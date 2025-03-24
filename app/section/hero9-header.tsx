@@ -8,10 +8,10 @@ import { cn } from "../_lib/utils"
 import Image from "next/image"
 
 const menuItems = [
-  { name: "Features", href: "#link" },
-  { name: "Solution", href: "#link" },
-  { name: "Pricing", href: "#link" },
-  { name: "About", href: "#link" },
+  { name: "Inicio", href: "#link" },
+  { name: "Sobre", href: "#link" },
+  { name: "Contato", href: "#link" },
+  { name: "Duvidas Frequentes", href: "#link" },
 ]
 
 export const HeroHeader = () => {
@@ -44,7 +44,7 @@ export const HeroHeader = () => {
           >
             <div className="flex w-full items-center justify-between gap-12 lg:w-auto">
               <Link href="/" aria-label="home" className="flex items-center space-x-2">
-                <Image src="/logo.png" height={20} width={110} alt="DPVAT Paraná" />
+                <Image src="/logo.png" height={20} width={140} alt="DPVAT Paraná" />
                </Link>
 
               <button
@@ -57,7 +57,7 @@ export const HeroHeader = () => {
               </button>
 
               <div className="hidden lg:block">
-                <ul className="flex gap-8 text-sm">
+                <ul className="flex gap-8 text-md">
                   {menuItems.map((item, index) => (
                     <li key={index}>
                       <Link
