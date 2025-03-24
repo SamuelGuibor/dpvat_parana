@@ -1,5 +1,3 @@
-'use client'
-
 import Login from "./sections/login-page"
 
 const login = () => {
