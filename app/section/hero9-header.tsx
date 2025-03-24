@@ -41,7 +41,7 @@ export const HeroHeader = () => {
               scrolled && "lg:py-4",
             )}
           >
-            <div className="flex w-full items-center justify-between gap-12 lg:w-auto">
+            <div className="flex w-full items-center justify-between gap-12 lg:gap-80 lg:w-auto">
               <Link href="/" aria-label="home" className="flex items-center space-x-2">
                 <Image src="/logo.png" height={20} width={140} alt="DPVAT Paraná" />
                </Link>
@@ -88,12 +88,12 @@ export const HeroHeader = () => {
               </div>
               <div className="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
                 <Button asChild variant="outline" size="sm">
-                  <Link href="#">
+                  <Link href="/login">
                     <span>Login</span>
                   </Link>
                 </Button>
                 <Button asChild size="sm">
-                  <Link href="#">
+                  <Link href="/login">
                     <span>Sign Up</span>
                   </Link>
                 </Button>
