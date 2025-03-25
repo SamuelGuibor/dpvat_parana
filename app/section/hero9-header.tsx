@@ -6,6 +6,7 @@ import React from "react"
 import { useScroll, motion } from "framer-motion"
 import { cn } from "../_lib/utils"
 import Image from "next/image"
+import { FaFacebook, FaInstagram } from "react-icons/fa"
 
 const menuItems = [
   { name: "Inicio", href: "#link" },
@@ -43,8 +44,9 @@ export const HeroHeader = () => {
           >
             <div className="flex w-full items-center justify-between gap-12 lg:gap-80 lg:w-auto">
               <Link href="/" aria-label="home" className="flex items-center space-x-2">
-                <Image src="/logo.png" height={20} width={140} alt="DPVAT Paraná" />
-               </Link>
+                <Image src={scrolled ? "/logo.png" : "/logo_text_white.png"}
+                  height={20} width={140} alt="DPVAT Paraná" />
+              </Link>
 
               <button
                 onClick={() => setMenuState(!menuState)}
@@ -63,13 +65,15 @@ export const HeroHeader = () => {
                         href={item.href}
                         className="text-muted-foreground hover:text-accent-foreground block duration-150"
                       >
-                        <span className="text-white">{item.name}</span>
+                        <span className={scrolled ? "text-black" : "text-white"}>{item.name}</span>
                       </Link>
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
+
+              
 
             <div className="bg-background in-data-[state=active]:block lg:in-data-[state=active]:flex mb-6 hidden w-full flex-wrap items-center justify-end space-y-8 rounded-3xl border p-6 shadow-2xl shadow-zinc-300/20 md:flex-nowrap lg:m-0 lg:flex lg:w-fit lg:gap-6 lg:space-y-0 lg:border-transparent lg:bg-transparent lg:p-0 lg:shadow-none dark:shadow-none dark:lg:bg-transparent">
               <div className="lg:hidden">
@@ -80,13 +84,21 @@ export const HeroHeader = () => {
                         href={item.href}
                         className="text-muted-foreground hover:text-accent-foreground block duration-150"
                       >
-                        <span>{item.name}</span>
+                        <span className="text-[20px]">{item.name}</span>
                       </Link>
                     </li>
                   ))}
                 </ul>
               </div>
               <div className="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
+              <div className="relative flex gap-4 right-24">
+                <Link href="https://www.facebook.com/paranadpvat/">
+                  <FaFacebook size={30} className={scrolled ? "text-black cursor-pointer" : "text-white cursor-pointer" }/>
+                </Link>
+                <Link href="https://www.instagram.com/paranadpvat/">
+                  <FaInstagram size={30} className={scrolled ? "text-black cursor-pointer" : "text-white cursor-pointer" }/>
+                </Link>
+              </div>
                 <Button asChild variant="outline" size="sm">
                   <Link href="/login">
                     <span>Login</span>
