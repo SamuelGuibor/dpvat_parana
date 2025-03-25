@@ -1,49 +1,75 @@
-/* eslint-disable @next/next/no-img-element */
-import Link from "next/link"
-import { Button } from "@/app/_components/ui/button"
-import { HeroHeader } from "./hero9-header"
-import { ChevronRight } from "lucide-react"
-import Image from "next/image"
+'use client';
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Button } from "@/app/_components/ui/button";
+import { HeroHeader } from "./hero9-header";
+import { ChevronRight } from "lucide-react";
 
 export default function HeroSection() {
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      const maxScroll = window.innerHeight; 
+      const progress = Math.min(scrollY / maxScroll, 1); 
+      setScrollProgress(progress);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
     <>
       <HeroHeader />
-      <main className="overflow-x-hidden">
-        <section>
-          <div className="py-24 md:pb-32 lg:pb-36 lg:pt-72 relative">
-            {/* Caixa escura cobrindo parte da tela */}
-            <div className="absolute left-0 top-0 w-[550px] h-full bg-black/80 -z-8" />
+      <main className="overflow-hidden">
+        <section className="relative h-screen flex items-center">
+          <div
+            id="parallax-background"
+            className="absolute inset-0 -z-10"
+            style={{
+              backgroundImage: "url('/car.jpg')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              height: "100%",
+              transform: `translateY(${scrollProgress * 250}px)`, 
+            }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/70" />
+          </div>
 
+          <div
+            className="py-24 md:pb-32 lg:pb-36 lg:pt-72 relative transition-transform duration-500 ease-out"
+            style={{
+              transform: `translateX(-${scrollProgress * 100}%)`, 
+              opacity: 1 - scrollProgress, 
+            }}
+          >
+            <div className="absolute left-0 top-0 w-[550px] lg:max-w-4xl h-full bg-black/80 -z-8" />
+            <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 bottom-16">
+              <div className="mx-auto max-w-lg text-center lg:ml-0 lg:max-w-full lg:text-left mb-10">
+                <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl text-white">
+                  DPVAT Paraná
+                </h1>
+                <p className="mt-8 max-w-2xl text-balance text-lg relative text-white">
+                  Receba uma indenização pelas lesões do seu acidente
+                </p>
 
-              <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 bottom-16">
-                <div className="mx-auto max-w-lg text-center lg:ml-0 lg:max-w-full lg:text-left mb-10">
-                  <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl relative lg:right-24 text-white top-14 lg:top-0">
-                    DPVAT Paraná
-                  </h1>
-                  <p className="mt-8 max-w-2xl text-balance text-lg relative lg:right-24 text-white top-14 lg:top-0">
-                    Receba uma indenização pelas lesões do seu acidente
-                  </p>
-
-                  <div className="mt-12 flex flex-col items-center justify-center gap-2 sm:flex-row lg:justify-start relative lg:right-24 top-14 lg:top-0">
-                    <Button asChild size="lg" className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500">
-                      <Link href="#link">
-                        <span className="text-nowrap">Fale Conosco</span>
-                        <ChevronRight className="ml-1" />
-                      </Link>
-                    </Button>
-                  </div>
+                <div className="mt-12 flex flex-col items-center justify-center gap-2 sm:flex-row lg:justify-start">
+                  <Button asChild size="lg" className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500">
+                    <Link href="#link">
+                      <span>Fale Conosco</span>
+                      <ChevronRight className="ml-1" />
+                    </Link>
+                  </Button>
                 </div>
               </div>
-
-            {/* Imagem de fundo com gradiente */}
-            <div className="absolute inset-0 -z-10">
-              <Image src="/car.jpg" width={1920} height={1080} alt="car" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/70" />
             </div>
           </div>
         </section>
       </main>
     </>
-  )
+  );
 }

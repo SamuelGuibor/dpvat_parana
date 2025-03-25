@@ -25,7 +25,7 @@ const Stats = () => {
           </div>
           <div className="space-y-4">
             <div className="text-5xl font-bold text-blue-600">100%</div>
-            <p className="text-gray-700">Satisfação</p>
+            <p className="text-gray-700">De Satisfação</p>
           </div>
         </div>
       </div>
