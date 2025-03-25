@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Mulish } from "next/font/google";
+import AuthProvider from "./_providers/auth";
 
 
 const mulish = Mulish({
@@ -22,7 +23,7 @@ export default function RootLayout({
       <body
         className={`${mulish.className} antialiased`}
       >
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

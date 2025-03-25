@@ -72,6 +72,7 @@
 
   body {
     @apply h-full bg-background text-foreground;
+
   }
 
   .dark {
@@ -83,3 +84,4 @@
     @apply bg-background text-foreground; /* Usa as variáveis definidas */
   }
 }
+

@@ -5,11 +5,13 @@ declare module "next-auth" {
   interface Session {
     user: {
       id: string
-      role: string // ou `role?: string` se o campo for opcional
+      role: string 
+      cpf: string
     } & DefaultSession["user"]
   }
 
   interface User {
-    role: string // Adiciona `role` ao objeto User do NextAuth
+    role: string
+    cpf: string 
   }
 }

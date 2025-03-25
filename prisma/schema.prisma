@@ -10,21 +10,23 @@ datasource db {
 model User {
   id               String    @id @default(cuid())
   name             String?
-  cpf              String    @unique
-  data_nasc        DateTime
+  cpf              String?   @unique // Permitir null
+  data_nasc        DateTime?
   email            String    @unique
   password         String?
-  rua              String
-  bairro           String
-  numero           String
-  cep              String
+  rua              String?
+  bairro           String?
+  numero           String?
+  cep              String?
   image            String?
+  emailVerified    DateTime?
   role             String    @default("USER") 
   accounts         Account[]
   sessions         Session[]
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
+
 
 model Account {
   userId            String
