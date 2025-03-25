@@ -71,15 +71,24 @@ const Faq = ({
         <div className="mx-auto flex flex-col items-center justify-center max-w-4xl w-[350px] lg:w-[825px] rounded-lg bg-accent p-4 text-center md:rounded-xl md:p-6 lg:p-8">
           <div className="relative mb-6 flex justify-center">
             <Avatar className="absolute mb-4 size-16 origin-bottom -translate-x-[60%] scale-[80%] border md:mb-5">
-              <AvatarImage src="https://shadcnblocks.com/images/block/avatar-2.webp" />
+              <AvatarImage
+                src="https://shadcnblocks.com/images/block/avatar-2.webp"
+                alt="Suporte"
+              />
               <AvatarFallback>SU</AvatarFallback>
             </Avatar>
             <Avatar className="absolute mb-4 size-16 origin-bottom translate-x-[60%] scale-[80%] border md:mb-5">
-              <AvatarImage src="https://shadcnblocks.com/images/block/avatar-3.webp" />
+              <AvatarImage
+                src="https://shadcnblocks.com/images/block/avatar-3.webp"
+                alt="Suporte"
+              />
               <AvatarFallback>SU</AvatarFallback>
             </Avatar>
             <Avatar className="mb-4 size-16 border md:mb-5">
-              <AvatarImage src="https://shadcnblocks.com/images/block/avatar-1.webp" />
+              <AvatarImage
+                src="https://shadcnblocks.com/images/block/avatar-1.webp"
+                alt="Suporte"
+              />
               <AvatarFallback>SU</AvatarFallback>
             </Avatar>
           </div>
