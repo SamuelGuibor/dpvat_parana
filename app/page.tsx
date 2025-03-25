@@ -2,7 +2,6 @@ import { Faq } from "./section/faq";
 import { FeatureSteps } from "./section/feature-section";
 import Footer from "./section/footer";
 import Hero from "./section/hero-section";
-import Objetivos from "./section/objetivos";
 import Stats from "./section/stats";
 
 export default function Home() {
