@@ -58,7 +58,7 @@ export default function Home() {
       content:
         "Nos dedicamos a proteger os direitos e interesses dos nossos clientes com acordos extrajudiciais, garantindo uma justa e rápida indenização.",
       image:
-        "https://images.unsplash.com/photo-1723958929247-ef054b525153?q=80&w=2070&auto=format&fit=crop",
+        "/protect.jpg",
     },
     {
       step: "Step 2",
@@ -66,7 +66,7 @@ export default function Home() {
       content:
         "Nosso compromisso é com a transparência, a ética e a eficácia, desburocratizando procedimentos administrativos de seguradoras.",
       image:
-        "https://images.unsplash.com/photo-1723958929247-ef054b525153?q=80&w=2070&auto=format&fit=crop",
+        "/transparencia.jpg",
     },
     {
       step: "Step 3",
@@ -74,7 +74,7 @@ export default function Home() {
       content:
         "Acompanhamos o cliente desde a obtenção de documentos até a realização de perícia para garantir paz de espírito e resultados positivos.",
       image:
-        "https://images.unsplash.com/photo-1723958929247-ef054b525153?q=80&w=2070&auto=format&fit=crop",
+        "/conecg.jpg",
     },
   ];
 
