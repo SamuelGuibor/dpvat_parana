@@ -54,6 +54,7 @@ export function FeatureSteps({
     };
   }, []);
 
+
   useEffect(() => {
     const timer = setInterval(() => {
       if (progress < 100) {
@@ -69,10 +70,11 @@ export function FeatureSteps({
 
   return (
     <div ref={sectionRef} className={cn("p-8 md:p-12", className)}>
-      <div className="max-w-7xl mx-auto w-full">
+      <div className="max-w-7xl mx-auto w-full overflow-hidden">
+
         <motion.h2
           initial={{ opacity: 0, x: -50 }}
-          animate={{ opacity: isVisible ? 1 : 0, x: isVisible ? 0 : -50 }}
+          animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
           className="text-3xl md:text-4xl lg:text-5xl font-bold mb-10 text-center text-white"
         >
