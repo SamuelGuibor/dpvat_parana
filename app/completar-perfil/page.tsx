@@ -75,6 +75,24 @@ export default function CompletarPerfil() {
   });
 
   const [loading, setLoading] = useState(false);
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, ""); // Remove tudo que não é número
+    if (value.length <= 11) {
+      value = value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"); // Formata o CPF
+      form.setValue("cpf", value); // Atualiza o valor do campo
+    }
+  };
+
+  const handleCepChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, ""); // Remove tudo que não for número
+    if (value.length <= 8) {
+      value =
+        value.slice(0, 5) + (value.length > 5 ? "-" + value.slice(5, 8) : ""); // Formata o CEP
+      form.setValue("cep", value); // Atualiza o valor do campo
+    }
+  };
+
   const onSubmit = async (data: FormSchema) => {
     setLoading(true);
     try {
@@ -126,7 +144,12 @@ export default function CompletarPerfil() {
                   <FormItem>
                     <FormLabel>CPF</FormLabel>
                     <FormControl>
-                      <Input placeholder="Digite seu CPF" {...field} />
+                      <Input
+                        placeholder="Digite seu CPF"
+                        {...field}
+                        maxLength={14}
+                        onChange={handleCpfChange}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -171,7 +194,12 @@ export default function CompletarPerfil() {
                   <FormItem>
                     <FormLabel>CEP</FormLabel>
                     <FormControl>
-                      <Input placeholder="Digite seu CEP" {...field} />
+                      <Input
+                        placeholder="Digite seu CEP"
+                        {...field}
+                        maxLength={10}
+                        onChange={handleCepChange}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
