@@ -119,4 +119,3 @@ export const HeroHeader = () => {
     </header>
   )
 }
-

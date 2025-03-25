@@ -1,6 +1,9 @@
 const Objetivos = () => {
   return (
-    <section className="flex flex-col items-center text-center py-10 px-4">
+    <section
+      id="about"
+      className="flex flex-col items-center text-center py-10 px-4"
+    >
       <div className="max-w-4xl">
         <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
           Nosso Objetivo

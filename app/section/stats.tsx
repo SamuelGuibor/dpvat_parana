@@ -4,7 +4,7 @@ const Stats = () => {
       <div className="mx-auto max-w-5xl space-y-12 px-6">
         <div className="relative z-10 mx-auto max-w-xl text-center">
           <h2 className="text-4xl font-semibold lg:text-5xl">
-            Seguro DPVAT Paraná em Números
+            Paraná Seguros em Números
           </h2>
           <p className="mt-4 text-lg text-gray-600">
             No Paraná, o DPVAT é mais do que um seguro obrigatório – é um

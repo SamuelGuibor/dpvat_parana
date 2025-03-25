@@ -6,7 +6,7 @@ const Footer = () => {
       <div className="container justify-center md:mx-auto md:pl-[10px]">
         <div className="relative inline-flex before:absolute before:bottom-0 before:top-2 before:w-full before:bg-[linear-gradient(to_right,#CCFFCC,#8BC462,#008000)] before:blur before:content-['']">
           <Image
-            src="/logo.png"
+            src="/logo_text_white.png"
             alt="logo"
             height={70}
             width={70}
@@ -14,9 +14,9 @@ const Footer = () => {
           />
         </div>
         <nav className="mt-6 flex flex-col gap-6 md:flex-row md:justify-center">
-          <a href="#about">Iníciio</a>
-          <a href="#features">Sobre</a>
-          <a href="#price">Perguntas Frequentes</a>
+          <a href="#home">Início</a>
+          <a href="#about">Sobre</a>
+          <a href="#ask">Duvidas Frequentes</a>
         </nav>
         <p className="mt-6">
           Bluelife Seg Corretora e Consultoria. Paraná consultoria em seguros –

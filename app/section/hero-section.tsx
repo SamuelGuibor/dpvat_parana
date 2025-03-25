@@ -30,7 +30,7 @@ export default function HeroSection() {
             id="parallax-background"
             className="absolute inset-0 -z-10"
             style={{
-              backgroundImage: "url('/car.jpg')",
+              backgroundImage: "url('/moto.jpg')",
               backgroundSize: "cover",
               backgroundPosition: "center",
               height: "100%",
@@ -51,7 +51,7 @@ export default function HeroSection() {
             <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 bottom-16">
               <div className="mx-auto max-w-lg text-center lg:ml-0 lg:max-w-full lg:text-left mb-10">
                 <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl text-white">
-                  DPVAT Paraná
+                  Paraná Seguros
                 </h1>
                 <p className="mt-8 max-w-2xl text-balance text-lg relative text-white">
                   Receba uma indenização pelas lesões do seu acidente
