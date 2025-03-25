@@ -41,14 +41,14 @@ export default function HeroSection() {
           </div>
 
           <div
-            className="py-24 md:pb-32 lg:pb-36 lg:pt-72 relative transition-transform duration-500 ease-out"
+            className="py-24 md:pb-32 lg:pb-36 lg:pt-72 relative h-full transition-transform duration-500 ease-out"
             style={{
               transform: `translateX(-${scrollProgress * 100}%)`, 
               opacity: 1 - scrollProgress, 
             }}
           >
             <div className="absolute left-0 top-0 w-[550px] lg:max-w-4xl h-full bg-black/80 -z-8" />
-            <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 bottom-16">
+            <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 top-28 lg:top-[-80px]">
               <div className="mx-auto max-w-lg text-center lg:ml-0 lg:max-w-full lg:text-left mb-10">
                 <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl text-white">
                   Paraná Seguros
