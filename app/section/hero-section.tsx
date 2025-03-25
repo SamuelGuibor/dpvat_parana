@@ -15,25 +15,26 @@ export default function HeroSection() {
             {/* Caixa escura cobrindo parte da tela */}
             <div className="absolute left-0 top-0 w-[550px] h-full bg-black/80 -z-8" />
 
-            <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 bottom-16">
-              <div className="mx-auto max-w-lg text-center lg:ml-0 lg:max-w-full lg:text-left mb-10">
-                <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl relative right-24 text-white">
-                  DPVAT Paraná
-                </h1>
-                <p className="mt-8 max-w-2xl text-balance text-lg relative right-24 text-white">
-                  Receba uma indenização pelas lesões do seu acidente
-                </p>
 
-                <div className="mt-12 flex flex-col items-center justify-center gap-2 sm:flex-row lg:justify-start relative right-24">
-                  <Button asChild size="lg" className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500">
-                    <Link href="#link">
-                      <span className="text-nowrap">Fale Conosco</span>
-                      <ChevronRight className="ml-1" />
-                    </Link>
-                  </Button>
+              <div className="relative mx-auto flex max-w-7xl flex-col px-6 lg:block lg:px-12 bottom-16">
+                <div className="mx-auto max-w-lg text-center lg:ml-0 lg:max-w-full lg:text-left mb-10">
+                  <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl relative lg:right-24 text-white top-14 lg:top-0">
+                    DPVAT Paraná
+                  </h1>
+                  <p className="mt-8 max-w-2xl text-balance text-lg relative lg:right-24 text-white top-14 lg:top-0">
+                    Receba uma indenização pelas lesões do seu acidente
+                  </p>
+
+                  <div className="mt-12 flex flex-col items-center justify-center gap-2 sm:flex-row lg:justify-start relative lg:right-24 top-14 lg:top-0">
+                    <Button asChild size="lg" className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500">
+                      <Link href="#link">
+                        <span className="text-nowrap">Fale Conosco</span>
+                        <ChevronRight className="ml-1" />
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
 
             {/* Imagem de fundo com gradiente */}
             <div className="absolute inset-0 -z-10">
