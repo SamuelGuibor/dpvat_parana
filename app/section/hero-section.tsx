@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -12,8 +12,8 @@ export default function HeroSection() {
   useEffect(() => {
     const handleScroll = () => {
       const scrollY = window.scrollY;
-      const maxScroll = window.innerHeight; 
-      const progress = Math.min(scrollY / maxScroll, 1); 
+      const maxScroll = window.innerHeight;
+      const progress = Math.min(scrollY / maxScroll, 1);
       setScrollProgress(progress);
     };
 
@@ -34,7 +34,7 @@ export default function HeroSection() {
               backgroundSize: "cover",
               backgroundPosition: "center",
               height: "100%",
-              transform: `translateY(${scrollProgress * 250}px)`, 
+              transform: `translateY(${scrollProgress * 250}px)`,
             }}
           >
             <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/70" />
@@ -43,8 +43,8 @@ export default function HeroSection() {
           <div
             className="py-24 md:pb-32 lg:pb-36 lg:pt-72 relative h-full transition-transform duration-500 ease-out"
             style={{
-              transform: `translateX(-${scrollProgress * 100}%)`, 
-              opacity: 1 - scrollProgress, 
+              transform: `translateX(-${scrollProgress * 100}%)`,
+              opacity: 1 - scrollProgress,
             }}
           >
             <div className="absolute left-0 top-0 w-[550px] lg:max-w-4xl h-full bg-black/80 -z-8" />
@@ -58,7 +58,11 @@ export default function HeroSection() {
                 </p>
 
                 <div className="mt-12 flex flex-col items-center justify-center gap-2 sm:flex-row lg:justify-start">
-                  <Button asChild size="lg" className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500">
+                  <Button
+                    asChild
+                    size="lg"
+                    className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500"
+                  >
                     <Link href="#link">
                       <span>Fale Conosco</span>
                       <ChevronRight className="ml-1" />

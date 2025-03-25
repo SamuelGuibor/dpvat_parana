@@ -1,4 +1,5 @@
 import { Faq } from "./section/faq";
+import { FeatureSteps } from "./section/feature-section";
 import Footer from "./section/footer";
 import Hero from "./section/hero-section";
 import Objetivos from "./section/objetivos";
@@ -50,11 +51,46 @@ export default function Home() {
     },
   ];
 
+  const features = [
+    {
+      step: "Step 1",
+      title: "Proteção dos Direitos dos Clientes",
+      content:
+        "Nos dedicamos a proteger os direitos e interesses dos nossos clientes com acordos extrajudiciais, garantindo uma justa e rápida indenização.",
+      image:
+        "https://images.unsplash.com/photo-1723958929247-ef054b525153?q=80&w=2070&auto=format&fit=crop",
+    },
+    {
+      step: "Step 2",
+      title: "Compromisso com Transparência e Ética",
+      content:
+        "Nosso compromisso é com a transparência, a ética e a eficácia, desburocratizando procedimentos administrativos de seguradoras.",
+      image:
+        "https://images.unsplash.com/photo-1723958929247-ef054b525153?q=80&w=2070&auto=format&fit=crop",
+    },
+    {
+      step: "Step 3",
+      title: "Acompanhamento Completo",
+      content:
+        "Acompanhamos o cliente desde a obtenção de documentos até a realização de perícia para garantir paz de espírito e resultados positivos.",
+      image:
+        "https://images.unsplash.com/photo-1723958929247-ef054b525153?q=80&w=2070&auto=format&fit=crop",
+    },
+  ];
+
   return (
     <div>
       <Hero />
       <Stats />
-      <Objetivos />
+      {/* <Objetivos /> */}
+      <FeatureSteps
+        features={features}
+        title="Nossos Objetivos"
+        autoPlayInterval={3000}
+        imageHeight="h-[500px]"
+        className=" z-30 bg-gradient-to-b from-[#0f0f0f] to-black transform translate-y-[-20px]"
+      />
+
       <Faq
         heading="Perguntas Frequentes"
         description="Tudo o que você precisa saber sobre o DPVAT. Não encontrou a resposta que procura? Sinta-se à vontade para entrar em contato com nossa equipe de suporte"
