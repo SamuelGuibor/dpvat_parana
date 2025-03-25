@@ -29,7 +29,7 @@ export function FeatureSteps({
   title = "",
   autoPlayInterval = 3000,
   /* eslint-disable no-unused-vars */
-  imageHeight = "h-[400px]",
+  imageHeight = "h-[400px]",// eslint-disable-line @typescript-eslint/no-unused-vars
   /* eslint-enable no-unused-vars */
 }: FeatureStepsProps) {
   const [currentFeature, setCurrentFeature] = useState(0);
