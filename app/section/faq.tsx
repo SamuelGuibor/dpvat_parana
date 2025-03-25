@@ -47,11 +47,15 @@ const Faq = ({
 
         {/* Accordion */}
         <div className="flex justify-center w-full">
-          <Accordion type="single" collapsible className="w-full max-w-3xl">
+          <Accordion
+            type="single"
+            collapsible
+            className="lg:w-full w-[350px] max-w-3xl "
+          >
             {items.map((item) => (
               <AccordionItem key={item.id} value={item.id}>
                 <AccordionTrigger className="transition-opacity duration-200 hover:no-underline hover:text-blue-400">
-                  <div className="font-medium sm:py-1 lg:py-2 lg:text-lg">
+                  <div className="font-medium text-left sm:py-1 lg:py-2 lg:text-lg">
                     {item.question}
                   </div>
                 </AccordionTrigger>
@@ -64,7 +68,7 @@ const Faq = ({
         </div>
 
         {/* Seção de Suporte */}
-        <div className="mx-auto flex flex-col items-center justify-center max-w-4xl rounded-lg bg-accent p-4 text-center md:rounded-xl md:p-6 lg:p-8">
+        <div className="mx-auto flex flex-col items-center justify-center max-w-4xl w-[350px] lg:w-[825px] rounded-lg bg-accent p-4 text-center md:rounded-xl md:p-6 lg:p-8">
           <div className="relative mb-6 flex justify-center">
             <Avatar className="absolute mb-4 size-16 origin-bottom -translate-x-[60%] scale-[80%] border md:mb-5">
               <AvatarImage src="https://shadcnblocks.com/images/block/avatar-2.webp" />
