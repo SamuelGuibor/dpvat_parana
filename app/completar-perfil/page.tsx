@@ -82,7 +82,7 @@ export default function CompletarPerfil() {
         ...data,
         data_nasc: new Date(data.data_nasc).toISOString(),
       };
-      console.log("Dados formatados para salvar:", formattedData);
+
       await updateUserProfile(formattedData);
       router.push("/");
     } catch (error) {
