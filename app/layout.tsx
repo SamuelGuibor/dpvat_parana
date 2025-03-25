@@ -9,8 +9,8 @@ const mulish = Mulish({
 });
 
 export const metadata: Metadata = {
-  title: "DPVAT Paraná",
-  description: "DPVAT Paraná",
+  title: "Paraná Seguros",
+  description: "Paraná Seguros",
 };
 
 export default function RootLayout({
