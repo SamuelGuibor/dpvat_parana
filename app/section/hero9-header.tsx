@@ -19,12 +19,12 @@ const menuItems = [
 export const HeroHeader = () => {
   const [menuState, setMenuState] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
-  const { scrollYProgress } = useScroll();
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  const { data: session } = useSession()
-  const handleLogoutClick = () => signOut()
+  const { scrollYProgress } = useScroll();
+  const { data: session } = useSession();
+  const handleLogoutClick = () => signOut();
 
-
+  // Monitora o scroll para o estado "scrolled"
   React.useEffect(() => {
     const unsubscribe = scrollYProgress.on("change", (latest) => {
       setScrolled(latest > 0.05);
@@ -32,8 +32,13 @@ export const HeroHeader = () => {
     return () => unsubscribe();
   }, [scrollYProgress]);
 
+  // Função para abrir/fechar o sheet
+  const toggleSheet = () => {
+    setSheetOpen((prev) => !prev);
+  };
+
   return (
-    <header>
+    <header className="relative">
       <nav
         data-state={menuState && "active"}
         className="fixed z-20 w-full pt-2"
@@ -67,11 +72,8 @@ export const HeroHeader = () => {
 
               <button
                 onClick={() => setMenuState(!menuState)}
-                aria-label={menuState == true ? "Close Menu" : "Open Menu"}
-                className={`${scrolled
-                  ? "text-black cursor-pointer"
-                  : "text-white cursor-pointer"
-                  } relative z-20 -m-2.5 -mr-4 block p-2.5 lg:hidden`}
+                aria-label={menuState ? "Close Menu" : "Open Menu"}
+                className={`${scrolled ? "text-black" : "text-white"} relative z-20 -m-2.5 -mr-4 block p-2.5 lg:hidden`}
               >
                 <Menu className="in-data-[state=active]:rotate-180 in-data-[state=active]:scale-0 in-data-[state=active]:opacity-0 m-auto size-6 duration-200" />
                 <X className="in-data-[state=active]:rotate-0 in-data-[state=active]:scale-100 in-data-[state=active]:opacity-100 absolute inset-0 m-auto size-6 -rotate-180 scale-0 opacity-0 duration-200" />
@@ -85,9 +87,7 @@ export const HeroHeader = () => {
                         href={item.href}
                         className="text-muted-foreground hover:text-accent-foreground block duration-150"
                       >
-                        <span
-                          className={scrolled ? "text-black" : "text-white"}
-                        >
+                        <span className={scrolled ? "text-black" : "text-white"}>
                           {item.name}
                         </span>
                       </Link>
@@ -124,11 +124,7 @@ export const HeroHeader = () => {
                   >
                     <FaFacebook
                       size={30}
-                      className={
-                        scrolled
-                          ? "text-black cursor-pointer"
-                          : "lg:text-white text-black cursor-pointer"
-                      }
+                      className={scrolled ? "text-black" : "lg:text-white text-black"}
                     />
                   </Link>
                   <Link
@@ -137,11 +133,7 @@ export const HeroHeader = () => {
                   >
                     <FaInstagram
                       size={30}
-                      className={
-                        scrolled
-                          ? "text-black cursor-pointer"
-                          : "lg:text-white text-black cursor-pointer"
-                      }
+                      className={scrolled ? "text-black" : "lg:text-white text-black"}
                     />
                   </Link>
                 </div>
@@ -159,50 +151,50 @@ export const HeroHeader = () => {
                     </Button>
                   </>
                 ) : (
-                  <>
-                    <Avatar onClick={() => setSheetOpen(true)} className="cursor-pointer">
-                      <AvatarImage
-                        src={session?.user?.image || "https://i.pravatar.cc/300"}
-                        alt="Avatar"
-                      />
-                    </Avatar>
-
-                    {sheetOpen && (
-                      <div
-                        className="fixed inset-0 bg-black/50 z-40"
-                        onClick={() => setSheetOpen(false)}
-                      />
-                    )}
-
-                    <motion.div
-                      initial={{ x: "100%" }}
-                      animate={{ x: sheetOpen ? "0%" : "100%" }}
-                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                      className="fixed right-0 top-0 h-full w-80 bg-white shadow-xl p-6 z-50"
-                    >
-                      <h2 className="text-lg font-bold">Meu Sheet</h2>
-                      <p>Conteúdo do sheet aqui...</p>
-                      <Button onClick={() => setSheetOpen(false)} className="mt-4">
-                        Fechar
-                      </Button>
-                      <div className="flex flex-col gap-2 py-5">
-                        <Button
-                          variant="ghost"
-                          className="justify-start gap-2"
-                          onClick={handleLogoutClick}
-                        >
-                          <LogOutIcon size={18} />
-                          Sair da Conta
-                        </Button>
-                      </div>
-                    </motion.div>
-                  </>
+                  <Avatar onClick={toggleSheet} className="cursor-pointer">
+                    <AvatarImage
+                      src={session?.user?.image || "https://i.pravatar.cc/300"}
+                      alt="Avatar"
+                    />
+                  </Avatar>
                 )}
               </div>
             </div>
           </motion.div>
         </div>
       </nav>
+
+      {/* Sheet movido para fora da div que usa o scrolled */}
+      {session?.user && sheetOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-40"
+            onClick={() => setSheetOpen(false)}
+          />
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: sheetOpen ? "0%" : "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="fixed right-0 top-0 h-screen w-80 bg-white shadow-xl p-6 z-50"
+          >
+            <h2 className="text-lg font-bold">Meu Sheet</h2>
+            <p>Conteúdo do sheet aqui...</p>
+            <Button onClick={() => setSheetOpen(false)} className="mt-4">
+              Fechar
+            </Button>
+            <div className="flex flex-col gap-2 py-5">
+              <Button
+                variant="ghost"
+                className="justify-start gap-2"
+                onClick={handleLogoutClick}
+              >
+                <LogOutIcon size={18} />
+                Sair da Conta
+              </Button>
+            </div>
+          </motion.div>
+        </>
+      )}
     </header>
   );
 };

@@ -79,6 +79,7 @@ export default function Home() {
 
   return (
     <div>
+      
       <Hero />
       <Stats />
       {/* <Objetivos /> */}
