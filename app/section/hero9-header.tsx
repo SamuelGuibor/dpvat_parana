@@ -1,12 +1,14 @@
 "use client";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { LogOutIcon, Menu, X } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import React from "react";
 import { useScroll, motion } from "framer-motion";
 import { cn } from "../_lib/utils";
 import Image from "next/image";
 import { FaFacebook, FaInstagram } from "react-icons/fa";
+import { Avatar, AvatarImage } from "../_components/ui/avatar";
+import { signOut, useSession } from "next-auth/react";
 
 const menuItems = [
   { name: "Inicio", href: "#link" },
@@ -18,6 +20,10 @@ export const HeroHeader = () => {
   const [menuState, setMenuState] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const { scrollYProgress } = useScroll();
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  const { data: session } = useSession()
+  const handleLogoutClick = () => signOut()
+
 
   React.useEffect(() => {
     const unsubscribe = scrollYProgress.on("change", (latest) => {
@@ -62,11 +68,10 @@ export const HeroHeader = () => {
               <button
                 onClick={() => setMenuState(!menuState)}
                 aria-label={menuState == true ? "Close Menu" : "Open Menu"}
-                className={`${
-                  scrolled
-                    ? "text-black cursor-pointer"
-                    : "text-white cursor-pointer"
-                } relative z-20 -m-2.5 -mr-4 block p-2.5 lg:hidden`}
+                className={`${scrolled
+                  ? "text-black cursor-pointer"
+                  : "text-white cursor-pointer"
+                  } relative z-20 -m-2.5 -mr-4 block p-2.5 lg:hidden`}
               >
                 <Menu className="in-data-[state=active]:rotate-180 in-data-[state=active]:scale-0 in-data-[state=active]:opacity-0 m-auto size-6 duration-200" />
                 <X className="in-data-[state=active]:rotate-0 in-data-[state=active]:scale-100 in-data-[state=active]:opacity-100 absolute inset-0 m-auto size-6 -rotate-180 scale-0 opacity-0 duration-200" />
@@ -140,16 +145,59 @@ export const HeroHeader = () => {
                     />
                   </Link>
                 </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/login">
-                    <span>Login</span>
-                  </Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link href="/login">
-                    <span>Sign Up</span>
-                  </Link>
-                </Button>
+                {!session?.user ? (
+                  <>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/login">
+                        <span>Login</span>
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm">
+                      <Link href="/login">
+                        <span>Sign Up</span>
+                      </Link>
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Avatar onClick={() => setSheetOpen(true)} className="cursor-pointer">
+                      <AvatarImage
+                        src={session?.user?.image || "https://i.pravatar.cc/300"}
+                        alt="Avatar"
+                      />
+                    </Avatar>
+
+                    {sheetOpen && (
+                      <div
+                        className="fixed inset-0 bg-black/50 z-40"
+                        onClick={() => setSheetOpen(false)}
+                      />
+                    )}
+
+                    <motion.div
+                      initial={{ x: "100%" }}
+                      animate={{ x: sheetOpen ? "0%" : "100%" }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                      className="fixed right-0 top-0 h-full w-80 bg-white shadow-xl p-6 z-50"
+                    >
+                      <h2 className="text-lg font-bold">Meu Sheet</h2>
+                      <p>Conteúdo do sheet aqui...</p>
+                      <Button onClick={() => setSheetOpen(false)} className="mt-4">
+                        Fechar
+                      </Button>
+                      <div className="flex flex-col gap-2 py-5">
+                        <Button
+                          variant="ghost"
+                          className="justify-start gap-2"
+                          onClick={handleLogoutClick}
+                        >
+                          <LogOutIcon size={18} />
+                          Sair da Conta
+                        </Button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
