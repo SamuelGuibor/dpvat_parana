@@ -9,6 +9,12 @@ import Image from "next/image";
 import { FaFacebook, FaInstagram } from "react-icons/fa";
 import { Avatar, AvatarImage } from "../_components/ui/avatar";
 import { signOut, useSession } from "next-auth/react";
+import { AiOutlineCar } from "react-icons/ai";
+import { RxAvatar } from "react-icons/rx";
+import { IoDocumentsOutline } from "react-icons/io5";
+import { GoGear } from "react-icons/go";
+import { MdInsertChartOutlined } from "react-icons/md";
+import { HiOutlineChatAlt2 } from "react-icons/hi";
 
 const menuItems = [
   { name: "Inicio", href: "#link" },
@@ -164,7 +170,6 @@ export const HeroHeader = () => {
         </div>
       </nav>
 
-      {/* Sheet movido para fora da div que usa o scrolled */}
       {session?.user && sheetOpen && (
         <>
           <div
@@ -175,17 +180,43 @@ export const HeroHeader = () => {
             initial={{ x: "100%" }}
             animate={{ x: sheetOpen ? "0%" : "100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="fixed right-0 top-0 h-screen w-80 bg-white shadow-xl p-6 z-50"
+            className="fixed right-0 top-0 h-screen w-80 bg-white shadow-xl p-6 z-50 flex flex-col justify-between"
           >
-            <h2 className="text-lg font-bold">Meu Sheet</h2>
-            <p>Conteúdo do sheet aqui...</p>
-            <Button onClick={() => setSheetOpen(false)} className="mt-4">
-              Fechar
-            </Button>
-            <div className="flex flex-col gap-2 py-5">
+            <div>
+              <div className="flex flex-col gap-2 border-b border-solid pb-3">
+                <h2 className="text-lg font-bold">Menu</h2>
+              </div>
+              <div className="flex flex-col gap-2 border-b border-solid py-5">
+                <Button className="justify-start gap-2" variant="ghost">
+                  <RxAvatar style={{ width: 22, height: 22 }} />Aréa dos Clientes
+                </Button>
+                <Button className="justify-start gap-2" variant="ghost">
+                  <MdInsertChartOutlined style={{ width: 22, height: 22 }} />Dashboard
+                </Button>
+                <Button className="justify-start gap-2" variant="ghost">
+                  <HiOutlineChatAlt2 style={{ width: 22, height: 22 }} />Chat
+                </Button>
+                <Button className="justify-start gap-2" variant="ghost">
+                  <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
+                </Button>
+                <Button className="justify-start gap-2" variant="ghost">
+                  <IoDocumentsOutline style={{ width: 22, height: 22 }} />Documentos
+                </Button>
+                <Button className="justify-start gap-2" variant="ghost">
+                  <GoGear style={{ width: 22, height: 22 }} />Configurações
+                </Button>
+              </div>
+            </div>
+
+
+
+            <div className="absolute bottom-0 left-0 w-full p-4 bg-white shadow-inner">
+              <Button onClick={() => setSheetOpen(false)} className="w-full mb-2">
+                Fechar
+              </Button>
               <Button
                 variant="ghost"
-                className="justify-start gap-2"
+                className="w-full justify-start gap-2"
                 onClick={handleLogoutClick}
               >
                 <LogOutIcon size={18} />
@@ -193,6 +224,7 @@ export const HeroHeader = () => {
               </Button>
             </div>
           </motion.div>
+
         </>
       )}
     </header>
