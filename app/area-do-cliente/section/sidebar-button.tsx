@@ -14,7 +14,7 @@ const SidebarButton = ({ href, children }: SidebarButtonProps) => {
   const pathname = usePathname();
   return (
     <Button
-      variant={pathname === `${href}` ? "secondary" : "ghost"}
+      variant={pathname === `${href}` ? "terciario" : "ghost"}
       className="justify-start gap-2"
       asChild
     >

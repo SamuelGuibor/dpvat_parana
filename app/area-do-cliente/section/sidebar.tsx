@@ -9,7 +9,7 @@ import { GoGear } from "react-icons/go";
 
 const Sidebar = () => {
   return (
-    <div className="fixed w-full bg-gray-100 md:relative md:w-64">
+    <div className="fixed w-full bg-gray-100 md:relative md:w-64 h-screen">
       {/* IMAGEM */}
       <div className="px-8 py-1 md:py-6">
         <Link
@@ -22,7 +22,7 @@ const Sidebar = () => {
       </div>
       {/* BOTOES */}
       <div className="flex flex-row gap-2 p-2 md:flex-col">
-        <SidebarButton href="/">
+        <SidebarButton href="/status">
           <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
         </SidebarButton>
 
