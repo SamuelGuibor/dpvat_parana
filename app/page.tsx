@@ -6,6 +6,7 @@ import Hero from "./section/hero-section";
 import Stats from "./section/stats";
 
 export default function Home() {
+  
   const faqItems = [
     {
       id: "faq-1",

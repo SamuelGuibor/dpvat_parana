@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useRouter } from "next/navigation";
@@ -26,7 +27,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import Image from "next/image";
 import { Loader2Icon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { checkUserCpf } from "../_actions/checkCpf";
 
 const formSchema = z.object({
   cpf: z
@@ -61,6 +63,35 @@ type FormSchema = z.infer<typeof formSchema>;
 export default function CompletarPerfil() {
   const { data: session } = useSession();
   const router = useRouter();
+  const [user, setUser] = useState<{ cpf: string | null } | null>(null);
+  const [loadingg, setLoadingg] = useState(true);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const userData = await checkUserCpf(); 
+        setUser(userData);
+      } catch (error) {
+        console.error("Erro ao buscar usuário:", error);
+        setUser(null); 
+      } finally {
+        setLoadingg(false);
+      }
+    };
+
+    fetchUser();
+  }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      if (user?.cpf) {
+        router.push("/");
+      } else {
+        console.log("Usuário sem CPF, mantendo na tela atual");
+        router.push("/completar-perfil");
+      }
+    }
+  }, [loadingg, user, router]);
 
   const form = useForm<FormSchema>({
     resolver: zodResolver(formSchema),
@@ -135,7 +166,6 @@ export default function CompletarPerfil() {
             <p className="text-center text-sm mb-6">
               Bem-vindo, {session.user?.name}!
             </p>
-
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
