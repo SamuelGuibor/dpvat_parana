@@ -8,6 +8,7 @@ import { IoDocumentsOutline } from "react-icons/io5";
 import { GoGear } from "react-icons/go";
 import { PiHouseBold } from "react-icons/pi";
 import { RxAvatar } from "react-icons/rx";
+import { FaRegQuestionCircle } from "react-icons/fa";
 
 const Sidebar = () => {
   return (
@@ -43,6 +44,10 @@ const Sidebar = () => {
         </SidebarButton>
 
         <div className="absolute bottom-0 left-0 w-full p-4 border-gray-400 border-t">
+        <SidebarButton href="/faq">
+          <FaRegQuestionCircle style={{ width: 22, height: 22 }} />
+          FAQ do Chat
+        </SidebarButton>
         <SidebarButton href="/config">
           <GoGear style={{ width: 22, height: 22 }} />
           Configurações

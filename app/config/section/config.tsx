@@ -114,19 +114,20 @@ const Configuracao = () => {
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full">
                           {field.value
-                            ? format(new Date(field.value), "dd/MM/yyyy") // Converte a string para Date
+                            ? format(new Date(field.value), "dd/MM/yyyy") 
                             : "Selecione a data"}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-full mt-2">
                         <Calendar
                           selected={
-                            field.value ? new Date(field.value) : undefined // Converte a string para Date
+                            field.value ? new Date(field.value) : undefined 
                           }
                           onDayClick={(date: Date) => {
                             const formattedDate = format(date, "yyyy-MM-dd");
-                            field.onChange(formattedDate); // Salva como string no formato yyyy-MM-dd
+                            field.onChange(formattedDate); 
                           }}
+                          disabled
                         />
                       </PopoverContent>
                     </Popover>
