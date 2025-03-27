@@ -7,6 +7,7 @@ import { AiOutlineCar } from "react-icons/ai";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { GoGear } from "react-icons/go";
 import { PiHouseBold } from "react-icons/pi";
+import { RxAvatar } from "react-icons/rx";
 
 const Sidebar = () => {
   return (
@@ -28,6 +29,10 @@ const Sidebar = () => {
           <PiHouseBold style={{ width: 22, height: 22 }} /> Inicio
         </SidebarButton>
 
+        <SidebarButton href="/area-do-cliente">
+          <RxAvatar style={{ width: 22, height: 22 }} /> Area do cliente
+        </SidebarButton>
+
         <SidebarButton href="/status">
           <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
         </SidebarButton>
@@ -37,10 +42,12 @@ const Sidebar = () => {
           Documentos
         </SidebarButton>
 
+        <div className="absolute bottom-0 left-0 w-full p-4 border-gray-400 border-t">
         <SidebarButton href="/config">
           <GoGear style={{ width: 22, height: 22 }} />
           Configurações
         </SidebarButton>
+        </div>
       </div>
     </div>
   );
