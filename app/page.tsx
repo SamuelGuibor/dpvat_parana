@@ -1,12 +1,19 @@
-import Head from "next/head";
 import { Faq } from "./section/faq";
 import { FeatureSteps } from "./section/feature-section";
 import Footer from "./section/footer";
 import Hero from "./section/hero-section";
 import Stats from "./section/stats";
 
+export const metadata = {
+  title: "DPVAT Paraná - Indenização Rápida e Segura",
+  description:
+    "Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia.",
+  alternates: {
+    canonical: "https://dpvat-parana.vercel.app/",
+  },
+};
+
 export default function Home() {
-  
   const faqItems = [
     {
       id: "faq-1",
@@ -78,14 +85,6 @@ export default function Home() {
 
   return (
     <div>
-      <Head>
-        <title>DPVAT Paraná - Indenização Rápida e Segura</title>
-        <meta
-          name="description"
-          content="Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia."
-        />
-        <link rel="canonical" href="https://dpvat-parana.vercel.app/" />
-      </Head>
       <Hero />
       <Stats />
       {/* <Objetivos /> */}
