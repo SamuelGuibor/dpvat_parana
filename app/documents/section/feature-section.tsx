@@ -16,33 +16,33 @@ interface FeatureProps {
 const features: FeatureProps[] = [
   {
     icon: Lightbulb,
-    title: "Innovative Ideas",
-    description: "Transform your business with cutting-edge solutions designed to meet modern challenges.",
+    title: "Documento 1",
+    description: "Documento que é necessario para alguma coisa.",
   },
   {
     icon: Rocket,
-    title: "Rapid Deployment",
-    description: "Launch your projects faster with our streamlined implementation process.",
+    title: "Documento 2",
+    description: "Documento que é necessario para alguma coisa.",
   },
   {
     icon: Shield,
-    title: "Enterprise Security",
-    description: "Protect your data with industry-leading security protocols and best practices.",
+    title: "Documento 3",
+    description: "Documento que é necessario para alguma coisa.",
   },
   {
     icon: Globe,
-    title: "Global Reach",
-    description: "Connect with customers worldwide through our international infrastructure.",
+    title: "Documento 4",
+    description: "Documento que é necessario para alguma coisa.",
   },
   {
     icon: BarChart3,
-    title: "Analytics Dashboard",
-    description: "Make data-driven decisions with comprehensive analytics and reporting tools.",
+    title: "Documento 5",
+    description: "Documento que é necessario para alguma coisa.",
   },
   {
     icon: Layers,
-    title: "Scalable Architecture",
-    description: "Grow without limits using our flexible and scalable platform architecture.",
+    title: "Documento 6",
+    description: "Documento que é necessario para alguma coisa.",
   },
 ]
 
