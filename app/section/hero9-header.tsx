@@ -188,27 +188,37 @@ export const HeroHeader = () => {
               </div>
               <div className="flex flex-col gap-2 border-b border-solid py-5">
                 <Button className="justify-start gap-2" variant="ghost">
-                  <RxAvatar style={{ width: 22, height: 22 }} />Aréa dos Clientes
+                  <Link href="/area-do-cliente" className="flex items-center gap-2">
+                    <RxAvatar style={{ width: 22, height: 22 }} /> Aréa dos Clientes
+                  </Link>
                 </Button>
                 <Button className="justify-start gap-2" variant="ghost">
-                  <MdInsertChartOutlined style={{ width: 22, height: 22 }} />Dashboard
+                  <Link href="/dashboard" className="flex items-center gap-2">
+                    <MdInsertChartOutlined style={{ width: 22, height: 22 }} />Dashboard
+                  </Link>
                 </Button>
                 <Button className="justify-start gap-2" variant="ghost">
-                  <HiOutlineChatAlt2 style={{ width: 22, height: 22 }} />Chat
+                  <Link href="/chats" className="flex items-center gap-2">
+                    <HiOutlineChatAlt2 style={{ width: 22, height: 22 }} />Chat
+                  </Link>
                 </Button>
                 <Button className="justify-start gap-2" variant="ghost">
-                  <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
+                  <Link href="/status" className="flex items-center gap-2">
+                    <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
+                  </Link>
                 </Button>
                 <Button className="justify-start gap-2" variant="ghost">
-                  <IoDocumentsOutline style={{ width: 22, height: 22 }} />Documentos
+                  <Link href="/documents" className="flex items-center gap-2">
+                    <IoDocumentsOutline style={{ width: 22, height: 22 }} />Documentos
+                  </Link>
                 </Button>
                 <Button className="justify-start gap-2" variant="ghost">
-                  <GoGear style={{ width: 22, height: 22 }} />Configurações
+                  <Link href="/config" className="flex items-center gap-2">
+                    <GoGear style={{ width: 22, height: 22 }} />Configurações
+                  </Link>
                 </Button>
               </div>
             </div>
-
-
 
             <div className="absolute bottom-0 left-0 w-full p-4 bg-white shadow-inner">
               <Button onClick={() => setSheetOpen(false)} className="w-full mb-2">
