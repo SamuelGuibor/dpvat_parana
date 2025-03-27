@@ -6,6 +6,7 @@ import Image from "next/image";
 import { AiOutlineCar } from "react-icons/ai";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { GoGear } from "react-icons/go";
+import { PiHouseBold } from "react-icons/pi";
 
 const Sidebar = () => {
   return (
@@ -22,16 +23,21 @@ const Sidebar = () => {
       </div>
       {/* BOTOES */}
       <div className="flex flex-row gap-2 p-2 md:flex-col">
+
+        <SidebarButton href="/">
+          <PiHouseBold style={{ width: 22, height: 22 }} /> Inicio
+        </SidebarButton>
+
         <SidebarButton href="/status">
           <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
         </SidebarButton>
 
-        <SidebarButton href="/products">
+        <SidebarButton href="/documents">
           <IoDocumentsOutline style={{ width: 22, height: 22 }} />
           Documentos
         </SidebarButton>
 
-        <SidebarButton href="/sales">
+        <SidebarButton href="/config">
           <GoGear style={{ width: 22, height: 22 }} />
           Configurações
         </SidebarButton>
