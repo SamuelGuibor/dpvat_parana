@@ -1,3 +1,5 @@
+
+
 "use client"
 
 import { Avatar, AvatarImage } from "@/app/_components/ui/avatar";
@@ -23,6 +25,7 @@ interface FormData {
 
 const Configuracao = () => {
   const { data: session } = useSession();
+  // eslint-disable-line @typescript-eslint/no-unused-vars
   const [loading, setLoading] = useState(true);
 
   const form = useForm<FormData>({

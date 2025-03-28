@@ -1,5 +1,4 @@
 import { AppSidebar } from "@/app/_components/app-sidebar"
-import { DataTable } from "@/app/_components/data-table"
 import { SiteHeader } from "@/app/_components/site-header"
 import { SidebarInset, SidebarProvider } from "@/app/_components/ui/sidebar"
 

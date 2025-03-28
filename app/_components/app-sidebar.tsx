@@ -59,7 +59,7 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
 
   const userData = session?.user
     ? {

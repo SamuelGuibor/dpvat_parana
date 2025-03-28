@@ -13,7 +13,7 @@ interface getUserProfile {
   numero: string;
   cep: string;
 }
-
+// eslint-disable-line @typescript-eslint/no-unused-vars
 export async function getUser(data: getUserProfile) {
   const session = await getServerSession(authOptions);
 
