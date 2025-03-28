@@ -5,7 +5,7 @@ import Hero from "./section/hero-section";
 import Stats from "./section/stats";
 
 export const metadata = {
-  title: "DPVAT Paraná - Indenização Rápida e Segura",
+  title: "Paraná Seguros - Indenização Rápida e Segura",
   description:
     "Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia.",
   alternates: {
@@ -65,26 +65,30 @@ export default function Home() {
       title: "Proteção dos Direitos dos Clientes",
       content:
         "Nos dedicamos a proteger os direitos e interesses dos nossos clientes com acordos extrajudiciais, garantindo uma justa e rápida indenização.",
-      image: "/protect.jpg",
+      image:
+        "/protect.jpg",
     },
     {
       step: "Step 2",
       title: "Compromisso com Transparência e Ética",
       content:
         "Nosso compromisso é com a transparência, a ética e a eficácia, desburocratizando procedimentos administrativos de seguradoras.",
-      image: "/transparencia.jpg",
+      image:
+        "/transparencia.jpg",
     },
     {
       step: "Step 3",
       title: "Acompanhamento Completo",
       content:
         "Acompanhamos o cliente desde a obtenção de documentos até a realização de perícia para garantir paz de espírito e resultados positivos.",
-      image: "/conecg.jpg",
+      image:
+        "/conecg.jpg",
     },
   ];
 
   return (
     <div>
+      
       <Hero />
       <Stats />
       {/* <Objetivos /> */}
