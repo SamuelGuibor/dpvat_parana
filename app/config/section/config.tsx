@@ -1,13 +1,26 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable no-unused-vars */
 
-
-"use client"
+"use client";
 
 import { Avatar, AvatarImage } from "@/app/_components/ui/avatar";
 import { Button } from "@/app/_components/ui/button";
 import { Calendar } from "@/app/_components/ui/calendar";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/app/_components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/app/_components/ui/form";
 import { Input } from "@/app/_components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/app/_components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/app/_components/ui/popover";
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
@@ -74,9 +87,7 @@ const Configuracao = () => {
   return (
     <div className="container py-5">
       <Form {...form}>
-        <form
-          className="bg-muted m-auto h-fit w-full overflow-hidden rounded-lg border shadow-md"
-        >
+        <form className="bg-muted m-auto h-fit w-full overflow-hidden rounded-lg border shadow-md">
           <div className="bg-card p-8 pb-6">
             <div className="relative flex flex-row items-center gap-4 pb-5">
               <Avatar>
@@ -85,9 +96,7 @@ const Configuracao = () => {
                   alt="Avatar"
                 />
               </Avatar>
-              <h2 className="text-lg font-semibold">
-                {session?.user.name}
-              </h2>
+              <h2 className="text-lg font-semibold">{session?.user.name}</h2>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -117,18 +126,18 @@ const Configuracao = () => {
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full">
                           {field.value
-                            ? format(new Date(field.value), "dd/MM/yyyy") 
+                            ? format(new Date(field.value), "dd/MM/yyyy")
                             : "Selecione a data"}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-full mt-2">
                         <Calendar
                           selected={
-                            field.value ? new Date(field.value) : undefined 
+                            field.value ? new Date(field.value) : undefined
                           }
                           onDayClick={(date: Date) => {
                             const formattedDate = format(date, "yyyy-MM-dd");
-                            field.onChange(formattedDate); 
+                            field.onChange(formattedDate);
                           }}
                           disabled
                         />
