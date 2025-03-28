@@ -1,8 +1,5 @@
 import {
-    BellIcon,
-    CalendarIcon,
     FileTextIcon,
-    InputIcon,
   } from "@radix-ui/react-icons";
   import { PiHouseBold } from "react-icons/pi";
   import { FaRegQuestionCircle } from "react-icons/fa";

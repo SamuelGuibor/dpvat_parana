@@ -10,7 +10,6 @@ const Documents = () => {
         <p className="text-sm font-semibold text-slate-500">Verifique os documentos do seu processo</p>
         <FeatureSection />
       </div>
-      
     </div>
   );
 };

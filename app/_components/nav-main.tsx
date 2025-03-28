@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { PlusCircleIcon, type LucideIcon } from "lucide-react";
+import { type LucideIcon } from "lucide-react";
 import {
   SidebarGroup,
   SidebarGroupContent,
