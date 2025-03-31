@@ -1,30 +1,30 @@
-"use client"
+"use client";
+"use client";
 
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@/app/_components/ui/avatar"
+} from "@/app/_components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
-} from "@/app/_components/ui/dropdown-menu"
+} from "@/app/_components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/app/_components/ui/sidebar"
+} from "@/app/_components/ui/sidebar";
 
 export function NavUser({
   user,
 }: {
   user: {
-    name: string
-    email: string
-    avatar: string
-  }
+    name: string;
+    email: string;
+    avatar: string;
+  };
 }) {
-
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -49,5 +49,5 @@ export function NavUser({
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }
