@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Mulish } from "next/font/google";
 import AuthProvider from "./_providers/auth";
-import Head from "next/head";
 
 const mulish = Mulish({
   subsets: ["latin-ext"],
@@ -25,35 +24,31 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        <Head>
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{
-              __html: JSON.stringify({
-                "@context": "https://schema.org",
-                "@type": "Organization",
-                name: "Paraná Seguros",
-                url: "https://dpvat-parana.vercel.app/",
-                logo: "https://dpvat-parana.vercel.app/logo.png",
-                contactPoint: {
-                  "@type": "ContactPoint",
-                  contactType: "Customer Service",
-                  telephone: "+55 41 0000-0000",
-                  areaServed: "BR",
-                  availableLanguage: "Portuguese",
-                },
-                sameAs: [
-                  "https://www.facebook.com/paranadpvat/",
-                  "https://www.instagram.com/paranadpvat/",
-                ],
-              }),
-            }}
-          />
-        </Head>
-      </head>
       <body className={`${mulish.className} antialiased`}>
         <AuthProvider>{children}</AuthProvider>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              name: "Paraná Seguros",
+              url: "https://dpvat-parana.vercel.app/",
+              logo: "https://dpvat-parana.vercel.app/logo.png",
+              contactPoint: {
+                "@type": "ContactPoint",
+                contactType: "Customer Service",
+                telephone: "+55 41 0000-0000",
+                areaServed: "BR",
+                availableLanguage: "Portuguese",
+              },
+              sameAs: [
+                "https://www.facebook.com/paranadpvat/",
+                "https://www.instagram.com/paranadpvat/",
+              ],
+            }),
+          }}
+        />
       </body>
     </html>
   );
