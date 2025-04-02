@@ -3,7 +3,7 @@ import Cards from "./cards";
 import Header from "./header";
 
 export const metadata = {
-  title: "Blog - DPVAT Paraná",
+  title: "Paraná Seguros - Blog",
   description:
     "Aqui, você encontra todas as informações sobre a plataforma DPVAT Paraná e como utilizar todos os seus recursos.",
   alternates: {
