@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import {
   UsersIcon,
   DatabaseIcon,
-  ClipboardListIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -43,11 +42,7 @@ const data = {
       url: "/document",
       icon: DatabaseIcon,
     },
-    {
-      name: "Status",
-      url: "/stats",
-      icon: ClipboardListIcon,
-    },
+
   ],
   chats: [
     {
