@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Mulish } from "next/font/google";
 import AuthProvider from "./_providers/auth";
+import { Toaster } from "./_components/ui/sonner";
 
 const mulish = Mulish({
   subsets: ["latin-ext"],
@@ -26,6 +27,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${mulish.className} antialiased`}>
         <AuthProvider>{children}</AuthProvider>
+        <Toaster />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
