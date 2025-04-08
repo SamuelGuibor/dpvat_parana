@@ -8,19 +8,19 @@ import Link from "next/link";
 interface SidebarButtonProps {
   children: React.ReactNode;
   href: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  onClick?: () => void;
 }
 
-export default function SidebarButton({ href, children, icon: Icon }: SidebarButtonProps) {
+export default function SidebarButton({ href, children, onClick }: SidebarButtonProps) {
   const pathname = usePathname();
   return (
     <Button
       variant={pathname === href ? "terciario" : "ghost"}
       className="w-full justify-start gap-2"
       asChild
+      onClick={onClick}
     >
       <Link href={href}>
-        {Icon && <Icon className="h-5 w-5" />}
         {children}
       </Link>
     </Button>

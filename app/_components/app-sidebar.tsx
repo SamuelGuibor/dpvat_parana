@@ -6,6 +6,7 @@ import {
   UsersIcon,
   DatabaseIcon,
 } from "lucide-react";
+import { RxAvatar } from "react-icons/rx";
 import {
   Sidebar,
   SidebarContent,
@@ -41,6 +42,11 @@ const data = {
       name: "Documentos",
       url: "/document",
       icon: DatabaseIcon,
+    },
+    {
+      name: "Clientes",
+      url: "/Clientes Novos",
+      icon: RxAvatar,
     },
 
   ],
