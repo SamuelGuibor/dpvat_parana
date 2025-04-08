@@ -20,8 +20,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "../_components/ui/alert-dialog";
+import { useState } from "react";
+import { Dropzone, DropzoneContent, DropzoneEmptyState } from "./dropzone";
 
 const DialogDash = () => {
+  const [files, setFiles] = useState<File[] | undefined>();
+
+  const handleDrop = (files: File[]) => {
+    console.log(files);
+    setFiles(files);
+  };
   return (
     <div>
       <AlertDialog>
@@ -263,15 +271,29 @@ const DialogDash = () => {
                   />
                 </div>
               </div>
+              <div className="flex h-[250px]  w-full max-w-lg items-center justify-center p-4 sm:p-6 md:p-8 mx-auto">
+                <Dropzone
+                  maxSize={1024 * 1024 * 10}
+                  minSize={1024}
+                  maxFiles={10}
+                  accept={{ "image/*": [] }}
+                  onDrop={handleDrop}
+                  src={files}
+                  onError={console.error}
+                >
+                  <DropzoneEmptyState />
+                  <DropzoneContent />
+                </Dropzone>
+              </div>
             </form>
           </div>
 
           <AlertDialogFooter className="border-t pt-4">
-            <div className="flex flex-row gap-2 mx-auto">
-              <AlertDialogCancel className="bg-red-500 hover:bg-red-500 hover:text-white text-white w-[330px]">
+            <div className="flex flex-col sm:flex-row gap-2 mx-auto w-full justify-center">
+              <AlertDialogCancel className="bg-red-500 hover:bg-red-500 hover:text-white text-white w-full lg:w-[330px]">
                 Cancelar
               </AlertDialogCancel>
-              <AlertDialogAction className="w-[330px] bg-green-500/70 hover:bg-green-500">
+              <AlertDialogAction className="w-full lg:w-[330px] bg-green-500/70 hover:bg-green-500">
                 Salvar
               </AlertDialogAction>
             </div>
