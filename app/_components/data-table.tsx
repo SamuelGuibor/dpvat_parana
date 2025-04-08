@@ -68,16 +68,6 @@ import {
   SelectValue,
 } from "@/app/_components/ui/select";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/app/_components/ui/sheet";
-import {
   Table,
   TableBody,
   TableCell,
@@ -86,6 +76,7 @@ import {
   TableRow,
 } from "@/app/_components/ui/table";
 import { Tabs, TabsContent } from "@/app/_components/ui/tabs";
+import DialogDash from "./dialog";
 
 export const schema = z.object({
   id: z.number(),
@@ -472,184 +463,6 @@ export function DataTable({
   );
 }
 
-function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
-  return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="link" className="w-fit px-0 text-left text-foreground">
-          {item.header}
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="flex flex-col max-w-[800px]">
-        <SheetHeader className="gap-1">
-          <SheetTitle>{item.header}</SheetTitle>
-          <SheetDescription>Status de {item.header}</SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4 px-4 text-sm">
-          <form className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Nome</Label>
-              <Input id="header" defaultValue={item.header} disabled />
-              <Label htmlFor="header">RG</Label>
-              <Input id="header" defaultValue="" disabled />
-              <Label htmlFor="header">CPF</Label>
-              <Input id="header" defaultValue="123.456.789-10" disabled />
-              <Label htmlFor="header">Data de Nascimento</Label>
-              <Input id="header" defaultValue="01/01/2001" disabled />
-              <Label htmlFor="header">Nome da Mãe</Label>
-              <Input id="header" defaultValue="Nome Da Mãe da Silva" disabled />
-              <Label htmlFor="header">Telefone</Label>
-              <Input id="header" defaultValue="(41) 9999-9999" disabled />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="type">Nacionalidade</Label>
-                <Select defaultValue={item.type}>
-                  <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Table of Contents">
-                      Brasileiro (a)
-                    </SelectItem>
-                    <SelectItem value="Executive Summary">
-                      Brasileiro (a)
-                    </SelectItem>
-                    <SelectItem value="Technical Approach">
-                      Brasileiro (a)
-                    </SelectItem>
-                    <SelectItem value="Design">Brasileiro (a)</SelectItem>
-                    <SelectItem value="Capabilities">Brasileiro (a)</SelectItem>
-                    <SelectItem value="Focus Documents">
-                      Brasileiro (a)
-                    </SelectItem>
-                    <SelectItem value="Narrative">Brasileiro (a)</SelectItem>
-                    <SelectItem value="Cover Page">Brasileiro (a)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="status">Estado Civil</Label>
-                <Select defaultValue={item.status}>
-                  <SelectTrigger id="status" className="w-full">
-                    <SelectValue placeholder="Select a status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Solteiro">Solteiro (a)</SelectItem>
-                    <SelectItem value="Casado">Casado (a)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Profissão</Label>
-              <Input id="header" defaultValue="" disabled />
-              <Label htmlFor="header">Email</Label>
-              <Input id="header" defaultValue="email@gmail.com" disabled />
-              <Label htmlFor="header">Data do Acidente</Label>
-              <Input id="header" defaultValue="01/01/01" disabled />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="type">Atendimento Via</Label>
-                <Select defaultValue={item.type}>
-                  <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Table of Contents">Siate</SelectItem>
-                    <SelectItem value="Executive Summary">
-                      Brasileiro (a)
-                    </SelectItem>
-                    <SelectItem value="Technical Approach">
-                      Brasileiro (a)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="type">Hospital</Label>
-                <Select defaultValue={item.type}>
-                  <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Table of Contents">hospital</SelectItem>
-                    <SelectItem value="Executive Summary">
-                      Brasileiro (a)
-                    </SelectItem>
-                    <SelectItem value="Technical Approach">
-                      Brasileiro (a)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="header">Outro hospital</Label>
-                <Input className="w-full" />
-              </div>
-            </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="reviewer">Lesões</Label>
-              <Select defaultValue={item.reviewer}>
-                <SelectTrigger id="reviewer" className="w-full">
-                  <SelectValue placeholder="Selecione a Lesão" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-                  <SelectItem value="Jamik Tashpulatov">
-                    Jamik Tashpulatov
-                  </SelectItem>
-                  <SelectItem value="Emily Whalen">Emily Whalen</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Rua</Label>
-              <Input id="header" defaultValue="Rua das ruas" disabled />
-              <Label htmlFor="header">N° da Casa</Label>
-              <Input id="header" defaultValue="" />
-              <Label htmlFor="header">CEP</Label>
-              <Input id="header" defaultValue="12345-678" disabled />
-              <Label htmlFor="header">Bairro</Label>
-              <Input id="header" defaultValue="Bairro dos bairros" disabled />
-              <Label htmlFor="header">Cidade</Label>
-              <Input id="header" defaultValue="Cidade das cidades " disabled />
-            </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="reviewer">Estado</Label>
-              <Select defaultValue="Paraná">
-                <SelectTrigger id="reviewer" className="w-full">
-                  <SelectValue placeholder="Selecioneo Estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Eddie Lake">Paraná</SelectItem>
-                  <SelectItem value="Jamik Tashpulatov">Paraná</SelectItem>
-                  <SelectItem value="Emily Whalen">Paraná</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="header">GASTOS/DESPESAS</Label>
-              <Input
-                id="header"
-                defaultValue="Adiconar gastos/despesas"
-                disabled
-              />
-              <Label htmlFor="header">N° do Processo</Label>
-              <Input id="header" defaultValue="Adicionar n° do processo" />
-            </div>
-          </form>
-        </div>
-        <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
-          <Button className="w-full">Submit</Button>
-          <SheetClose asChild>
-            <Button variant="outline" className="w-full">
-              Done
-            </Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
+function TableCellViewer({}: { item: z.infer<typeof schema> }) {
+  return <DialogDash />;
 }
