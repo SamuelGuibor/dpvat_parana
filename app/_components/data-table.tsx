@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -11,15 +11,15 @@ import {
   useSensors,
   type DragEndEvent,
   type UniqueIdentifier,
-} from "@dnd-kit/core"
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers"
+} from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   arrayMove,
   useSortable,
   verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -34,7 +34,7 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
-} from "@tanstack/react-table"
+} from "@tanstack/react-table";
 import { FaSearch } from "react-icons/fa";
 import {
   CheckCircle2Icon,
@@ -47,26 +47,26 @@ import {
   GripVerticalIcon,
   LoaderIcon,
   MoreVerticalIcon,
-} from "lucide-react"
-import { z } from "zod"
-import { Badge } from "@/app/_components/ui/badge"
-import { Button } from "@/app/_components/ui/button"
+} from "lucide-react";
+import { z } from "zod";
+import { Badge } from "@/app/_components/ui/badge";
+import { Button } from "@/app/_components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/app/_components/ui/dropdown-menu"
-import { Input } from "@/app/_components/ui/input"
-import { Label } from "@/app/_components/ui/label"
+} from "@/app/_components/ui/dropdown-menu";
+import { Input } from "@/app/_components/ui/input";
+import { Label } from "@/app/_components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/app/_components/ui/select"
+} from "@/app/_components/ui/select";
 import {
   Sheet,
   SheetClose,
@@ -76,7 +76,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/app/_components/ui/sheet"
+} from "@/app/_components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -84,11 +84,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/app/_components/ui/table"
-import {
-  Tabs,
-  TabsContent,
-} from "@/app/_components/ui/tabs"
+} from "@/app/_components/ui/table";
+import { Tabs, TabsContent } from "@/app/_components/ui/tabs";
 
 export const schema = z.object({
   id: z.number(),
@@ -98,12 +95,12 @@ export const schema = z.object({
   target: z.string(),
   limit: z.string(),
   reviewer: z.string(),
-})
+});
 
 function DragHandle({ id }: { id: number }) {
   const { attributes, listeners } = useSortable({
     id,
-  })
+  });
 
   return (
     <Button
@@ -116,7 +113,7 @@ function DragHandle({ id }: { id: number }) {
       <GripVerticalIcon className="size-3 text-muted-foreground" />
       <span className="sr-only">Drag to reorder</span>
     </Button>
-  )
+  );
 }
 
 const columns: ColumnDef<z.infer<typeof schema>>[] = [
@@ -129,7 +126,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "header",
     header: "Nome",
     cell: ({ row }) => {
-      return <TableCellViewer item={row.original} />
+      return <TableCellViewer item={row.original} />;
     },
     enableHiding: false,
   },
@@ -181,12 +178,12 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
       </DropdownMenu>
     ),
   },
-]
+];
 
 function DraggableRow({ row }: { row: Row<z.infer<typeof schema>> }) {
   const { transform, transition, setNodeRef, isDragging } = useSortable({
     id: row.original.id,
-  })
+  });
 
   return (
     <TableRow
@@ -205,37 +202,37 @@ function DraggableRow({ row }: { row: Row<z.infer<typeof schema>> }) {
         </TableCell>
       ))}
     </TableRow>
-  )
+  );
 }
 
 export function DataTable({
   data: initialData,
 }: {
-  data: z.infer<typeof schema>[]
+  data: z.infer<typeof schema>[];
 }) {
-  const [data, setData] = React.useState(() => initialData)
-  const [rowSelection, setRowSelection] = React.useState({})
+  const [data, setData] = React.useState(() => initialData);
+  const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({})
+    React.useState<VisibilityState>({});
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
-  )
-  const [sorting, setSorting] = React.useState<SortingState>([])
+  );
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 10,
-  })
-  const sortableId = React.useId()
+  });
+  const sortableId = React.useId();
   const sensors = useSensors(
     useSensor(MouseSensor, {}),
     useSensor(TouchSensor, {}),
     useSensor(KeyboardSensor, {})
-  )
+  );
 
   const dataIds = React.useMemo<UniqueIdentifier[]>(
     () => data?.map(({ id }) => id) || [],
     [data]
-  )
+  );
 
   const table = useReactTable({
     data,
@@ -260,16 +257,16 @@ export function DataTable({
     getSortedRowModel: getSortedRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
-  })
+  });
 
   function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
+    const { active, over } = event;
     if (active && over && active.id !== over.id) {
       setData((data) => {
-        const oldIndex = dataIds.indexOf(active.id)
-        const newIndex = dataIds.indexOf(over.id)
-        return arrayMove(data, oldIndex, newIndex)
-      })
+        const oldIndex = dataIds.indexOf(active.id);
+        const newIndex = dataIds.indexOf(over.id);
+        return arrayMove(data, oldIndex, newIndex);
+      });
     }
   }
 
@@ -312,12 +309,11 @@ export function DataTable({
                     >
                       {column.id}
                     </DropdownMenuCheckboxItem>
-                  )
+                  );
                 })}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-
 
         <div className="relative flex items-center">
           <FaSearch className="absolute left-2 text-black/70" />
@@ -350,11 +346,11 @@ export function DataTable({
                           {header.isPlaceholder
                             ? null
                             : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
                         </TableHead>
-                      )
+                      );
                     })}
                   </TableRow>
                 ))}
@@ -396,7 +392,7 @@ export function DataTable({
               <Select
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => {
-                  table.setPageSize(Number(value))
+                  table.setPageSize(Number(value));
                 }}
               >
                 <SelectTrigger className="w-20" id="rows-per-page">
@@ -477,9 +473,8 @@ export function DataTable({
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
       </TabsContent>
     </Tabs>
-  )
+  );
 }
-
 
 function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
   return (
@@ -489,75 +484,120 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           {item.header}
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="flex flex-col">
+      <SheetContent side="right" className="flex flex-col max-w-[800px]">
         <SheetHeader className="gap-1">
           <SheetTitle>{item.header}</SheetTitle>
-          <SheetDescription>
-            Status de {item.header}
-          </SheetDescription>
+          <SheetDescription>Status de {item.header}</SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4 px-4 text-sm">
           <form className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
               <Label htmlFor="header">Nome</Label>
               <Input id="header" defaultValue={item.header} disabled />
+              <Label htmlFor="header">RG</Label>
+              <Input id="header" defaultValue="" disabled />
+              <Label htmlFor="header">CPF</Label>
+              <Input id="header" defaultValue="123.456.789-10" disabled />
+              <Label htmlFor="header">Data de Nascimento</Label>
+              <Input id="header" defaultValue="01/01/2001" disabled />
+              <Label htmlFor="header">Nome da Mãe</Label>
+              <Input id="header" defaultValue="Nome Da Mãe da Silva" disabled />
+              <Label htmlFor="header">Telefone</Label>
+              <Input id="header" defaultValue="(41) 9999-9999" disabled />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
-                <Label htmlFor="type">Type</Label>
+                <Label htmlFor="type">Nacionalidade</Label>
                 <Select defaultValue={item.type}>
                   <SelectTrigger id="type" className="w-full">
                     <SelectValue placeholder="Select a type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Table of Contents">
-                      Table of Contents
+                      Brasileiro (a)
                     </SelectItem>
                     <SelectItem value="Executive Summary">
-                      Executive Summary
+                      Brasileiro (a)
                     </SelectItem>
                     <SelectItem value="Technical Approach">
-                      Technical Approach
+                      Brasileiro (a)
                     </SelectItem>
-                    <SelectItem value="Design">Design</SelectItem>
-                    <SelectItem value="Capabilities">Capabilities</SelectItem>
+                    <SelectItem value="Design">Brasileiro (a)</SelectItem>
+                    <SelectItem value="Capabilities">Brasileiro (a)</SelectItem>
                     <SelectItem value="Focus Documents">
-                      Focus Documents
+                      Brasileiro (a)
                     </SelectItem>
-                    <SelectItem value="Narrative">Narrative</SelectItem>
-                    <SelectItem value="Cover Page">Cover Page</SelectItem>
+                    <SelectItem value="Narrative">Brasileiro (a)</SelectItem>
+                    <SelectItem value="Cover Page">Brasileiro (a)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-3">
-                <Label htmlFor="status">Status</Label>
+                <Label htmlFor="status">Estado Civil</Label>
                 <Select defaultValue={item.status}>
                   <SelectTrigger id="status" className="w-full">
                     <SelectValue placeholder="Select a status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Done">Done</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Not Started">Not Started</SelectItem>
+                    <SelectItem value="Solteiro">Solteiro (a)</SelectItem>
+                    <SelectItem value="Casado">Casado (a)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="header">Profissão</Label>
+              <Input id="header" defaultValue="" disabled />
+              <Label htmlFor="header">Email</Label>
+              <Input id="header" defaultValue="email@gmail.com" disabled />
+              <Label htmlFor="header">Data do Acidente</Label>
+              <Input id="header" defaultValue="01/01/01" disabled />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
-                <Label htmlFor="target">Target</Label>
-                <Input id="target" defaultValue={item.target} />
+                <Label htmlFor="type">Atendimento Via</Label>
+                <Select defaultValue={item.type}>
+                  <SelectTrigger id="type" className="w-full">
+                    <SelectValue placeholder="Select a type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Table of Contents">Siate</SelectItem>
+                    <SelectItem value="Executive Summary">
+                      Brasileiro (a)
+                    </SelectItem>
+                    <SelectItem value="Technical Approach">
+                      Brasileiro (a)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex flex-col gap-3">
-                <Label htmlFor="limit">Limit</Label>
-                <Input id="limit" defaultValue={item.limit} />
+                <Label htmlFor="type">Hospital</Label>
+                <Select defaultValue={item.type}>
+                  <SelectTrigger id="type" className="w-full">
+                    <SelectValue placeholder="Select a type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Table of Contents">hospital</SelectItem>
+                    <SelectItem value="Executive Summary">
+                      Brasileiro (a)
+                    </SelectItem>
+                    <SelectItem value="Technical Approach">
+                      Brasileiro (a)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-3">
+                <Label htmlFor="header">Outro hospital</Label>
+                <Input className="w-full" />
               </div>
             </div>
             <div className="flex flex-col gap-3">
-              <Label htmlFor="reviewer">Reviewer</Label>
+              <Label htmlFor="reviewer">Lesões</Label>
               <Select defaultValue={item.reviewer}>
                 <SelectTrigger id="reviewer" className="w-full">
-                  <SelectValue placeholder="Select a reviewer" />
+                  <SelectValue placeholder="Selecione a Lesão" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
@@ -567,6 +607,41 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                   <SelectItem value="Emily Whalen">Emily Whalen</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="header">Rua</Label>
+              <Input id="header" defaultValue="Rua das ruas" disabled />
+              <Label htmlFor="header">N° da Casa</Label>
+              <Input id="header" defaultValue="" />
+              <Label htmlFor="header">CEP</Label>
+              <Input id="header" defaultValue="12345-678" disabled />
+              <Label htmlFor="header">Bairro</Label>
+              <Input id="header" defaultValue="Bairro dos bairros" disabled />
+              <Label htmlFor="header">Cidade</Label>
+              <Input id="header" defaultValue="Cidade das cidades " disabled />
+            </div>
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="reviewer">Estado</Label>
+              <Select defaultValue="Paraná">
+                <SelectTrigger id="reviewer" className="w-full">
+                  <SelectValue placeholder="Selecioneo Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Eddie Lake">Paraná</SelectItem>
+                  <SelectItem value="Jamik Tashpulatov">Paraná</SelectItem>
+                  <SelectItem value="Emily Whalen">Paraná</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="header">GASTOS/DESPESAS</Label>
+              <Input
+                id="header"
+                defaultValue="Adiconar gastos/despesas"
+                disabled
+              />
+              <Label htmlFor="header">N° do Processo</Label>
+              <Input id="header" defaultValue="Adicionar n° do processo" />
             </div>
           </form>
         </div>
@@ -580,5 +655,5 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
         </SheetFooter>
       </SheetContent>
     </Sheet>
-  )
+  );
 }
