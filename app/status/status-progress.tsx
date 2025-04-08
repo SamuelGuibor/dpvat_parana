@@ -1,137 +1,90 @@
-"use client";
+"use client"
 
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { CircleCheck } from "lucide-react";
-import { cn } from "../_lib/utils";
+/* eslint-disable no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// components/ProgressTimeline.tsx
+import { useState } from "react";
 
-const ProgressIndicator = () => {
-  const [step, setStep] = useState(1);
-  const [isExpanded, setIsExpanded] = useState(true);
+// Definir a interface para o tipo de cada step
+interface Step {
+  id: number; // Tornar id obrigatório, já que será usado em completedSteps
+  title?: string;
+  description?: string;
+  final?: string; // Propriedade opcional para o texto final
+}
 
-  const handleContinue = () => {
-    if (step < 8) {
-      setStep(step + 1);
-      setIsExpanded(false);
-    }
-  };
+// Definir o array de steps com o tipo Step[]
+const steps: Step[] = [
+  { id: 1, title: "Envio de documentos e assinatura da procuração", description: "Após envio dos seus documentos, nós te enviamos uma procuração para você assinar." },
+  { id: 2, title: "Solicitação de documentos", description: "Nossos procuradores e advogados vão atrás dos documentos hospitalares, prontuário, declaração do IML, guia do SIATE ou SAMU, entre outros. Essa é a fase mais demorada do processo, podendo levar de 30 a 60 dias." },
+  { id: 3, title: "Coleta de documentos", description: "Após os documentos ficarem prontos, nossa equipe digitaliza tudo e envia para a seguradora. Essa fase dura de 3 até 7 dias para organizar tudo." },
+  { id: 4, title: "Análise de documentos pela seguradora", description: "A seguradora analisa os documentos e agenda a perícia médica. Esse processo pode levar até 30 dias, podendo ser prorrogado." },
+  { id: 5, title: "Perícia médica e pagamentos", description: "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa." },
+  { id: 6, final: "Você recebeu seu dinheiro!" }, // Mantemos como um step, mas com a propriedade final
+];
 
-  const handleBack = () => {
-    if (step == 2) {
-      setIsExpanded(true);
-    }
-    if (step > 1) {
-      setStep(step - 1);
+export default function ProgressTimeline() {
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+  const handleCheckboxChange = (stepId: number) => {
+    if (completedSteps.includes(stepId)) {
+      setCompletedSteps(completedSteps.filter((id) => id !== stepId));
+    } else {
+      setCompletedSteps([...completedSteps, stepId]);
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center gap-8">
-      <div className="flex items-center gap-44 relative">
-        {[1, 2, 3, 4, 5, 6, 7, 8].map((dot) => (
-          <div
-            key={dot}
-            className={cn(
-              "w-2 h-2 rounded-full relative z-10",
-              dot <= step ? "bg-white" : "bg-gray-300"
-            )}
-          />
-        ))}
+    <div className="relative pl-10">
+      {steps.map((step, index) => {
+        const isLastStep = index === steps.length - 1; 
 
-        {/* Green progress overlay */}
-        <motion.div
-          initial={{ width: "12px", height: "24px", x: 0 }}
-          animate={{
-            width:
-              step === 1
-                ? "24px"
-                : step === 2
-                ? "210px"
-                : step == 3
-                ? "395px"
-                : step == 4
-                ? "580px"
-                : step == 5
-                ? "760px"
-                : step == 6
-                ? "950px"
-                : step == 7
-                ? "1135px"
-                : "1320px",
-            x: 0,
-          }}
-          className="absolute -left-[8px] -top-[8px] -translate-y-1/2 h-3 bg-green-500 rounded-full"
-          transition={{
-            type: "spring",
-            stiffness: 300,
-            damping: 20,
-            mass: 0.8,
-            bounce: 0.25,
-            duration: 0.6,
-          }}
-        />
-      </div>
-
-      {/* Buttons container */}
-      <div className="w-full max-w-sm">
-        <motion.div
-          className="flex items-center gap-1"
-          animate={{
-            justifyContent: isExpanded ? "stretch" : "space-between",
-          }}
-        >
-          {!isExpanded && (
-            <motion.button
-              initial={{ opacity: 0, width: 0, scale: 0.8 }}
-              animate={{ opacity: 1, width: "64px", scale: 1 }}
-              transition={{
-                type: "spring",
-                stiffness: 400,
-                damping: 15,
-                mass: 0.8,
-                bounce: 0.25,
-                duration: 0.6,
-                opacity: { duration: 0.2 },
-              }}
-              onClick={handleBack}
-              className="px-4 py-3 text-black flex items-center justify-center   bg-gray-100  font-semibold rounded-full hover:bg-gray-50 hover:border transition-colors flex-1 w-16 text-sm"
-            >
-              Back
-            </motion.button>
-          )}
-          <motion.button
-            onClick={handleContinue}
-            animate={{
-              flex: isExpanded ? 1 : "inherit",
-            }}
-            className={cn(
-              "px-4 py-3 rounded-full text-white bg-[#006cff]   transition-colors flex-1 w-56",
-              !isExpanded && "w-44"
+        return (
+          <div key={step.id} className="relative h-[200px]">
+            {!isLastStep && (
+              <div className="absolute left-4 top-0 w-0.5 h-full bg-gray-200">
+                <div
+                  className={`w-full bg-blue-500 transition-all duration-500 ease-in-out ${
+                    completedSteps.includes(step.id) ? "h-full" : "h-0"
+                  }`}
+                ></div>
+              </div>
             )}
-          >
-            <div className="flex items-center font-[600] justify-center gap-2 text-sm">
-              {step === 8 && (
-                <motion.div
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 500,
-                    damping: 15,
-                    mass: 0.5,
-                    bounce: 0.4,
-                  }}
-                >
-                  <CircleCheck size={16} />
-                </motion.div>
+
+            {step.final ? (
+              <div
+                className={`absolute left-0 top-0 px-4 py-2 rounded-full text-white font-semibold transition-all duration-300 ease-in-out ${
+                  completedSteps.includes(steps[steps.length - 2].id) ? "bg-green-500" : "bg-gray-300"
+                }`}
+              >
+                {step.final}
+              </div>
+            ) : (
+              <div
+                className={`absolute left-2 top-0 w-5 h-5 rounded-full border-2 border-blue-500 transition-all duration-300 ease-in-out ${
+                  completedSteps.includes(step.id) ? "bg-blue-500" : "bg-white"
+                }`}
+              ></div>
+            )}
+
+            <div className="ml-12 p-4 bg-gray-100 rounded-lg">
+              {step.title && <h2 className="text-lg font-semibold">{step.title}</h2>}
+              {step.description && <p className="text-gray-600">{step.description}</p>}
+              {!step.final && (
+                <label className="flex items-center mt-2">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={completedSteps.includes(step.id)}
+                    onChange={() => handleCheckboxChange(step.id)}
+                  />
+                  <span>Marcar como concluído</span>
+                </label>
               )}
-              {step === 8 ? "Finish" : "Continue"}
             </div>
-          </motion.button>
-        </motion.div>
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
-};
-
-export default ProgressIndicator;
+}

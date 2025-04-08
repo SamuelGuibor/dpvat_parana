@@ -35,7 +35,7 @@ const Faq = ({
   supportButtonUrl = "https://www.shadcnblocks.com",
 }: Faq3Props) => {
   return (
-    <section className="py-32">
+    <section className="py-3">
       <div className="container mx-auto flex flex-col items-center space-y-16">
         {/* Título e Descrição */}
         <div className="flex  flex-col items-center text-center max-w-3xl px-4">

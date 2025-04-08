@@ -14,6 +14,7 @@ export function SiteHeader() {
     "/document": "Documentos",
     "/stats": "Status",
     "/chats": "Chats",
+    "/mensagens": "Mensagens Automaticas",
   };
 
   const pageTitle = pageTitles[pathname] || "Dashboard";

@@ -10,7 +10,7 @@ const StatusPage = () => {
         <p className="text-sm font-semibold text-slate-500">
           Verifique o status do seu processo.
         </p>
-        <div className="mx-auto pt-[150px]">
+        <div className="mx-auto pt-10">
           <ProgressIndicator />
         </div>
       </div>

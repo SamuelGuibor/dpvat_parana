@@ -3,10 +3,8 @@
 import React from "react";
 import { useSession } from "next-auth/react";
 import {
-  UsersIcon,
   DatabaseIcon,
 } from "lucide-react";
-import { RxAvatar } from "react-icons/rx";
 import {
   Sidebar,
   SidebarContent,
@@ -31,11 +29,6 @@ const data = {
       url: "/dashboard",
       icon: MdInsertChartOutlined,
     },
-    {
-      title: "Equipe",
-      url: "/team",
-      icon: UsersIcon,
-    },
   ],
   documents: [
     {
@@ -43,17 +36,16 @@ const data = {
       url: "/document",
       icon: DatabaseIcon,
     },
-    {
-      name: "Clientes",
-      url: "/Clientes Novos",
-      icon: RxAvatar,
-    },
-
   ],
   chats: [
     {
       name: "Chats",
       url: "/chats",
+      icon: HiOutlineChatAlt2, 
+    },
+    {
+      name: "Mensagens Automaticas",
+      url: "/mensagens",
       icon: HiOutlineChatAlt2, 
     }
   ]
