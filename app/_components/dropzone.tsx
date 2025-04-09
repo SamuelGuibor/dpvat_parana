@@ -10,22 +10,6 @@ import type { DropEvent, DropzoneOptions, FileRejection } from "react-dropzone";
 type DropzoneContextType = {
   src?: File[];
   accept?: DropzoneOptions["accept"];
-  maxSize?: DropzoneOptions["maxSize"];
-  minSize?: DropzoneOptions["minSize"];
-  maxFiles?: DropzoneOptions["maxFiles"];
-};
-
-const renderBytes = (bytes: number) => {
-  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-  let size = bytes;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex++;
-  }
-
-  return `${size.toFixed(2)}${units[unitIndex]}`;
 };
 
 const DropzoneContext = createContext<DropzoneContextType | undefined>(
@@ -45,9 +29,6 @@ export type DropzoneProps = Omit<DropzoneOptions, "onDrop"> & {
 
 export const Dropzone = ({
   accept,
-  maxFiles = 1,
-  maxSize,
-  minSize,
   onDrop,
   onError,
   disabled,
@@ -58,9 +39,6 @@ export const Dropzone = ({
 }: DropzoneProps) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept,
-    maxFiles,
-    maxSize,
-    minSize,
     onError,
     disabled,
     onDrop: (acceptedFiles, fileRejections, event) => {
@@ -78,7 +56,7 @@ export const Dropzone = ({
   return (
     <DropzoneContext.Provider
       key={JSON.stringify(src)}
-      value={{ src, accept, maxSize, minSize, maxFiles }}
+      value={{ src, accept }}
     >
       <Button
         type="button"
@@ -112,8 +90,6 @@ export type DropzoneContentProps = {
   children?: ReactNode;
 };
 
-const maxLabelItems = 3;
-
 export const DropzoneContent = ({ children }: DropzoneContentProps) => {
   const { src } = useDropzoneContext();
 
@@ -131,14 +107,10 @@ export const DropzoneContent = ({ children }: DropzoneContentProps) => {
         <UploadIcon size={16} />
       </div>
       <p className="my-2 w-full truncate font-medium text-sm">
-        {src.length > maxLabelItems
-          ? `${new Intl.ListFormat("en").format(
-              src.slice(0, maxLabelItems).map((file) => file.name)
-            )} and ${src.length - maxLabelItems} more`
-          : new Intl.ListFormat("en").format(src.map((file) => file.name))}
+        Adicione mais arquivos
       </p>
-      <p className="w-full text-muted-foreground text-xs">
-        Drag and drop or click to replace
+      <p className="w-full text-muted-foreground text-xs">    
+        Arraste e solte ou clique para adicionar mais arquivos
       </p>
     </>
   );
@@ -149,7 +121,7 @@ export type DropzoneEmptyStateProps = {
 };
 
 export const DropzoneEmptyState = ({ children }: DropzoneEmptyStateProps) => {
-  const { src, accept, maxSize, minSize, maxFiles } = useDropzoneContext();
+  const { src, accept } = useDropzoneContext();
 
   if (src) {
     return null;
@@ -160,18 +132,9 @@ export const DropzoneEmptyState = ({ children }: DropzoneEmptyStateProps) => {
   }
 
   let caption = "";
-
   if (accept) {
-    caption += "Aceita ";
+    caption += "Accepts ";
     caption += new Intl.ListFormat("en").format(Object.keys(accept));
-  }
-
-  if (minSize && maxSize) {
-    caption += ` entre ${renderBytes(minSize)} and ${renderBytes(maxSize)}`;
-  } else if (minSize) {
-    caption += ` até ${renderBytes(minSize)}`;
-  } else if (maxSize) {
-    caption += ` menos de ${renderBytes(maxSize)}`;
   }
 
   return (
@@ -180,10 +143,10 @@ export const DropzoneEmptyState = ({ children }: DropzoneEmptyStateProps) => {
         <UploadIcon size={16} />
       </div>
       <p className="my-2 w-full truncate font-medium text-sm">
-        Upload {maxFiles === 1 ? "a file" : "files"}
+        Envie os arquivos
       </p>
       <p className="w-full truncate text-muted-foreground text-xs">
-        Arraste e solte ou click para fazer upload.
+        Arraste e solte ou clique para adicionar os arquivos
       </p>
       {caption && <p className="text-muted-foreground text-xs">{caption}.</p>}
     </>
