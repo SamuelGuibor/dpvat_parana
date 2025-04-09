@@ -1,109 +1,76 @@
 /* eslint-disable @next/next/no-img-element */
+"use client";
+
+import { motion } from "framer-motion";
+
 const members = [
   {
     name: "Thomaz Martinez",
-    role: "Creator",
+    role: "Leadership",
     avatar: "/thomaz.jpg",
   },
-];
-
-const enginer = [
   {
     name: "Eduardo Martinez",
-    role: "Creator",
+    role: "Engineering",
     avatar: "/thomaz.jpg",
   },
-];
-
-const marketing = [
   {
     name: "Nikolas",
-    role: "Creator",
+    role: "Marketing",
     avatar: "/thomaz.jpg",
   },
 ];
 
 export default function TeamSection() {
   return (
-    <section className="py-10 bg-gray-100">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-        <h2 className="flex justify-center mb-10 text-3xl font-bold tracking-tight text-gray-900 md:mb-16 lg:text-4xl">
-          Nossa Equipe
+    <section className="relative py-20 bg-gray-50 overflow-hidden rounded-t-[4rem]">
+      {/* Blurs no fundo */}
+      <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-blue-300 opacity-30 rounded-full blur-3xl z-0" />
+      <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-emerald-300 opacity-20 rounded-full blur-2xl z-0" />
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-300 opacity-10 rounded-full blur-[200px] z-0" />
+
+      {/* Conteúdo */}
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <h2 className="text-center text-4xl font-extrabold text-gray-900 sm:text-5xl mb-6">
+          Nossa <span className="text-indigo-600">Equipe</span>
         </h2>
 
-        {/* Leadership Section */}
-        <div className="mb-12">
-          <h3 className="flex justify-center mb-6 text-xl font-semibold text-gray-800">Leadership</h3>
-          <div className="flex justify-center border-t border-gray-200 pt-8">
-            <div className={`grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-${Math.min(members.length, 4)} max-w-3xl w-full`}>
-              {members.map((member, index) => (
-                <div key={index} className="flex flex-col items-center">
-                  <div className="bg-white size-24 rounded-full border-2 border-gray-200 p-1 shadow-md hover:shadow-lg transition-shadow duration-300">
-                    <img
-                      className="aspect-square rounded-full object-cover"
-                      src={member.avatar}
-                      alt={member.name}
-                      height="96"
-                      width="96"
-                      loading="lazy"
-                    />
-                  </div>
-                  <span className="mt-3 block text-sm font-medium text-gray-900">{member.name}</span>
-                  <span className="text-gray-500 block text-xs">{member.role}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <p className="text-center text-gray-600 max-w-2xl mx-auto mb-12">
+          Conheça os profissionais por trás das nossas soluções inovadoras. Cada
+          membro contribui com talento, experiência e dedicação.
+        </p>
 
-        {/* Engineering Section */}
-        <div className="mb-12">
-          <h3 className="flex justify-center mb-6 text-xl font-semibold text-gray-800">Engineering</h3>
-          <div className="flex justify-center border-t border-gray-200 pt-8">
-            <div className={`grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-${Math.min(enginer.length, 4)} max-w-3xl w-full`}>
-              {enginer.map((engineer, index) => (
-                <div key={index} className="flex flex-col items-center">
-                  <div className="bg-white size-24 rounded-full border-2 border-gray-200 p-1 shadow-md hover:shadow-lg transition-shadow duration-300">
-                    <img
-                      className="aspect-square rounded-full object-cover"
-                      src={engineer.avatar}
-                      alt={engineer.name}
-                      height="96"
-                      width="96"
-                      loading="lazy"
-                    />
-                  </div>
-                  <span className="mt-3 block text-sm font-medium text-gray-900">{engineer.name}</span>
-                  <span className="text-gray-500 block text-xs">{engineer.role}</span>
+        <div className="flex flex-wrap justify-center gap-10">
+          {members.map((person, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+              viewport={{ once: true }}
+              className="relative group"
+            >
+              <div className="relative z-10 bg-white rounded-2xl shadow-md flex flex-col items-center justify-center gap-3 p-8 w-60 min-h-[280px] transition-transform duration-300 group-hover:-translate-y-2">
+                <div className="relative w-24 h-24 mb-4 rounded-full border-4 border-indigo-500 shadow-lg overflow-hidden">
+                  <img
+                    src={person.avatar}
+                    alt={person.name}
+                    className="object-cover w-full h-full"
+                    loading="lazy"
+                  />
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
+                <h4 className="text-lg font-semibold text-gray-900 text-center">
+                  {person.name}
+                </h4>
+                <p className="text-sm text-gray-600 text-center mt-1">
+                  {person.role}
+                </p>
+              </div>
 
-        {/* Marketing Section */}
-        <div>
-          <h3 className="flex justify-center mb-6 text-xl font-semibold text-gray-800">Marketing</h3>
-          <div className="flex justify-center border-t border-gray-200 pt-8">
-            <div className={`grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-${Math.min(marketing.length, 4)} max-w-3xl w-full`}>
-              {marketing.map((market, index) => (
-                <div key={index} className="flex flex-col items-center">
-                  <div className="bg-white size-24 rounded-full border-2 border-gray-200 p-1 shadow-md hover:shadow-lg transition-shadow duration-300">
-                    <img
-                      className="aspect-square rounded-full object-cover"
-                      src={market.avatar}
-                      alt={market.name}
-                      height="96"
-                      width="96"
-                      loading="lazy"
-                    />
-                  </div>
-                  <span className="mt-3 block text-sm font-medium text-gray-900">{market.name}</span>
-                  <span className="text-gray-500 block text-xs">{market.role}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+              {/* Contorno colorido ao passar o mouse */}
+              <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition duration-300 blur-md z-0 pointer-events-none bg-gradient-to-br from-blue-200 to-emerald-300" />
+            </motion.div>
+          ))}
         </div>
       </div>
     </section>
