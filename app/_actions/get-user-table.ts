@@ -23,7 +23,7 @@ export async function getUserTable(): Promise<UserTableData[]> {
     const users = await db.user.findMany({
       select: {
         id: true,
-        name: true, // Ensure this matches your Prisma schema
+        name: true, 
         status: true,
         role: true,
       },
@@ -31,7 +31,7 @@ export async function getUserTable(): Promise<UserTableData[]> {
   
     return users.map((user) => ({
       id: user.id,
-      name: user.name || "Sem nome", // Use "name" here
+      name: user.name || "Sem nome",
       status: user.status || "Sem status",
       type: user.role || "USER",
     }));

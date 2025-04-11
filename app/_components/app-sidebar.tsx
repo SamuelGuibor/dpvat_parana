@@ -18,7 +18,7 @@ import Link from "next/link";
 import { NavUser } from "./nav-user";
 import { NavMain } from "./nav-main";
 import { NavChats } from "./nav-chat";
-import { NavDocuments } from "./nav-documents"; // Importar o NavDocuments ajustado
+import { NavDocuments } from "./nav-documents"; 
 import { MdInsertChartOutlined } from "react-icons/md";
 import { HiOutlineChatAlt2 } from "react-icons/hi";
 
