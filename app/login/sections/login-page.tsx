@@ -182,7 +182,7 @@ const AuthSection = () => {
               <div className="flex justify-center">
                 <Button
                   onClick={() =>
-                    signIn("google", { callbackUrl: "/completar-perfil" })
+                    signIn("google", { callbackUrl: "/" })
                   }
                   type="button"
                   variant="outline"

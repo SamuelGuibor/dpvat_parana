@@ -16,36 +16,35 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/app/_components/ui/alert-dialog";
-import { getUser } from "@/app/_actions/get-user";
+import { getUsers } from "@/app/_actions/get-user";
+import { updateUser } from "@/app/_actions/update-users";
 import { Dropzone, DropzoneContent, DropzoneEmptyState } from "./dropzone";
 
 interface UserData {
   id: string;
   name: string;
-  status: string;
+  status?: string;
   type: string;
-  cpf: string;
-  data_nasc: string;
-  email: string;
-  rua: string;
-  bairro: string;
-  numero: string;
-  cep: string;
-  rg: string;
-  nome_mae: string;
-  telefone: string;
-  cidade: string;
-  estado: string;
-  estado_civil: string;
-  profissao: string;
-  nacionalidade: string;
-  acidente?: {
-    data_acidente: string;
-    atendimento_via: string;
-    hospital: string;
-    outro_hospital: string;
-    lesoes: string;
-  };
+  cpf?: string;
+  data_nasc?: string;
+  email?: string;
+  rua?: string;
+  bairro?: string;
+  numero?: string;
+  cep?: string;
+  rg?: string;
+  nome_mae?: string;
+  telefone?: string;
+  cidade?: string;
+  estado?: string;
+  estado_civil?: string;
+  profissao?: string;
+  nacionalidade?: string;
+  data_acidente?: string;
+  atendimento_via?: string;
+  hospital?: string;
+  outro_hospital?: string;
+  lesoes?: string;
 }
 
 interface DialogDashProps {
@@ -63,22 +62,49 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     periciaPagamentos: false,
     dinheiroRecebido: false,
   });
+  const [formData, setFormData] = useState<UserData | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const handleDrop = (acceptedFiles: File[]) => {
     setFiles((prevFiles) => [...prevFiles, ...acceptedFiles]);
   };
 
-  const [isLoading, setIsLoading] = useState(true);
-
   useEffect(() => {
     async function fetchUser() {
       try {
-        const userData = await getUser(userId);
+        setIsLoading(true);
+        const userData = await getUsers("full", userId);
+        if (!userData || Array.isArray(userData)) {
+          throw new Error("Usuário não encontrado ou resposta inválida.");
+        }
         setUser(userData);
-        const mappedStatus = mapServerStatusToLocal(userData.status);
-        setLocalStatus(mappedStatus);
+        setFormData(userData);
+        setLocalStatus({
+          envioDocumentos:
+            userData.status === "ENVIO" ||
+            userData.status === "SOLICITACAO" ||
+            userData.status === "COLETA" ||
+            userData.status === "ANALISE" ||
+            userData.status === "PERICIA",
+          solicitacaoDocumentos:
+            userData.status === "SOLICITACAO" ||
+            userData.status === "COLETA" ||
+            userData.status === "ANALISE" ||
+            userData.status === "PERICIA",
+          coletaDocumentos:
+            userData.status === "COLETA" ||
+            userData.status === "ANALISE" ||
+            userData.status === "PERICIA",
+          analiseDocumentos:
+            userData.status === "ANALISE" || userData.status === "PERICIA",
+          periciaPagamentos: userData.status === "PERICIA",
+          dinheiroRecebido: userData.status === "PERICIA",
+        });
       } catch (error) {
         console.error("Erro ao buscar usuário:", error);
+        setError("Não foi possível carregar os dados do usuário.");
       } finally {
         setIsLoading(false);
       }
@@ -86,7 +112,21 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     fetchUser();
   }, [userId]);
 
-  const handleCheckboxChange = async (key: string) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
+  };
+
+  const determineStatus = () => {
+    if (localStatus.dinheiroRecebido || localStatus.periciaPagamentos) return "PERICIA";
+    if (localStatus.analiseDocumentos) return "ANALISE";
+    if (localStatus.coletaDocumentos) return "COLETA";
+    if (localStatus.solicitacaoDocumentos) return "SOLICITACAO";
+    if (localStatus.envioDocumentos) return "ENVIO";
+    return undefined;
+  };
+
+  const handleCheckboxChange = (key: keyof typeof localStatus) => {
     setLocalStatus((prev) => {
       const newStatus = { ...prev };
 
@@ -144,17 +184,6 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
             newStatus.dinheiroRecebido = !prev.dinheiroRecebido;
           }
           break;
-        default:
-          break;
-      }
-
-      const serverStatus = determineServerStatus(newStatus);
-      if (serverStatus && user) {
-        fetch(`/api/user-status/${user.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: serverStatus }),
-        }).catch((error) => console.error("Erro ao atualizar status:", error));
       }
 
       return newStatus;
@@ -162,30 +191,30 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   };
 
   const handleSave = async () => {
-    if (!user) return;
-    const serverStatus = determineServerStatus(localStatus);
-    if (serverStatus) {
-      try {
-        const response = await fetch(`/api/user-status/${user.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: serverStatus }),
-        });
-        if (!response.ok) throw new Error("Erro ao salvar status");
-      } catch (error) {
-        console.error("Erro ao salvar:", error);
-      }
+    if (!user || !formData) return;
+
+    try {
+      const updatedData = {
+        ...formData,
+        status: determineStatus(),
+      };
+
+      const updatedUser = await updateUser(updatedData);
+      setUser(updatedUser);
+      setFormData(updatedUser);
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+      setError("Não foi possível salvar as alterações.");
     }
   };
 
-  if (!user) return;
 
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent className="max-w-3xl sm:max-w-lg md:max-w-xl lg:max-w-3xl flex flex-col max-h-[80vh]">
         <AlertDialogHeader>
-          <AlertDialogTitle>Dados do Cliente: {user.name}</AlertDialogTitle>
+          <AlertDialogTitle>Dados do Cliente: {user?.name}</AlertDialogTitle>
           <AlertDialogDescription>
             Visualize ou altere os dados do cliente.
           </AlertDialogDescription>
@@ -195,67 +224,132 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Nome</Label>
-                <Input value={user.name} readOnly />
+                <Input
+                  name="name"
+                  value={formData?.name || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>CPF</Label>
-                <Input value={user.cpf} />
+                <Input
+                  name="cpf"
+                  value={formData?.cpf || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Data de Nascimento</Label>
-                <Input value={user.data_nasc} />
+                <Input
+                  name="data_nasc"
+                  type="date"
+                  value={formData?.data_nasc || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input value={user.email} />
+                <Input
+                  name="email"
+                  value={formData?.email || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Rua</Label>
-                <Input value={user.rua} />
+                <Input
+                  name="rua"
+                  value={formData?.rua || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Bairro</Label>
-                <Input value={user.bairro} />
+                <Input
+                  name="bairro"
+                  value={formData?.bairro || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Número</Label>
-                <Input value={user.numero} />
+                <Input
+                  name="numero"
+                  value={formData?.numero || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>CEP</Label>
-                <Input value={user.cep} />
+                <Input
+                  name="cep"
+                  value={formData?.cep || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>RG</Label>
-                <Input value={user.rg} />
+                <Input
+                  name="rg"
+                  value={formData?.rg || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Nome da Mãe</Label>
-                <Input value={user.nome_mae} />
+                <Input
+                  name="nome_mae"
+                  value={formData?.nome_mae || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input value={user.telefone} />
+                <Input
+                  name="telefone"
+                  value={formData?.telefone || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Cidade</Label>
-                <Input value={user.cidade} />
+                <Input
+                  name="cidade"
+                  value={formData?.cidade || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Estado</Label>
-                <Input value={user.estado} />
+                <Input
+                  name="estado"
+                  value={formData?.estado || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Estado Civil</Label>
-                <Input value={user.estado_civil} />
+                <Input
+                  name="estado_civil"
+                  value={formData?.estado_civil || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Profissão</Label>
-                <Input value={user.profissao} />
+                <Input
+                  name="profissao"
+                  value={formData?.profissao || ""}
+                  onChange={handleInputChange}
+                />
               </div>
               <div>
                 <Label>Nacionalidade</Label>
-                <Input value={user.nacionalidade} />
+                <Input
+                  name="nacionalidade"
+                  value={formData?.nacionalidade || ""}
+                  onChange={handleInputChange}
+                />
               </div>
             </div>
 
@@ -264,27 +358,47 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Data do Acidente</Label>
-                  <Input value={user.acidente?.data_acidente || ""} />
+                  <Input
+                    name="data_acidente"
+                    type="date"
+                    value={formData?.data_acidente || ""}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div>
                   <Label>Atendimento Via</Label>
-                  <Input value={user.acidente?.atendimento_via || ""} />
+                  <Input
+                    name="atendimento_via"
+                    value={formData?.atendimento_via || ""}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div>
                   <Label>Hospital</Label>
-                  <Input value={user.acidente?.hospital || ""} />
+                  <Input
+                    name="hospital"
+                    value={formData?.hospital || ""}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div>
                   <Label>Outro Hospital</Label>
-                  <Input value={user.acidente?.outro_hospital || ""} />
+                  <Input
+                    name="outro_hospital"
+                    value={formData?.outro_hospital || ""}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div className="col-span-2">
                   <Label>Lesões</Label>
-                  <Input value={user.acidente?.lesoes || ""} />
+                  <Input
+                    name="lesoes"
+                    value={formData?.lesoes || ""}
+                    onChange={handleInputChange}
+                  />
                 </div>
               </div>
             </div>
-
 
             <div className="mt-4">
               <h1 className="text-lg font-semibold mb-4">Área dos Status</h1>
@@ -298,7 +412,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       onChange={() => handleCheckboxChange("envioDocumentos")}
                       className="w-4 h-4"
                     />
-                    <Label htmlFor="envioDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
+                    <Label
+                      htmlFor="envioDocumentos"
+                      className="text-sm text-gray-700 whitespace-nowrap"
+                    >
                       Envio de documentos e assinaturas
                     </Label>
                   </div>
@@ -311,7 +428,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       disabled={!localStatus.envioDocumentos}
                       className="w-4 h-4"
                     />
-                    <Label htmlFor="solicitacaoDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
+                    <Label
+                      htmlFor="solicitacaoDocumentos"
+                      className="text-sm text-gray-700 whitespace-nowrap"
+                    >
                       Solicitação de documentos
                     </Label>
                   </div>
@@ -324,7 +444,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       disabled={!localStatus.solicitacaoDocumentos}
                       className="w-4 h-4"
                     />
-                    <Label htmlFor="coletaDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
+                    <Label
+                      htmlFor="coletaDocumentos"
+                      className="text-sm text-gray-700 whitespace-nowrap"
+                    >
                       Coleta de documentos
                     </Label>
                   </div>
@@ -337,7 +460,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       disabled={!localStatus.coletaDocumentos}
                       className="w-4 h-4"
                     />
-                    <Label htmlFor="analiseDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
+                    <Label
+                      htmlFor="analiseDocumentos"
+                      className="text-sm text-gray-700 whitespace-nowrap"
+                    >
                       Análise de documentos pela seguradora
                     </Label>
                   </div>
@@ -350,7 +476,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       disabled={!localStatus.analiseDocumentos}
                       className="w-4 h-4"
                     />
-                    <Label htmlFor="periciaPagamentos" className="text-sm text-gray-700 whitespace-nowrap">
+                    <Label
+                      htmlFor="periciaPagamentos"
+                      className="text-sm text-gray-700 whitespace-nowrap"
+                    >
                       Perícia médica e pagamentos
                     </Label>
                   </div>
@@ -363,25 +492,26 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       disabled={!localStatus.periciaPagamentos}
                       className="w-4 h-4"
                     />
-                    <Label htmlFor="dinheiroRecebido" className="text-sm text-gray-700 whitespace-nowrap">
+                    <Label
+                      htmlFor="dinheiroRecebido"
+                      className="text-sm text-gray-700 whitespace-nowrap"
+                    >
                       Você recebeu seu dinheiro!
                     </Label>
                   </div>
                 </div>
               </div>
             </div>
+
             <div className="flex flex-col h-[250px] w-full max-w-lg p-4 sm:p-6 md:p-8 mx-auto">
-              <Dropzone
-                onDrop={handleDrop}
-                src={files}
-                onError={console.error}
-              >
+              <Dropzone onDrop={handleDrop} src={files} onError={console.error}>
                 <DropzoneEmptyState />
                 <DropzoneContent />
               </Dropzone>
             </div>
           </form>
-          {files && files.length > 0 && (
+
+          {files.length > 0 && (
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-sm text-left border-collapse">
                 <thead>
@@ -402,7 +532,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         </div>
         <AlertDialogFooter className="border-t pt-4">
           <div className="flex flex-col sm:flex-row gap-2 mx-auto w-full justify-center">
-            <AlertDialogCancel className="bg-red-500 hover:bg-red-500/90 hover:text-white text-white w-full lg:w-[330px]">
+            <AlertDialogCancel className="bg-red-500 hover:bg-red-500/90 text-white w-full lg:w-[330px]">
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
@@ -416,77 +546,6 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
       </AlertDialogContent>
     </AlertDialog>
   );
-};
-
-// Funções auxiliares
-const determineServerStatus = (status: {
-  envioDocumentos: boolean;
-  solicitacaoDocumentos: boolean;
-  coletaDocumentos: boolean;
-  analiseDocumentos: boolean;
-  periciaPagamentos: boolean;
-  dinheiroRecebido: boolean;
-}): string | null => {
-  if (status.dinheiroRecebido || status.periciaPagamentos) return "PERICIA";
-  if (status.analiseDocumentos) return "ANALISE";
-  if (status.coletaDocumentos) return "COLETA";
-  if (status.solicitacaoDocumentos) return "SOLICITACAO";
-  if (status.envioDocumentos) return "ENVIO";
-  return null;
-};
-
-const mapServerStatusToLocal = (
-  serverStatus: string
-): {
-  envioDocumentos: boolean;
-  solicitacaoDocumentos: boolean;
-  coletaDocumentos: boolean;
-  analiseDocumentos: boolean;
-  periciaPagamentos: boolean;
-  dinheiroRecebido: boolean;
-} => {
-  const status = {
-    envioDocumentos: false,
-    solicitacaoDocumentos: false,
-    coletaDocumentos: false,
-    analiseDocumentos: false,
-    periciaPagamentos: false,
-    dinheiroRecebido: false,
-  };
-
-  if (!serverStatus) return status;
-
-  switch (serverStatus.toUpperCase()) {
-    case "ENVIO":
-      status.envioDocumentos = true;
-      break;
-    case "SOLICITACAO":
-      status.envioDocumentos = true;
-      status.solicitacaoDocumentos = true;
-      break;
-    case "COLETA":
-      status.envioDocumentos = true;
-      status.solicitacaoDocumentos = true;
-      status.coletaDocumentos = true;
-      break;
-    case "ANALISE":
-      status.envioDocumentos = true;
-      status.solicitacaoDocumentos = true;
-      status.coletaDocumentos = true;
-      status.analiseDocumentos = true;
-      break;
-    case "PERICIA":
-      status.envioDocumentos = true;
-      status.solicitacaoDocumentos = true;
-      status.coletaDocumentos = true;
-      status.analiseDocumentos = true;
-      status.periciaPagamentos = true;
-      break;
-    default:
-      break;
-  }
-
-  return status;
 };
 
 export default DialogDash;

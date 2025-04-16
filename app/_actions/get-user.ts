@@ -10,107 +10,149 @@ import { format } from "date-fns";
 interface UserData {
   id: string;
   name: string;
-  status: string;
+  status?: string;
   type: string;
-  cpf: string;
-  data_nasc: string;
-  email: string;
-  rua: string;
-  bairro: string;
-  numero: string;
-  cep: string;
-  rg: string;
-  nome_mae: string;
-  telefone: string;
-  cidade: string;
-  estado: string;
-  estado_civil: string;
-  profissao: string;
-  nacionalidade: string;
-  acidente?: {
-    data_acidente: string;
-    atendimento_via: string;
-    hospital: string;
-    outro_hospital: string;
-    lesoes: string;
-  };
+  cpf?: string;
+  data_nasc?: string;
+  email?: string;
+  rua?: string;
+  bairro?: string;
+  numero?: string;
+  cep?: string;
+  rg?: string;
+  nome_mae?: string;
+  telefone?: string;
+  cidade?: string;
+  estado?: string;
+  estado_civil?: string;
+  profissao?: string;
+  nacionalidade?: string;
+  data_acidente?: string;
+  atendimento_via?: string;
+  hospital?: string;
+  outro_hospital?: string;
+  lesoes?: string;
 }
 
-export async function getUser(id: string): Promise<UserData> {
+export async function getUsers(
+  fields: "basic" | "full" = "basic",
+  userId?: string
+): Promise<UserData[] | UserData | null> {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {
     throw new Error("Usuário não autenticado.");
   }
 
-  const user = await db.user.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-      status: true,
-      role: true,
-      cpf: true,
-      data_nasc: true,
-      email: true,
-      rua: true,
-      bairro: true,
-      numero: true,
-      cep: true,
-      rg: true,
-      nome_mae: true,
-      telefone: true,
-      cidade: true,
-      estado: true,
-      estado_civil: true,
-      profissao: true,
-      nacionalidade: true,
-      acidente: {
-        select: {
+  const selectFields =
+    fields === "full"
+      ? {
+          id: true,
+          name: true,
+          status: true,
+          role: true,
+          cpf: true,
+          data_nasc: true,
+          email: true,
+          rua: true,
+          bairro: true,
+          numero: true,
+          cep: true,
+          rg: true,
+          nome_mae: true,
+          telefone: true,
+          cidade: true,
+          estado: true,
+          estado_civil: true,
+          profissao: true,
+          nacionalidade: true,
           data_acidente: true,
           atendimento_via: true,
           hospital: true,
           outro_hospital: true,
           lesoes: true,
-        },
-      },
-    },
-  });
+        }
+      : {
+          id: true,
+          name: true,
+          status: true,
+          role: true,
+        };
 
-  if (!user) {
-    throw new Error("Usuário não encontrado.");
+  if (userId) {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: selectFields,
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      name: user.name || "Sem nome",
+      status: user.status || undefined, // Converte null para undefined
+      type: user.role || "USER",
+      ...(fields === "full" && {
+        cpf: user.cpf || "",
+        data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",
+        email: user.email || "",
+        rua: user.rua || "",
+        bairro: user.bairro || "",
+        numero: user.numero || "",
+        cep: user.cep || "",
+        rg: user.rg || "",
+        nome_mae: user.nome_mae || "",
+        telefone: user.telefone || "",
+        cidade: user.cidade || "",
+        estado: user.estado || "",
+        estado_civil: user.estado_civil || "",
+        profissao: user.profissao || "",
+        nacionalidade: user.nacionalidade || "",
+        data_acidente: user.data_acidente
+          ? format(user.data_acidente, "yyyy-MM-dd")
+          : "",
+        atendimento_via: user.atendimento_via || "",
+        hospital: user.hospital || "",
+        outro_hospital: user.outro_hospital || "",
+        lesoes: user.lesoes || "",
+      }),
+    };
   }
 
-  return {
+  const users = await db.user.findMany({
+    select: selectFields,
+  });
+
+  return users.map((user) => ({
     id: user.id,
     name: user.name || "Sem nome",
-    status: user.status || "Sem status",
+    status: user.status || undefined, // Converte null para undefined
     type: user.role || "USER",
-    cpf: user.cpf || "",
-    data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",
-    email: user.email || "",
-    rua: user.rua || "",
-    bairro: user.bairro || "",
-    numero: user.numero || "",
-    cep: user.cep || "",
-    rg: user.rg || "",
-    nome_mae: user.nome_mae || "",
-    telefone: user.telefone || "",
-    cidade: user.cidade || "",
-    estado: user.estado || "",
-    estado_civil: user.estado_civil || "",
-    profissao: user.profissao || "",
-    nacionalidade: user.nacionalidade || "",
-    acidente: user.acidente
-      ? {
-          data_acidente: user.acidente.data_acidente
-            ? format(user.acidente.data_acidente, "yyyy-MM-dd")
-            : "",
-          atendimento_via: user.acidente.atendimento_via || "",
-          hospital: user.acidente.hospital || "",
-          outro_hospital: user.acidente.outro_hospital || "",
-          lesoes: user.acidente.lesoes || "",
-        }
-      : undefined,
-  };
+    ...(fields === "full" && {
+      cpf: user.cpf || "",
+      data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",
+      email: user.email || "",
+      rua: user.rua || "",
+      bairro: user.bairro || "",
+      numero: user.numero || "",
+      cep: user.cep || "",
+      rg: user.rg || "",
+      nome_mae: user.nome_mae || "",
+      telefone: user.telefone || "",
+      cidade: user.cidade || "",
+      estado: user.estado || "",
+      estado_civil: user.estado_civil || "",
+      profissao: user.profissao || "",
+      nacionalidade: user.nacionalidade || "",
+      data_acidente: user.data_acidente
+        ? format(user.data_acidente, "yyyy-MM-dd")
+        : "",
+      atendimento_via: user.atendimento_via || "",
+      hospital: user.hospital || "",
+      outro_hospital: user.outro_hospital || "",
+      lesoes: user.lesoes || "",
+    }),
+  }));
 }

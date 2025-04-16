@@ -65,11 +65,12 @@ import {
 import { useState, useEffect } from "react";
 import DialogDash from "./dialog";
 
+// Update the schema to allow status to be optional
 export const schema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.string(),
-  status: z.string(),
+  status: z.string().optional(), // Changed to optional
 });
 
 type DataType = z.infer<typeof schema>;
@@ -102,7 +103,7 @@ const columns: ColumnDef<DataType>[] = [
     header: "Nome",
     cell: ({ row }) => (
       <DialogDash
-        userId={row.original.id} 
+        userId={row.original.id}
         trigger={<span className="cursor-pointer hover:underline">{row.original.name}</span>}
       />
     ),
@@ -127,7 +128,7 @@ const columns: ColumnDef<DataType>[] = [
         variant="outline"
         className="flex gap-1 px-1.5 text-muted-foreground [&_svg]:size-3"
       >
-        {row.original.status}
+        {row.original.status || "Sem status"} {/* Handle undefined status */}
       </Badge>
     ),
   },

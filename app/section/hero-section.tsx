@@ -5,45 +5,9 @@ import Link from "next/link";
 import { Button } from "@/app/_components/ui/button";
 import { HeroHeader } from "./hero9-header";
 import { ChevronRight } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { checkUserCpf } from "../_actions/checkCpf";
 
 export default function HeroSection() {
   const [scrollProgress, setScrollProgress] = useState(0);
-
-  const router = useRouter();
-  const [user, setUser] = useState<{ cpf: string | null } | null>(null);
-  const [loadingg, setLoadingg] = useState(true);
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const userData = await checkUserCpf(); // Throws error if no session
-        setUser(userData);
-      } catch (error) {
-        console.error("Erro ao buscar usuário:", error);
-        setUser(null); // No session or other error
-      } finally {
-        setLoadingg(false);
-      }
-    };
-
-    fetchUser();
-  }, []);
-
-  useEffect(() => {
-    if (!loadingg) {
-      if (user) {
-        if (user.cpf) {
-          router.push("/");
-        } else {
-          router.push("/completar-perfil");
-        }
-      } else {
-        console.log("Nenhuma sessão ativa, aguardando autenticação");
-      }
-    }
-  }, [loadingg, user, router]);
 
   useEffect(() => {
     const handleScroll = () => {

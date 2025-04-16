@@ -8,49 +8,39 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  cpf           String?   @unique
-  data_nasc     DateTime?
-  email         String    @unique
-  password      String?
-  rua           String?
-  bairro        String?
-  numero        String?
-  cep           String?
-  image         String?
-  emailVerified DateTime?
-  role          String    @default("USER")
-  rg            String?
-  nome_mae      String?
-  telefone      String?
-  cidade        String?
-  estado        String?
-  estado_civil  String?
-  profissao     String?
-  nacionalidade String?
-
-  accounts  Account[]
-  sessions  Session[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  acidente Acidente?
-  status   Status?
-}
-
-model Acidente {
   id              String    @id @default(cuid())
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId          String    @unique
+  name            String?
+  cpf             String?   @unique
+  data_nasc       DateTime?
+  email           String    @unique
+  password        String?
+  rua             String?
+  bairro          String?
+  numero          String?
+  cep             String?
+  image           String?
+  emailVerified   DateTime?
+  role            String    @default("USER")
+  rg              String?
+  nome_mae        String?
+  telefone        String?
+  cidade          String?
+  estado          String?
+  estado_civil    String?
+  profissao       String?
+  nacionalidade   String?
   data_acidente   DateTime?
   atendimento_via String?
   hospital        String?
   outro_hospital  String?
   lesoes          String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  accounts  Account[]
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  status   Status?
 }
 
 enum Status {
@@ -98,4 +88,20 @@ model VerificationToken {
   expires    DateTime
 
   @@id([identifier, token])
+}
+
+model Message {
+  id           String         @id @default(cuid())
+  titulo       String
+  role         String         @default("USER")
+  multipleMessages SubMessage[]
+}
+
+model SubMessage {
+  id         String   @id @default(cuid())
+  conteudo   String
+  mediaUrl   String?  
+  mediaType  String?  
+  messageId  String
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }

@@ -5,7 +5,6 @@ import { useState } from "react"
 import { BarChart3, Globe, Layers, Lightbulb, Rocket, Shield } from "lucide-react"
 
 import { cn } from "@/app/_lib/utils"
-import { Button } from "@/app/_components/ui/button"
 import { DocumentDialog } from "./dialog"
 
 interface FeatureProps {
