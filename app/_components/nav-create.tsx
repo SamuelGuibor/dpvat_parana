@@ -10,7 +10,7 @@ import {
 } from "@/app/_components/ui/sidebar";
 import SidebarButton from "@/app/area-do-cliente/section/sidebar-button"; // Importar o SidebarButton
 
-export function NavDocuments({
+export function NavCreate({
   items,
 }: {
   items: {
@@ -21,11 +21,11 @@ export function NavDocuments({
 }) {
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Documents</SidebarGroupLabel>
+      <SidebarGroupLabel>Criar Contas</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
-            <SidebarButton href={item.url} icon={item.icon}>
+            <SidebarButton href={item.url}>
               {item.name}
             </SidebarButton>
           </SidebarMenuItem>

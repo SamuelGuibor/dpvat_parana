@@ -13,7 +13,7 @@ export const createUser = async ({ name, email, password }: CreateUserProps) => 
     data: {
       name,
       email,
-      password, // Salva a senha em texto puro
+      password, 
     },
   });
 

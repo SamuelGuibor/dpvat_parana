@@ -3,9 +3,6 @@
 import React from "react";
 import { useSession } from "next-auth/react";
 import {
-  DatabaseIcon,
-} from "lucide-react";
-import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -18,9 +15,10 @@ import Link from "next/link";
 import { NavUser } from "./nav-user";
 import { NavMain } from "./nav-main";
 import { NavChats } from "./nav-chat";
-import { NavDocuments } from "./nav-documents"; 
 import { MdInsertChartOutlined } from "react-icons/md";
 import { HiOutlineChatAlt2 } from "react-icons/hi";
+import { RxAvatar } from "react-icons/rx";
+import { NavCreate } from "./nav-create";
 
 const data = {
   navMain: [
@@ -28,13 +26,6 @@ const data = {
       title: "Dashboard",
       url: "/dashboard",
       icon: MdInsertChartOutlined,
-    },
-  ],
-  documents: [
-    {
-      name: "Documentos",
-      url: "/document",
-      icon: DatabaseIcon,
     },
   ],
   chats: [
@@ -47,6 +38,13 @@ const data = {
       name: "Mensagens Automaticas",
       url: "/mensagens",
       icon: HiOutlineChatAlt2, 
+    }
+  ],
+  options: [
+    {
+      name: "Criar Conta",
+      url: "/create",
+      icon: RxAvatar
     }
   ]
 };
@@ -83,8 +81,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
         <NavChats items={data.chats}/>
+        <NavCreate items={data.options}/>
       </SidebarContent>
       <SidebarFooter>
           <NavUser user={userData} />

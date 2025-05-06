@@ -25,7 +25,7 @@ export function NavChats({
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
-            <SidebarButton href={item.url} icon={item.icon}>
+            <SidebarButton href={item.url}>
               {item.name}
             </SidebarButton>
           </SidebarMenuItem>
