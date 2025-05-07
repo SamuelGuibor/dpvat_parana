@@ -100,8 +100,8 @@ model Message {
 model SubMessage {
   id         String   @id @default(cuid())
   conteudo   String
-  mediaUrl   String?  
-  mediaType  String?  
+  mediaUrl   String?
+  mediaType  String?
   messageId  String
   message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
