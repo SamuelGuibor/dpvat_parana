@@ -101,6 +101,11 @@ model Message {
 model SubMessage {
   id         String   @id @default(cuid())
   conteudo   String
+<<<<<<< HEAD
+=======
+  mediaUrl   String?
+  mediaType  String?
+>>>>>>> 478a3e0d85f04b8db8cfca763e2e72c5da261c70
   messageId  String
   message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }

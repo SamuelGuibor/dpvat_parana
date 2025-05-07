@@ -1,9 +1,8 @@
 "use client";
 
-import React from "react";
-import { usePathname } from "next/navigation"; // Importar usePathname
 import { Separator } from "@/app/_components/ui/separator";
 import { SidebarTrigger } from "@/app/_components/ui/sidebar";
+import { usePathname } from "next/navigation"; // Importar usePathname
 
 export function SiteHeader() {
   const pathname = usePathname();
@@ -15,6 +14,7 @@ export function SiteHeader() {
     "/stats": "Status",
     "/chats": "Chats",
     "/mensagens": "Mensagens Automaticas",
+    "/create": "Criar Conta"
   };
 
   const pageTitle = pageTitles[pathname] || "Dashboard";
