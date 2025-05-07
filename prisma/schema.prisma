@@ -10,7 +10,7 @@ datasource db {
 model User {
   id              String    @id @default(cuid())
   name            String?
-  cpf             String?   @unique
+  cpf             String?   
   data_nasc       DateTime?
   email           String    @unique
   password        String?
@@ -37,6 +37,7 @@ model User {
 
   accounts  Account[]
   sessions  Session[]
+  document  Document[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -100,8 +101,15 @@ model Message {
 model SubMessage {
   id         String   @id @default(cuid())
   conteudo   String
-  mediaUrl   String?  
-  mediaType  String?  
   messageId  String
   message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  userId     String
+  key        String
+  name       String
+  uploadedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
 }

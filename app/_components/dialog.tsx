@@ -28,7 +28,10 @@ import { getUsers } from "@/app/_actions/get-user";
 import { updateUser } from "@/app/_actions/update-users";
 import { Dropzone, DropzoneContent, DropzoneEmptyState } from "./dropzone";
 import { Button } from "./ui/button";
-
+import { getPresignedUrls } from '@/app/_actions/uploadS3';
+import { downloadFileFromS3 } from '@/app/_actions/downloadS3'; 
+import { Download, Loader2 } from 'lucide-react'; 
+import { toast } from "sonner";
 
 interface UserData {
   id: string;
@@ -62,6 +65,12 @@ interface DialogDashProps {
   trigger: React.ReactNode;
 }
 
+interface FileWithBase64 {
+  name: string;
+  type: string;
+  base64: string;
+}
+
 const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   const [user, setUser] = useState<UserData | null>(null);
   const [localStatus, setLocalStatus] = useState({
@@ -74,12 +83,169 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   });
   const [formData, setFormData] = useState<UserData | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [base64Files, setBase64Files] = useState<FileWithBase64[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null); 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDocument, setIsDocument] = useState(true);
+  const [userDocuments, setUserDocuments] = useState<{ key: string; name: string }[]>([]);
 
-  const handleDrop = (acceptedFiles: File[]) => {
-    setFiles((prevFiles) => [...prevFiles, ...acceptedFiles]);
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDrop = async (acceptedFiles: File[]) => {
+    try {
+      const filesWithBase64 = await Promise.all(
+        acceptedFiles.map(async (file) => {
+          const base64 = await fileToBase64(file);
+          return {
+            name: file.name,
+            type: file.type,
+            base64,
+          };
+        })
+      );
+      setFiles((prevFiles) => [...prevFiles, ...acceptedFiles]);
+      setBase64Files((prevBase64Files) => [...prevBase64Files, ...filesWithBase64]);
+    } catch (err) {
+      console.error('Erro ao converter arquivos para Base64:', err);
+      setError('Erro ao processar os arquivos.');
+    }
+  };
+
+  const uploadFilesToS3 = async () => {
+    if (!userId) {
+      setError('Erro: ID do usuário não fornecido.');
+      toast.error('ID do usuário não fornecido.');
+      setUploading(false);
+      return;
+    }
+    if (base64Files.length === 0) {
+      setError('Nenhum arquivo selecionado para upload.');
+      toast.error('Nenhum arquivo selecionado para upload.');
+      setUploading(false);
+      return;
+    }
+  
+    setUploading(true);
+    setError(null);
+    toast.success('Sucesso ao salvar o arquivo.');
+
+    try {
+      const fileInfos = base64Files.map((file) => ({
+        name: file.name,
+        type: file.type,
+      }));
+  
+      const response = await getPresignedUrls(fileInfos, userId);
+  
+      if (!response.success || !response.presignedUrls) {
+        throw new Error(response.error || 'Erro ao obter URLs pré-assinadas');
+      }
+  
+      const uploadedFiles = await Promise.all(
+        response.presignedUrls.map(async ({ fileName, url, key }) => {
+          const file = base64Files.find((f) => f.name === fileName);
+          if (!file) return null;
+  
+          const base64Data = file.base64.split(',')[1];
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: file.type });
+  
+          const res = await fetch(url, {
+            method: 'PUT',
+            body: blob,
+            headers: {
+              'Content-Type': file.type,
+              'Content-Disposition': `attachment; filename="${fileName}"`,
+            },
+          });
+  
+          if (!res.ok) {
+            throw new Error(`Erro ao fazer upload do arquivo ${fileName}`);
+          }
+  
+          return { key, name: fileName };
+        })
+      );
+  
+      const validUploads = uploadedFiles.filter((file) => file !== null) as { key: string; name: string }[];
+      await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          documents: validUploads,
+        }),
+      });
+  
+      setUserDocuments((prev) => [...prev, ...validUploads]);
+      await fetchUserDocuments();
+      setFiles([]);
+      setBase64Files([]);
+  
+    } catch (err: any) {
+      console.error('Erro no upload:', err);
+      setError('Erro ao fazer upload dos arquivos.');
+      toast.error('Erro ao fazer upload dos arquivos: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const fetchUserDocuments = async () => {
+    try {
+      const response = await fetch(`/api/documents?userId=${userId}`);
+      if (!response.ok) {
+        throw new Error('Erro ao buscar documentos');
+      }
+      const documents = await response.json();
+      setUserDocuments(documents);
+    } catch (err) {
+      console.error('Erro ao buscar documentos:', err);
+      setError('Erro ao carregar documentos do usuário.');
+    }
+  };
+
+  const handleDownload = async (key: string, fileName: string) => {
+    try {
+      setError(null);
+      setDownloading(key); 
+
+      const response = await downloadFileFromS3(key, fileName);
+      if (!response.success || !response.fileContent) {
+        throw new Error(response.error || 'Erro ao baixar o arquivo');
+      }
+
+      const blob = new Blob([response.fileContent], { type: response.contentType });
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName; 
+      document.body.appendChild(link);
+      link.click();
+
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Erro ao baixar arquivo:', err);
+      setError('Erro ao baixar o arquivo: ' + err.message);
+    } finally {
+      setDownloading(null); 
+    }
   };
 
   useEffect(() => {
@@ -113,6 +279,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           periciaPagamentos: userData.status === "PERICIA",
           dinheiroRecebido: userData.status === "PERICIA",
         });
+        await fetchUserDocuments();
       } catch (error) {
         console.error("Erro ao buscar usuário:", error);
         setError("Não foi possível carregar os dados do usuário.");
@@ -209,6 +376,8 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     if (!user || !formData) return;
 
     try {
+      await uploadFilesToS3();
+
       const updatedData = {
         ...formData,
         status: determineStatus(),
@@ -217,13 +386,13 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
       const updatedUser = await updateUser(updatedData);
       setUser(updatedUser);
       setFormData(updatedUser);
-    } catch (error) {
+      setError(null);
+    } catch (error: any) {
       console.error("Erro ao salvar:", error);
-      setError("Não foi possível salvar as alterações.");
+      setError("Não foi possível salvar as alterações: " + error.message);
     }
   };
 
-  
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
@@ -237,20 +406,12 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
               {isDocument ? "Ver Documentos" : "Ver Status"}
             </Button>
           </div>
-          {isDocument &&
-          <div className="absolute right-[200px] flex space-x-4">
-            <Button
-              className="bg-indigo-800 hover:bg-indigo-900"
-            >
-              Gerar Contrato
-            </Button>
-            <Button
-              className="bg-indigo-800 hover:bg-indigo-900"
-            >
-              Gerar Procuração
-            </Button>
-          </div>
-          }
+          {isDocument && (
+            <div className="absolute right-[200px] flex space-x-4">
+              <Button disabled className="bg-indigo-800 hover:bg-indigo-900">Gerar Contrato</Button>
+              <Button disabled className="bg-indigo-800 hover:bg-indigo-900">Gerar Procuração</Button>
+            </div>
+          )}
           <AlertDialogDescription>Visualize ou altere os dados do cliente.</AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex-1 overflow-y-auto px-4 py-2 text-sm">
@@ -658,12 +819,14 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                 </div>
               </div>
 
-              <div className="flex flex-col h-[250px] w-full max-w-lg p-4 sm:p-6 md:p-8 mx-auto">
-                <Dropzone onDrop={handleDrop} src={files} onError={console.error}>
-                  <DropzoneEmptyState />
-                  <DropzoneContent />
-                </Dropzone>
-              </div>
+              <Dropzone onDrop={handleDrop} src={files} onError={console.error}>
+                <DropzoneEmptyState />
+                <DropzoneContent />
+              </Dropzone>
+
+              {uploading && <p>Enviando arquivos...</p>}
+              {error && <p className="text-red-500">{error}</p>}
+
               {files.length > 0 && (
                 <div className="mt-4 overflow-x-auto">
                   <table className="w-full text-sm text-left border-collapse">
@@ -692,9 +855,33 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b">
-                    <td className="p-2 border truncate max-w-[200px]">Nome de algum arquivo</td>
-                  </tr>
+                  {userDocuments.length > 0 ? (
+                    userDocuments.map((doc, index) => (
+                      <tr key={index} className="border-b">
+                        <td className="p-2 border flex justify-between items-center">
+                          <span className="truncate max-w-[200px]">{doc.name}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDownload(doc.key, doc.name)}
+                            disabled={downloading === doc.key}
+                            className="h-8 w-8"
+                            aria-label={downloading === doc.key ? 'Baixando arquivo' : 'Baixar arquivo'}
+                          >
+                            {downloading === doc.key ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={2} className="p-2 border text-center">Nenhum documento encontrado</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

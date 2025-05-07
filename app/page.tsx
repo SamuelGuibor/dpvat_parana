@@ -2,6 +2,7 @@ import { Faq } from "./section/faq";
 import { FeatureSteps } from "./section/feature-section";
 import Footer from "./section/footer";
 import Hero from "./section/hero-section";
+import Recurses from "./section/recurses";
 import Stats from "./section/stats";
 import TeamSection from "./section/TeamSection"
 
@@ -97,6 +98,7 @@ export default function Home() {
         imageHeight="h-[500px]"
         className=" z-30 bg-gradient-to-b from-[#0f0f0f] to-black transform translate-y-[-20px]"
       />
+      <Recurses />
       <Faq
         heading="Perguntas Frequentes"
         description="Tudo o que você precisa saber sobre o DPVAT. Não encontrou a resposta que procura? Sinta-se à vontade para entrar em contato com nossa equipe de suporte"

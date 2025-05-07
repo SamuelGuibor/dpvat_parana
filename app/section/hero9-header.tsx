@@ -16,11 +16,7 @@ import { GoGear } from "react-icons/go";
 import { MdInsertChartOutlined } from "react-icons/md";
 import { HiOutlineChatAlt2 } from "react-icons/hi";
 
-const menuItems = [
-  { name: "Inicio", href: "#link" },
-  { name: "Sobre", href: "#link" },
-  { name: "Duvidas Frequentes", href: "#link" },
-];
+
 
 export const HeroHeader = () => {
   const [menuState, setMenuState] = React.useState(false);
@@ -85,22 +81,6 @@ export const HeroHeader = () => {
                 <X className="in-data-[state=active]:rotate-0 in-data-[state=active]:scale-100 in-data-[state=active]:opacity-100 absolute inset-0 m-auto size-6 -rotate-180 scale-0 opacity-0 duration-200" />
               </button>
 
-              <div className="hidden lg:block">
-                <ul className="flex gap-8 text-md">
-                  {menuItems.map((item, index) => (
-                    <li key={index}>
-                      <Link
-                        href={item.href}
-                        className="text-muted-foreground hover:text-accent-foreground block duration-150"
-                      >
-                        <span className={scrolled ? "text-black" : "text-white"}>
-                          {item.name}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </div>
             <div
               className={cn(
@@ -108,20 +88,6 @@ export const HeroHeader = () => {
                 menuState && "block"
               )}
             >
-              <div className="lg:hidden">
-                <ul className="space-y-6 text-base">
-                  {menuItems.map((item, index) => (
-                    <li key={index}>
-                      <Link
-                        href={item.href}
-                        className="text-muted-foreground hover:text-accent-foreground block duration-150"
-                      >
-                        <span className="text-[20px]">{item.name}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
               <div className="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit justify-center items-center">
                 <div className="relative flex gap-4">
                   <Link
@@ -129,7 +95,7 @@ export const HeroHeader = () => {
                     aria-label="Veja nosso Facebook"
                   >
                     <FaFacebook
-                      size={30}
+                      size={35}
                       className={scrolled ? "text-black" : "lg:text-white text-black"}
                     />
                   </Link>
@@ -138,7 +104,7 @@ export const HeroHeader = () => {
                     aria-label="Veja nosso Instagram"
                   >
                     <FaInstagram
-                      size={30}
+                      size={35}
                       className={scrolled ? "text-black" : "lg:text-white text-black"}
                     />
                   </Link>
