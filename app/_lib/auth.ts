@@ -33,7 +33,7 @@ export const authOptions: AuthOptions = {
         if (!user || !user.password) {
           throw new Error("Usuário não encontrado ou senha não configurada");
         }
-
+        
         return {
           id: user.id,
           email: user.email,

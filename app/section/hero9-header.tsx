@@ -111,14 +111,9 @@ export const HeroHeader = () => {
                 </div>
                 {!session?.user ? (
                   <>
-                    <Button asChild variant="outline" size="sm">
+                    <Button variant={scrolled ? "default" : "outline"} asChild size="sm">
                       <Link href="/login">
                         <span>Login</span>
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm">
-                      <Link href="/login">
-                        <span>Sign Up</span>
                       </Link>
                     </Button>
                   </>

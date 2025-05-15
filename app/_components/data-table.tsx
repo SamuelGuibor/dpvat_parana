@@ -86,7 +86,7 @@ function DragHandle({ id }: { id: string }) {
       size="icon"
       className="size-7 text-muted-foreground hover:bg-transparent"
     >
-      <GripVerticalIcon className="size-3 text-muted-foreground" />
+      <GripVerticalIcon className="size-3 text-muted-foreground bg-" />
       <span className="sr-only">Drag to reorder</span>
     </Button>
   );
@@ -112,13 +112,34 @@ const columns: ColumnDef<DataType>[] = [
   {
     accessorKey: "type",
     header: "Serviço",
-    cell: ({ row }) => (
-      <div className="w-32">
-        <Badge variant="outline" className="px-1.5 text-muted-foreground">
-          {row.original.type}
+    cell: ({ row }) => {
+      const type = row.original.type;
+      const badgeColor =
+      type === "ADMIN"
+        ? "bg-green-100 text-green-800 border-green-300"
+        : type === "USER"
+        ? "bg-red-100 text-red-800 border-red-300"
+        : type === "B.O"
+        ? "bg-blue-200 text-blue-800 border-blue-300"
+        : type === "SOLICITAR PRONTUARIO"
+        ? "bg-indigo-100 text-indigo-800 border-indigo-300"
+        : type === "PROTOCOLAR"
+        ? "bg-orange-100 text-orange-800 border-orange-300"
+        : type === "PENDENCIAS"
+        ? "bg-lime-100 text-lime-800 border-lime-300"
+        : type === "SOLICITAR CAJURU"
+        ? "bg-cyan-100 text-cyan-800 border-cyan-300"        
+        : "bg-green-100 text-green-800 border-green-300"
+    return (
+      <div className="w-40 BG-">
+        <Badge
+          variant="outline"
+          className={`px-1.5 ${badgeColor}`}
+        >
+          {type}
         </Badge>
       </div>
-    ),
+    )},
   },
   {
     accessorKey: "status",
