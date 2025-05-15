@@ -11,7 +11,6 @@ import {
   DialogTrigger,
 } from "@/app/_components/ui/dialog" // Ajuste o caminho conforme sua estrutura
 import { Button } from "@/app/_components/ui/button"
-import { X } from "lucide-react"
 
 interface DocumentDialogProps {
   title: string
