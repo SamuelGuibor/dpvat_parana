@@ -16,7 +16,45 @@ interface UserTableData {
 
 export default function Page() {
   const [data, setData] = useState<UserTableData[]>([]);
+  const [serverStatus, setServerStatus] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch("/api/user-status", { method: "GET" });
+        if (!response.ok) throw new Error("Erro ao buscar status");
+        const { status, role } = await response.json();
+        setServerStatus(status);
+        setUserRole(role);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchStatus();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch("/api/user-status", { method: "GET" });
+        if (!response.ok) throw new Error("Erro ao buscar status");
+        const { status, role } = await response.json();
+        setServerStatus(status);
+        setUserRole(role);
+      } catch (error) {
+        console.error(error);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (userRole !== "ADMIN") {
+    return <div></div>;
+  }
   useEffect(() => {
     async function fetchData() {
       try {
