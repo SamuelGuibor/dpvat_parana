@@ -57,15 +57,28 @@ export default function HeroSection() {
                   Receba uma indenização pelas lesões do seu acidente
                 </p>
 
-                <div className="mt-12 flex flex-col items-center justify-center gap-2 sm:flex-row lg:justify-start">
+                <div className="mt-12 flex flex-col items-center justify-center gap-4 lg:items-start">
                   <Button
                     asChild
                     size="lg"
-                    className="h-12 rounded-full pl-5 pr-3 text-base bg-green-500"
+                    className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-[#6d997a]  hover:bg-slate-200"
                   >
                     <Link href="#link">
-                      <span>Fale Conosco</span>
-                      <ChevronRight className="ml-1" />
+                      <span className="text-black">Fale Conosco</span>
+                      <ChevronRight className="ml-1 text-black" />
+                    </Link>
+                  </Button>
+                  <span className="text-gray-300 lg:pl-[100px] relative">
+                    Ou
+                  </span>
+                  <Button
+                    asChild
+                    size="lg"
+                    className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-[#84abaa] hover:bg-slate-200"
+                  >
+                    <Link href="/login">
+                      <span className="text-black">Consulte seu processo</span>
+                      <ChevronRight className="ml-1 text-black" />
                     </Link>
                   </Button>
                 </div>

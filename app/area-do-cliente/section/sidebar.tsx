@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { AiOutlineCar } from "react-icons/ai";
 import { IoDocumentsOutline } from "react-icons/io5";
-import { GoGear } from "react-icons/go";
 import { PiHouseBold } from "react-icons/pi";
 import { RxAvatar } from "react-icons/rx";
 import { FaRegQuestionCircle } from "react-icons/fa";
@@ -67,10 +66,7 @@ const Sidebar = () => {
         {/* Bottom Section */}
         <div className="p-4 border-t border-gray-400 space-y-2">
           <SidebarButton href="/faq" onClick={() => setIsOpen(false)}>
-            <FaRegQuestionCircle className="w-5 h-5" /> FAQ do Chat
-          </SidebarButton>
-          <SidebarButton href="/config" onClick={() => setIsOpen(false)}>
-            <GoGear className="w-5 h-5" /> Configurações
+            <FaRegQuestionCircle className="w-5 h-5" /> FAQ
           </SidebarButton>
         </div>
       </div>

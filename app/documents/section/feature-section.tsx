@@ -1,11 +1,15 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { BarChart3, Globe, Layers, Lightbulb, Rocket, Shield } from "lucide-react"
-
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { BarChart3, Globe, Layers, Lightbulb, Loader2, Rocket, Shield } from "lucide-react"
 import { cn } from "@/app/_lib/utils"
-import { DocumentDialog } from "./dialog"
+
+interface Document {
+  key: string
+  name: string
+}
 
 interface FeatureProps {
   icon: React.ElementType
@@ -13,45 +17,10 @@ interface FeatureProps {
   description: string
 }
 
-const features: FeatureProps[] = [
-  {
-    icon: Lightbulb,
-    title: "Documento 1",
-    description: "Documento que é necessario para alguma coisa.",
-  },
-  {
-    icon: Rocket,
-    title: "Documento 2",
-    description: "Documento que é necessario para alguma coisa.",
-  },
-  {
-    icon: Shield,
-    title: "Documento 3",
-    description: "Documento que é necessario para alguma coisa.",
-  },
-  {
-    icon: Globe,
-    title: "Documento 4",
-    description: "Documento que é necessario para alguma coisa.",
-  },
-  {
-    icon: BarChart3,
-    title: "Documento 5",
-    description: "Documento que é necessario para alguma coisa.",
-  },
-  {
-    icon: Layers,
-    title: "Documento 6",
-    description: "Documento que é necessario para alguma coisa.",
-  },
-]
+const icons = [Lightbulb, Rocket, Shield, Globe, BarChart3, Layers]
 
 function FeatureCard({ icon: Icon, title, description }: FeatureProps) {
   const [isHovered, setIsHovered] = useState(false)
-  const handleEmit = () => {
-    console.log(`Emitindo documento: ${title}`)
-    // Lógica de emissão aqui
-  }
   return (
     <div
       className={cn(
@@ -78,17 +47,74 @@ function FeatureCard({ icon: Icon, title, description }: FeatureProps) {
       </div>
       <h3 className="mb-2 text-xl font-medium">{title}</h3>
       <p className="text-muted-foreground mb-4 flex-1">{description}</p>
-      <DocumentDialog title={title} description={description} onEmit={handleEmit} />
     </div>
   )
 }
 
 export function FeatureSection() {
+  const [documents, setDocuments] = useState<Document[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { data: session, status } = useSession()
+
+  // Get userId from session
+  const userId = session?.user?.id
+
+  useEffect(() => {
+    async function fetchUserDocuments() {
+      if (!userId) {
+        setError("Usuário não autenticado.")
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        const response = await fetch(`/api/documents?userId=${userId}`)
+        if (!response.ok) {
+          throw new Error("Erro ao buscar documentos")
+        }
+        const docs = await response.json()
+        setDocuments(docs)
+      } catch (err) {
+        console.error("Erro ao buscar documentos:", err)
+        setError("Não foi possível carregar os documentos.")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (status === "authenticated" && userId) {
+      fetchUserDocuments()
+    } else if (status === "unauthenticated") {
+      setError("Por favor, faça login para ver seus documentos.")
+      setLoading(false)
+    }
+  }, [userId, status])
+
+  if (loading) {
+    return <section className="container py-5"><Loader2 className="h-4 w-4 animate-spin" /></section>
+  }
+
+  if (error) {
+    return <section className="container py-5 text-red-500">{error}</section>
+  }
+
+  const features: FeatureProps[] = documents.length > 0 ? documents.map((doc, index) => ({
+    icon: icons[index % icons.length],
+    title: doc.name,
+    description: "Documento enviado pela administração."
+  })) : [{
+    icon: Lightbulb,
+    title: "Nenhum documento",
+    description: "Nenhum documento foi enviado pela administração."
+  }]
+
   return (
     <section className="container py-5">
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {features.map((feature) => (
-          <FeatureCard key={feature.title} {...feature} />
+        {features.map((feature, index) => (
+          <FeatureCard key={feature.title + index} {...feature} />
         ))}
       </div>
     </section>

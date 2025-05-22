@@ -91,7 +91,6 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   const [error, setError] = useState<string | null>(null);
   const [isDocument, setIsDocument] = useState(true);
   const [userDocuments, setUserDocuments] = useState<{ key: string; name: string }[]>([]);
-
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -223,29 +222,21 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   const handleDownload = async (key: string, fileName: string) => {
     try {
       setError(null);
-      setDownloading(key); 
+      setDownloading(key);
 
       const response = await downloadFileFromS3(key, fileName);
-      if (!response.success || !response.fileContent) {
-        throw new Error(response.error || 'Erro ao baixar o arquivo');
+      if (!response.success || !response.presignedUrl) {
+        throw new Error(response.error || 'Erro ao obter URL pré-assinada');
       }
 
-      const blob = new Blob([response.fileContent], { type: response.contentType });
-      const url = window.URL.createObjectURL(blob);
 
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName; 
-      document.body.appendChild(link);
-      link.click();
-
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      window.location.href = response.presignedUrl;
     } catch (err: any) {
       console.error('Erro ao baixar arquivo:', err);
-      setError('Erro ao baixar o arquivo: ' + err.message);
+      setError('Erro ao obter URL para download: ' + err.message);
+      toast.error('Erro ao obter URL para download: ' + err.message);
     } finally {
-      setDownloading(null); 
+      setDownloading(null);
     }
   };
 
@@ -418,6 +409,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         <div className="flex-1 overflow-y-auto px-4 py-2 text-sm">
           {isDocument ? (
             <form className="flex flex-col gap-6">
+              <div>
+                <label>É menor de idade?</label>
+                <input type="checkbox" name="" id="" />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Nome</Label>

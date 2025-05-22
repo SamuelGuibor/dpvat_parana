@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface Step {
@@ -40,14 +41,43 @@ const steps: Step[] = [
     description:
       "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
   },
-  { id: 6, final: "Você recebeu seu dinheiro!" },
+  {
+    id: 6,
+    title: "Perícia médica e pagamentos",
+    description:
+      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
+  },
+  {
+    id: 7,
+    title: "Perícia médica e pagamentos",
+    description:
+      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
+  },
+  {
+    id: 8,
+    title: "Perícia médica e pagamentos",
+    description:
+      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
+  },
+  {
+    id: 9,
+    title: "Perícia médica e pagamentos",
+    description:
+      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
+  },
+  {
+    id: 10,
+    title: "Perícia médica e pagamentos",
+    description:
+      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
+  },
+  { id: 11, final: "Você recebeu seu dinheiro!" },
 ];
 
 export default function ProgressTimeline() {
   const [serverStatus, setServerStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Buscar o status do servidor ao carregar
   useEffect(() => {
     const fetchStatus = async () => {
       try {
@@ -64,7 +94,7 @@ export default function ProgressTimeline() {
     fetchStatus();
   }, []);
 
-  // Atualizar o status automaticamente quando houver mudanças (opcional)
+
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -75,11 +105,11 @@ export default function ProgressTimeline() {
       } catch (error) {
         console.error(error);
       }
-    }, 5000); // Atualiza a cada 5 segundos, ajuste conforme necessário
+    }, 5000); 
     return () => clearInterval(interval);
   }, []);
 
-  if (isLoading) return <div>Carregando...</div>;
+  if (isLoading) return <div><Loader2 className="h-4 w-4 animate-spin" /></div>;
 
   const completedSteps = mapServerStatusToCompletedSteps(serverStatus);
 
@@ -148,7 +178,7 @@ const mapServerStatusToCompletedSteps = (
     case "ANALISE":
       return [1, 2, 3, 4];
     case "PERICIA":
-      return [1, 2, 3, 4, 5, 6];
+      return [1, 2, 3, 4, 5];
     default:
       return [];
   }

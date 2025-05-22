@@ -40,6 +40,9 @@ export default function CreateAccountForm() {
         password: values.password
       })
       toast.success("Usuário cadastrado!");
+      setTimeout(() => {
+        window.location.reload();
+      }, 2100);
     } catch (error: any) {
       if (error.message.includes("Unique constraint failed")) {
         toast.error("O Email já está sendo usado!");

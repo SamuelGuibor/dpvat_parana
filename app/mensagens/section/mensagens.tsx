@@ -34,6 +34,7 @@ import { Dropzone, DropzoneContent, DropzoneEmptyState } from "@/app/_components
 import Image from "next/image";
 import { cn } from "@/app/_lib/utils";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 interface Mensagem {
   id: string;
@@ -239,8 +240,10 @@ export function Mensagens() {
           });
         }
       }
-      alert("Mensagens enviadas com sucesso!");
-      window.location.reload();
+      toast.success("Usuário cadastrado!");
+      setTimeout(() => {
+        window.location.reload();
+      }, 5000);
     } catch (err: any) {
       setError("Erro ao enviar mensagens: " + err.message);
     }

@@ -1,63 +1,58 @@
 'use client'
 
-import { Check } from "lucide-react";
+import {  PhoneCall } from "lucide-react";
 import { Badge } from "@/app/_components/ui/badge";
-import Image from "next/image";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/app/_components/ui/accordion";
+import { Button } from "@/app/_components/ui/button";
 
 function Feature() {
   return (
-    <div className="w-full pt-10">
+    <div className="w-full py-5 lg:py-8">
       <div className="container mx-auto">
-        <div className="container p-8 grid grid-cols-1 gap-8 items-center lg:grid-cols-2">
-          {/* Left Side: Text Content */}
+        <div className="grid lg:grid-cols-2 gap-10">
           <div className="flex gap-10 flex-col">
             <div className="flex gap-4 flex-col">
               <div>
-                <Badge variant="outline">Chatbot</Badge>
+                <Badge className="bg-green-400 text-green-800 border-green-500" variant="outline">Perguntas Frequentes</Badge>
               </div>
               <div className="flex gap-2 flex-col">
-                <h2 className="text-3xl lg:text-5xl tracking-tighter max-w-xl text-left font-regular">
-                  Chatbot
-                </h2>
-                <p className="text-lg leading-relaxed tracking-tight text-muted-foreground max-w-xl text-left">
-                  Para automatizar processos e melhorar a eficiência
+                <h4 className="text-3xl md:text-5xl tracking-tighter max-w-xl text-left font-regular">
+                  This is the start of something new
+                </h4>
+                <p className="text-lg max-w-xl lg:max-w-lg leading-relaxed tracking-tight text-muted-foreground  text-left">
+                  Managing a small business today is already tough. Avoid further
+                  complications by ditching outdated, tedious trade methods. Our
+                  goal is to streamline SMB trade, making it easier and faster
+                  than ever.
                 </p>
               </div>
-            </div>
-            <div className="grid lg:pl-6 grid-cols-1 sm:grid-cols-3 items-start lg:grid-cols-1 gap-6">
-              <div className="flex flex-row gap-6 items-start">
-                <Check className="w-4 h-4 mt-2 text-primary" />
-                <div className="flex flex-col gap-1">
-                  <p>Fácil de usar</p>
-                  <p className="text-muted-foreground text-sm">
-                    Desenvolvemos uma solução simples e intuitiva.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-row gap-6 items-start">
-                <Check className="w-4 h-4 mt-2 text-primary" />
-                <div className="flex flex-col gap-1">
-                  <p>Rápido e confiável</p>
-                  <p className="text-muted-foreground text-sm">
-                    Respostas instantâneas para atender seus clientes.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-row gap-6 items-start">
-                <Check className="w-4 h-4 mt-2 text-primary" />
-                <div className="flex flex-col gap-1">
-                  <p>Moderno e eficiente</p>
-                  <p className="text-muted-foreground text-sm">
-                    Uma ferramenta atual que otimiza o atendimento.
-                  </p>
-                </div>
+              <div className="">
+                <Button className="gap-4" variant="outline">
+                  Any questions? Reach out <PhoneCall className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           </div>
-          {/* Right Side: Image */}
-          <div className="flex justify-center items-center">
-            <Image src="/chatbot.jpg" width={600} height={200} alt="robot" />
-          </div>
+          <Accordion type="single" collapsible className="w-full">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <AccordionItem key={index} value={"index-" + index}>
+                <AccordionTrigger>
+                  This is the start of something new
+                </AccordionTrigger>
+                <AccordionContent>
+                  Managing a small business today is already tough. Avoid further
+                  complications by ditching outdated, tedious trade methods. Our
+                  goal is to streamline SMB trade, making it easier and faster
+                  than ever.
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </div>
       </div>
     </div>

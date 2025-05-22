@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// app/_actions/downloadS3.ts
 'use server';
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -13,9 +14,8 @@ const s3Client = new S3Client({
 
 interface DownloadFileResponse {
   success: boolean;
-  fileContent?: Buffer;
+  presignedUrl?: string;
   fileName?: string;
-  contentType?: string;
   error?: string;
 }
 
@@ -25,34 +25,24 @@ export async function downloadFileFromS3(key: string, fileName: string): Promise
       throw new Error('Chave do arquivo não fornecida');
     }
 
-    console.log('Baixando arquivo do S3:', key); // Log para depuração
+    console.log('Gerando URL pré-assinada para o arquivo:', key); // Log para depuração
 
     const command = new GetObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET_NAME,
       Key: key,
+      ResponseContentDisposition: `attachment; filename="${fileName}"`,
     });
 
-    const { Body, ContentType } = await s3Client.send(command);
-
-    if (!Body) {
-      throw new Error('Conteúdo do arquivo não encontrado');
-    }
-
-    // Converter o Body (ReadableStream) em Buffer
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of Body as any) {
-      chunks.push(chunk);
-    }
-    const fileContent = Buffer.concat(chunks);
+    // Gerar URL pré-assinada com validade de 1 hora (3600 segundos)
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
 
     return {
       success: true,
-      fileContent,
+      presignedUrl,
       fileName,
-      contentType: ContentType || 'application/octet-stream',
     };
   } catch (error: any) {
-    console.error('Erro ao baixar arquivo do S3:', error);
-    return { success: false, error: `Falha ao baixar arquivo: ${error.message}` };
+    console.error('Erro ao gerar URL pré-assinada do S3:', error);
+    return { success: false, error: `Falha ao gerar URL pré-assinada: ${error.message}` };
   }
 }

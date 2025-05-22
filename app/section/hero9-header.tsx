@@ -120,8 +120,9 @@ export const HeroHeader = () => {
                 ) : (
                   <Avatar onClick={toggleSheet} className="cursor-pointer">
                     <AvatarImage
-                      src={session?.user?.image || "https://i.pravatar.cc/300"}
+                      src={session?.user?.image || "/homem.png"}
                       alt="Avatar"
+                      
                     />
                   </Avatar>
                 )}
