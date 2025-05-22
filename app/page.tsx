@@ -4,6 +4,7 @@ import Footer from "./section/footer";
 import Hero from "./section/hero-section";
 import Recurses from "./section/recurses";
 import Stats from "./section/stats";
+import WhatsAppButton from "./section/whatsapp";
 // import TeamSection from "./section/TeamSection"
 
 export const metadata = {
@@ -88,6 +89,7 @@ export default function Home() {
   return (
     <div>
       <Hero />
+      <WhatsAppButton />
       <Stats />
       {/* <TeamSection /> */}
       {/* <Objetivos /> */}

@@ -20,7 +20,9 @@ export default function HeroSection() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
+  const phoneNumber = "5541997862323"; 
+  const message = "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!"; 
+  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
   return (
     <>
       <HeroHeader />
@@ -63,7 +65,7 @@ export default function HeroSection() {
                     size="lg"
                     className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-[#2e5e3d] hover:bg-[#3c694a] "
                   >
-                    <Link href="https://wa.me/5541997862323">
+                    <Link href={whatsappUrl}>
                       <span className="text-white text-[17px] ">Fale Conosco</span>
                       <ChevronRight className="ml-1 text-white" />
                     </Link>

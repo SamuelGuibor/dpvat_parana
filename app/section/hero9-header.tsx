@@ -88,16 +88,7 @@ export const HeroHeader = () => {
               <div className="flex items-center space-x-2 sm:space-x-3">
                 <div className="flex gap-4">
                   <Link
-                    href="https://www.facebook.com/paranadpvat/"
-                    aria-label="Veja nosso Facebook"
-                  >
-                    <FaFacebook
-                      size={35}
-                      className={scrolled ? "text-black" : "lg:text-white text-white"}
-                    />
-                  </Link>
-                  <Link
-                    href="https://www.instagram.com/paranadpvat/"
+                    href="https://www.instagram.com/paranasegurospr?igsh=bGJsN2UyZDhic2Fu&utm_source=qr"
                     aria-label="Veja nosso Instagram"
                   >
                     <FaInstagram
@@ -107,11 +98,9 @@ export const HeroHeader = () => {
                   </Link>
                 </div>
                 {!session?.user ? (
-                  <Button variant={scrolled ? "default" : "outline"} asChild size="sm">
-                    <Link href="/login">
-                      <span>Login</span>
-                    </Link>
-                  </Button>
+                  <div>
+
+                  </div>
                 ) : (
                   <>
                     <Avatar onClick={toggleSheet} className="cursor-pointer">
