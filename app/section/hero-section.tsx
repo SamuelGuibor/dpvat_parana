@@ -30,7 +30,7 @@ export default function HeroSection() {
             id="parallax-background"
             className="absolute inset-0 -z-10"
             style={{
-              backgroundImage: "url('/moto.jpg')",
+              backgroundImage: "url('/imagemm.jpg')",
               backgroundSize: "cover",
               backgroundPosition: "center",
               height: "100%",

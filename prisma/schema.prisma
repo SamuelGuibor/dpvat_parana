@@ -13,6 +13,11 @@ model User {
   cpf             String?   
   data_nasc       DateTime?
   email           String    @unique
+  nome_res        String?
+  rg_res          String?
+  cpf_res         String?
+  estado_civil_res String?
+  profissao_res   String?
   password        String?
   rua             String?
   bairro          String?
@@ -45,11 +50,15 @@ model User {
 }
 
 enum Status {
-  ENVIO
-  SOLICITACAO
-  COLETA
-  ANALISE
-  PERICIA
+  INICIADO
+  AGUARDANDO_ASSINATURA
+  SOLICITAR_DOCUMENTOS
+  COLETA_DOCUMENTOS
+  ANALISE_DOCUMENTOS
+  PERICIAL
+  AGUARDANDO_PERICIAL
+  PAGAMENTO_HONORARIO
+  PROCESSO_ENCERRADO
 }
 
 model Account {

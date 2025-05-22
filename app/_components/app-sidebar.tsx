@@ -29,11 +29,11 @@ const data = {
     },
   ],
   chats: [
-    {
-      name: "Chats",
-      url: "/chats",
-      icon: HiOutlineChatAlt2, 
-    },
+    // {
+    //   name: "Chats",
+    //   url: "/chats",
+    //   icon: HiOutlineChatAlt2, 
+    // },
     {
       name: "Mensagens Automaticas",
       url: "/mensagens",

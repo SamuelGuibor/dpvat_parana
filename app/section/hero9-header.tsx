@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { LogOutIcon, Menu, X } from "lucide-react";
+import { LogOutIcon } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import React from "react";
 import { useScroll, motion } from "framer-motion";
@@ -16,7 +16,6 @@ import { MdInsertChartOutlined } from "react-icons/md";
 import { HiOutlineChatAlt2 } from "react-icons/hi";
 
 export const HeroHeader = () => {
-  const [menuState, setMenuState] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const { scrollYProgress } = useScroll();
@@ -54,10 +53,7 @@ export const HeroHeader = () => {
 
   return (
     <header className="relative">
-      <nav
-        data-state={menuState && "active"}
-        className="fixed z-20 w-full pt-2"
-      >
+      <nav className="fixed z-20 w-full pt-2">
         <div
           className={cn(
             "mx-auto max-w-7xl rounded-3xl px-6 transition-all duration-300 lg:px-12",
@@ -67,48 +63,38 @@ export const HeroHeader = () => {
           <motion.div
             key={1}
             className={cn(
-              "relative flex flex-wrap items-center justify-between gap-6 py-3 duration-200 lg:gap-0 lg:py-6",
+              "relative flex items-center justify-between gap-4 py-3 duration-200 lg:gap-0 lg:py-6",
               scrolled && "lg:py-4"
             )}
           >
-            <div className="flex w-full items-center justify-between gap-12 lg:gap-80 lg:w-auto">
-              <Link
-                href="/"
-                aria-label="home"
-                className="flex items-center space-x-2"
-              >
-                <Image
-                  src={scrolled ? "/logo.png" : "/logo_text_white.png"}
-                  height={20}
-                  width={140}
-                  alt="DPVAT Paraná"
-                />
-              </Link>
+            <Link
+              href="/"
+              aria-label="home"
+              className="flex items-center space-x-2 flex-shrink-0"
+            >
+              <Image
+                src={scrolled ? "/logo.png" : "/logo_text_white.png"}
+                height={20}
+                width={140}
+                alt="DPVAT Paraná"
+              />
+            </Link>
 
-              <button
-                onClick={() => setMenuState(!menuState)}
-                aria-label={menuState ? "Close Menu" : "Open Menu"}
-                className={`${scrolled ? "text-black" : "text-white"} relative z-20 -m-2.5 -mr-4 block p-2.5 lg:hidden`}
-              >
-                <Menu className="in-data-[state=active]:rotate-180 in-data-[state=active]:scale-0 in-data-[state=active]:opacity-0 m-auto size-6 duration-200" />
-                <X className="in-data-[state=active]:rotate-0 in-data-[state=active]:scale-100 in-data-[state=active]:opacity-100 absolute inset-0 m-auto size-6 -rotate-180 scale-0 opacity-0 duration-200" />
-              </button>
-            </div>
             <div
               className={cn(
-                "bg-background mb-6 hidden w-full flex-wrap items-center justify-end space-y-8 rounded-3xl border p-6 shadow-2xl shadow-zinc-300/20 md:flex-nowrap lg:m-0 lg:flex lg:w-fit lg:gap-6 lg:space-y-0 lg:border-transparent lg:bg-transparent lg:p-0 lg:shadow-none dark:shadow-none dark:lg:bg-transparent",
-                menuState && "block"
+                "flex items-center justify-end gap-4 flex-grow lg:gap-6",
+                scrolled && "bg-transparent"
               )}
             >
-              <div className="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit justify-center items-center">
-                <div className="relative flex gap-4">
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <div className="flex gap-4">
                   <Link
                     href="https://www.facebook.com/paranadpvat/"
                     aria-label="Veja nosso Facebook"
                   >
                     <FaFacebook
                       size={35}
-                      className={scrolled ? "text-black" : "lg:text-white text-black"}
+                      className={scrolled ? "text-black" : "lg:text-white text-white"}
                     />
                   </Link>
                   <Link
@@ -117,25 +103,25 @@ export const HeroHeader = () => {
                   >
                     <FaInstagram
                       size={35}
-                      className={scrolled ? "text-black" : "lg:text-white text-black"}
+                      className={scrolled ? "text-black" : "lg:text-white text-white"}
                     />
                   </Link>
                 </div>
                 {!session?.user ? (
-                  <>
-                    <Button variant={scrolled ? "default" : "outline"} asChild size="sm">
-                      <Link href="/login">
-                        <span>Login</span>
-                      </Link>
-                    </Button>
-                  </>
+                  <Button variant={scrolled ? "default" : "outline"} asChild size="sm">
+                    <Link href="/login">
+                      <span>Login</span>
+                    </Link>
+                  </Button>
                 ) : (
-                  <Avatar onClick={toggleSheet} className="cursor-pointer">
-                    <AvatarImage
-                      src={session?.user?.image || "/homem.png"}
-                      alt="Avatar"
-                    />
-                  </Avatar>
+                  <>
+                    <Avatar onClick={toggleSheet} className="cursor-pointer">
+                      <AvatarImage
+                        src={session?.user?.image || "/homem.png"}
+                        alt="Avatar"
+                      />
+                    </Avatar>
+                  </>
                 )}
               </div>
             </div>

@@ -9,7 +9,7 @@ import { IoDocumentsOutline } from "react-icons/io5";
 import { PiHouseBold } from "react-icons/pi";
 import { RxAvatar } from "react-icons/rx";
 import { FaRegQuestionCircle } from "react-icons/fa";
-import { HiMenu, HiX } from "react-icons/hi"; // For hamburger menu
+import { HiMenu, HiX } from "react-icons/hi"; 
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,13 +19,17 @@ const Sidebar = () => {
   return (
     <>
       {/* Mobile Menu Button */}
+      <div>
+      <span className="md:hidden fixed top-5 left-1/2 transform -translate-x-1/2 p-2 rounded-md text-[20px]">
+        Paraná Seguros
+      </span>
       <button
         className="md:hidden fixed top-4 right-4 z-50 p-2 bg-gray-100 rounded-md"
         onClick={toggleSidebar}
       >
         {isOpen ? <HiX size={24} /> : <HiMenu size={24} />}
       </button>
-
+      </div>
       {/* Sidebar */}
       <div
         className={`fixed inset-y-0 left-0 w-64 bg-gray-100 transform ${

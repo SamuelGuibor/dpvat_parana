@@ -12,6 +12,7 @@ interface UserData {
   name: string;
   status?: string;
   type: string;
+  role: string;
   cpf?: string;
   data_nasc?: string;
   email?: string;
@@ -94,6 +95,7 @@ export async function getUsers(
       name: user.name || "Sem nome",
       status: user.status || undefined, // Converte null para undefined
       type: user.role || "USER",
+      role: user.role || "USER",
       ...(fields === "full" && {
         cpf: user.cpf || "",
         data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",
@@ -130,6 +132,7 @@ export async function getUsers(
     name: user.name || "Sem nome",
     status: user.status || undefined, // Converte null para undefined
     type: user.role || "USER",
+    role: user.role || "USER",
     ...(fields === "full" && {
       cpf: user.cpf || "",
       data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",

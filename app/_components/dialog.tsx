@@ -30,8 +30,8 @@ import { updateUser } from "@/app/_actions/update-users";
 import { Dropzone, DropzoneContent, DropzoneEmptyState } from "./dropzone";
 import { Button } from "./ui/button";
 import { getPresignedUrls } from '@/app/_actions/uploadS3';
-import { downloadFileFromS3 } from '@/app/_actions/downloadS3'; 
-import { Download, Loader2 } from 'lucide-react'; 
+import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
+import { Download, Loader2 } from 'lucide-react';
 import { toast } from "sonner";
 
 interface UserData {
@@ -39,6 +39,12 @@ interface UserData {
   name: string;
   status?: string;
   type: string;
+  role?: string;
+  nome_res?: string;
+  rg_res?: string;
+  cpf_res?: string;
+  estado_civil_res?: string;
+  profissao_res?: string;
   cpf?: string;
   data_nasc?: string;
   email?: string;
@@ -61,36 +67,40 @@ interface UserData {
   lesoes?: string;
 }
 
-interface DialogDashProps {
-  userId: string;
-  trigger: React.ReactNode;
-}
-
 interface FileWithBase64 {
   name: string;
   type: string;
   base64: string;
 }
 
+interface DialogDashProps {
+  userId: string;
+  trigger: React.ReactNode;
+}
+
 const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   const [user, setUser] = useState<UserData | null>(null);
   const [localStatus, setLocalStatus] = useState({
-    envioDocumentos: false,
-    solicitacaoDocumentos: false,
+    iniciado: false,
+    aguardandoAssinatura: false,
+    solicitarDocumentos: false,
     coletaDocumentos: false,
     analiseDocumentos: false,
-    periciaPagamentos: false,
-    dinheiroRecebido: false,
+    pericial: false,
+    aguardandoPericial: false,
+    pagamentoHonorario: false,
+    processoEncerrado: false,
   });
   const [formData, setFormData] = useState<UserData | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [base64Files, setBase64Files] = useState<FileWithBase64[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [downloading, setDownloading] = useState<string | null>(null); 
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDocument, setIsDocument] = useState(true);
   const [userDocuments, setUserDocuments] = useState<{ key: string; name: string }[]>([]);
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -129,11 +139,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     }
     if (base64Files.length === 0) {
       setError('Nenhum arquivo selecionado para upload.');
-      toast.error('Nenhum arquivo selecionado para upload.');
       setUploading(false);
       return;
     }
-  
+
     setUploading(true);
     setError(null);
     toast.success('Sucesso ao salvar o arquivo.');
@@ -143,18 +152,18 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         name: file.name,
         type: file.type,
       }));
-  
+
       const response = await getPresignedUrls(fileInfos, userId);
-  
+
       if (!response.success || !response.presignedUrls) {
         throw new Error(response.error || 'Erro ao obter URLs pré-assinadas');
       }
-  
+
       const uploadedFiles = await Promise.all(
         response.presignedUrls.map(async ({ fileName, url, key }) => {
           const file = base64Files.find((f) => f.name === fileName);
           if (!file) return null;
-  
+
           const base64Data = file.base64.split(',')[1];
           const byteCharacters = atob(base64Data);
           const byteNumbers = new Array(byteCharacters.length);
@@ -163,7 +172,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           }
           const byteArray = new Uint8Array(byteNumbers);
           const blob = new Blob([byteArray], { type: file.type });
-  
+
           const res = await fetch(url, {
             method: 'PUT',
             body: blob,
@@ -172,15 +181,15 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
               'Content-Disposition': `attachment; filename="${fileName}"`,
             },
           });
-  
+
           if (!res.ok) {
             throw new Error(`Erro ao fazer upload do arquivo ${fileName}`);
           }
-  
+
           return { key, name: fileName };
         })
       );
-  
+
       const validUploads = uploadedFiles.filter((file) => file !== null) as { key: string; name: string }[];
       await fetch('/api/documents', {
         method: 'POST',
@@ -190,12 +199,12 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           documents: validUploads,
         }),
       });
-  
+
       setUserDocuments((prev) => [...prev, ...validUploads]);
       await fetchUserDocuments();
       setFiles([]);
       setBase64Files([]);
-  
+
     } catch (err: any) {
       console.error('Erro no upload:', err);
       setError('Erro ao fazer upload dos arquivos.');
@@ -229,7 +238,6 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         throw new Error(response.error || 'Erro ao obter URL pré-assinada');
       }
 
-
       window.location.href = response.presignedUrl;
     } catch (err: any) {
       console.error('Erro ao baixar arquivo:', err);
@@ -251,25 +259,51 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         setUser(userData);
         setFormData(userData);
         setLocalStatus({
-          envioDocumentos:
-            userData.status === "ENVIO" ||
-            userData.status === "SOLICITACAO" ||
-            userData.status === "COLETA" ||
-            userData.status === "ANALISE" ||
-            userData.status === "PERICIA",
-          solicitacaoDocumentos:
-            userData.status === "SOLICITACAO" ||
-            userData.status === "COLETA" ||
-            userData.status === "ANALISE" ||
-            userData.status === "PERICIA",
-          coletaDocumentos:
-            userData.status === "COLETA" ||
-            userData.status === "ANALISE" ||
-            userData.status === "PERICIA",
-          analiseDocumentos:
-            userData.status === "ANALISE" || userData.status === "PERICIA",
-          periciaPagamentos: userData.status === "PERICIA",
-          dinheiroRecebido: userData.status === "PERICIA",
+          iniciado: userData.status === "INICIADO" ||
+            userData.status === "AGUARDANDO_ASSINATURA" ||
+            userData.status === "SOLICITAR_DOCUMENTOS" ||
+            userData.status === "COLETA_DOCUMENTOS" ||
+            userData.status === "ANALISE_DOCUMENTOS" ||
+            userData.status === "PERICIAL" ||
+            userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          aguardandoAssinatura: userData.status === "AGUARDANDO_ASSINATURA" ||
+            userData.status === "SOLICITAR_DOCUMENTOS" ||
+            userData.status === "COLETA_DOCUMENTOS" ||
+            userData.status === "ANALISE_DOCUMENTOS" ||
+            userData.status === "PERICIAL" ||
+            userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          solicitarDocumentos: userData.status === "SOLICITAR_DOCUMENTOS" ||
+            userData.status === "COLETA_DOCUMENTOS" ||
+            userData.status === "ANALISE_DOCUMENTOS" ||
+            userData.status === "PERICIAL" ||
+            userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          coletaDocumentos: userData.status === "COLETA_DOCUMENTOS" ||
+            userData.status === "ANALISE_DOCUMENTOS" ||
+            userData.status === "PERICIAL" ||
+            userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          analiseDocumentos: userData.status === "ANALISE_DOCUMENTOS" ||
+            userData.status === "PERICIAL" ||
+            userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          pericial: userData.status === "PERICIAL" ||
+            userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          aguardandoPericial: userData.status === "AGUARDANDO_PERICIAL" ||
+            userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          pagamentoHonorario: userData.status === "PAGAMENTO_HONORARIO" ||
+            userData.status === "PROCESSO_ENCERRADO",
+          processoEncerrado: userData.status === "PROCESSO_ENCERRADO",
         });
         await fetchUserDocuments();
       } catch (error) {
@@ -292,11 +326,15 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   };
 
   const determineStatus = () => {
-    if (localStatus.dinheiroRecebido || localStatus.periciaPagamentos) return "PERICIA";
-    if (localStatus.analiseDocumentos) return "ANALISE";
-    if (localStatus.coletaDocumentos) return "COLETA";
-    if (localStatus.solicitacaoDocumentos) return "SOLICITACAO";
-    if (localStatus.envioDocumentos) return "ENVIO";
+    if (localStatus.processoEncerrado) return "PROCESSO_ENCERRADO";
+    if (localStatus.pagamentoHonorario) return "PAGAMENTO_HONORARIO";
+    if (localStatus.aguardandoPericial) return "AGUARDANDO_PERICIAL";
+    if (localStatus.pericial) return "PERICIAL";
+    if (localStatus.analiseDocumentos) return "ANALISE_DOCUMENTOS";
+    if (localStatus.coletaDocumentos) return "COLETA_DOCUMENTOS";
+    if (localStatus.solicitarDocumentos) return "SOLICITAR_DOCUMENTOS";
+    if (localStatus.aguardandoAssinatura) return "AGUARDANDO_ASSINATURA";
+    if (localStatus.iniciado) return "INICIADO";
     return undefined;
   };
 
@@ -305,34 +343,55 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
       const newStatus = { ...prev };
 
       switch (key) {
-        case "envioDocumentos":
-          newStatus.envioDocumentos = !prev.envioDocumentos;
-          if (!newStatus.envioDocumentos) {
-            newStatus.solicitacaoDocumentos = false;
+        case "iniciado":
+          newStatus.iniciado = !prev.iniciado;
+          if (!newStatus.iniciado) {
+            newStatus.aguardandoAssinatura = false;
+            newStatus.solicitarDocumentos = false;
             newStatus.coletaDocumentos = false;
             newStatus.analiseDocumentos = false;
-            newStatus.periciaPagamentos = false;
-            newStatus.dinheiroRecebido = false;
+            newStatus.pericial = false;
+            newStatus.aguardandoPericial = false;
+            newStatus.pagamentoHonorario = false;
+            newStatus.processoEncerrado = false;
           }
           break;
-        case "solicitacaoDocumentos":
-          if (prev.envioDocumentos) {
-            newStatus.solicitacaoDocumentos = !prev.solicitacaoDocumentos;
-            if (!newStatus.solicitacaoDocumentos) {
+        case "aguardandoAssinatura":
+          if (prev.iniciado) {
+            newStatus.aguardandoAssinatura = !prev.aguardandoAssinatura;
+            if (!newStatus.aguardandoAssinatura) {
+              newStatus.solicitarDocumentos = false;
               newStatus.coletaDocumentos = false;
               newStatus.analiseDocumentos = false;
-              newStatus.periciaPagamentos = false;
-              newStatus.dinheiroRecebido = false;
+              newStatus.pericial = false;
+              newStatus.aguardandoPericial = false;
+              newStatus.pagamentoHonorario = false;
+              newStatus.processoEncerrado = false;
+            }
+          }
+          break;
+        case "solicitarDocumentos":
+          if (prev.aguardandoAssinatura) {
+            newStatus.solicitarDocumentos = !prev.solicitarDocumentos;
+            if (!newStatus.solicitarDocumentos) {
+              newStatus.coletaDocumentos = false;
+              newStatus.analiseDocumentos = false;
+              newStatus.pericial = false;
+              newStatus.aguardandoPericial = false;
+              newStatus.pagamentoHonorario = false;
+              newStatus.processoEncerrado = false;
             }
           }
           break;
         case "coletaDocumentos":
-          if (prev.solicitacaoDocumentos) {
+          if (prev.solicitarDocumentos) {
             newStatus.coletaDocumentos = !prev.coletaDocumentos;
             if (!newStatus.coletaDocumentos) {
               newStatus.analiseDocumentos = false;
-              newStatus.periciaPagamentos = false;
-              newStatus.dinheiroRecebido = false;
+              newStatus.pericial = false;
+              newStatus.aguardandoPericial = false;
+              newStatus.pagamentoHonorario = false;
+              newStatus.processoEncerrado = false;
             }
           }
           break;
@@ -340,22 +399,43 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           if (prev.coletaDocumentos) {
             newStatus.analiseDocumentos = !prev.analiseDocumentos;
             if (!newStatus.analiseDocumentos) {
-              newStatus.periciaPagamentos = false;
-              newStatus.dinheiroRecebido = false;
+              newStatus.pericial = false;
+              newStatus.aguardandoPericial = false;
+              newStatus.pagamentoHonorario = false;
+              newStatus.processoEncerrado = false;
             }
           }
           break;
-        case "periciaPagamentos":
+        case "pericial":
           if (prev.analiseDocumentos) {
-            newStatus.periciaPagamentos = !prev.periciaPagamentos;
-            if (!newStatus.periciaPagamentos) {
-              newStatus.dinheiroRecebido = false;
+            newStatus.pericial = !prev.pericial;
+            if (!newStatus.pericial) {
+              newStatus.aguardandoPericial = false;
+              newStatus.pagamentoHonorario = false;
+              newStatus.processoEncerrado = false;
             }
           }
           break;
-        case "dinheiroRecebido":
-          if (prev.periciaPagamentos) {
-            newStatus.dinheiroRecebido = !prev.dinheiroRecebido;
+        case "aguardandoPericial":
+          if (prev.pericial) {
+            newStatus.aguardandoPericial = !prev.aguardandoPericial;
+            if (!newStatus.aguardandoPericial) {
+              newStatus.pagamentoHonorario = false;
+              newStatus.processoEncerrado = false;
+            }
+          }
+          break;
+        case "pagamentoHonorario":
+          if (prev.aguardandoPericial) {
+            newStatus.pagamentoHonorario = !prev.pagamentoHonorario;
+            if (!newStatus.pagamentoHonorario) {
+              newStatus.processoEncerrado = false;
+            }
+          }
+          break;
+        case "processoEncerrado":
+          if (prev.pagamentoHonorario) {
+            newStatus.processoEncerrado = !prev.processoEncerrado;
           }
           break;
       }
@@ -379,9 +459,11 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
       setUser(updatedUser);
       setFormData(updatedUser);
       setError(null);
+      toast.success('Dados salvos com sucesso!');
     } catch (error: any) {
       console.error("Erro ao salvar:", error);
       setError("Não foi possível salvar as alterações: " + error.message);
+      toast.error("Erro ao salvar as alterações: " + error.message);
     }
   };
 
@@ -409,10 +491,6 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         <div className="flex-1 overflow-y-auto px-4 py-2 text-sm">
           {isDocument ? (
             <form className="flex flex-col gap-6">
-              <div>
-                <label>É menor de idade?</label>
-                <input type="checkbox" name="" id="" />
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Nome</Label>
@@ -578,22 +656,117 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                   </Select>
                 </div>
                 <div className="col-span-2">
-                  <Label>Role</Label>
-                  <Select>
+                  <Label>Serviços</Label>
+                  <Select
+                    onValueChange={(value) => handleSelectChange("role", value)}
+                    value={formData?.role || ""}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Role do cliente" />
+                      <SelectValue placeholder="Selecione um serviço" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem className="hover:bg-gray-200" value="1">.</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="2">.</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="3">.</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Agendar Coleta com Motoboy">Agendar Coleta com Motoboy</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Rota do Motoboy">Acompanhar Rota do Motoboy</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Fazer Protocolo no Hospital">Fazer Protocolo no Hospital</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Protocolar Pasta – Hospital Presencial">Protocolar Pasta – Hospital Presencial</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário por E-mail">Solicitar Prontuário por E-mail</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário Cajuru por E-mail">Solicitar Prontuário Cajuru por E-mail</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Cajuru – Solicitado">Acompanhar Cajuru – Solicitado</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário – Outros Hospitais">Solicitar Prontuário – Outros Hospitais</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Prontuário – Outros Solicitados">Acompanhar Prontuário – Outros Solicitados</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário – Ponta Grossa">Solicitar Prontuário – Ponta Grossa</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário – Recebimento Online">Aguardar Prontuário – Recebimento Online</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário PG – Recebimento Online">Aguardar Prontuário PG – Recebimento Online</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Solicitar Siate">Solicitar Siate</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Protocolar DPVAT – Caixa">Protocolar DPVAT – Caixa</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Enviar para Reanálise">Enviar para Reanálise</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Manter SPVAT em Standby">Manter SPVAT em Standby</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Análise da Caixa">Aguardar Análise da Caixa</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Pendências – Protocolado">Acompanhar Pendências – Protocolado</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Protocolar Pendência de B.O.">Protocolar Pendência de B.O.</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Avisar Sobre Perícia Administrativa">Avisar Sobre Perícia Administrativa</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Resultado da Perícia">Aguardar Resultado da Perícia</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-
               <div className="mt-4">
-                <h2 className="text-lg font-semibold mb-2">Dados do Acidente</h2>
+                <h2 className="text-lg font-semibold mb-2 text-blue-600">É menor de idade? Preencha os dados:</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Nome</Label>
+                    <Input
+                      name="nome_res"
+                      value={formData?.nome_res || ""}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div>
+                    <Label>RG</Label>
+                    <Input
+                      name="rg_res"
+                      value={formData?.rg_res || ""}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div>
+                    <Label>CPF</Label>
+                    <Input
+                      name="cpf_res"
+                      value={formData?.cpf_res || ""}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div>
+                    <Label>Profissão</Label>
+                    <Input
+                      name="profissao_res"
+                      value={formData?.profissao_res || ""}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                </div>
+                <div className="relative top-2">
+                  <Label>Estado Civil</Label>
+                  <Select
+                    onValueChange={(value) => handleSelectChange("estado_civil_res", value)}
+                    value={formData?.estado_civil_res || ""}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o estado civil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem className="hover:bg-gray-200" value="Solteiro">Solteiro(a)</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Casado">Casado(a)</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Divorciado">Divorciado(a)</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Viuvo">Viúvo(a)</SelectItem>
+                      <SelectItem className="hover:bg-gray-200" value="Uniao_Estavel">União Estável</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="mt-4">
+                <h2 className="text-lg font-semibold mb-2 text-blue-600">Dados do Acidente</h2>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Data do Acidente</Label>
@@ -719,32 +892,48 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     <div className="flex items-center gap-2">
                       <Input
                         type="checkbox"
-                        id="envioDocumentos"
-                        checked={localStatus.envioDocumentos}
-                        onChange={() => handleCheckboxChange("envioDocumentos")}
+                        id="iniciado"
+                        checked={localStatus.iniciado}
+                        onChange={() => handleCheckboxChange("iniciado")}
                         className="w-4 h-4"
                       />
                       <Label
-                        htmlFor="envioDocumentos"
+                        htmlFor="iniciado"
                         className="text-sm text-gray-700 whitespace-nowrap"
                       >
-                        Envio de documentos e assinaturas
+                        Processo iniciado
                       </Label>
                     </div>
                     <div className="flex items-center gap-2">
                       <Input
                         type="checkbox"
-                        id="solicitacaoDocumentos"
-                        checked={localStatus.solicitacaoDocumentos}
-                        onChange={() => handleCheckboxChange("solicitacaoDocumentos")}
-                        disabled={!localStatus.envioDocumentos}
+                        id="aguardandoAssinatura"
+                        checked={localStatus.aguardandoAssinatura}
+                        onChange={() => handleCheckboxChange("aguardandoAssinatura")}
+                        disabled={!localStatus.iniciado}
                         className="w-4 h-4"
                       />
                       <Label
-                        htmlFor="solicitacaoDocumentos"
+                        htmlFor="aguardandoAssinatura"
                         className="text-sm text-gray-700 whitespace-nowrap"
                       >
-                        Solicitação de documentos
+                        Aguardando assinatura
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="checkbox"
+                        id="solicitarDocumentos"
+                        checked={localStatus.solicitarDocumentos}
+                        onChange={() => handleCheckboxChange("solicitarDocumentos")}
+                        disabled={!localStatus.aguardandoAssinatura}
+                        className="w-4 h-4"
+                      />
+                      <Label
+                        htmlFor="solicitarDocumentos"
+                        className="text-sm text-gray-700 whitespace-nowrap"
+                      >
+                        Fase de solicitação de documentos
                       </Label>
                     </div>
                     <div className="flex items-center gap-2">
@@ -753,7 +942,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         id="coletaDocumentos"
                         checked={localStatus.coletaDocumentos}
                         onChange={() => handleCheckboxChange("coletaDocumentos")}
-                        disabled={!localStatus.solicitacaoDocumentos}
+                        disabled={!localStatus.solicitarDocumentos}
                         className="w-4 h-4"
                       />
                       <Label
@@ -776,39 +965,71 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         htmlFor="analiseDocumentos"
                         className="text-sm text-gray-700 whitespace-nowrap"
                       >
-                        Análise de documentos pela seguradora
+                        Análise de documentos
                       </Label>
                     </div>
                     <div className="flex items-center gap-2">
                       <Input
                         type="checkbox"
-                        id="periciaPagamentos"
-                        checked={localStatus.periciaPagamentos}
-                        onChange={() => handleCheckboxChange("periciaPagamentos")}
+                        id="pericial"
+                        checked={localStatus.pericial}
+                        onChange={() => handleCheckboxChange("pericial")}
                         disabled={!localStatus.analiseDocumentos}
                         className="w-4 h-4"
                       />
                       <Label
-                        htmlFor="periciaPagamentos"
+                        htmlFor="pericial"
                         className="text-sm text-gray-700 whitespace-nowrap"
                       >
-                        Perícia médica e pagamentos
+                        Fase Pericial
                       </Label>
                     </div>
                     <div className="flex items-center gap-2">
                       <Input
                         type="checkbox"
-                        id="dinheiroRecebido"
-                        checked={localStatus.dinheiroRecebido}
-                        onChange={() => handleCheckboxChange("dinheiroRecebido")}
-                        disabled={!localStatus.periciaPagamentos}
+                        id="aguardandoPericial"
+                        checked={localStatus.aguardandoPericial}
+                        onChange={() => handleCheckboxChange("aguardandoPericial")}
+                        disabled={!localStatus.pericial}
                         className="w-4 h-4"
                       />
                       <Label
-                        htmlFor="dinheiroRecebido"
+                        htmlFor="aguardandoPericial"
                         className="text-sm text-gray-700 whitespace-nowrap"
                       >
-                        Você recebeu seu dinheiro!
+                        Aguardando resultado pericial
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="checkbox"
+                        id="pagamentoHonorario"
+                        checked={localStatus.pagamentoHonorario}
+                        onChange={() => handleCheckboxChange("pagamentoHonorario")}
+                        disabled={!localStatus.aguardandoPericial}
+                        className="w-4 h-4"
+                      />
+                      <Label
+                        htmlFor="pagamentoHonorario"
+                        className="text-sm text-gray-700 whitespace-nowrap"
+                      >
+                        Pagamento de honorários
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="checkbox"
+                        id="processoEncerrado"
+                        checked={localStatus.processoEncerrado}
+                        onChange={() => handleCheckboxChange("processoEncerrado")}
+                        disabled={!localStatus.pagamentoHonorario}
+                        className="w-4 h-4"
+                      />
+                      <Label
+                        htmlFor="processoEncerrado"
+                        className="text-sm text-gray-700 whitespace-nowrap"
+                      >
+                        Processo encerrado
                       </Label>
                     </div>
                   </div>

@@ -130,7 +130,7 @@ const columns: ColumnDef<DataType>[] = [
                       ? "bg-cyan-100 text-cyan-800 border-cyan-300"
                       : "bg-green-100 text-green-800 border-green-300";
       return (
-        <div className="w-40">
+        <div className="w-72">
           <Badge variant="outline" className={`px-1.5 ${badgeColor}`}>
             {type}
           </Badge>
@@ -294,13 +294,52 @@ export function DataTable({ data }: { data: DataType[] }) {
         </div>
         <div>
           <Select value={serviceFilter} onValueChange={setServiceFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[360px]">
               <SelectValue placeholder="Filtrar por serviço" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Todos">Todos</SelectItem>
-              <SelectItem value="B.O">B.O</SelectItem>
-              <SelectItem value="Prontuario">Prontuario</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Todos">Todos</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Agendar Coleta com Motoboy">Agendar Coleta com Motoboy</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Acompanhar Rota do Motoboy">Acompanhar Rota do Motoboy</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Fazer Protocolo no Hospital">Fazer Protocolo no Hospital</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Protocolar Pasta – Hospital Presencial">Protocolar Pasta – Hospital Presencial</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário por E-mail">Solicitar Prontuário por E-mail</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário Cajuru por E-mail">Solicitar Prontuário Cajuru por E-mail</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Acompanhar Cajuru – Solicitado">Acompanhar Cajuru – Solicitado</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário – Outros Hospitais">Solicitar Prontuário – Outros Hospitais</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Acompanhar Prontuário – Outros Solicitados">Acompanhar Prontuário – Outros Solicitados</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário – Ponta Grossa">Solicitar Prontuário – Ponta Grossa</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário – Recebimento Online">Aguardar Prontuário – Recebimento Online</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário PG – Recebimento Online">Aguardar Prontuário PG – Recebimento Online</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Solicitar Siate">Solicitar Siate</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Protocolar DPVAT – Caixa">Protocolar DPVAT – Caixa</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Enviar para Reanálise">Enviar para Reanálise</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Manter SPVAT em Standby">Manter SPVAT em Standby</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Análise da Caixa">Aguardar Análise da Caixa</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Acompanhar Pendências – Protocolado">Acompanhar Pendências – Protocolado</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Protocolar Pendência de B.O.">Protocolar Pendência de B.O.</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Avisar Sobre Perícia Administrativa">Avisar Sobre Perícia Administrativa</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Resultado da Perícia">Aguardar Resultado da Perícia</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
             </SelectContent>
           </Select>
         </div>

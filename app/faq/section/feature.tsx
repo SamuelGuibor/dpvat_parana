@@ -1,6 +1,5 @@
 'use client'
 
-import {  PhoneCall } from "lucide-react";
 import { Badge } from "@/app/_components/ui/badge";
 import {
   Accordion,
@@ -8,7 +7,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/app/_components/ui/accordion";
-import { Button } from "@/app/_components/ui/button";
 
 function Feature() {
   return (
@@ -30,11 +28,6 @@ function Feature() {
                   goal is to streamline SMB trade, making it easier and faster
                   than ever.
                 </p>
-              </div>
-              <div className="">
-                <Button className="gap-4" variant="outline">
-                  Any questions? Reach out <PhoneCall className="w-4 h-4" />
-                </Button>
               </div>
             </div>
           </div>

@@ -32,10 +32,22 @@ export default function Recurses() {
                         </div>
                         <p className="text-sm">Receba atualizações instantâneas sobre o andamento do seu processo diretamente no WhatsApp, com praticidade e agilidade.</p>
                     </div>
-   
                 </div>
                 <div>
-                        <Image src="/statss.png" width={1200} height={1200} alt="a" />
+                    <Image
+                        src="/statss.png"
+                        width={1200}
+                        height={1200}
+                        alt="Estatísticas para desktop"
+                        className="hidden sm:block"
+                    />
+                    <Image
+                        src="/celular_stats.png"
+                        width={1200}
+                        height={1200}
+                        alt="Estatísticas para celular"
+                        className="block sm:hidden"
+                    />
                 </div>
             </div>
         </section>
