@@ -17,6 +17,9 @@ export const metadata = {
 };
 
 export default function Home() {
+  const phoneNumber = "5541997862323"; 
+const message = "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!"; 
+const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
   const faqItems = [
     {
       id: "faq-1",
@@ -108,7 +111,7 @@ export default function Home() {
         supportHeading="Precisa de mais suporte?"
         supportDescription="Nossa equipe de suporte dedicada está aqui para ajudar você com qualquer dúvida ou preocupação. Entre em contato para assistência personalizada."
         supportButtonText="Contactar Suporte"
-        supportButtonUrl="https://wa.me/5541997862323"
+        supportButtonUrl={whatsappUrl}
       />
       <Footer />
     </div>
