@@ -19,8 +19,10 @@ const Footer = () => {
         <p className="mt-4">
           Paraná seguros e previdência 
           CNPJ:  59.600.345/0001-29
-          Paraná Seguros
-          CNPJ: 48.270.397/0001-69
+          <p>
+            Paraná Seguros
+            CNPJ: 48.270.397/0001-69
+          </p>
           <p>
           Susep 221140431
           @paranasegurospr
