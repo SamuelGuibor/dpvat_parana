@@ -6,7 +6,7 @@ import React from "react";
 import { useScroll, motion } from "framer-motion";
 import { cn } from "../_lib/utils";
 import Image from "next/image";
-import { FaFacebook, FaInstagram } from "react-icons/fa";
+import { FaInstagram } from "react-icons/fa";
 import { Avatar, AvatarImage } from "../_components/ui/avatar";
 import { signOut, useSession } from "next-auth/react";
 import { AiOutlineCar } from "react-icons/ai";
