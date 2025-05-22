@@ -15,7 +15,7 @@ import { getUsers } from "@/app/_actions/get-user";
 interface UserTableData {
   id: string;
   name: string;
-  status?: string; // Mantemos como opcional para alinhar com getUsers
+  status?: string;
   type: string;
 }
 
@@ -57,20 +57,16 @@ export default function Page() {
     return () => clearInterval(interval);
   }, []);
 
-  if (userRole !== "ADMIN") {
-    return <div></div>;
-  }
   useEffect(() => {
+    if (userRole !== "ADMIN") return; // Early return inside useEffect
     async function fetchData() {
       try {
-        const users = await getUsers("basic"); // Busca apenas os campos básicos
+        const users = await getUsers("basic");
         console.log("Dados retornados por getUsers:", users);
-        // Garante que users é uma lista
         if (Array.isArray(users)) {
-          // Transforma status para garantir que seja uma string
           const transformedData = users.map((user) => ({
             ...user,
-            status: user.status || "Sem status", // Substitui undefined por "Sem status"
+            status: user.status || "Sem status",
           }));
           setData(transformedData);
         } else {
@@ -83,7 +79,12 @@ export default function Page() {
       }
     }
     fetchData();
-  }, []);
+  }, [userRole]); // Add userRole as a dependency
+
+
+  if (userRole !== "ADMIN") {
+    return <div></div>;
+  }
 
   return (
     <SidebarProvider>
