@@ -24,9 +24,7 @@ interface Faq3Props {
 }
 
 const faqItems: [] = [];
-const phoneNumber = "5541997862323"; 
-const message = "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!"; 
-const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+
 const Faq = ({
   heading = "Frequently asked questions",
   description = "Find answers to common questions about our products. Can't find what you're looking for? Contact our support team.",
