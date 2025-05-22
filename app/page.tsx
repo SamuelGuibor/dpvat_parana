@@ -4,7 +4,7 @@ import Footer from "./section/footer";
 import Hero from "./section/hero-section";
 import Recurses from "./section/recurses";
 import Stats from "./section/stats";
-import TeamSection from "./section/TeamSection"
+// import TeamSection from "./section/TeamSection"
 
 export const metadata = {
   title: "Paraná Seguros - Indenização Rápida e Segura",
@@ -89,7 +89,7 @@ export default function Home() {
     <div>
       <Hero />
       <Stats />
-      <TeamSection />
+      {/* <TeamSection /> */}
       {/* <Objetivos /> */}
       <FeatureSteps
         features={features}
