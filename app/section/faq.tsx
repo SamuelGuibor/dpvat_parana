@@ -32,7 +32,7 @@ const Faq = ({
   supportHeading = "Need more support?",
   supportDescription = "Our dedicated support team is here to help you with any questions or concerns. Get in touch with us for personalized assistance.",
   supportButtonText = "Contact Support",
-  supportButtonUrl = "https://www.shadcnblocks.com",
+  supportButtonUrl = "https://wa.me/5541997862323",
 }: Faq3Props) => {
   return (
     <section className="py-3">

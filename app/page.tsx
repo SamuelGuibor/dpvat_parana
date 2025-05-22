@@ -106,7 +106,7 @@ export default function Home() {
         supportHeading="Precisa de mais suporte?"
         supportDescription="Nossa equipe de suporte dedicada está aqui para ajudar você com qualquer dúvida ou preocupação. Entre em contato para assistência personalizada."
         supportButtonText="Contactar Suporte"
-        supportButtonUrl=""
+        supportButtonUrl="https://wa.me/5541997862323"
       />
       <Footer />
     </div>

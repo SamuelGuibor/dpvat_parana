@@ -61,11 +61,11 @@ export default function HeroSection() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-[#6d997a]  hover:bg-slate-200"
+                    className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-[#2e5e3d] hover:bg-[#3c694a] "
                   >
-                    <Link href="#link">
-                      <span className="text-black">Fale Conosco</span>
-                      <ChevronRight className="ml-1 text-black" />
+                    <Link href="https://wa.me/5541997862323">
+                      <span className="text-white text-[17px] ">Fale Conosco</span>
+                      <ChevronRight className="ml-1 text-white" />
                     </Link>
                   </Button>
                   <span className="text-gray-300 lg:pl-[100px] relative">
@@ -74,10 +74,10 @@ export default function HeroSection() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-[#84abaa] hover:bg-slate-200"
+                    className="w-[250px] h-12 rounded-full pl-5 pr-3 text-base bg-slate-300 hover:bg-slate-200 "
                   >
                     <Link href="/login">
-                      <span className="text-black">Consulte seu processo</span>
+                      <span className="text-black text-[17px]">Consulte seu processo</span>
                       <ChevronRight className="ml-1 text-black" />
                     </Link>
                   </Button>

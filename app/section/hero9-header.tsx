@@ -12,11 +12,8 @@ import { signOut, useSession } from "next-auth/react";
 import { AiOutlineCar } from "react-icons/ai";
 import { RxAvatar } from "react-icons/rx";
 import { IoDocumentsOutline } from "react-icons/io5";
-import { GoGear } from "react-icons/go";
 import { MdInsertChartOutlined } from "react-icons/md";
 import { HiOutlineChatAlt2 } from "react-icons/hi";
-
-
 
 export const HeroHeader = () => {
   const [menuState, setMenuState] = React.useState(false);
@@ -24,6 +21,7 @@ export const HeroHeader = () => {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const { scrollYProgress } = useScroll();
   const { data: session } = useSession();
+
   const handleLogoutClick = () => signOut();
 
   // Monitora o scroll para o estado "scrolled"
@@ -38,6 +36,21 @@ export const HeroHeader = () => {
   const toggleSheet = () => {
     setSheetOpen((prev) => !prev);
   };
+
+  // Definir as opções do menu com base na role
+  const menuOptions = session?.user?.role === "ADMIN"
+    ? [
+        { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
+        { href: "/dashboard", label: "Dashboard", icon: <MdInsertChartOutlined style={{ width: 22, height: 22 }} /> },
+        { href: "/chats", label: "Chat", icon: <HiOutlineChatAlt2 style={{ width: 22, height: 22 }} /> },
+        { href: "/status", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
+        { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
+      ]
+    : [
+        { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
+        { href: "/status", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
+        { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
+      ];
 
   return (
     <header className="relative">
@@ -80,7 +93,6 @@ export const HeroHeader = () => {
                 <Menu className="in-data-[state=active]:rotate-180 in-data-[state=active]:scale-0 in-data-[state=active]:opacity-0 m-auto size-6 duration-200" />
                 <X className="in-data-[state=active]:rotate-0 in-data-[state=active]:scale-100 in-data-[state=active]:opacity-100 absolute inset-0 m-auto size-6 -rotate-180 scale-0 opacity-0 duration-200" />
               </button>
-
             </div>
             <div
               className={cn(
@@ -122,7 +134,6 @@ export const HeroHeader = () => {
                     <AvatarImage
                       src={session?.user?.image || "/homem.png"}
                       alt="Avatar"
-                      
                     />
                   </Avatar>
                 )}
@@ -149,36 +160,13 @@ export const HeroHeader = () => {
                 <h2 className="text-lg font-bold">Menu</h2>
               </div>
               <div className="flex flex-col gap-2 border-b border-solid py-5">
-                <Button className="justify-start gap-2" variant="ghost">
-                  <Link href="/area-do-cliente" className="flex items-center gap-2">
-                    <RxAvatar style={{ width: 22, height: 22 }} /> Aréa dos Clientes
-                  </Link>
-                </Button>
-                <Button className="justify-start gap-2" variant="ghost">
-                  <Link href="/dashboard" className="flex items-center gap-2">
-                    <MdInsertChartOutlined style={{ width: 22, height: 22 }} />Dashboard
-                  </Link>
-                </Button>
-                <Button className="justify-start gap-2" variant="ghost">
-                  <Link href="/chats" className="flex items-center gap-2">
-                    <HiOutlineChatAlt2 style={{ width: 22, height: 22 }} />Chat
-                  </Link>
-                </Button>
-                <Button className="justify-start gap-2" variant="ghost">
-                  <Link href="/status" className="flex items-center gap-2">
-                    <AiOutlineCar style={{ width: 22, height: 22 }} /> Status
-                  </Link>
-                </Button>
-                <Button className="justify-start gap-2" variant="ghost">
-                  <Link href="/documents" className="flex items-center gap-2">
-                    <IoDocumentsOutline style={{ width: 22, height: 22 }} />Documentos
-                  </Link>
-                </Button>
-                <Button className="justify-start gap-2" variant="ghost">
-                  <Link href="/config" className="flex items-center gap-2">
-                    <GoGear style={{ width: 22, height: 22 }} />Configurações
-                  </Link>
-                </Button>
+                {menuOptions.map((option) => (
+                  <Button key={option.href} className="justify-start gap-2" variant="ghost">
+                    <Link href={option.href} className="flex items-center gap-2">
+                      {option.icon} {option.label}
+                    </Link>
+                  </Button>
+                ))}
               </div>
             </div>
 
@@ -196,7 +184,6 @@ export const HeroHeader = () => {
               </Button>
             </div>
           </motion.div>
-
         </>
       )}
     </header>

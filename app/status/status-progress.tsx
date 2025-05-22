@@ -41,41 +41,12 @@ const steps: Step[] = [
     description:
       "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
   },
-  {
-    id: 6,
-    title: "Perícia médica e pagamentos",
-    description:
-      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
-  },
-  {
-    id: 7,
-    title: "Perícia médica e pagamentos",
-    description:
-      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
-  },
-  {
-    id: 8,
-    title: "Perícia médica e pagamentos",
-    description:
-      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
-  },
-  {
-    id: 9,
-    title: "Perícia médica e pagamentos",
-    description:
-      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
-  },
-  {
-    id: 10,
-    title: "Perícia médica e pagamentos",
-    description:
-      "Feita a perícia, o pagamento da indenização é feito em até 7 dias. O valor vai direto para a conta da vítima. Após isso, você realiza a transferência dos honorários da empresa.",
-  },
-  { id: 11, final: "Você recebeu seu dinheiro!" },
+  { id: 6, final: "Você recebeu seu dinheiro!" },
 ];
 
 export default function ProgressTimeline() {
   const [serverStatus, setServerStatus] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -83,8 +54,9 @@ export default function ProgressTimeline() {
       try {
         const response = await fetch("/api/user-status", { method: "GET" });
         if (!response.ok) throw new Error("Erro ao buscar status");
-        const status = await response.json();
+        const { status, role } = await response.json();
         setServerStatus(status);
+        setUserRole(role);
       } catch (error) {
         console.error(error);
       } finally {
@@ -94,22 +66,26 @@ export default function ProgressTimeline() {
     fetchStatus();
   }, []);
 
-
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
         const response = await fetch("/api/user-status", { method: "GET" });
         if (!response.ok) throw new Error("Erro ao buscar status");
-        const status = await response.json();
+        const { status, role } = await response.json();
         setServerStatus(status);
+        setUserRole(role);
       } catch (error) {
         console.error(error);
       }
-    }, 5000); 
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
   if (isLoading) return <div><Loader2 className="h-4 w-4 animate-spin" /></div>;
+
+  if (userRole === "INSS") {
+    return <div>OI</div>;
+  }
 
   const completedSteps = mapServerStatusToCompletedSteps(serverStatus);
 
