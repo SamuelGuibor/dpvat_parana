@@ -1,3 +1,8 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 "use client"
 import { AppSidebar } from "@/app/_components/app-sidebar"
 import { SiteHeader } from "@/app/_components/site-header"

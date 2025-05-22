@@ -13,7 +13,6 @@ import { AiOutlineCar } from "react-icons/ai";
 import { RxAvatar } from "react-icons/rx";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { MdInsertChartOutlined } from "react-icons/md";
-import { HiOutlineChatAlt2 } from "react-icons/hi";
 
 export const HeroHeader = () => {
   const [scrolled, setScrolled] = React.useState(false);
