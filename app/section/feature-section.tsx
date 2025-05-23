@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../_lib/utils";
-import { Button } from "../_components/ui/button";
 import { CiPause1 } from "react-icons/ci";
 import { MdOutlineNotStarted } from "react-icons/md";
 
@@ -32,7 +31,7 @@ export function FeatureSteps({
   title = "",
   autoPlayInterval = 3000,
   imageHeight = "h-[400px]",
-  videoSrc = "/video.mp4", // Default video source
+  videoSrc = "/videoo.mp4", // Default video source
 }: FeatureStepsProps) {
   const [currentFeature, setCurrentFeature] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -47,8 +46,22 @@ export function FeatureSteps({
       ([entry]) => {
         setIsVisible(entry.isIntersecting);
         if (entry.isIntersecting && videoRef.current) {
-          videoRef.current.play();
-          setIsPlaying(true);
+          // Attempt to play the video
+          videoRef.current.play().then(() => {
+            setIsPlaying(true);
+          }).catch((error) => {
+            console.error("Video autoplay failed:", error);
+            // Fallback: Try playing after a short delay
+            setTimeout(() => {
+              if (videoRef.current && entry.isIntersecting) {
+                videoRef.current.play().then(() => {
+                  setIsPlaying(true);
+                }).catch((err) => {
+                  console.error("Delayed video autoplay failed:", err);
+                });
+              }
+            }, 500);
+          });
         } else if (videoRef.current) {
           videoRef.current.pause();
           setIsPlaying(false);
@@ -81,16 +94,28 @@ export function FeatureSteps({
 
     return () => clearInterval(timer);
   }, [progress, features.length, autoPlayInterval]);
-
+useEffect(() => {
+  if (videoRef.current) {
+    videoRef.current.addEventListener('canplay', () => {
+      if (isVisible && !isPlaying) {
+        videoRef.current?.play().then(() => setIsPlaying(true)).catch(console.error);
+      }
+    });
+  }
+}, [isVisible, isPlaying]);
   // Toggle play/pause
   const togglePlayPause = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
-        videoRef.current.play();
+        videoRef.current.play().then(() => {
+          setIsPlaying(true);
+        }).catch((error) => {
+          console.error("Manual video play failed:", error);
+        });
       }
-      setIsPlaying(!isPlaying);
     }
   };
 

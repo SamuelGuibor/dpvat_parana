@@ -103,7 +103,7 @@ export default function Home() {
         features={features}
         title="Nossos Objetivos"
         imageHeight="h-[500px]"
-        videoSrc="/video.mp4"
+        videoSrc="/videoo.mp4"
         className="z-30 bg-gradient-to-b from-[#0f0f0f] to-black transform translate-y-[-20px]"
       />
       <Recurses />
