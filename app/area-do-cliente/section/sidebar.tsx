@@ -44,7 +44,7 @@ const Sidebar = () => {
             className="flex items-center space-x-2"
             onClick={() => setIsOpen(false)}
           >
-            <Image src="/logo.png" height={20} width={140} alt="DPVAT Paraná" />
+            <Image src="/paranaseguros.png" height={20} width={140} alt="DPVAT Paraná" />
           </Link>
         </div>
 

@@ -9,7 +9,7 @@ const Cards = () => {
       <Link href="/blog/solicitar-dpvat">
         <div className="rounded-3xl p-[2px] bg-gradient-to-b from-blue-200 to-emerald-300 w-full sm:w-[350px]">
           <div className="rounded-[calc(1.5rem-1px)] p-5 bg-white h-[250px]">
-            <Image src="/logo.png" alt="logo" width={70} height={70} />
+            <Image src="/paranaseguros.png" alt="logo" width={70} height={70} />
             <h2 className="pt-24 text-2xl font-semibold">
               Como Solicitar o DPVAT
             </h2>
@@ -27,7 +27,7 @@ const Cards = () => {
       {/* Card 2 */}
       <div className="rounded-3xl p-[2px] bg-gradient-to-b from-blue-200 to-emerald-300 w-full sm:w-[350px]">
         <div className="rounded-[calc(1.5rem-1px)] p-5 bg-white h-[250px]">
-          <Image src="/logo.png" alt="logo" width={70} height={70} />
+          <Image src="/paranaseguros.png" alt="logo" width={70} height={70} />
           <h2 className="pt-24 text-2xl font-semibold">Benefícios do DPVAT</h2>
           <div className="mt-2 flex gap-4 items-center">
             <p className="text-sm">
@@ -42,7 +42,7 @@ const Cards = () => {
       {/* Card 3 */}
       <div className="rounded-3xl p-[2px] bg-gradient-to-b from-blue-200 to-emerald-300 w-full sm:w-[350px]">
         <div className="rounded-[calc(1.5rem-1px)] p-5 bg-white h-[250px]">
-          <Image src="/logo.png" alt="logo" width={70} height={70} />
+          <Image src="/paranaseguros.png" alt="logo" width={70} height={70} />
           <h2 className="pt-24 text-2xl font-semibold">Coberturas do DPVAT</h2>
           <div className="mt-2 flex gap-4 items-center">
             <p className="text-sm">

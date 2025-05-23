@@ -59,7 +59,7 @@ const AuthSection = () => {
           <div className="text-center">
             <Link href="/" aria-label="go home" className="mx-auto block w-fit">
               <Image
-                src="/logo.png"
+                src="/paranaseguros.png"
                 height={20}
                 width={140}
                 alt="DPVAT Paraná"

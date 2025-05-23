@@ -12,7 +12,7 @@ const Header = () => {
     <Card>
       <CardContent className="flex flex-row items-center justify-between p-5 pl-20">
         <Link href="/">
-        <Image src="/logo.png" height={20} width={110} alt="DPVAT Paraná" />
+        <Image src="/paranaseguros.png" height={20} width={110} alt="DPVAT Paraná" />
         </Link>
 
         <div className="flex items-center gap-4">

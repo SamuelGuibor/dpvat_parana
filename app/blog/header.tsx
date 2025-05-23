@@ -9,7 +9,7 @@ const Header = () => {
       <div>
         <Link href="/">
           <Image
-            src="/logo.png"
+            src="/paranaseguros.png"
             alt="Logo Paraná Seguros"
             width={120}
             height={100}

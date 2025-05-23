@@ -5,7 +5,7 @@ const Stats = () => {
     <section className="py-12 md:py-20 bg-white">
       <div className="mx-auto max-w-7xl space-y-12 px-6">
           <div className="flex justify-center relative bottom-5">
-            <Image src="/logo.png" width={250} height={250} alt="" />
+            <Image src="/paranaseguros.png" width={250} height={250} alt="" />
           </div>
         <div className="relative z-10 mx-auto text-center">
           

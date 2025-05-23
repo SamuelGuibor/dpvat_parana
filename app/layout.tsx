@@ -35,8 +35,8 @@ export default function RootLayout({
               "@context": "https://schema.org",
               "@type": "Organization",
               name: "Paraná Seguros",
-              url: "https://dpvat-parana.vercel.app/",
-              logo: "https://dpvat-parana.vercel.app/logo.png",
+              url: "https://www.segurosparana.com.br/",
+              logo: "https://www.segurosparana.com.br/paranaseguros.png",
               contactPoint: {
                 "@type": "ContactPoint",
                 contactType: "Customer Service",
