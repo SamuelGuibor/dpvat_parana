@@ -17,9 +17,12 @@ export const metadata = {
 };
 
 export default function Home() {
-  const phoneNumber = "5541997862323"; 
-const message = "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!"; 
-const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+  const phoneNumber = "5541997862323";
+  const message =
+    "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!";
+  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(
+    message
+  )}`;
   const faqItems = [
     {
       id: "faq-1",
@@ -71,21 +74,21 @@ const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(mess
       title: "Proteção dos Direitos dos Clientes",
       content:
         "Nos dedicamos a proteger os direitos e interesses dos nossos clientes com acordos extrajudiciais, garantindo uma justa e rápida indenização.",
-      image: "/protect.jpg",
+      image: "/protect.jpg", // Kept for compatibility
     },
     {
       step: "Step 2",
       title: "Compromisso com Transparência e Ética",
       content:
         "Nosso compromisso é com a transparência, a ética e a eficácia, desburocratizando procedimentos administrativos de seguradoras.",
-      image: "/transparencia.jpg",
+      image: "/transparencia.jpg", // Kept for compatibility
     },
     {
       step: "Step 3",
       title: "Acompanhamento Completo",
       content:
         "Acompanhamos o cliente desde a obtenção de documentos até a realização de perícia para garantir paz de espírito e resultados positivos.",
-      image: "/conecg.jpg",
+      image: "/conecg.jpg", // Kept for compatibility
     },
   ];
 
@@ -99,9 +102,9 @@ const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(mess
       <FeatureSteps
         features={features}
         title="Nossos Objetivos"
-        autoPlayInterval={3000}
         imageHeight="h-[500px]"
-        className=" z-30 bg-gradient-to-b from-[#0f0f0f] to-black transform translate-y-[-20px]"
+        videoSrc="/video.mp4"
+        className="z-30 bg-gradient-to-b from-[#0f0f0f] to-black transform translate-y-[-20px]"
       />
       <Recurses />
       <Faq
