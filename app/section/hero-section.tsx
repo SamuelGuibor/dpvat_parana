@@ -5,9 +5,11 @@ import Link from "next/link";
 import { Button } from "@/app/_components/ui/button";
 import { HeroHeader } from "./hero9-header";
 import { ChevronRight } from "lucide-react";
+import { useSession } from "next-auth/react"; // Importar useSession
 
 export default function HeroSection() {
   const [scrollProgress, setScrollProgress] = useState(0);
+  const { data: session } = useSession(); // Obter dados da sessão
 
   useEffect(() => {
     const handleScroll = () => {
@@ -20,9 +22,14 @@ export default function HeroSection() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-  const phoneNumber = "5541997862323"; 
-  const message = "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!"; 
+
+  const phoneNumber = "5541997862323";
+  const message = "Olá! Quero saber mais sobre as indenizações que tenho direito a receber!";
   const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+  
+  // Determinar o destino do botão com base na sessão
+  const consultProcessUrl = session?.user ? "/area-do-cliente" : "/login";
+
   return (
     <>
       <HeroHeader />
@@ -63,10 +70,10 @@ export default function HeroSection() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-[250px] h-12 pl-5 pr-3 text-base bg-[#2e5e3d] hover:bg-[#3c694a] "
+                    className="w-[250px] h-12 pl-5 pr-3 text-base bg-[#2e5e3d] hover:bg-[#3c694a]"
                   >
                     <Link href={whatsappUrl}>
-                      <span className="text-white text-[17px] ">Receba Sua Indenização</span>
+                      <span className="text-white text-[17px]">Receba Sua Indenização</span>
                       <ChevronRight className="ml-1 text-white" />
                     </Link>
                   </Button>
@@ -76,9 +83,9 @@ export default function HeroSection() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-[250px] h-12 pl-5 pr-3 text-base bg-red-600 hover:bg-red-500 "
+                    className="w-[250px] h-12 pl-5 pr-3 text-base bg-red-600 hover:bg-red-500"
                   >
-                    <Link href="/login">
+                    <Link href={consultProcessUrl}>
                       <span className="text-white text-[17px]">Consulte seu Processo</span>
                       <ChevronRight className="ml-1 text-white" />
                     </Link>
