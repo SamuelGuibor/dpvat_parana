@@ -66,9 +66,8 @@ const AuthSection = () => {
               />
             </Link>
             <h1 className="mb-1 mt-4 text-xl font-semibold">
-              Faça Login em DPVAT Paraná
+              Faça Login Para Consultar Seu Processo
             </h1>
-            <p className="text-sm">Faça o login para continuar!</p>
           </div>
 
           <div className="mt-6 space-y-6">

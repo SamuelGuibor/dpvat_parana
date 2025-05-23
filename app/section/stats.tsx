@@ -7,17 +7,11 @@ const Stats = () => {
           <div className="flex justify-center relative bottom-5">
             <Image src="/logo.png" width={250} height={250} alt="" />
           </div>
-        <div className="relative z-10 mx-auto max-w-xl text-center">
+        <div className="relative z-10 mx-auto text-center">
           
           <h2 className="text-4xl font-semibold lg:text-5xl">
-            Paraná Seguros em Números
+            Aqui Nós Resgatamos Seus Direitos 
           </h2>
-          <p className="mt-4 text-lg text-gray-600">
-            No Paraná, o DPVAT é mais do que um seguro obrigatório – é um
-            suporte essencial. Com milhares de indenizações concedidas todos os
-            anos, estamos comprometidos em proteger as famílias paranaenses e
-            promover segurança no trânsito.
-          </p>
         </div>
 
         <div className="grid gap-8 text-center md:grid-cols-3 md:gap-4">

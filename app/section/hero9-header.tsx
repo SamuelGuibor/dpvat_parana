@@ -72,7 +72,7 @@ export const HeroHeader = () => {
               className="flex items-center space-x-2 flex-shrink-0"
             >
               <Image
-                src={scrolled ? "/logo.png" : "/logo_text_white.png"}
+                src={scrolled ? "/paranaseguros.png" : "/logo_text_white.png"}
                 height={20}
                 width={140}
                 alt="DPVAT Paraná"
