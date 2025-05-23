@@ -25,6 +25,29 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <title>Paraná Seguros - Indenização Rápida e Segura</title>
+        <meta name="description" content="Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia." />
+        <meta name="keywords" content="DPVAT Paraná,seguro DPVAT,indenização DPVAT,Paraná Seguros,Curitiba DPVAT,Ponta Grossa DPVAT,Maringá DPVAT" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="canonical" href="https://www.segurosparana.com.br/" />
+        <meta property="og:title" content="Paraná Seguros - Indenização Rápida e Segura com DPVAT" />
+        <meta property="og:description" content="Especialistas em indenizações DPVAT no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em Curitiba, Ponta Grossa e Maringá." />
+        <meta property="og:url" content="https://www.segurosparana.com.br/" />
+        <meta property="og:site_name" content="Paraná Seguros" />
+        <meta property="og:image" content="https://www.segurosparana.com.br/paranaseguros.png" />
+        <meta property="og:image:secure_url" content="https://www.segurosparana.com.br/paranaseguros.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="Paraná Seguros - Indenização DPVAT" />
+        <meta property="og:locale" content="pt_BR" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Paraná Seguros - Indenização Rápida DPVAT" />
+        <meta name="twitter:description" content="Garantimos sua indenização DPVAT com rapidez e transparência no Paraná. Entre em contato hoje!" />
+        <meta name="twitter:image" content="https://www.segurosparana.com.br/paranaseguros.png" />
+        <meta name="robots" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
+      </head>
       <body className={`${mulish.className} antialiased`}>
         <AuthProvider>{children}</AuthProvider>
         <Toaster />
