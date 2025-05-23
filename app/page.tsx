@@ -131,8 +131,25 @@ export default function Home() {
   return (
     <div>
       <head>
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "LocalBusiness",
+            "name": "Paraná Seguros",
+            "description":
+              "Especialistas em indenizações DPVAT no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em Curitiba, Ponta Grossa e Maringá.",
+            "url": "https://www.segurosparana.com.br/",
+            "telephone": "+5541997862323",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Curitiba",
+              "addressRegion": "PR",
+              "addressCountry": "BR",
+            },
+          })}
+        </script>
         <title>Paraná Seguros - Indenização Rápida e Segura</title>
-        <meta name="description" content="Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia." />
+        <meta name="description" content="Especialistas em indenizações de acidentes de trânsito no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em todo o Paraná." />
         <meta name="keywords" content="DPVAT Paraná,seguro DPVAT,indenização DPVAT,Paraná Seguros,Curitiba DPVAT,Ponta Grossa DPVAT,Maringá DPVAT" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="canonical" href="https://www.segurosparana.com.br/" />
@@ -144,12 +161,12 @@ export default function Home() {
         <meta property="og:image:secure_url" content="https://www.segurosparana.com.br/paranaseguros.png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content="Paraná Seguros - Indenização DPVAT" />
+        <meta property="og:image:alt" content="Paraná Seguros - Indenização de Acidentes de Transito" />
         <meta property="og:locale" content="pt_BR" />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Paraná Seguros - Indenização Rápida DPVAT" />
-        <meta name="twitter:description" content="Garantimos sua indenização DPVAT com rapidez e transparência no Paraná. Entre em contato hoje!" />
+        <meta name="twitter:title" content="Paraná Seguros - Indenização Rápida de Acidentes de Transito " />
+        <meta name="twitter:description" content="Garantimos sua indenização de Acidentes de Transito com rapidez e transparência no Paraná. Entre em contato hoje!" />
         <meta name="twitter:image" content="https://www.segurosparana.com.br/paranaseguros.png" />
         <meta name="robots" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
       </head>
