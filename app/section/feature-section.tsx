@@ -31,7 +31,7 @@ export function FeatureSteps({
   title = "",
   autoPlayInterval = 3000,
   imageHeight = "h-[400px]",
-  videoSrc = "/videoo.mp4", // Default video source
+  videoSrc = "/video.mp4", // Default video source
 }: FeatureStepsProps) {
   const [currentFeature, setCurrentFeature] = useState(0);
   const [progress, setProgress] = useState(0);
