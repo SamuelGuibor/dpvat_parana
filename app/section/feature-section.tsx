@@ -48,19 +48,7 @@ export function FeatureSteps({
           // Attempt to play the video
           videoRef.current.play().then(() => {
             setIsPlaying(true);
-          }).catch((error) => {
-            console.error("Video autoplay failed:", error);
-            // Fallback: Try playing after a short delay
-            setTimeout(() => {
-              if (videoRef.current && entry.isIntersecting) {
-                videoRef.current.play().then(() => {
-                  setIsPlaying(true);
-                }).catch((err) => {
-                  console.error("Delayed video autoplay failed:", err);
-                });
-              }
-            }, 500);
-          });
+          })
         } else if (videoRef.current) {
           videoRef.current.pause();
           setIsPlaying(false);
@@ -97,7 +85,7 @@ useEffect(() => {
   if (videoRef.current) {
     videoRef.current.addEventListener('canplay', () => {
       if (isVisible && !isPlaying) {
-        videoRef.current?.play().then(() => setIsPlaying(true)).catch(console.error);
+        videoRef.current?.play().then(() => setIsPlaying(true))
       }
     });
   }
@@ -111,9 +99,7 @@ useEffect(() => {
       } else {
         videoRef.current.play().then(() => {
           setIsPlaying(true);
-        }).catch((error) => {
-          console.error("Manual video play failed:", error);
-        });
+        })
       }
     }
   };
