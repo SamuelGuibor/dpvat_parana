@@ -32,7 +32,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="canonical" href="https://www.segurosparana.com.br/" />
         <meta property="og:title" content="Paraná Seguros - Indenização Rápida e Segura com DPVAT" />
-        <meta property="og:description" content="Especialistas em indenizações DPVAT no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em Curitiba, Ponta Grossa e Maringá." />
+        <meta property="og:description" content="Especialistas em indenizações de Acidentes de Transito no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em todo o Paraná." />
         <meta property="og:url" content="https://www.segurosparana.com.br/" />
         <meta property="og:site_name" content="Paraná Seguros" />
         <meta property="og:image" content="https://www.segurosparana.com.br/paranaseguros.png" />
