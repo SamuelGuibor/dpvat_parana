@@ -133,7 +133,6 @@ export default function Home() {
         <title>{metadata.title}</title>
         <meta name="google" content="nositelinkssearchbox" key="sitelinks" />
         <meta name="google" content="notranslate" key="notranslate" />
-        <meta name="description" content={metadata.description} />
       </div>
       <Hero />
       <WhatsAppButton />
