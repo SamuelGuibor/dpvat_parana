@@ -64,12 +64,15 @@ import {
 } from "@/app/_components/ui/table";
 import { useState, useEffect } from "react";
 import DialogDash from "./dialog";
+import { differenceInDays, formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 export const schema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.string(),
   status: z.string().optional(),
+  statusStartedAt: z.string().optional().nullable(),
 });
 
 type DataType = z.infer<typeof schema>;
@@ -114,89 +117,89 @@ const columns: ColumnDef<DataType>[] = [
     cell: ({ row }) => {
       const type = row.original.type;
       const badgeColor =
-      type === "Aplicar Filtro DPVAT"
-      ? "bg-green-100 text-green-800 border-green-300"
-      : type === "Gerar Procuração Automática"
-      ? "bg-green-100 text-green-800 border-green-300"
-      : type === "Coletar Assinatura em Cartório"
-      ? "bg-cyan-200 text-cyan-800 border-cyan-300"
-      : type === "Coletar Assinatura Digital"
-      ? "bg-cyan-200 text-cyan-800 border-cyan-300"
-      : type === "Agendar Coleta com Motoboy"
-      ? "bg-blue-200 text-blue-800 border-blue-300"
-      : type === "Acompanhar Rota do Motoboy"
-      ? "bg-blue-200 text-blue-800 border-blue-300"
-      : type === "Fazer Protocolo no Hospital"
-      ? "bg-lime-200 text-lime-800 border-lime-300"
-      : type === "Protocolar Pasta – Hospital Presencial"
-      ? "bg-lime-200 text-lime-800 border-lime-300"
-      : type === "Solicitar Prontuário por E-mail"
-      ? "bg-yellow-200 text-yellow-800 border-yellow-300"
-      : type === "Solicitar Prontuário Cajuru por E-mail"
-      ? "bg-yellow-200 text-yellow-800 border-yellow-300"
-      : type === "Acompanhar Cajuru – Solicitado"
-      ? "bg-yellow-200 text-yellow-800 border-yellow-300"
-      : type === "Solicitar Prontuário – Outros Hospitais"
-      ? "bg-yellow-200 text-yellow-800 border-yellow-300"
-      : type === "Acompanhar Prontuário – Outros Solicitados"
-      ? "bg-yellow-200 text-yellow-800 border-yellow-300"
-      : type === "Solicitar Prontuário – Ponta Grossa"
-      ? "bg-yellow-200 text-yellow-800 border-yellow-300"
-      : type === "Aguardar Prontuário – Recebimento Online"
-      ? "bg-amber-200 text-amber-800 border-amber-300"
-      : type === "Aguardar Prontuário PG – Recebimento Online"
-      ? "bg-amber-200 text-amber-800 border-amber-300"
-      : type === "Aguardar Prontuário PG – Presencial"
-      ? "bg-amber-200 text-amber-800 border-amber-300"
-      : type === "Aguardar Retirada de Prontuário – Presencial"
-      ? "bg-amber-200 text-amber-800 border-amber-300"
-      : type === "Retirar Prontuário – Pronto para Retirar"
-      ? "bg-amber-200 text-amber-800 border-amber-300"
-      : type === "Resolver Problema com B.O."
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Fazer B.O. – Equipe Rubi"
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Orientar Cliente – Fazer B.O."
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Enviar 1ª Mensagem – B.O."
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Solicitar B.O. ao Cliente – Acidente"
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Solicitar Siate"
-      ? "bg-red-200 text-red-800 border-red-300"
-      : type === "Aguardar Retorno do Siate"
-      ? "bg-red-200 text-red-800 border-red-300"
-      : type === "Acompanhar Siate – Pronto"
-      ? "bg-red-200 text-red-800 border-red-300"
-      : type === "Enviar Mensagem – Previdenciário"
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Registrar Óbito – Nova Lei"
-      ? "bg-rose-200 text-rose-800 border-rose-300"
-      : type === "Protocolar SPVAT"
-      ? "bg-indigo-200 text-indigo-800 border-indigo-300"
-      : type === "Protocolar DPVAT – Caixa"
-      ? "bg-indigo-200 text-indigo-800 border-indigo-300"
-      : type === "Enviar para Reanálise"
-      ? "bg-indigo-200 text-indigo-800 border-indigo-300"
-      : type === "Manter SPVAT em Standby"
-      ? "bg-indigo-200 text-indigo-800 border-indigo-300"
-      : type === "Aguardar Análise da Caixa"
-      ? "bg-blue-300 text-blue-800 border-blue-400"
-      : type === "Acompanhar Pendências – Protocolado"
-      ? "bg-fuchsia-200 text-fuchsia-800 border-fuchsia-300"
-      : type === "Protocolar Pendência de B.O."
-      ? "bg-fuchsia-200 text-fuchsia-800 border-fuchsia-300"
-      : type === "Avisar Sobre Perícia Administrativa"
-      ? "bg-teal-200 text-teal-800 border-teal-300"
-      : type === "Aguardar Resultado da Perícia"
-      ? "bg-teal-200 text-teal-800 border-teal-300"
-      : type === "Cobrar Honorários – Resultado Perícia"
-      ? "bg-teal-200 text-teal-800 border-teal-300"
-      : type === "Aguardar Pagamento – Honorários Cobrados"
-      ? "bg-teal-200 text-teal-800 border-teal-300"
-      : type === "Encerrar Processo – DPVAT"
-      ? "bg-neutral-300 text-neutral-800 border-neutral-400"
-      : "bg-neutral-100 text-neutral-800 border-neutral-300";
+        type === "Aplicar Filtro DPVAT"
+          ? "bg-green-100 text-green-800 border-green-300"
+          : type === "Gerar Procuração Automática"
+            ? "bg-green-100 text-green-800 border-green-300"
+            : type === "Coletar Assinatura em Cartório"
+              ? "bg-cyan-200 text-cyan-800 border-cyan-300"
+              : type === "Coletar Assinatura Digital"
+                ? "bg-cyan-200 text-cyan-800 border-cyan-300"
+                : type === "Agendar Coleta com Motoboy"
+                  ? "bg-blue-200 text-blue-800 border-blue-300"
+                  : type === "Acompanhar Rota do Motoboy"
+                    ? "bg-blue-200 text-blue-800 border-blue-300"
+                    : type === "Fazer Protocolo no Hospital"
+                      ? "bg-lime-200 text-lime-800 border-lime-300"
+                      : type === "Protocolar Pasta – Hospital Presencial"
+                        ? "bg-lime-200 text-lime-800 border-lime-300"
+                        : type === "Solicitar Prontuário por E-mail"
+                          ? "bg-yellow-200 text-yellow-800 border-yellow-300"
+                          : type === "Solicitar Prontuário Cajuru por E-mail"
+                            ? "bg-yellow-200 text-yellow-800 border-yellow-300"
+                            : type === "Acompanhar Cajuru – Solicitado"
+                              ? "bg-yellow-200 text-yellow-800 border-yellow-300"
+                              : type === "Solicitar Prontuário – Outros Hospitais"
+                                ? "bg-yellow-200 text-yellow-800 border-yellow-300"
+                                : type === "Acompanhar Prontuário – Outros Solicitados"
+                                  ? "bg-yellow-200 text-yellow-800 border-yellow-300"
+                                  : type === "Solicitar Prontuário – Ponta Grossa"
+                                    ? "bg-yellow-200 text-yellow-800 border-yellow-300"
+                                    : type === "Aguardar Prontuário – Recebimento Online"
+                                      ? "bg-amber-200 text-amber-800 border-amber-300"
+                                      : type === "Aguardar Prontuário PG – Recebimento Online"
+                                        ? "bg-amber-200 text-amber-800 border-amber-300"
+                                        : type === "Aguardar Prontuário PG – Presencial"
+                                          ? "bg-amber-200 text-amber-800 border-amber-300"
+                                          : type === "Aguardar Retirada de Prontuário – Presencial"
+                                            ? "bg-amber-200 text-amber-800 border-amber-300"
+                                            : type === "Retirar Prontuário – Pronto para Retirar"
+                                              ? "bg-amber-200 text-amber-800 border-amber-300"
+                                              : type === "Resolver Problema com B.O."
+                                                ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                : type === "Fazer B.O. – Equipe Rubi"
+                                                  ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                  : type === "Orientar Cliente – Fazer B.O."
+                                                    ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                    : type === "Enviar 1ª Mensagem – B.O."
+                                                      ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                      : type === "Solicitar B.O. ao Cliente – Acidente"
+                                                        ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                        : type === "Solicitar Siate"
+                                                          ? "bg-red-200 text-red-800 border-red-300"
+                                                          : type === "Aguardar Retorno do Siate"
+                                                            ? "bg-red-200 text-red-800 border-red-300"
+                                                            : type === "Acompanhar Siate – Pronto"
+                                                              ? "bg-red-200 text-red-800 border-red-300"
+                                                              : type === "Enviar Mensagem – Previdenciário"
+                                                                ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                                : type === "Registrar Óbito – Nova Lei"
+                                                                  ? "bg-rose-200 text-rose-800 border-rose-300"
+                                                                  : type === "Protocolar SPVAT"
+                                                                    ? "bg-indigo-200 text-indigo-800 border-indigo-300"
+                                                                    : type === "Protocolar DPVAT – Caixa"
+                                                                      ? "bg-indigo-200 text-indigo-800 border-indigo-300"
+                                                                      : type === "Enviar para Reanálise"
+                                                                        ? "bg-indigo-200 text-indigo-800 border-indigo-300"
+                                                                        : type === "Manter SPVAT em Standby"
+                                                                          ? "bg-indigo-200 text-indigo-800 border-indigo-300"
+                                                                          : type === "Aguardar Análise da Caixa"
+                                                                            ? "bg-blue-300 text-blue-800 border-blue-400"
+                                                                            : type === "Acompanhar Pendências – Protocolado"
+                                                                              ? "bg-fuchsia-200 text-fuchsia-800 border-fuchsia-300"
+                                                                              : type === "Protocolar Pendência de B.O."
+                                                                                ? "bg-fuchsia-200 text-fuchsia-800 border-fuchsia-300"
+                                                                                : type === "Avisar Sobre Perícia Administrativa"
+                                                                                  ? "bg-teal-200 text-teal-800 border-teal-300"
+                                                                                  : type === "Aguardar Resultado da Perícia"
+                                                                                    ? "bg-teal-200 text-teal-800 border-teal-300"
+                                                                                    : type === "Cobrar Honorários – Resultado Perícia"
+                                                                                      ? "bg-teal-200 text-teal-800 border-teal-300"
+                                                                                      : type === "Aguardar Pagamento – Honorários Cobrados"
+                                                                                        ? "bg-teal-200 text-teal-800 border-teal-300"
+                                                                                        : type === "Encerrar Processo – DPVAT"
+                                                                                          ? "bg-neutral-300 text-neutral-800 border-neutral-400"
+                                                                                          : "bg-neutral-100 text-neutral-800 border-neutral-300";
       return (
         <div className="w-72">
           <Badge variant="outline" className={`px-1.5 ${badgeColor}`}>
@@ -205,6 +208,88 @@ const columns: ColumnDef<DataType>[] = [
         </div>
       );
     },
+  },
+  {
+    accessorKey: "Timer",
+    header: "Tempo",
+    cell: ({ row }) => {
+      const user = row.original;
+      const roleTimeLimits: { [key: string]: number | null } = {
+        "Aplicar Filtro DPVAT": 7,
+        "Gerar Procuração Automática": 3,
+        "Coletar Assinatura em Cartório": 5,
+        "Coletar Assinatura Digital": 3,
+        "Agendar Coleta com Motoboy": 2,
+        "Acompanhar Rota do Motoboy": 2,
+        "Fazer Protocolo no Hospital": 5,
+        "Protocolar Pasta – Hospital Presencial": 5,
+        "Solicitar Prontuário por E-mail": 7,
+        "Solicitar Prontuário Cajuru por E-mail": 7,
+        "Acompanhar Cajuru – Solicitado": 10,
+        "Solicitar Prontuário – Outros Hospitais": 7,
+        "Acompanhar Prontuário – Outros Solicitados": 10,
+        "Solicitar Prontuário – Ponta Grossa": 7,
+        "Aguardar Prontuário – Recebimento Online": 15,
+        "Aguardar Prontuário PG – Recebimento Online": 15,
+        "Aguardar Prontuário PG – Presencial": 15,
+        "Aguardar Retirada de Prontuário – Presencial": 10,
+        "Retirar Prontuário – Pronto para Retirar": 5,
+        "Resolver Problema com B.O.": 7,
+        "Fazer B.O. – Equipe Rubi": 5,
+        "Orientar Cliente – Fazer B.O.": 3,
+        "Enviar 1ª Mensagem – B.O.": 2,
+        "Solicitar B.O. ao Cliente – Acidente": 5,
+        "Solicitar Siate": 3,
+        "Aguardar Retorno do Siate": 7,
+        "Acompanhar Siate – Pronto": 5,
+        "Enviar Mensagem – Previdenciário": 3,
+        "Registrar Óbito – Nova Lei": 5,
+        "Protocolar SPVAT": 7,
+        "Protocolar DPVAT – Caixa": 7,
+        "Enviar para Reanálise": 5,
+        "Manter SPVAT em Standby": null,
+        "Aguardar Análise da Caixa": 15,
+        "Acompanhar Pendências – Protocolado": 10,
+        "Protocolar Pendência de B.O.": 5,
+        "Avisar Sobre Perícia Administrativa": 3,
+        "Aguardar Resultado da Perícia": 15,
+        "Cobrar Honorários – Resultado Perícia": 5,
+        "Aguardar Pagamento – Honorários Cobrados": 7,
+        "Encerrar Processo – DPVAT": null,
+        "USER": null,
+        "ADMIN": null,
+      };
+
+      if (!user.type || !user.statusStartedAt) {
+        return <div>Sem data de início</div>;
+      }
+
+      const statusStartedAt = new Date(user.statusStartedAt);
+      if (isNaN(statusStartedAt.getTime())) {
+        console.error("Data inválida para statusStartedAt:", user.statusStartedAt);
+        return <div>Data inválida</div>;
+      }
+
+      const daysInRole = differenceInDays(new Date(), statusStartedAt);
+
+      const timeLimit = roleTimeLimits[user.type] ?? null;
+      const isOverdue = timeLimit !== null && daysInRole > timeLimit;
+
+      return (
+        <div className={isOverdue ? "text-red-600 font-semibold" : "text-blue-700 font-semibold"}>
+          {formatDistanceToNow(statusStartedAt, {
+            locale: ptBR,
+            addSuffix: true,
+          })}
+          {isOverdue && (
+            <span className="ml-1 text-xs font-semibold">
+            (Excedeu {daysInRole - timeLimit} dias)
+            </span>
+          )}
+        </div>
+      );
+    },
+    enableHiding: false,
   },
   {
     accessorKey: "status",

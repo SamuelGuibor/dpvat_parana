@@ -39,6 +39,7 @@ model User {
   hospital        String?
   outro_hospital  String?
   lesoes          String?
+  statusStartedAt DateTime?
 
   accounts  Account[]
   sessions  Session[]

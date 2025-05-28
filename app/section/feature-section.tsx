@@ -111,7 +111,7 @@ useEffect(() => {
           initial={{ opacity: 0, x: -50 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
-          className="text-3xl md:text-4xl lg:text-5xl font-bold mb-10 text-center text-white"
+          className="text-2xl md:text-4xl lg:text-5xl font-bold mb-10 text-center text-white"
         >
           {title}
         </motion.h2>

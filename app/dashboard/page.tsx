@@ -58,7 +58,7 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    if (userRole !== "ADMIN") return; // Early return inside useEffect
+    // if (userRole !== "ADMIN") return; // Early return inside useEffect
     async function fetchData() {
       try {
         const users = await getUsers("basic");
@@ -82,9 +82,9 @@ export default function Page() {
   }, [userRole]); // Add userRole as a dependency
 
 
-  if (userRole !== "ADMIN") {
-    return <div></div>;
-  }
+  // if (userRole !== "ADMIN") {
+  //   return <div></div>;
+  // }
 
   return (
     <SidebarProvider>

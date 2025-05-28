@@ -1,12 +1,9 @@
-/* eslint-disable no-unused-vars */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 "use server";
 
 import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
 
-// Definindo os valores válidos do enum Status manualmente (não exportado)
 const VALID_STATUSES = ["INICIADO", "AGUARDANDO_ASSINATURA", "SOLICITAR_DOCUMENTOS", "COLETA_DOCUMENTOS", "ANALISE_DOCUMENTOS", "PERICIAL", "AGUARDANDO_PERICIAL", "PAGAMENTO_HONORARIO", "PROCESSO_ENCERRADO"] as const;
 type Status = typeof VALID_STATUSES[number];
 
@@ -16,11 +13,11 @@ interface UpdateUserData {
   cpf?: string;
   data_nasc?: string;
   email?: string;
-  nome_res?: string
-  rg_res?: string
-  cpf_res?: string
-  estado_civil_res?: string
-  profissao_res?: string
+  nome_res?: string;
+  rg_res?: string;
+  cpf_res?: string;
+  estado_civil_res?: string;
+  profissao_res?: string;
   rua?: string;
   bairro?: string;
   numero?: string;
@@ -38,11 +35,10 @@ interface UpdateUserData {
   hospital?: string;
   outro_hospital?: string;
   lesoes?: string;
-  status?: string; // Recebe string do frontend
-  role?: string;  // Added role to the interface
+  status?: string;
+  role?: string;
 }
 
-// Valida e mapeia string para um valor do enum Status
 function mapStringToStatus(status: string | undefined): Status | undefined {
   if (!status) return undefined;
 
@@ -61,6 +57,18 @@ export async function updateUser(data: UpdateUserData) {
   }
 
   try {
+    // Fetch the current user to compare the role
+    const currentUser = await db.user.findUnique({
+      where: { id: data.id },
+      select: { role: true, statusStartedAt: true },
+    });
+
+    if (!currentUser) {
+      throw new Error("Usuário não encontrado.");
+    }
+
+    const shouldUpdateTimer = data.role && data.role !== currentUser.role;
+
     const updatedUser = await db.user.update({
       where: { id: data.id },
       data: {
@@ -91,7 +99,8 @@ export async function updateUser(data: UpdateUserData) {
         outro_hospital: data.outro_hospital,
         lesoes: data.lesoes,
         status: mapStringToStatus(data.status),
-        role: data.role,  // Added role to the update query
+        role: data.role,
+        statusStartedAt: shouldUpdateTimer ? new Date() : currentUser.statusStartedAt,
       },
     });
 
@@ -101,6 +110,7 @@ export async function updateUser(data: UpdateUserData) {
       status: updatedUser.status || undefined,
       type: updatedUser.role || "USER",
       role: updatedUser.role || "USER",
+      statusStartedAt: updatedUser.statusStartedAt ? updatedUser.statusStartedAt.toISOString() : null,
       nome_res: updatedUser.nome_res || "",
       rg_res: updatedUser.rg_res || "",
       cpf_res: updatedUser.cpf_res || "",
@@ -112,7 +122,7 @@ export async function updateUser(data: UpdateUserData) {
       rua: updatedUser.rua || "",
       bairro: updatedUser.bairro || "",
       numero: updatedUser.numero || "",
-      cep: updatedUser.cpf || "",
+      cep: updatedUser.cep || "",
       rg: updatedUser.rg || "",
       nome_mae: updatedUser.nome_mae || "",
       telefone: updatedUser.telefone || "",

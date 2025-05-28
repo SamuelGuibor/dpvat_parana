@@ -62,7 +62,7 @@ export default function HeroSection() {
                 <h1 className="mt-8 max-w-2xl text-balance text-5xl md:text-6xl lg:mt-16 xl:text-6xl text-white">
                   Paraná Seguros
                 </h1>
-                <p className="mt-8 max-w-2xl text-balance text-lg relative text-white">
+                <p className="mt-8 max-w-2xl text-balance text-lg font-bold relative text-white">
                   Receba uma indenização pelas lesões do seu acidente
                 </p>
 

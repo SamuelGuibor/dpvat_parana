@@ -1,11 +1,13 @@
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "../_components/ui/accordion";
+/* eslint-disable no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+"use client"
+
+import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../_components/ui/avatar";
 import { Button } from "../_components/ui/button";
+import { Input } from "../_components/ui/input";
+import { Label } from "../_components/ui/label";
+import { Textarea } from "../_components/ui/textarea";
 
 interface FaqItem {
   id: string;
@@ -23,52 +25,48 @@ interface Faq3Props {
   supportButtonUrl: string;
 }
 
-const faqItems: [] = [];
-
 const Faq = ({
-  heading = "Frequently asked questions",
-  description = "Find answers to common questions about our products. Can't find what you're looking for? Contact our support team.",
-  items = faqItems,
   supportHeading = "Need more support?",
   supportDescription = "Our dedicated support team is here to help you with any questions or concerns. Get in touch with us for personalized assistance.",
   supportButtonText = "Contact Support",
   supportButtonUrl = "https://wa.me/5541997862323",
 }: Faq3Props) => {
+  // State to manage form inputs
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    message: "",
+  });
+
+  // Handle input changes
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  // Handle form submission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const whatsappMessage = `Olá! Meu nome é ${formData.name}\n` +
+      `Telefone: ${formData.phone}\n` +
+      `Mensagem: ${formData.message}`;
+
+    const encodedMessage = encodeURIComponent(whatsappMessage);
+    const whatsappUrl = `https://wa.me/5541997862323?text=${encodedMessage}`;
+    
+    window.open(whatsappUrl, "_blank");
+  };
+
   return (
     <section className="py-3">
       <div className="container mx-auto flex flex-col items-center space-y-16">
-        {/* Título e Descrição */}
-        <div className="flex  flex-col items-center text-center max-w-3xl px-4">
-          <h2 className="mb-3 text-4xl md:text-5xl font-bold tracking-tight md:mb-4 lg:mb-6 lg:text-4xl">
-            {heading}
-          </h2>
-          <p className=" lg:text-lg">{description}</p>
-        </div>
-
-        {/* Accordion */}
-        <div className="flex justify-center w-full">
-          <Accordion
-            type="single"
-            collapsible
-            className="lg:w-full w-[350px] max-w-3xl "
-          >
-            {items.map((item) => (
-              <AccordionItem key={item.id} value={item.id}>
-                <AccordionTrigger className="transition-opacity duration-200 hover:no-underline hover:text-blue-400">
-                  <div className="font-medium text-left sm:py-1 lg:py-2 lg:text-lg">
-                    {item.question}
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="sm:mb-1 lg:mb-2">
-                  <div className=" lg:text-lg">{item.answer}</div>
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
-
         {/* Seção de Suporte */}
-        <div className="mx-auto flex flex-col items-center justify-center max-w-4xl w-[350px] lg:w-[825px] rounded-lg bg-accent p-4 text-center md:rounded-xl md:p-6 lg:p-8">
+        <div className="mx-auto flex flex-col items-center justify-center max-w-6xl w-[350px] lg:w-[825px] rounded-lg bg-accent p-4 text-center md:rounded-xl md:p-6 lg:p-8">
           <div className="relative mb-6 flex justify-center">
             <Avatar className="absolute mb-4 size-16 origin-bottom -translate-x-[60%] scale-[80%] border md:mb-5">
               <AvatarImage
@@ -98,13 +96,47 @@ const Faq = ({
           <p className="mb-8 max-w-3xl text-muted-foreground lg:text-lg">
             {supportDescription}
           </p>
-          <div className="flex w-full flex-col justify-center gap-2 sm:flex-row">
-            <Button className="w-full sm:w-auto" asChild>
-              <a href={supportButtonUrl} target="_blank">
+          <form onSubmit={handleSubmit} className="w-full max-w-sm mx-auto space-y-4">
+            <div>
+              <Label>Nome</Label>
+              <Input
+                type="text"
+                name="name"
+                placeholder="Digite seu nome"
+                className="w-full"
+                value={formData.name}
+                onChange={handleChange}
+                required
+              />
+            </div>
+            <div>
+              <Label>Telefone</Label>
+              <Input
+                type="tel"
+                name="phone"
+                placeholder="Digite seu telefone"
+                className="w-full"
+                value={formData.phone}
+                onChange={handleChange}
+                required
+              />
+            </div>
+            <div className="w-full max-w-lg mx-auto">
+              <Label>Deixe sua Mensagem</Label>
+              <Textarea
+                name="message"
+                className="w-full"
+                value={formData.message}
+                onChange={handleChange}
+                required
+              />
+            </div>
+            <div className="flex w-full flex-col justify-center gap-2 sm:flex-row mt-6">
+              <Button type="submit" className="w-full sm:w-auto">
                 {supportButtonText}
-              </a>
-            </Button>
-          </div>
+              </Button>
+            </div>
+          </form>
         </div>
       </div>
     </section>

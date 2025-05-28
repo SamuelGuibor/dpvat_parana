@@ -13,6 +13,7 @@ interface UserData {
   status?: string;
   type: string;
   role: string;
+  statusStartedAt?: string | null; // Adicionado
   cpf?: string;
   data_nasc?: string;
   email?: string;
@@ -52,6 +53,7 @@ export async function getUsers(
           name: true,
           status: true,
           role: true,
+          statusStartedAt: true, // Adicionado para modo "full"
           cpf: true,
           data_nasc: true,
           email: true,
@@ -78,6 +80,7 @@ export async function getUsers(
           name: true,
           status: true,
           role: true,
+          statusStartedAt: true, // Adicionado para modo "basic"
         };
 
   if (userId) {
@@ -93,9 +96,10 @@ export async function getUsers(
     return {
       id: user.id,
       name: user.name || "Sem nome",
-      status: user.status || undefined, // Converte null para undefined
+      status: user.status || undefined,
       type: user.role || "USER",
       role: user.role || "USER",
+      statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null, // Adicionado
       ...(fields === "full" && {
         cpf: user.cpf || "",
         data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",
@@ -130,9 +134,10 @@ export async function getUsers(
   return users.map((user) => ({
     id: user.id,
     name: user.name || "Sem nome",
-    status: user.status || undefined, // Converte null para undefined
+    status: user.status || undefined,
     type: user.role || "USER",
     role: user.role || "USER",
+    statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null, // Adicionado
     ...(fields === "full" && {
       cpf: user.cpf || "",
       data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",

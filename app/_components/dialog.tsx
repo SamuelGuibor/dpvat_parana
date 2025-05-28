@@ -33,6 +33,7 @@ import { getPresignedUrls } from '@/app/_actions/uploadS3';
 import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from "sonner";
+import { updateUserRole } from "../_actions/statusTimer";
 
 interface UserData {
   id: string;
@@ -44,6 +45,7 @@ interface UserData {
   rg_res?: string;
   cpf_res?: string;
   estado_civil_res?: string;
+  statusStartedAt?: string | null;
   profissao_res?: string;
   cpf?: string;
   data_nasc?: string;
@@ -65,6 +67,38 @@ interface UserData {
   hospital?: string;
   outro_hospital?: string;
   lesoes?: string;
+}
+
+interface UpdateUserData {
+  id: string;
+  name?: string;
+  cpf?: string;
+  data_nasc?: string;
+  email?: string;
+  rua?: string;
+  bairro?: string;
+  numero?: string;
+  cep?: string;
+  rg?: string;
+  nome_mae?: string;
+  telefone?: string;
+  cidade?: string;
+  estado?: string;
+  estado_civil?: string;
+  profissao?: string;
+  nacionalidade?: string;
+  data_acidente?: string;
+  atendimento_via?: string;
+  hospital?: string;
+  outro_hospital?: string;
+  lesoes?: string;
+  status?: string;
+  role?: string;
+  nome_res?: string;
+  rg_res?: string;
+  cpf_res?: string;
+  estado_civil_res?: string;
+  profissao_res?: string;
 }
 
 interface FileWithBase64 {
@@ -446,20 +480,83 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
 
   const handleSave = async () => {
     if (!user || !formData) return;
-
+  
     try {
+      // Upload files to S3 first, if any
       await uploadFilesToS3();
-
-      const updatedData = {
-        ...formData,
-        status: determineStatus(),
-      };
-
-      const updatedUser = await updateUser(updatedData);
+  
+      // Check if only the role has changed
+      const onlyRoleChanged = Object.keys(formData).every((key) => {
+        const typedKey = key as keyof UserData;
+        if (typedKey === "role") {
+          return formData[typedKey] !== user[typedKey];
+        }
+        return formData[typedKey] === user[typedKey];
+      });
+  
+      let updatedUser;
+      if (onlyRoleChanged && formData.role !== user.role) {
+        // Call updateUserRole Server Action for role-only changes
+        updatedUser = await updateUserRole({
+          userId: formData.id,
+          newRole: formData.role || "USER",
+        });
+        // Map the response to match the expected UserData structure
+        updatedUser = {
+          ...user,
+          role: updatedUser.role,
+          type: updatedUser.role || "USER",
+          statusStartedAt: updatedUser.statusStartedAt
+            ? updatedUser.statusStartedAt.toISOString()
+            : null,
+        };
+      } else {
+        // Call updateUser Server Action for other changes
+        const updatedData: UpdateUserData = {
+          id: formData.id,
+          name: formData.name !== user.name ? formData.name : undefined,
+          cpf: formData.cpf !== user.cpf ? formData.cpf : undefined,
+          data_nasc: formData.data_nasc !== user.data_nasc ? formData.data_nasc : undefined,
+          email: formData.email !== user.email ? formData.email : undefined,
+          rua: formData.rua !== user.rua ? formData.rua : undefined,
+          bairro: formData.bairro !== user.bairro ? formData.bairro : undefined,
+          numero: formData.numero !== user.numero ? formData.numero : undefined,
+          cep: formData.cep !== user.cep ? formData.cep : undefined,
+          rg: formData.rg !== user.rg ? formData.rg : undefined,
+          nome_mae: formData.nome_mae !== user.nome_mae ? formData.nome_mae : undefined,
+          telefone: formData.telefone !== user.telefone ? formData.telefone : undefined,
+          cidade: formData.cidade !== user.cidade ? formData.cidade : undefined,
+          estado: formData.estado !== user.estado ? formData.estado : undefined,
+          estado_civil: formData.estado_civil !== user.estado_civil ? formData.estado_civil : undefined,
+          profissao: formData.profissao !== user.profissao ? formData.profissao : undefined,
+          nacionalidade: formData.nacionalidade !== user.nacionalidade ? formData.nacionalidade : undefined,
+          data_acidente: formData.data_acidente !== user.data_acidente ? formData.data_acidente : undefined,
+          atendimento_via: formData.atendimento_via !== user.atendimento_via ? formData.atendimento_via : undefined,
+          hospital: formData.hospital !== user.hospital ? formData.hospital : undefined,
+          outro_hospital: formData.outro_hospital !== user.outro_hospital ? formData.outro_hospital : undefined,
+          lesoes: formData.lesoes !== user.lesoes ? formData.lesoes : undefined,
+          status: determineStatus() !== user.status ? determineStatus() : undefined,
+          role: formData.role !== user.role ? formData.role : undefined,
+          nome_res: formData.nome_res !== user.nome_res ? formData.nome_res : undefined,
+          rg_res: formData.rg_res !== user.rg_res ? formData.rg_res : undefined,
+          cpf_res: formData.cpf_res !== user.cpf_res ? formData.cpf_res : undefined,
+          estado_civil_res: formData.estado_civil_res !== user.estado_civil_res ? formData.estado_civil_res : undefined,
+          profissao_res: formData.profissao_res !== user.profissao_res ? formData.profissao_res : undefined,
+        };
+  
+        // Only call updateUser if there are changes to save
+        if (Object.values(updatedData).some((value) => value !== undefined && value !== updatedData.id)) {
+          updatedUser = await updateUser(updatedData);
+        } else {
+          // No changes to save, return the current user
+          updatedUser = user;
+        }
+      }
+  
       setUser(updatedUser);
       setFormData(updatedUser);
       setError(null);
-      toast.success('Dados salvos com sucesso!');
+      toast.success("Dados salvos com sucesso!");
     } catch (error: any) {
       console.error("Erro ao salvar:", error);
       setError("Não foi possível salvar as alterações: " + error.message);

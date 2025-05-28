@@ -10,7 +10,7 @@ const Stats = () => {
         <div className="relative z-10 mx-auto text-center">
           
           <h2 className="text-4xl font-semibold lg:text-5xl">
-            Aqui Nós Resgatamos Seus Direitos 
+            Aqui nós Resgatamos Seus Direitos 
           </h2>
         </div>
 
