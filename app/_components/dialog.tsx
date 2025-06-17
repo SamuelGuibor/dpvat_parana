@@ -67,6 +67,8 @@ interface UserData {
   hospital?: string;
   outro_hospital?: string;
   lesoes?: string;
+  service?: string;
+  obs?: string;
 }
 
 interface UpdateUserData {
@@ -99,6 +101,8 @@ interface UpdateUserData {
   cpf_res?: string;
   estado_civil_res?: string;
   profissao_res?: string;
+  obs?: string;
+  service?: string;
 }
 
 interface FileWithBase64 {
@@ -480,11 +484,11 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
 
   const handleSave = async () => {
     if (!user || !formData) return;
-  
+
     try {
       // Upload files to S3 first, if any
       await uploadFilesToS3();
-  
+
       // Check if only the role has changed
       const onlyRoleChanged = Object.keys(formData).every((key) => {
         const typedKey = key as keyof UserData;
@@ -493,7 +497,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         }
         return formData[typedKey] === user[typedKey];
       });
-  
+
       let updatedUser;
       if (onlyRoleChanged && formData.role !== user.role) {
         // Call updateUserRole Server Action for role-only changes
@@ -542,8 +546,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           cpf_res: formData.cpf_res !== user.cpf_res ? formData.cpf_res : undefined,
           estado_civil_res: formData.estado_civil_res !== user.estado_civil_res ? formData.estado_civil_res : undefined,
           profissao_res: formData.profissao_res !== user.profissao_res ? formData.profissao_res : undefined,
+          obs: formData.obs !== user.obs ? formData.obs : undefined,
+          service: formData.service !== user.service ? formData.service : undefined,
         };
-  
+
         // Only call updateUser if there are changes to save
         if (Object.values(updatedData).some((value) => value !== undefined && value !== updatedData.id)) {
           updatedUser = await updateUser(updatedData);
@@ -552,7 +558,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           updatedUser = user;
         }
       }
-  
+
       setUser(updatedUser);
       setFormData(updatedUser);
       setError(null);
@@ -567,34 +573,41 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
-      <AlertDialogContent className="max-w-3xl sm:max-w-lg md:max-w-xl lg:max-w-4xl flex flex-col max-h-[80vh]">
+      <AlertDialogContent className="max-w-[95vw] sm:max-w-lg md:max-w-xl lg:max-w-5xl flex flex-col max-h-[80vh] p-4 sm:p-6">
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-[20px]">
+          <AlertDialogTitle className="text-base sm:text-[20px]">
             Dados do Cliente: <span className="font-bold text-blue-600">{user?.name}</span>
           </AlertDialogTitle>
-          <div className="absolute right-0 pr-5">
-            <Button onClick={() => setIsDocument(!isDocument)}>
+          <div className="flex flex-col sm:flex-row sm:absolute sm:right-0 sm:pr-5 gap-2 mt-2 sm:mt-0">
+            {isDocument && (
+              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                <Button disabled className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
+                  Gerar Contrato
+                </Button>
+                <Button disabled className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
+                  Gerar Procuração
+                </Button>
+              </div>
+            )}
+            <Button onClick={() => setIsDocument(!isDocument)} className="w-full sm:w-auto">
               {isDocument ? "Ver Documentos" : "Ver Status"}
             </Button>
           </div>
-          {isDocument && (
-            <div className="absolute right-[200px] flex space-x-4">
-              <Button disabled className="bg-indigo-800 hover:bg-indigo-900">Gerar Contrato</Button>
-              <Button disabled className="bg-indigo-800 hover:bg-indigo-900">Gerar Procuração</Button>
-            </div>
-          )}
-          <AlertDialogDescription>Visualize ou altere os dados do cliente.</AlertDialogDescription>
+          <AlertDialogDescription className="text-sm sm:text-base">
+            Visualize ou altere os dados do cliente.
+          </AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="flex-1 overflow-y-auto px-4 py-2 text-sm">
+        <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-2 text-sm">
           {isDocument ? (
-            <form className="flex flex-col gap-6">
-              <div className="grid grid-cols-2 gap-4">
+            <form className="flex flex-col gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Nome</Label>
                   <Input
                     name="name"
                     value={formData?.name || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -603,6 +616,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="cpf"
                     value={formData?.cpf || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -612,6 +626,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     type="date"
                     value={formData?.data_nasc || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -620,6 +635,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="email"
                     value={formData?.email || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -628,6 +644,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="rua"
                     value={formData?.rua || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -636,6 +653,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="bairro"
                     value={formData?.bairro || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -644,6 +662,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="numero"
                     value={formData?.numero || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -652,6 +671,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="cep"
                     value={formData?.cep || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -660,6 +680,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="rg"
                     value={formData?.rg || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -668,6 +689,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="nome_mae"
                     value={formData?.nome_mae || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -676,6 +698,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="telefone"
                     value={formData?.telefone || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -684,6 +707,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="cidade"
                     value={formData?.cidade || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -692,17 +716,17 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     onValueChange={(value) => handleSelectChange("estado", value)}
                     value={formData?.estado || ""}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Selecione o estado" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem className="hover:bg-gray-200" value="parana">Paraná</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="santa_catarina">Santa Catarina</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="sao_paulo">São Paulo</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="rio_grande_do_sul">Rio Grande do Sul</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="mato_grosso">Mato Grosso</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="mato_grosso_do_sul">Mato Grosso do Sul</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="rio_de_janeiro">Rio de Janeiro</SelectItem>
+                      <SelectItem value="parana">Paraná</SelectItem>
+                      <SelectItem value="santa_catarina">Santa Catarina</SelectItem>
+                      <SelectItem value="sao_paulo">São Paulo</SelectItem>
+                      <SelectItem value="rio_grande_do_sul">Rio Grande do Sul</SelectItem>
+                      <SelectItem value="mato_grosso">Mato Grosso</SelectItem>
+                      <SelectItem value="mato_grosso_do_sul">Mato Grosso do Sul</SelectItem>
+                      <SelectItem value="rio_de_janeiro">Rio de Janeiro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -712,15 +736,15 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     onValueChange={(value) => handleSelectChange("estado_civil", value)}
                     value={formData?.estado_civil || ""}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Selecione o estado civil" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem className="hover:bg-gray-200" value="Solteiro">Solteiro(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Casado">Casado(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Divorciado">Divorciado(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Viuvo">Viúvo(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Uniao_Estavel">União Estável</SelectItem>
+                      <SelectItem value="Solteiro">Solteiro(a)</SelectItem>
+                      <SelectItem value="Casado">Casado(a)</SelectItem>
+                      <SelectItem value="Divorciado">Divorciado(a)</SelectItem>
+                      <SelectItem value="Viuvo">Viúvo(a)</SelectItem>
+                      <SelectItem value="Uniao_Estavel">União Estável</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -730,6 +754,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     name="profissao"
                     value={formData?.profissao || ""}
                     onChange={handleInputChange}
+                    className="w-full"
                   />
                 </div>
                 <div>
@@ -738,84 +763,111 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     onValueChange={(value) => handleSelectChange("nacionalidade", value)}
                     value={formData?.nacionalidade || ""}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Selecione a nacionalidade" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem className="hover:bg-gray-200" value="Brasileiro">Brasileiro(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Venezuelano">Venezuelano(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Colombiano">Colombiano(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Uruguaio">Uruguaio(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Argentino">Argentino(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Peruano">Peruano(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Boliviano">Boliviano(a)</SelectItem>
+                      <SelectItem value="Brasileiro">Brasileiro(a)</SelectItem>
+                      <SelectItem value="Venezuelano">Venezuelano(a)</SelectItem>
+                      <SelectItem value="Colombiano">Colombiano(a)</SelectItem>
+                      <SelectItem value="Uruguaio">Uruguaio(a)</SelectItem>
+                      <SelectItem value="Argentino">Argentino(a)</SelectItem>
+                      <SelectItem value="Peruano">Peruano(a)</SelectItem>
+                      <SelectItem value="Boliviano">Boliviano(a)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="col-span-2">
-                  <Label>Serviços</Label>
+                <div className="col-span-1 sm:col-span-2">
+                  <Label className="text-blue-600 font-semibold">Etiquetas</Label>
                   <Select
                     onValueChange={(value) => handleSelectChange("role", value)}
                     value={formData?.role || ""}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full bg-blue-100 border-2 border-blue-500">
                       <SelectValue placeholder="Selecione um serviço" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem className="hover:bg-gray-200" value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Agendar Coleta com Motoboy">Agendar Coleta com Motoboy</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Rota do Motoboy">Acompanhar Rota do Motoboy</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Fazer Protocolo no Hospital">Fazer Protocolo no Hospital</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Protocolar Pasta – Hospital Presencial">Protocolar Pasta – Hospital Presencial</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário por E-mail">Solicitar Prontuário por E-mail</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário Cajuru por E-mail">Solicitar Prontuário Cajuru por E-mail</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Cajuru – Solicitado">Acompanhar Cajuru – Solicitado</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário – Outros Hospitais">Solicitar Prontuário – Outros Hospitais</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Prontuário – Outros Solicitados">Acompanhar Prontuário – Outros Solicitados</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Solicitar Prontuário – Ponta Grossa">Solicitar Prontuário – Ponta Grossa</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário – Recebimento Online">Aguardar Prontuário – Recebimento Online</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário PG – Recebimento Online">Aguardar Prontuário PG – Recebimento Online</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Solicitar Siate">Solicitar Siate</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Protocolar DPVAT – Caixa">Protocolar DPVAT – Caixa</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Enviar para Reanálise">Enviar para Reanálise</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Manter SPVAT em Standby">Manter SPVAT em Standby</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Análise da Caixa">Aguardar Análise da Caixa</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Acompanhar Pendências – Protocolado">Acompanhar Pendências – Protocolado</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Protocolar Pendência de B.O.">Protocolar Pendência de B.O.</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Avisar Sobre Perícia Administrativa">Avisar Sobre Perícia Administrativa</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Resultado da Perícia">Aguardar Resultado da Perícia</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
+                      <SelectItem value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
+                      <SelectItem value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
+                      <SelectItem value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
+                      <SelectItem value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
+                      <SelectItem value="Agendar Coleta com Motoboy">Agendar Coleta com Motoboy</SelectItem>
+                      <SelectItem value="Acompanhar Rota do Motoboy">Acompanhar Rota do Motoboy</SelectItem>
+                      <SelectItem value="Fazer Protocolo no Hospital">Fazer Protocolo no Hospital</SelectItem>
+                      <SelectItem value="Protocolar Pasta – Hospital Presencial">Protocolar Pasta – Hospital Presencial</SelectItem>
+                      <SelectItem value="Solicitar Prontuário por E-mail">Solicitar Prontuário por E-mail</SelectItem>
+                      <SelectItem value="Solicitar Prontuário Cajuru por E-mail">Solicitar Prontuário Cajuru por E-mail</SelectItem>
+                      <SelectItem value="Acompanhar Cajuru – Solicitado">Acompanhar Cajuru – Solicitado</SelectItem>
+                      <SelectItem value="Solicitar Prontuário – Outros Hospitais">Solicitar Prontuário – Outros Hospitais</SelectItem>
+                      <SelectItem value="Acompanhar Prontuário – Outros Solicitados">Acompanhar Prontuário – Outros Solicitados</SelectItem>
+                      <SelectItem value="Solicitar Prontuário – Ponta Grossa">Solicitar Prontuário – Ponta Grossa</SelectItem>
+                      <SelectItem value="Aguardar Prontuário – Recebimento Online">Aguardar Prontuário – Recebimento Online</SelectItem>
+                      <SelectItem value="Aguardar Prontuário PG – Recebimento Online">Aguardar Prontuário PG – Recebimento Online</SelectItem>
+                      <SelectItem value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
+                      <SelectItem value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
+                      <SelectItem value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
+                      <SelectItem value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
+                      <SelectItem value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
+                      <SelectItem value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
+                      <SelectItem value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
+                      <SelectItem value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
+                      <SelectItem value="Solicitar Siate">Solicitar Siate</SelectItem>
+                      <SelectItem value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
+                      <SelectItem value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
+                      <SelectItem value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
+                      <SelectItem value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
+                      <SelectItem value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
+                      <SelectItem value="Protocolar DPVAT – Caixa">Protocolar DPVAT – Caixa</SelectItem>
+                      <SelectItem value="Enviar para Reanálise">Enviar para Reanálise</SelectItem>
+                      <SelectItem value="Manter SPVAT em Standby">Manter SPVAT em Standby</SelectItem>
+                      <SelectItem value="Aguardar Análise da Caixa">Aguardar Análise da Caixa</SelectItem>
+                      <SelectItem value="Acompanhar Pendências – Protocolado">Acompanhar Pendências – Protocolado</SelectItem>
+                      <SelectItem value="Protocolar Pendência de B.O.">Protocolar Pendência de B.O.</SelectItem>
+                      <SelectItem value="Avisar Sobre Perícia Administrativa">Avisar Sobre Perícia Administrativa</SelectItem>
+                      <SelectItem value="Aguardar Resultado da Perícia">Aguardar Resultado da Perícia</SelectItem>
+                      <SelectItem value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
+                      <SelectItem value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
+                      <SelectItem value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="col-span-1 sm:col-span-2">
+                  <Label className="text-blue-600 font-semibold">Serviços</Label>
+                  <Select
+                    onValueChange={(value) => handleSelectChange("service", value)}
+                    value={formData?.service || ""}
+                  >
+                    <SelectTrigger className="w-full bg-blue-100 border-2 border-blue-500">
+                      <SelectValue placeholder="Selecione um serviço" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="INSS">INSS</SelectItem>
+                      <SelectItem value="Seguro de Vida">Seguro de Vida</SelectItem>
+                      <SelectItem value="RCF">RCF</SelectItem>
+                      <SelectItem value="DPVAT">DPVAT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Observação</Label>
+                  <Input
+                    name="obs"
+                    value={formData?.obs || ""}
+                    onChange={handleInputChange}
+                    className="w-full"
+                  />
+                </div>
               </div>
               <div className="mt-4">
-                <h2 className="text-lg font-semibold mb-2 text-blue-600">É menor de idade? Preencha os dados:</h2>
-                <div className="grid grid-cols-2 gap-4">
+                <h2 className="text-base sm:text-lg font-semibold mb-2 text-blue-600">É menor de idade? Preencha os dados:</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Nome</Label>
                     <Input
                       name="nome_res"
                       value={formData?.nome_res || ""}
                       onChange={handleInputChange}
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -824,6 +876,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       name="rg_res"
                       value={formData?.rg_res || ""}
                       onChange={handleInputChange}
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -832,6 +885,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       name="cpf_res"
                       value={formData?.cpf_res || ""}
                       onChange={handleInputChange}
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -840,31 +894,32 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       name="profissao_res"
                       value={formData?.profissao_res || ""}
                       onChange={handleInputChange}
+                      className="w-full"
                     />
                   </div>
-                </div>
-                <div className="relative top-2">
-                  <Label>Estado Civil</Label>
-                  <Select
-                    onValueChange={(value) => handleSelectChange("estado_civil_res", value)}
-                    value={formData?.estado_civil_res || ""}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o estado civil" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem className="hover:bg-gray-200" value="Solteiro">Solteiro(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Casado">Casado(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Divorciado">Divorciado(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Viuvo">Viúvo(a)</SelectItem>
-                      <SelectItem className="hover:bg-gray-200" value="Uniao_Estavel">União Estável</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="col-span-1 sm:col-span-2">
+                    <Label>Estado Civil</Label>
+                    <Select
+                      onValueChange={(value) => handleSelectChange("estado_civil_res", value)}
+                      value={formData?.estado_civil_res || ""}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione o estado civil" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Solteiro">Solteiro(a)</SelectItem>
+                        <SelectItem value="Casado">Casado(a)</SelectItem>
+                        <SelectItem value="Divorciado">Divorciado(a)</SelectItem>
+                        <SelectItem value="Viuvo">Viúvo(a)</SelectItem>
+                        <SelectItem value="Uniao_Estavel">União Estável</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
               <div className="mt-4">
-                <h2 className="text-lg font-semibold mb-2 text-blue-600">Dados do Acidente</h2>
-                <div className="grid grid-cols-2 gap-4">
+                <h2 className="text-base sm:text-lg font-semibold mb-2 text-blue-600">Dados do Acidente</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Data do Acidente</Label>
                     <Input
@@ -872,6 +927,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       type="date"
                       value={formData?.data_acidente || ""}
                       onChange={handleInputChange}
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -880,14 +936,14 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       onValueChange={(value) => handleSelectChange("atendimento_via", value)}
                       value={formData?.atendimento_via || ""}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Selecione o atendimento via" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem className="hover:bg-gray-200" value="Siate">SIATE</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="Samu">SAMU/OUTRAS AMBULÂNCIAS</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="Procura_Direta">PROCURA DIRETA</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="Arteris">ARTERIS</SelectItem>
+                        <SelectItem value="Siate">SIATE</SelectItem>
+                        <SelectItem value="Samu">SAMU/OUTRAS AMBULÂNCIAS</SelectItem>
+                        <SelectItem value="Procura_Direta">PROCURA DIRETA</SelectItem>
+                        <SelectItem value="Arteris">ARTERIS</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -897,42 +953,42 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       onValueChange={(value) => handleSelectChange("hospital", value)}
                       value={formData?.hospital || ""}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Selecione o hospital" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem className="hover:bg-gray-200" value="trabalhador">Trabalhador</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="cajuru">Cajuru</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="evangelico_mackenzie">Evangélico/Mackenzie</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="angelina_caron">Angelina Caron</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="h_maternidade_sao_jose_dos_pinhais">
+                        <SelectItem value="trabalhador">Trabalhador</SelectItem>
+                        <SelectItem value="cajuru">Cajuru</SelectItem>
+                        <SelectItem value="evangelico_mackenzie">Evangélico/Mackenzie</SelectItem>
+                        <SelectItem value="angelina_caron">Angelina Caron</SelectItem>
+                        <SelectItem value="h_maternidade_sao_jose_dos_pinhais">
                           H. Maternidade São José dos Pinhais
                         </SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="hma_araucaria">Hma Araucária</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="rocio">Rocio</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="onix">Onix</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="marcelino_champagnat">Marcelino Champagnat</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="hospital_xv">Hospital XV</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="vita">Vita</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fraturas_novo_mundo">Fraturas Novo Mundo</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="cwb_santa_cruz">Cwb Santa Cruz</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="cwb_santa_casa">Cwb Santa Casa</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="nossa_saude">Nossa Saúde</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="nacoes">Nações</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="litoral">Litoral</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pg_regional">Pg Regional</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="upa_santana">Upa Santana</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="upa_santa_paula">Upa Santa Paula</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pg_bom_jesus">Pg Bom Jesus</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pg_sao_camilo">Pg São Camilo</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pg_unimed">Pg Unimed</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pg_santa_casa">Pg Santa Casa</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pg_pronto_socorro_amadeu_puppi">
+                        <SelectItem value="hma_araucaria">Hma Araucária</SelectItem>
+                        <SelectItem value="rocio">Rocio</SelectItem>
+                        <SelectItem value="onix">Onix</SelectItem>
+                        <SelectItem value="marcelino_champagnat">Marcelino Champagnat</SelectItem>
+                        <SelectItem value="hospital_xv">Hospital XV</SelectItem>
+                        <SelectItem value="vita">Vita</SelectItem>
+                        <SelectItem value="fraturas_novo_mundo">Fraturas Novo Mundo</SelectItem>
+                        <SelectItem value="cwb_santa_cruz">Cwb Santa Cruz</SelectItem>
+                        <SelectItem value="cwb_santa_casa">Cwb Santa Casa</SelectItem>
+                        <SelectItem value="nossa_saude">Nossa Saúde</SelectItem>
+                        <SelectItem value="nacoes">Nações</SelectItem>
+                        <SelectItem value="litoral">Litoral</SelectItem>
+                        <SelectItem value="pg_regional">Pg Regional</SelectItem>
+                        <SelectItem value="upa_santana">Upa Santana</SelectItem>
+                        <SelectItem value="upa_santa_paula">Upa Santa Paula</SelectItem>
+                        <SelectItem value="pg_bom_jesus">Pg Bom Jesus</SelectItem>
+                        <SelectItem value="pg_sao_camilo">Pg São Camilo</SelectItem>
+                        <SelectItem value="pg_unimed">Pg Unimed</SelectItem>
+                        <SelectItem value="pg_santa_casa">Pg Santa Casa</SelectItem>
+                        <SelectItem value="pg_pronto_socorro_amadeu_puppi">
                           Pg Pronto Socorro Amadeu Puppi
                         </SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="idf_telemaco_borba">Idf Telemaco Borba</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="regional_de_paranagua">Regional de Paranaguá</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="regional_pg">Regional Pg</SelectItem>
+                        <SelectItem value="idf_telemaco_borba">Idf Telemaco Borba</SelectItem>
+                        <SelectItem value="regional_de_paranagua">Regional de Paranaguá</SelectItem>
+                        <SelectItem value="regional_pg">Regional Pg</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -942,50 +998,50 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       name="outro_hospital"
                       value={formData?.outro_hospital || ""}
                       onChange={handleInputChange}
+                      className="w-full"
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-1 sm:col-span-2">
                     <Label>Lesões</Label>
                     <Select
                       onValueChange={(value) => handleSelectChange("lesoes", value)}
                       value={formData?.lesoes || ""}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Selecione as lesões" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem className="hover:bg-gray-200" value="fx_femur">FX Fêmur</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_tibia">FX Tíbia</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_pulso_mao_metatarso">FX Pulso/Mão/Metatarso</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_tornozelo">FX Tornozelo</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_mindilhos">FX Mindilhos</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_costela">FX Costela</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_coluna">FX Vértebra/Coluna</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_pelve">FX Pelve</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_joelho">FX Joelho</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="ligamento_joelho">Lesão no Ligamento Joelho</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="luxacao">Luxação</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="traumatismo">Traumatismo</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_exposta_cirurgia">FX Exposta/Cirurgia</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_braco">FX Braço</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_perna">FX Perna</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_pe">FX Pé</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_face_maxilar_nariz">FX Face, Maxilar, Nariz</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="fx_bacia">FX Bacia</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="laceracao">Laceração</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="pneumotorax">Pneumotórax</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="amputacao">Amputação</SelectItem>
-                        <SelectItem className="hover:bg-gray-200" value="multiplas_fraturas">Múltiplas Fraturas</SelectItem>
+                        <SelectItem value="fx_femur">FX Fêmur</SelectItem>
+                        <SelectItem value="fx_tibia">FX Tíbia</SelectItem>
+                        <SelectItem value="fx_pulso_mao_metatarso">FX Pulso/Mão/Metatarso</SelectItem>
+                        <SelectItem value="fx_tornozelo">FX Tornozelo</SelectItem>
+                        <SelectItem value="fx_mindilhos">FX Mindilhos</SelectItem>
+                        <SelectItem value="fx_costela">FX Costela</SelectItem>
+                        <SelectItem value="fx_coluna">FX Vértebra/Coluna</SelectItem>
+                        <SelectItem value="fx_pelve">FX Pelve</SelectItem>
+                        <SelectItem value="fx_joelho">FX Joelho</SelectItem>
+                        <SelectItem value="ligamento_joelho">Lesão no Ligamento Joelho</SelectItem>
+                        <SelectItem value="luxacao">Luxação</SelectItem>
+                        <SelectItem value="traumatismo">Traumatismo</SelectItem>
+                        <SelectItem value="fx_exposta_cirurgia">FX Exposta/Cirurgia</SelectItem>
+                        <SelectItem value="fx_braco">FX Braço</SelectItem>
+                        <SelectItem value="fx_perna">FX Perna</SelectItem>
+                        <SelectItem value="fx_pe">FX Pé</SelectItem>
+                        <SelectItem value="fx_face_maxilar_nariz">FX Face, Maxilar, Nariz</SelectItem>
+                        <SelectItem value="fx_bacia">FX Bacia</SelectItem>
+                        <SelectItem value="laceracao">Laceração</SelectItem>
+                        <SelectItem value="pneumotorax">Pneumotórax</SelectItem>
+                        <SelectItem value="amputacao">Amputação</SelectItem>
+                        <SelectItem value="multiplas_fraturas">Múltiplas Fraturas</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
               </div>
-
               <div className="mt-4">
-                <h1 className="text-lg font-semibold mb-4">Área dos Status</h1>
+                <h1 className="text-base sm:text-lg font-semibold mb-4">Área dos Status</h1>
                 <div className="flex justify-center">
-                  <div className="grid grid-cols-2 gap-6 max-w-2xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 max-w-2xl">
                     <div className="flex items-center gap-2">
                       <Input
                         type="checkbox"
@@ -994,10 +1050,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         onChange={() => handleCheckboxChange("iniciado")}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="iniciado"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="iniciado" className="text-sm text-gray-700 whitespace-nowrap">
                         Processo iniciado
                       </Label>
                     </div>
@@ -1010,10 +1063,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.iniciado}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="aguardandoAssinatura"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="aguardandoAssinatura" className="text-sm text-gray-700 whitespace-nowrap">
                         Aguardando assinatura
                       </Label>
                     </div>
@@ -1026,10 +1076,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.aguardandoAssinatura}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="solicitarDocumentos"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="solicitarDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
                         Fase de solicitação de documentos
                       </Label>
                     </div>
@@ -1042,10 +1089,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.solicitarDocumentos}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="coletaDocumentos"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="coletaDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
                         Coleta de documentos
                       </Label>
                     </div>
@@ -1058,10 +1102,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.coletaDocumentos}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="analiseDocumentos"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="analiseDocumentos" className="text-sm text-gray-700 whitespace-nowrap">
                         Análise de documentos
                       </Label>
                     </div>
@@ -1074,10 +1115,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.analiseDocumentos}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="pericial"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="pericial" className="text-sm text-gray-700 whitespace-nowrap">
                         Fase Pericial
                       </Label>
                     </div>
@@ -1090,10 +1128,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.pericial}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="aguardandoPericial"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="aguardandoPericial" className="text-sm text-gray-700 whitespace-nowrap">
                         Aguardando resultado pericial
                       </Label>
                     </div>
@@ -1106,10 +1141,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.aguardandoPericial}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="pagamentoHonorario"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="pagamentoHonorario" className="text-sm text-gray-700 whitespace-nowrap">
                         Pagamento de honorários
                       </Label>
                     </div>
@@ -1122,28 +1154,22 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         disabled={!localStatus.pagamentoHonorario}
                         className="w-4 h-4"
                       />
-                      <Label
-                        htmlFor="processoEncerrado"
-                        className="text-sm text-gray-700 whitespace-nowrap"
-                      >
+                      <Label htmlFor="processoEncerrado" className="text-sm text-gray-700 whitespace-nowrap">
                         Processo encerrado
                       </Label>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <Dropzone onDrop={handleDrop} src={files} onError={console.error}>
+              <Dropzone onDrop={handleDrop} src={files} onError={console.error} className="w-full">
                 <DropzoneEmptyState />
                 <DropzoneContent />
               </Dropzone>
-
-              {uploading && <p>Enviando arquivos...</p>}
-              {error && <p className="text-red-500">{error}</p>}
-
+              {uploading && <p className="text-sm">Enviando arquivos...</p>}
+              {error && <p className="text-red-500 text-sm">{error}</p>}
               {files.length > 0 && (
                 <div className="mt-4 overflow-x-auto">
-                  <table className="w-full text-sm text-left border-collapse">
+                  <table className="w-full text-xs sm:text-sm text-left border-collapse">
                     <thead>
                       <tr className="bg-muted">
                         <th className="p-2 border">Nome do Arquivo</th>
@@ -1152,7 +1178,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     <tbody>
                       {files.map((file, index) => (
                         <tr key={index} className="border-b">
-                          <td className="p-2 border truncate max-w-[200px]">{file.name}</td>
+                          <td className="p-2 border truncate max-w-[150px] sm:max-w-[200px]">{file.name}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1162,7 +1188,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
             </form>
           ) : (
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm text-left border-collapse">
+              <table className="w-full text-xs sm:text-sm text-left border-collapse">
                 <thead>
                   <tr className="bg-muted">
                     <th className="p-2 border">Nome do Arquivo</th>
@@ -1173,7 +1199,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                     userDocuments.map((doc, index) => (
                       <tr key={index} className="border-b">
                         <td className="p-2 border flex justify-between items-center">
-                          <span className="truncate max-w-[200px]">{doc.name}</span>
+                          <span className="truncate max-w-[150px] sm:max-w-[200px]">{doc.name}</span>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1203,12 +1229,12 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         </div>
         <AlertDialogFooter className="border-t pt-4">
           <div className="flex flex-col sm:flex-row gap-2 mx-auto w-full justify-center">
-            <AlertDialogCancel className="bg-red-500 hover:bg-red-500/90 text-white w-full lg:w-[330px]">
+            <AlertDialogCancel className="bg-red-600 hover:bg-red-700 text-white w-full">
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleSave}
-              className="w-full lg:w-[330px] bg-black hover:bg-black/70"
+              className="w-full bg-black hover:bg-gray-800"
             >
               Salvar
             </AlertDialogAction>

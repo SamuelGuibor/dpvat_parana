@@ -1,6 +1,5 @@
 'use client';
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/app/_components/ui/avatar';
 import { Badge } from '@/app/_components/ui/badge';
 import { Input } from '@/app/_components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
@@ -9,67 +8,131 @@ import {
   KanbanBoard,
   KanbanCard,
   KanbanCards,
-  KanbanHeader,
   KanbanProvider,
 } from './kanban';
 import DialogDash from '../dialog';
 import { getUsers } from '@/app/_actions/get-user';
-import type { DragEndEvent } from '@dnd-kit/core';
 import { useState, useEffect } from 'react';
 import type { FC } from 'react';
+import { Loader2 } from 'lucide-react';
+import { differenceInDays, formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
-// Lista fixa de serviços com cores
 const services = [
-  { id: '1', name: 'Aplicar Filtro DPVAT', color: '#DCFCE7', text: '#166534', border: '#BBF7D0' },
-  { id: '2', name: 'Gerar Procuração Automática', color: '#DCFCE7', text: '#166534', border: '#BBF7D0' },
-  { id: '3', name: 'Coletar Assinatura em Cartório', color: '#CFFAFE', text: '#155E75', border: '#A5F3FC' },
-  { id: '4', name: 'Coletar Assinatura Digital', color: '#CFFAFE', text: '#155E75', border: '#A5F3FC' },
-  { id: '5', name: 'Agendar Coleta com Motoboy', color: '#DBEAFE', text: '#1E3A8A', border: '#BFDBFE' },
-  { id: '6', name: 'Acompanhar Rota do Motoboy', color: '#DBEAFE', text: '#1E3A8A', border: '#BFDBFE' },
-  { id: '7', name: 'Fazer Protocolo no Hospital', color: '#ECFCCB', text: '#3F6212', border: '#D9F99D' },
-  { id: '8', name: 'Protocolar Pasta – Hospital Presencial', color: '#ECFCCB', text: '#3F6212', border: '#D9F99D' },
-  { id: '9', name: 'Solicitar Prontuário por E-mail', color: '#FEF9C3', text: '#713F12', border: '#FEF08A' },
-  { id: '10', name: 'Solicitar Prontuário Cajuru por E-mail', color: '#FEF9C3', text: '#713F12', border: '#FEF08A' },
-  { id: '11', name: 'Acompanhar Cajuru – Solicitado', color: '#FEF9C3', text: '#713F12', border: '#FEF08A' },
-  { id: '12', name: 'Solicitar Prontuário – Outros Hospitais', color: '#FEF9C3', text: '#713F12', border: '#FEF08A' },
-  { id: '13', name: 'Acompanhar Prontuário – Outros Solicitados', color: '#FEF9C3', text: '#713F12', border: '#FEF08A' },
-  { id: '14', name: 'Solicitar Prontuário – Ponta Grossa', color: '#FEF9C3', text: '#713F12', border: '#FEF08A' },
-  { id: '15', name: 'Aguardar Prontuário – Recebimento Online', color: '#FFEDD5', text: '#7C2D12', border: '#FED7AA' },
-  { id: '16', name: 'Aguardar Prontuário PG – Recebimento Online', color: '#FFEDD5', text: '#7C2D12', border: '#FED7AA' },
-  { id: '17', name: 'Aguardar Prontuário PG – Presencial', color: '#FFEDD5', text: '#7C2D12', border: '#FED7AA' },
-  { id: '18', name: 'Aguardar Retirada de Prontuário – Presencial', color: '#FFEDD5', text: '#7C2D12', border: '#FED7AA' },
-  { id: '19', name: 'Retirar Prontuário – Pronto para Retirar', color: '#FFEDD5', text: '#7C2D12', border: '#FED7AA' },
-  { id: '20', name: 'Resolver Problema com B.O.', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '21', name: 'Fazer B.O. – Equipe Rubi', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '22', name: 'Orientar Cliente – Fazer B.O.', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '23', name: 'Enviar 1ª Mensagem – B.O.', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '24', name: 'Solicitar B.O. ao Cliente – Acidente', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '25', name: 'Solicitar Siate', color: '#FEE2E2', text: '#991B1B', border: '#FECACA' },
-  { id: '26', name: 'Aguardar Retorno do Siate', color: '#FEE2E2', text: '#991B1B', border: '#FECACA' },
-  { id: '27', name: 'Acompanhar Siate – Pronto', color: '#FEE2E2', text: '#991B1B', border: '#FECACA' },
-  { id: '28', name: 'Enviar Mensagem – Previdenciário', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '29', name: 'Registrar Óbito – Nova Lei', color: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-  { id: '30', name: 'Protocolar SPVAT', color: '#E0E7FF', text: '#3730A3', border: '#C7D2FE' },
-  { id: '31', name: 'Protocolar DPVAT – Caixa', color: '#E0E7FF', text: '#3730A3', border: '#C7D2FE' },
-  { id: '32', name: 'Enviar para Reanálise', color: '#E0E7FF', text: '#3730A3', border: '#C7D2FE' },
-  { id: '33', name: 'Manter SPVAT em Standby', color: '#E0E7FF', text: '#3730A3', border: '#C7D2FE' },
-  { id: '34', name: 'Aguardar Análise da Caixa', color: '#DBEAFE', text: '#1E3A8A', border: '#BFDBFE' },
-  { id: '35', name: 'Acompanhar Pendências – Protocolado', color: '#F5D0FE', text: '#701A75', border: '#F0ABFC' },
-  { id: '36', name: 'Protocolar Pendência de B.O.', color: '#F5D0FE', text: '#701A75', border: '#F0ABFC' },
-  { id: '37', name: 'Avisar Sobre Perícia Administrativa', color: '#CCFBF1', text: '#115E59', border: '#99F6E4' },
-  { id: '38', name: 'Aguardar Resultado da Perícia', color: '#CCFBF1', text: '#115E59', border: '#99F6E4' },
-  { id: '39', name: 'Cobrar Honorários – Resultado Perícia', color: '#CCFBF1', text: '#115E59', border: '#99F6E4' },
-  { id: '40', name: 'Aguardar Pagamento – Honorários Cobrados', color: '#CCFBF1', text: '#115E59', border: '#99F6E4' },
-  { id: '41', name: 'Encerrar Processo – DPVAT', color: '#E5E7EB', text: '#1F2937', border: '#D1D5DB' },
+  { id: '1', name: 'Aplicar Filtro DPVAT', color: '#164b35', border: '#BBF7D0' },
+  { id: '2', name: 'Gerar Procuração Automática', color: '#000000', border: '#BBF7D0' },
+  { id: '3', name: 'Coletar Assinatura em Cartório', color: '#164555', border: '#A5F3FC' },
+  { id: '4', name: 'Coletar Assinatura Digital', color: '#164555', border: '#A5F3FC' },
+  { id: '5', name: 'Agendar Coleta com Motoboy', color: '#09326c', border: '#BFDBFE' },
+  { id: '6', name: 'Acompanhar Rota do Motoboy', color: '#09326c', border: '#BFDBFE' },
+  { id: '7', name: 'Fazer Protocolo no Hospital', color: '#37471f', border: '#D9F99D' },
+  { id: '8', name: 'Protocolar Pasta – Hospital Presencial', color: '#37471f', border: '#D9F99D' },
+  { id: '9', name: 'Solicitar Prontuário por E-mail', color: '#533f04', border: '#FEF08A' },
+  { id: '10', name: 'Solicitar Prontuário Cajuru por E-mail', color: '#533f04', border: '#FEF08A' },
+  { id: '11', name: 'Acompanhar Cajuru – Solicitado', color: '#533f04', border: '#FEF08A' },
+  { id: '12', name: 'Solicitar Prontuário – Outros Hospitais', color: '#533f04', border: '#FEF08A' },
+  { id: '13', name: 'Acompanhar Prontuário – Outros Solicitados', color: '#533f04', border: '#FEF08A' },
+  { id: '14', name: 'Solicitar Prontuário – Ponta Grossa', color: '#533f04', border: '#FEF08A' },
+  { id: '15', name: 'Aguardar Prontuário – Recebimento Online', color: '#702e00', border: '#FED7AA' },
+  { id: '16', name: 'Aguardar Prontuário PG – Recebimento Online', color: '#702e00', border: '#FED7AA' },
+  { id: '17', name: 'Aguardar Prontuário PG – Presencial', color: '#702e00', border: '#FED7AA' },
+  { id: '18', name: 'Aguardar Retirada de Prontuário – Presencial', color: '#702e00', border: '#FED7AA' },
+  { id: '19', name: 'Retirar Prontuário – Pronto para Retirar', color: '#702e00', border: '#FED7AA' },
+  { id: '20', name: 'Resolver Problema com B.O.', color: '#5d1f1a', border: '#FECDD3' },
+  { id: '21', name: 'Fazer B.O. – Equipe Rubi', color: '#5d1f1a', border: '#FECDD3' },
+  { id: '22', name: 'Orientar Cliente – Fazer B.O.', color: '#5d1f1a', border: '#FECDD3' },
+  { id: '23', name: 'Enviar 1ª Mensagem – B.O.', color: '#5d1f1a', border: '#FECDD3' },
+  { id: '24', name: 'Solicitado ao Cliente fazer B.O. – Acidente', color: '#5d1f1a', border: '#FECDD3' },
+  { id: '25', name: 'Solicitar Siate', color: '#5d1f1a', border: '#FECACA' },
+  { id: '26', name: 'Aguardar Retorno do Siate', color: '#5d1f1a', border: '#FECACA' },
+  { id: '27', name: 'Acompanhar Siate – Pronto', color: '#5d1f1a', border: '#FECACA' },
+  { id: '28', name: 'Enviar Mensagem – Previdenciário', color: '#09326c', border: '#FECDD3' },
+  { id: '29', name: 'Registrar Óbito – Nova Lei', color: '#09326c', border: '#FECDD3' },
+  { id: '30', name: 'Protocolar SPVAT', color: '#5d1f1a', border: '#C7D2FE' },
+  { id: '31', name: 'Protocolar SPVAT - Standby', color: '#E0E7FF', border: '#C7D2FE' },
+  { id: '32', name: 'Enviar para Reanálise', color: '#352c63', border: '#C7D2FE' },
+  { id: '33', name: 'Protocolar DPVAT – Caixa', color: '#352c63', border: '#C7D2FE' },
+  { id: '24', name: 'Aguardar Análise da Caixa', color: '#352c63', border: '#BFDBFE' },
+  { id: '35', name: 'Acompanhar Pendências – Protocolado', color: '#50253f', border: '#F0ABFC' },
+  { id: '36', name: 'Protocolar Pendência de B.O.', color: '#50253f', border: '#F0ABFC' },
+  { id: '37', name: 'Avisar Sobre Perícia Administrativa', color: '#164b35', border: '#99F6E4' },
+  { id: '38', name: 'Aguardar Resultado da Perícia', color: '#164b35', border: '#99F6E4' },
+  { id: '39', name: 'Cobrar Honorários – Resultado Perícia', color: '#164b35', border: '#99F6E4' },
+  { id: '40', name: 'Aguardar Pagamento – Honorários Cobrados', color: '#164b35', border: '#99F6E4' },
+  { id: '41', name: 'Encerrar Processo – DPVAT', color: '#352c63', border: '#D1D5DB' },
 ];
 
-// Interface para os dados dos usuários
+// Função para escurecer a cor em 20%
+
+
+// Mapeamento de estilos para user.service
+const serviceStyles: { [key: string]: { bgColor: string; textColor: string } } = {
+  INSS: { bgColor: '#DCFCE7', textColor: '#15803D' },
+  'outro exemplo': { bgColor: '#CFFAFE', textColor: '#0E7490' }, // Ciano claro para fundo, ciano escuro para texto
+  DPVAT: { bgColor: '#E0E7FF', textColor: '#1E3A8A' }, // Azul claro para fundo, azul escuro para texto
+};
+
+// Estilo padrão para serviços não mapeados ou undefined
+const defaultServiceStyle = {
+  bgColor: 'transparent',
+  textColor: '#000000',
+};
+
 interface User {
   id: string;
   name: string;
   type: string;
   status?: string;
+  statusStartedAt?: string | null;
+  service?: string;
+  obs?: string;
 }
+
+const roleTimeLimits: { [key: string]: number | null } = {
+  'Aplicar Filtro DPVAT': 7,
+  'Gerar Procuração Automática': 3,
+  'Coletar Assinatura em Cartório': 5,
+  'Coletar Assinatura Digital': 3,
+  'Agendar Coleta com Motoboy': 2,
+  'Acompanhar Rota do Motoboy': 2,
+  'Fazer Protocolo no Hospital': 5,
+  'Protocolar Pasta – Hospital Presencial': 5,
+  'Solicitar Prontuário por E-mail': 7,
+  'Solicitar Prontuário Cajuru por E-mail': 7,
+  'Acompanhar Cajuru – Solicitado': 10,
+  'Solicitar Prontuário – Outros Hospitais': 7,
+  'Acompanhar Prontuário – Outros Solicitados': 10,
+  'Solicitar Prontuário – Ponta Grossa': 7,
+  'Aguardar Prontuário – Recebimento Online': 15,
+  'Aguardar Prontuário PG – Recebimento Online': 15,
+  'Aguardar Prontuário PG – Presencial': 15,
+  'Aguardar Retirada de Prontuário – Presencial': 10,
+  'Retirar Prontuário – Pronto para Retirar': 5,
+  'Resolver Problema com B.O.': 7,
+  'Fazer B.O. – Equipe Rubi': 5,
+  'Orientar Cliente – Fazer B.O.': 3,
+  'Enviar 1ª Mensagem – B.O.': 2,
+  'Solicitar B.O. ao Cliente – Acidente': 5,
+  'Solicitar Siate': 3,
+  'Aguardar Retorno do Siate': 7,
+  'Acompanhar Siate – Pronto': 5,
+  'Enviar Mensagem – Previdenciário': 3,
+  'Registrar Óbito – Nova Lei': 5,
+  'Protocolar SPVAT': 7,
+  'Protocolar DPVAT – Caixa': 7,
+  'Enviar para Reanálise': 5,
+  'Manter SPVAT em Standby': null,
+  'Aguardar Análise da Caixa': 15,
+  'Acompanhar Pendências – Protocolado': 10,
+  'Protocolar Pendência de B.O.': 5,
+  'Avisar Sobre Perícia Administrativa': 3,
+  'Aguardar Resultado da Perícia': 15,
+  'Cobrar Honorários – Resultado Perícia': 5,
+  'Aguardar Pagamento – Honorários Cobrados': 7,
+  'Encerrar Processo – DPVAT': null,
+  USER: null,
+  ADMIN: null,
+};
 
 const KanbanExample: FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -77,8 +140,8 @@ const KanbanExample: FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('Todos');
   const [isLoading, setIsLoading] = useState(true);
+  const [collapsedBoards, setCollapsedBoards] = useState<{ [key: string]: boolean }>({});
 
-  // Carregar os dados do getUsers
   useEffect(() => {
     async function fetchData() {
       try {
@@ -86,7 +149,7 @@ const KanbanExample: FC = () => {
         if (Array.isArray(usersData)) {
           const transformedData = usersData.map((user) => ({
             ...user,
-            status: user.status || user.type, // Usar o type como status inicial
+            status: user.status || user.type,
           }));
           setUsers(transformedData);
           setFilteredUsers(transformedData);
@@ -106,7 +169,6 @@ const KanbanExample: FC = () => {
     fetchData();
   }, []);
 
-  // Aplicar filtros
   useEffect(() => {
     let filtered = users;
 
@@ -117,73 +179,99 @@ const KanbanExample: FC = () => {
     }
 
     if (serviceFilter !== 'Todos') {
-      filtered = filtered.filter((user) => user.type === serviceFilter);
+      filtered = filtered.filter((user) => user.status === serviceFilter);
     }
 
     setFilteredUsers(filtered);
   }, [searchQuery, serviceFilter, users]);
 
-  // Função para lidar com o drag-and-drop
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (!over) {
-      return;
+  const renderTimerBadge = (user: User) => {
+    if (!user.type || !user.statusStartedAt) {
+      return (
+        <Badge
+          variant="outline"
+          className="px-2 text-center text-xs sm:text-sm"
+          style={{ backgroundColor: 'transparent', color: '#000000' }}
+        >
+          Sem data de início
+        </Badge>
+      );
     }
 
-    const newStatus = services.find((s) => s.name === over.id)?.name;
-
-    if (!newStatus) {
-      return;
+    const statusStartedAt = new Date(user.statusStartedAt);
+    if (isNaN(statusStartedAt.getTime())) {
+      console.error('Data inválida para statusStartedAt:', user.statusStartedAt);
+      return (
+        <Badge
+          variant="outline"
+          className="px-2 text-center text-xs sm:text-sm"
+          style={{ backgroundColor: 'transparent', color: '#000000' }}
+        >
+          Data inválida
+        </Badge>
+      );
     }
 
-    setUsers((prev) =>
-      prev.map((user) => {
-        if (user.id === active.id) {
-          return { ...user, status: newStatus, type: newStatus };
-        }
-        return user;
-      })
-    );
+    const daysInRole = differenceInDays(new Date(), statusStartedAt);
+    const timeLimit = roleTimeLimits[user.type] ?? null;
+    const isOverdue = timeLimit !== null && daysInRole > timeLimit;
 
-    setFilteredUsers((prev) =>
-      prev.map((user) => {
-        if (user.id === active.id) {
-          return { ...user, status: newStatus, type: newStatus };
-        }
-        return user;
-      })
+    return (
+      <Badge
+        variant="outline"
+        className={`px-2 text-center text-xs sm:text-sm ${
+          isOverdue ? 'text-red-600 font-semibold' : 'text-blue-700 font-semibold'
+        }`}
+        style={{ backgroundColor: 'transparent' }}
+      >
+        {formatDistanceToNow(statusStartedAt, {
+          locale: ptBR,
+          addSuffix: true,
+        })}
+        {isOverdue && (
+          <span className="ml-1 text-[10px] sm:text-xs font-semibold">
+            (Excedeu {daysInRole - timeLimit} dias)
+          </span>
+        )}
+      </Badge>
     );
   };
 
-  // Debug para o duplo clique
-  const handleDoubleClick = (e: React.MouseEvent, userId: string) => {
-    e.stopPropagation();
-    console.log(`Duplo clique disparado para o usuário: ${userId}`);
+  const toggleCollapse = (boardId: string) => {
+    setCollapsedBoards((prev) => ({
+      ...prev,
+      [boardId]: !prev[boardId],
+    }));
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4 p-2 sm:p-4 w-full">
       {/* Filtros */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="relative flex items-center w-full max-w-md">
-          <FaSearch className="absolute left-2 text-black/70" />
+          <FaSearch className="absolute left-2 text-black/70 text-sm sm:text-base" />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             type="text"
             placeholder="Pesquise um nome"
-            className="pl-8 w-full"
+            className="pl-8 w-full text-xs sm:text-sm"
           />
         </div>
         <Select value={serviceFilter} onValueChange={setServiceFilter}>
-          <SelectTrigger className="w-[360px]">
+          <SelectTrigger className="w-full sm:w-[360px] text-xs sm:text-sm">
             <SelectValue placeholder="Filtrar por serviço" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="Todos">Todos</SelectItem>
+            <SelectItem value="Todos" className="text-xs sm:text-sm">
+              Todos
+            </SelectItem>
             {services.map((service) => (
-              <SelectItem key={service.name} value={service.name}>
+              <SelectItem
+                key={service.name}
+                value={service.name}
+                className="text-xs sm:text-sm"
+              >
                 {service.name}
               </SelectItem>
             ))}
@@ -193,60 +281,149 @@ const KanbanExample: FC = () => {
 
       {/* Kanban */}
       {isLoading ? (
-        <div>Carregando...</div>
+        <Loader2 className="h-4 w-4 animate-spin mx-auto" />
       ) : (
-        <div className="overflow-x-auto">
-          <KanbanProvider onDragEnd={handleDragEnd} className="min-w-max">
-            {services.map((service) => (
-              <KanbanBoard key={service.name} id={service.name} className="w-80 min-w-80">
-                <KanbanHeader name={service.name} color={service.color} />
-                <KanbanCards className="max-h-[600px] overflow-y-auto">
-                  {filteredUsers
-                    .filter((user) => user.status === service.name)
-                    .map((user, index) => (
-                      <KanbanCard
-                        key={user.id}
-                        id={user.id}
-                        name={user.name}
-                        parent={service.name}
-                        index={index}
-                        className="mb-2"
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <DialogDash
-                              userId={user.id}
-                              trigger={
-                                <span
-                                  className="cursor-pointer hover:underline font-medium text-sm"
-                                  onDoubleClick={(e) => handleDoubleClick(e, user.id)}
-                                >
-                                  {user.name}
-                                </span>
-                              }
-                            />
-                            <Avatar className="h-4 w-4 shrink-0">
-                              <AvatarImage src={`https://api.dicebear.com/7.x/adventurer-neutral/svg?seed=${user.id}`} />
-                              <AvatarFallback>{user.name?.slice(0, 2)}</AvatarFallback>
-                            </Avatar>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className={`px-1.5 w-full`}
-                            style={{
-                              backgroundColor: service.color,
-                              color: service.text,
-                              borderColor: service.border,
-                            }}
+        <div className="w-full lg:w-[1230px] overflow-x-auto">
+          <KanbanProvider className="flex flex-col sm:flex-row sm:gap-4 p-2 sm:p-4">
+            {serviceFilter === 'Todos'
+              ? services.map((service) => (
+                  <KanbanBoard
+                    key={service.name}
+                    id={service.name}
+                    className={
+                      collapsedBoards[service.name]
+                        ? 'w-[50px]'
+                        : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80 mb-4 sm:mb-0'
+                    }
+                    style={{
+                      backgroundColor: service.color,
+                      border: `2px solid ${service.border}`,
+                    }}
+                    isCollapsed={collapsedBoards[service.name] || false}
+                    toggleCollapse={() => toggleCollapse(service.name)}
+                  >
+                    <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
+                      {filteredUsers
+                        .filter((user) => user.status === service.name)
+                        .map((user, index) => (
+                          <KanbanCard
+                            key={user.id}
+                            id={user.id}
+                            name={user.name}
+                            parent={service.name}
+                            index={index}
+                            className="mb-2 w-full"
                           >
-                            {user.type}
-                          </Badge>
-                        </div>
-                      </KanbanCard>
-                    ))}
-                </KanbanCards>
-              </KanbanBoard>
-            ))}
+                            <div className="flex flex-col gap-1 w-full">
+                              <div className="flex items-center justify-between gap-2">
+                                <DialogDash
+                                  userId={user.id}
+                                  trigger={
+                                    <span className="cursor-pointer hover:underline font-medium text-xs sm:text-sm">
+                                      {user.name}
+                                    </span>
+                                  }
+                                />
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className="px-2 text-center text-xs sm:text-sm"
+                                style={{
+                                  backgroundColor:
+                                    user.service && serviceStyles[user.service]
+                                      ? serviceStyles[user.service].bgColor
+                                      : defaultServiceStyle.bgColor,
+                                  color:
+                                    user.service && serviceStyles[user.service]
+                                      ? serviceStyles[user.service].textColor
+                                      : defaultServiceStyle.textColor,
+                                }}
+                              >
+                                {user.service || 'Sem serviço'}
+                              </Badge>
+                              <div
+                                className="p-2 border rounded-md bg-gray-50 text-xs sm:text-sm text-gray-700"
+                                style={{ maxHeight: '60px', overflowY: 'auto' }}
+                              >
+                                {user.obs || 'Sem observações'}
+                              </div>
+                              {renderTimerBadge(user)}
+                            </div>
+                          </KanbanCard>
+                        ))}
+                    </KanbanCards>
+                  </KanbanBoard>
+                ))
+              : services
+                  .filter((service) => service.name === serviceFilter)
+                  .map((service) => (
+                    <KanbanBoard
+                      key={service.name}
+                      id={service.name}
+                      className={
+                        collapsedBoards[service.name]
+                          ? 'w-[50px]'
+                          : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80'
+                      }
+                      style={{
+                        backgroundColor: service.color,
+                        border: `2px solid ${service.border}`,
+                      }}
+                      isCollapsed={collapsedBoards[service.name] || false}
+                      toggleCollapse={() => toggleCollapse(service.name)}
+                    >
+                      <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
+                        {filteredUsers
+                          .filter((user) => user.status === service.name)
+                          .map((user, index) => (
+                            <KanbanCard
+                              key={user.id}
+                              id={user.id}
+                              name={user.name}
+                              parent={service.name}
+                              index={index}
+                              className="mb-2 w-full"
+                            >
+                              <div className="flex flex-col gap-1 w-full">
+                                <div className="flex items-center justify-between gap-2">
+                                  <DialogDash
+                                    userId={user.id}
+                                    trigger={
+                                      <span className="cursor-pointer hover:underline font-medium text-xs sm:text-sm">
+                                        {user.name}
+                                      </span>
+                                    }
+                                  />
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className="px-2 text-center text-xs sm:text-sm"
+                                  style={{
+                                    backgroundColor:
+                                      user.service && serviceStyles[user.service]
+                                        ? serviceStyles[user.service].bgColor
+                                        : defaultServiceStyle.bgColor,
+                                    color:
+                                      user.service && serviceStyles[user.service]
+                                        ? serviceStyles[user.service].textColor
+                                        : defaultServiceStyle.textColor,
+                                  }}
+                                >
+                                  {user.service || 'Sem serviço'}
+                                </Badge>
+                                <div
+                                  className="p-2 border rounded-md bg-gray-50 text-xs sm:text-sm text-gray-700"
+                                  style={{ maxHeight: '60px', overflowY: 'auto' }}
+                                >
+                                  {user.obs || 'Sem observações'}
+                                </div>
+                                {renderTimerBadge(user)}
+                              </div>
+                            </KanbanCard>
+                          ))}
+                      </KanbanCards>
+                    </KanbanBoard>
+                  ))}
           </KanbanProvider>
         </div>
       )}

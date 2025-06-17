@@ -37,6 +37,8 @@ interface UpdateUserData {
   lesoes?: string;
   status?: string;
   role?: string;
+  service?: string;
+  obs?: string;
 }
 
 function mapStringToStatus(status: string | undefined): Status | undefined {
@@ -101,6 +103,8 @@ export async function updateUser(data: UpdateUserData) {
         status: mapStringToStatus(data.status),
         role: data.role,
         statusStartedAt: shouldUpdateTimer ? new Date() : currentUser.statusStartedAt,
+        service: data.service,
+        obs: data.obs,
       },
     });
 
@@ -136,6 +140,8 @@ export async function updateUser(data: UpdateUserData) {
       hospital: updatedUser.hospital || "",
       outro_hospital: updatedUser.outro_hospital || "",
       lesoes: updatedUser.lesoes || "",
+      service: updatedUser.service || "",
+      obs: updatedUser.obs || "",
     };
   } catch (error) {
     console.error("Erro ao atualizar usuário:", error);

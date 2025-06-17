@@ -9,8 +9,8 @@ import { authOptions } from "../_lib/auth";
 interface UserTableData {
   id: string;
   name: string;
-  status: string;
-  type: string;
+  service: string;
+  obs: string;
   statusStartedAt: string | null;
 }
 
@@ -25,8 +25,8 @@ export async function getUserTable(): Promise<UserTableData[]> {
     select: {
       id: true,
       name: true,
-      status: true,
-      role: true,
+      service: true,
+      obs: true,
       statusStartedAt: true,
     },
   });
@@ -35,9 +35,9 @@ export async function getUserTable(): Promise<UserTableData[]> {
     console.log(`Usuário: ${user.name}, statusStartedAt: ${user.statusStartedAt}`);
     return {
       id: user.id,
-      name: user.name || "Sem nome",
-      status: user.status || "Sem status",
-      type: user.role || "USER",
+      name: user.name || "",
+      service: user.service || "",
+      obs: user.obs || "",
       statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null,
     };
   });

@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
 import { Loader2 } from "lucide-react";
@@ -115,9 +117,6 @@ export default function ProgressTimeline() {
 
   if (isLoading) return <div><Loader2 className="h-4 w-4 animate-spin" /></div>;
 
-  if (userRole === "INSS") {
-    return <div>Processo relacionado ao INSS. Entre em contato para mais detalhes.</div>;
-  }
 
   const completedSteps = mapServerStatusToCompletedSteps(serverStatus);
 

@@ -34,6 +34,8 @@ interface UserData {
   hospital?: string;
   outro_hospital?: string;
   lesoes?: string;
+  obs?: string;
+  service?: string;
 }
 
 export async function getUsers(
@@ -53,7 +55,7 @@ export async function getUsers(
           name: true,
           status: true,
           role: true,
-          statusStartedAt: true, // Adicionado para modo "full"
+          statusStartedAt: true,
           cpf: true,
           data_nasc: true,
           email: true,
@@ -74,13 +76,16 @@ export async function getUsers(
           hospital: true,
           outro_hospital: true,
           lesoes: true,
+          obs: true,
+          service: true,
         }
       : {
           id: true,
           name: true,
-          status: true,
           role: true,
-          statusStartedAt: true, // Adicionado para modo "basic"
+          obs: true,
+          service: true,
+          statusStartedAt: true,
         };
 
   if (userId) {
@@ -99,6 +104,8 @@ export async function getUsers(
       status: user.status || undefined,
       type: user.role || "USER",
       role: user.role || "USER",
+      obs: user.obs || "",
+      service: user.service || "",
       statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null, // Adicionado
       ...(fields === "full" && {
         cpf: user.cpf || "",
@@ -123,6 +130,8 @@ export async function getUsers(
         hospital: user.hospital || "",
         outro_hospital: user.outro_hospital || "",
         lesoes: user.lesoes || "",
+        obs: user.obs || "",
+        service: user.service || "",
       }),
     };
   }
@@ -137,6 +146,8 @@ export async function getUsers(
     status: user.status || undefined,
     type: user.role || "USER",
     role: user.role || "USER",
+    obs: user.obs || "",
+    service: user.service || "",
     statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null, // Adicionado
     ...(fields === "full" && {
       cpf: user.cpf || "",
@@ -161,6 +172,8 @@ export async function getUsers(
       hospital: user.hospital || "",
       outro_hospital: user.outro_hospital || "",
       lesoes: user.lesoes || "",
+      obs: user.obs || "",
+      service: user.service || "",
     }),
   }));
 }

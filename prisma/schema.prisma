@@ -40,14 +40,37 @@ model User {
   outro_hospital  String?
   lesoes          String?
   statusStartedAt DateTime?
+  service         String?
+  obs             String?
 
   accounts  Account[]
   sessions  Session[]
   document  Document[]
+  processes Process[] 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   status   Status?
+}
+
+model Process {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role            String? 
+  statusStartedAt DateTime? 
+  data_acidente   DateTime?
+  atendimento_via String?
+  hospital        String?
+  outro_hospital  String?
+  lesoes          String?
+  type            String?  
+  observacao      String
+  documents       Document[] 
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  status Status?
 }
 
 enum Status {
@@ -120,8 +143,10 @@ model SubMessage {
 model Document {
   id         String   @id @default(uuid())
   userId     String
+  processId  String?
   key        String
   name       String
   uploadedAt DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
+  process    Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
 }

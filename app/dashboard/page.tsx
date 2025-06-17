@@ -11,12 +11,14 @@ import { SiteHeader } from "@/app/_components/site-header";
 import { SidebarInset, SidebarProvider } from "@/app/_components/ui/sidebar";
 import { useState, useEffect } from "react";
 import { getUsers } from "@/app/_actions/get-user";
+import { KanbanExample } from "../_components/kanban/demo";
 
 interface UserTableData {
   id: string;
   name: string;
   status?: string;
   type: string;
+  statusStartedAt?: string | null;
 }
 
 export default function Page() {
@@ -58,7 +60,6 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    // if (userRole !== "ADMIN") return; // Early return inside useEffect
     async function fetchData() {
       try {
         const users = await getUsers("basic");
@@ -79,23 +80,18 @@ export default function Page() {
       }
     }
     fetchData();
-  }, [userRole]); // Add userRole as a dependency
-
-
-  // if (userRole !== "ADMIN") {
-  //   return <div></div>;
-  // }
+  }, [userRole]);
 
   return (
     <SidebarProvider>
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader />
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col w-full">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
               <div className="px-4 lg:px-6"></div>
-              <DataTable data={data} />
+              <KanbanExample />
             </div>
           </div>
         </div>
