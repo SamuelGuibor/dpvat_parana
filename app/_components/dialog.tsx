@@ -183,8 +183,6 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
 
     setUploading(true);
     setError(null);
-    toast.success('Sucesso ao salvar o arquivo.');
-
     try {
       const fileInfos = base64Files.map((file) => ({
         name: file.name,
