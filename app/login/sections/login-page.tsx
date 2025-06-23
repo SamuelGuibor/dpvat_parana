@@ -45,7 +45,7 @@ const AuthSection = () => {
       setError("Email ou senha incorretos");
     } else {
       toast.success("Login realizado com sucesso!");
-      router.push("/area-do-cliente");
+      router.push("/");
     }
   };
 

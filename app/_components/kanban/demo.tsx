@@ -312,7 +312,7 @@ const KanbanExample: FC = () => {
                             name={user.name}
                             parent={service.name}
                             index={index}
-                            className="mb-2 w-full"
+                            className="mb-2 w-[275px]"
                           >
                             <div className="flex flex-col gap-1 w-full">
                               <div className="flex items-center justify-between gap-2">

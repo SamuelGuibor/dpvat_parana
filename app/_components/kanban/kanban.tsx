@@ -37,7 +37,7 @@ export const KanbanBoard = ({ id, children, className, style, isCollapsed, toggl
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-md border bg-secondary p-2 text-xs shadow-sm h-auto sm:h-[500px]',
+        "flex flex-col gap-2 rounded-md border bg-secondary p-2 text-xs shadow-sm h-auto sm:h-[500px] overflow-y-auto ",
         className
       )}
       style={style}
@@ -71,7 +71,7 @@ export const KanbanCard = ({
 }: KanbanCardProps) => {
   return (
     <Card
-      className={cn('rounded-md p-2 sm:p-3 shadow-sm max-h-[200px] overflow-y-auto', className)}
+      className={cn('rounded-md p-2 sm:p-3 shadow-sm', className)}
       style={{ backgroundColor: '#FFFFFF', color: '#000000' }}
     >
       {children ?? <p className="m-0 font-medium text-xs sm:text-sm">{name}</p>}
