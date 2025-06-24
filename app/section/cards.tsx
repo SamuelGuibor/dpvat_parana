@@ -13,7 +13,7 @@ export function Cards() {
             id: 2,
             title: "Atendimento 24h",
             image: "car.jpg",
-            link: "/atendimento",
+            link: "/seguro-terceiros",
         },
         {
             id: 3,
