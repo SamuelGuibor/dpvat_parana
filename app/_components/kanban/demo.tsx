@@ -286,84 +286,19 @@ const KanbanExample: FC = () => {
         <div className="w-full lg:w-[1230px] overflow-x-auto">
           <KanbanProvider className="flex flex-col sm:flex-row sm:gap-4 p-2 sm:p-4">
             {serviceFilter === 'Todos'
-              ? services.map((service) => (
-                  <KanbanBoard
-                    key={service.name}
-                    id={service.name}
-                    className={
-                      collapsedBoards[service.name]
-                        ? 'w-[50px]'
-                        : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80 mb-4 sm:mb-0'
-                    }
-                    style={{
-                      backgroundColor: service.color,
-                      border: `2px solid ${service.border}`,
-                    }}
-                    isCollapsed={collapsedBoards[service.name] || false}
-                    toggleCollapse={() => toggleCollapse(service.name)}
-                  >
-                    <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
-                      {filteredUsers
-                        .filter((user) => user.status === service.name)
-                        .map((user, index) => (
-                          <KanbanCard
-                            key={user.id}
-                            id={user.id}
-                            name={user.name}
-                            parent={service.name}
-                            index={index}
-                            className="mb-2 w-[275px]"
-                          >
-                            <div className="flex flex-col gap-1 w-full">
-                              <div className="flex items-center justify-between gap-2">
-                                <DialogDash
-                                  userId={user.id}
-                                  trigger={
-                                    <span className="cursor-pointer hover:underline font-medium text-xs sm:text-sm">
-                                      {user.name}
-                                    </span>
-                                  }
-                                />
-                              </div>
-                              <Badge
-                                variant="outline"
-                                className="px-2 text-center text-xs sm:text-sm"
-                                style={{
-                                  backgroundColor:
-                                    user.service && serviceStyles[user.service]
-                                      ? serviceStyles[user.service].bgColor
-                                      : defaultServiceStyle.bgColor,
-                                  color:
-                                    user.service && serviceStyles[user.service]
-                                      ? serviceStyles[user.service].textColor
-                                      : defaultServiceStyle.textColor,
-                                }}
-                              >
-                                {user.service || 'Sem serviço'}
-                              </Badge>
-                              <div
-                                className="p-2 border rounded-md bg-gray-50 text-xs sm:text-sm text-gray-700"
-                                style={{ maxHeight: '60px', overflowY: 'auto' }}
-                              >
-                                {user.obs || 'Sem observações'}
-                              </div>
-                              {renderTimerBadge(user)}
-                            </div>
-                          </KanbanCard>
-                        ))}
-                    </KanbanCards>
-                  </KanbanBoard>
-                ))
-              : services
-                  .filter((service) => service.name === serviceFilter)
-                  .map((service) => (
+              ? services.map((service) => {
+                  // Calcular a contagem de cards para este board
+                  const cardCount = filteredUsers.filter(
+                    (user) => user.status === service.name
+                  ).length;
+                  return (
                     <KanbanBoard
                       key={service.name}
                       id={service.name}
                       className={
                         collapsedBoards[service.name]
                           ? 'w-[50px]'
-                          : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80'
+                          : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80 mb-4 sm:mb-0'
                       }
                       style={{
                         backgroundColor: service.color,
@@ -371,6 +306,7 @@ const KanbanExample: FC = () => {
                       }}
                       isCollapsed={collapsedBoards[service.name] || false}
                       toggleCollapse={() => toggleCollapse(service.name)}
+                      cardCount={cardCount} // Passa a contagem
                     >
                       <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
                         {filteredUsers
@@ -382,7 +318,7 @@ const KanbanExample: FC = () => {
                               name={user.name}
                               parent={service.name}
                               index={index}
-                              className="mb-2 w-full"
+                              className="mb-2 w-[275px]"
                             >
                               <div className="flex flex-col gap-1 w-full">
                                 <div className="flex items-center justify-between gap-2">
@@ -423,7 +359,85 @@ const KanbanExample: FC = () => {
                           ))}
                       </KanbanCards>
                     </KanbanBoard>
-                  ))}
+                  );
+                })
+              : services
+                  .filter((service) => service.name === serviceFilter)
+                  .map((service) => {
+                    // Calcular a contagem de cards para este board
+                    const cardCount = filteredUsers.filter(
+                      (user) => user.status === service.name
+                    ).length;
+                    return (
+                      <KanbanBoard
+                        key={service.name}
+                        id={service.name}
+                        className={
+                          collapsedBoards[service.name]
+                            ? 'w-[50px]'
+                            : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80'
+                        }
+                        style={{
+                          backgroundColor: service.color,
+                          border: `2px solid ${service.border}`,
+                        }}
+                        isCollapsed={collapsedBoards[service.name] || false}
+                        toggleCollapse={() => toggleCollapse(service.name)}
+                        cardCount={cardCount} // Passa a contagem
+                      >
+                        <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
+                          {filteredUsers
+                            .filter((user) => user.status === service.name)
+                            .map((user, index) => (
+                              <KanbanCard
+                                key={user.id}
+                                id={user.id}
+                                name={user.name}
+                                parent={service.name}
+                                index={index}
+                                className="mb-2 w-full"
+                              >
+                                <div className="flex flex-col gap-1 w-full">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <DialogDash
+                                      userId={user.id}
+                                      trigger={
+                                        <span className="cursor-pointer hover:underline font-medium text-xs sm:text-sm">
+                                          {user.name}
+                                        </span>
+                                      }
+                                    />
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className="px-2 text-center text-xs sm:text-sm"
+                                    style={{
+                                      backgroundColor:
+                                        user.service && serviceStyles[user.service]
+                                          ? serviceStyles[user.service].bgColor
+                                          : defaultServiceStyle.bgColor,
+                                      color:
+                                        user.service && serviceStyles[user.service]
+                                          ? serviceStyles[user.service].textColor
+                                          : defaultServiceStyle.textColor,
+                                    }}
+                                  >
+                                    {user.service || 'Sem serviço'}
+                                  </Badge>
+                                  <div
+                                    className="p-2 border rounded-md bg-gray-50 text-xs sm:text-sm text-gray-700"
+                                    style={{ maxHeight: '60px', overflowY: 'auto' }}
+                                  >
+                                    {user.obs || 'Sem observações'}
+                                  </div>
+                                  {renderTimerBadge(user)}
+                                </div>
+                              </KanbanCard>
+                            ))}
+                        </KanbanCards>
+                      </KanbanBoard>
+                    );
+                  })}
           </KanbanProvider>
         </div>
       )}

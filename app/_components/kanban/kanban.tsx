@@ -31,9 +31,18 @@ export type KanbanBoardProps = {
   };
   isCollapsed?: boolean;
   toggleCollapse?: () => void;
+  cardCount?: number; // Nova propriedade para a contagem de cards
 };
 
-export const KanbanBoard = ({ id, children, className, style, isCollapsed, toggleCollapse }: KanbanBoardProps) => {
+export const KanbanBoard = ({
+  id,
+  children,
+  className,
+  style,
+  isCollapsed,
+  toggleCollapse,
+  cardCount, // Adiciona cardCount
+}: KanbanBoardProps) => {
   return (
     <div
       className={cn(
@@ -43,11 +52,12 @@ export const KanbanBoard = ({ id, children, className, style, isCollapsed, toggl
       style={style}
     >
       <KanbanHeader
-        name={id} 
+        name={id}
         color={style?.backgroundColor || '#FFFFFF'}
         isCollapsed={isCollapsed || false}
         toggleCollapse={toggleCollapse}
-        className='text-[#ffffff] font-semibold uppercase'
+        className="text-[#ffffff] font-semibold uppercase"
+        cardCount={cardCount} // Passa cardCount para o KanbanHeader
       />
       {!isCollapsed && children}
     </div>
@@ -100,7 +110,7 @@ export type KanbanHeaderProps =
       className?: string;
       isCollapsed?: boolean;
       toggleCollapse?: () => void;
-      cardCount?: number;
+      cardCount?: number; // Nova propriedade para a contagem
     };
 
 export const KanbanHeader = (props: KanbanHeaderProps) =>
@@ -122,8 +132,11 @@ export const KanbanHeader = (props: KanbanHeaderProps) =>
             style={{ width: '50px', height: 'auto' }}
           >
             <FaChevronRight className="text-[12px] mb-1" />
-            <span className="inline-block text-[14px] mt-2 font-semibold truncate" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', maxWidth: '40px' }}>
-              {props.name}
+            <span
+              className="inline-block text-[14px] mt-2 font-semibold truncate"
+              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', maxWidth: '40px' }}
+            >
+              {props.cardCount !== undefined ? `(${props.cardCount}) ${props.name}` : props.name}
             </span>
           </button>
         </div>
@@ -134,7 +147,7 @@ export const KanbanHeader = (props: KanbanHeaderProps) =>
             style={{ backgroundColor: props.color }}
           />
           <p className="m-0 font-semibold text-xs sm:text-sm">
-            {props.name}
+            {props.cardCount !== undefined ? `(${props.cardCount}) ${props.name}` : props.name}
           </p>
           <button
             onClick={props.toggleCollapse}
