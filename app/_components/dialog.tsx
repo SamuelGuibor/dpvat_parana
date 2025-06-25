@@ -843,6 +843,8 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectItem value="Seguro de Vida">Seguro de Vida</SelectItem>
                       <SelectItem value="RCF">RCF</SelectItem>
                       <SelectItem value="DPVAT">DPVAT</SelectItem>
+                      <SelectItem value="SPVAT">SPVAT</SelectItem>
+                      <SelectItem value="TRABALHISTA">TRABALHISTA</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
