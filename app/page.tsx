@@ -1,4 +1,4 @@
-import { Cards } from "./section/cards";
+// import { Cards } from "./section/cards";
 import { Faq } from "./section/faq";
 import { FeatureSteps } from "./section/feature-section";
 import Footer from "./section/footer";
@@ -90,7 +90,7 @@ export default function Home() {
         videoSrc="/video.mp4"
         className="z-30 bg-gradient-to-b from-[#0f0f0f] to-black transform translate-y-[-20px]"
       />
-      <Cards />
+      {/* <Cards /> */}
       <Stats />
       <Faq
         heading="Perguntas Frequentes"
