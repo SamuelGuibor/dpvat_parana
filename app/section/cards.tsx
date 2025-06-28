@@ -19,7 +19,7 @@ export function Cards() {
             id: 3,
             title: "Descontos exclusivos",
             image: "homem.png",
-            link: "/descontos",
+            link: "/exclusivos",
         },
         {
             id: 4,
