@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { Button } from "../_components/ui/button";
 
@@ -25,7 +26,7 @@ export function Cards() {
             id: 4,
             title: "Cobertura nacional",
             image: "imagemm.jpg",
-            link: "/cobertura",
+            link: "/seguro-dpvat",
         },
     ];
 

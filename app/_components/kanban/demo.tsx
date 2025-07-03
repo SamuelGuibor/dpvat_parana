@@ -283,11 +283,10 @@ const KanbanExample: FC = () => {
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin mx-auto" />
       ) : (
-        <div className="w-full lg:w-[1230px] overflow-x-auto">
-          <KanbanProvider className="flex flex-col sm:flex-row sm:gap-4 p-2 sm:p-4">
+        <div className="w-full overflow-x-auto">
+          <KanbanProvider className="flex flex-row gap-4 p-2 sm:p-4 min-w-fit">
             {serviceFilter === 'Todos'
               ? services.map((service) => {
-                  // Calcular a contagem de cards para este board
                   const cardCount = filteredUsers.filter(
                     (user) => user.status === service.name
                   ).length;
@@ -297,8 +296,8 @@ const KanbanExample: FC = () => {
                       id={service.name}
                       className={
                         collapsedBoards[service.name]
-                          ? 'w-[50px]'
-                          : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80 mb-4 sm:mb-0'
+                          ? 'w-[50px] min-w-[50px]'
+                          : 'w-80 min-w-80 max-w-80 mb-4 sm:mb-0'
                       }
                       style={{
                         backgroundColor: service.color,
@@ -306,7 +305,7 @@ const KanbanExample: FC = () => {
                       }}
                       isCollapsed={collapsedBoards[service.name] || false}
                       toggleCollapse={() => toggleCollapse(service.name)}
-                      cardCount={cardCount} // Passa a contagem
+                      cardCount={cardCount}
                     >
                       <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
                         {filteredUsers
@@ -318,7 +317,7 @@ const KanbanExample: FC = () => {
                               name={user.name}
                               parent={service.name}
                               index={index}
-                              className="mb-2 w-[275px]"
+                              className="mb-2 w-full"
                             >
                               <div className="flex flex-col gap-1 w-full">
                                 <div className="flex items-center justify-between gap-2">
@@ -364,7 +363,6 @@ const KanbanExample: FC = () => {
               : services
                   .filter((service) => service.name === serviceFilter)
                   .map((service) => {
-                    // Calcular a contagem de cards para este board
                     const cardCount = filteredUsers.filter(
                       (user) => user.status === service.name
                     ).length;
@@ -374,8 +372,8 @@ const KanbanExample: FC = () => {
                         id={service.name}
                         className={
                           collapsedBoards[service.name]
-                            ? 'w-[50px]'
-                            : 'w-full sm:w-80 sm:min-w-80 sm:max-w-80'
+                            ? 'w-[50px] min-w-[50px]'
+                            : 'w-80 min-w-80 max-w-80'
                         }
                         style={{
                           backgroundColor: service.color,
@@ -383,7 +381,7 @@ const KanbanExample: FC = () => {
                         }}
                         isCollapsed={collapsedBoards[service.name] || false}
                         toggleCollapse={() => toggleCollapse(service.name)}
-                        cardCount={cardCount} // Passa a contagem
+                        cardCount={cardCount}
                       >
                         <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
                           {filteredUsers

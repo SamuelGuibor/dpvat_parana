@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { Disclosure } from "@headlessui/react";
@@ -5,31 +6,34 @@ import { ChevronUpIcon } from "lucide-react";
 import Footer from "../section/footer";
 import { HeroHeader } from "../section/hero9-header";
 
-export default function SeguroTerceiros() {
+export default function SegurosAplicativos() {
+    const whatsappUrl =
+        "https://wa.me/5541997862323?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20seguro%20de%20Aplicativos";
+
     return (
         <>
             <HeroHeader />
 
             <main className="text-gray-800">
-<section className="relative h-[550px]">
-    <img
-        src="/car.jpg"
-        alt="Seguro Terceiros"
-        className="absolute inset-0 w-full h-full object-cover"
-    />
-    <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-start justify-center text-white text-left px-4 md:pl-20 z-10">
-        <h1 className="text-4xl font-bold mb-4">Assessoria para Seguro DPVAT em Curitiba</h1>
-        <p className="mb-4 max-w-3xl leading-relaxed">
-            Somos uma assessoria especializada em Curitiba. Cuidamos de toda a burocracia para você, oferecendo suporte completo e trazendo tranquilidade em um momento tão difícil.
-        </p>
-        <a
-            href="#contato"
-            className="mt-6 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white font-semibold transition"
-        >
-            Entre em contato
-        </a>
-    </div>
-</section>
+                <div className="relative h-[500px]">
+                    <img
+                        src="/transparencia.jpg"
+                        alt="Seguro contra terceiros"
+                        className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col justify-center items-center text-center px-4 z-10">
+                        <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                            Assessoria para Seguro de Aplicativos
+                        </h1>
+                        <a
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-blue-600 hover:bg-blue-700 transition px-6 py-3 rounded-lg text-white font-semibold"
+                        >
+                            Fale com um Especialista
+                        </a>
+                    </div>
+                </div>
 
 
                 <section className="max-w-6xl mx-auto px-8 py-16 flex flex-col md:flex-row gap-10">
@@ -62,11 +66,28 @@ export default function SeguroTerceiros() {
                     </div>
                 </section>
 
-                <section
-                    className="relative h-[400px] bg-cover bg-center"
-                    style={{ backgroundImage: "url('/imagemm.jpg')" }}
-                >
-                    <div className="absolute inset-0 bg-black bg-opacity-60" />
+                <section className="relative mt-10">
+                    <img
+                        src="/car.jpg"
+                        alt="Ajuda com seguro contra terceiros"
+                        className="w-full h-[270px] object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center text-white text-center px-4">
+                        <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                            Seguro de Aplicativo
+                        </h2>
+                        <p className="text-lg mb-6 max-w-2xl">
+                            Entre em contato agora mesmo e agende uma visita. Estamos aqui para ajudar!
+                        </p>
+                        <a
+                            href={whatsappUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-blue-600 hover:bg-blue-700 transition px-6 py-3 rounded-lg text-white font-semibold"
+                        >
+                            Agendar Visita
+                        </a>
+                    </div>
                 </section>
 
                 <section className="py-16 px-6 bg-white">

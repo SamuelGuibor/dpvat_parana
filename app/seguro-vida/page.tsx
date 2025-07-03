@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { Disclosure } from "@headlessui/react";
@@ -34,6 +35,9 @@ const faqList = [
 ];
 
 export default function SeguroVida() {
+    const whatsappUrl =
+        "https://wa.me/5541997862323?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20Seguro%20de%20Vida!";
+
     const [isClient, setIsClient] = useState(false);
 
     useEffect(() => {
@@ -45,29 +49,25 @@ export default function SeguroVida() {
     return (
         <>
             <HeroHeader />
-            <section className="relative h-screen">
-                <div
-                    className="fixed inset-0 bg-center bg-cover bg-no-repeat -z-10"
-                    style={{ backgroundImage: "url('/car.jpg')" }}
-                >
-                    <div className="absolute inset-0 bg-black bg-opacity-50" />
-                </div>
-
-                <div className="relative z-10 flex flex-col items-start justify-center h-full px-6 lg:px-32 text-left text-white">
-                    <h2 className="text-5xl font-extrabold mb-10 leading-tight max-w-3xl">
-                        Precisando de ajuda com o seguro DPVAT?
-                    </h2>
+            <div className="relative h-[500px]">
+                <img
+                    src="/transparencia.jpg"
+                    alt="Seguro contra terceiros"
+                    className="absolute inset-0 w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col justify-center items-center text-center px-4 z-10">
+                    <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                        Assessoria para Seguro de Vida
+                    </h1>
                     <a
-                        href="https://wa.me/5541997862323?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20seguro%20DPVAT!"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="bg-blue-600 hover:bg-blue-700 transition px-6 py-3 rounded-lg text-white font-semibold"
                     >
                         Fale com um Especialista
                     </a>
-
                 </div>
-            </section>
+            </div>
 
             <main className="overflow-hidden bg-white text-gray-800">
                 <section className="relative pt-12 px-6 lg:px-32">
@@ -108,33 +108,27 @@ export default function SeguroVida() {
                         </ul>
                     </div>
 
-                    <div className="text-center mt-20">
-                        <div className="flex flex-col md:flex-row justify-center items-center gap-20 text-lg text-gray-800">
-                            <p>📍 Av. República Argentina, 4391 – Curitiba/PR</p>
-                            <p>📞 (41) 3779-0026 / (41) 99540-0033</p>
-                            <p>✉️ fernandonovadpvat@gmail.com</p>
-                        </div>
-                    </div>
                 </section>
-                <section className="relative mt-10 h-[380px]">
+                <section className="relative mt-10">
                     <img
-                        src="/imagemm.jpg"
-                        alt="Imagem ilustrativa sobre o Seguro DPVAT"
-                        className="absolute inset-0 w-full h-full object-cover"
+                        src="/car.jpg"
+                        alt="Ajuda com seguro contra terceiros"
+                        className="w-full h-[270px] object-cover"
                     />
-                    <div className="absolute inset-0 bg-black bg-opacity-60" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-10 px-4">
-                        <h2 className=" text-white text-3xl md:text-4xl font-bold mb-4">Ficou com alguma dúvida?</h2>
-                        <p className="text-white text-lg mb-6 max-w-2xl">
-                            Entre em contato agora mesmo!
+                    <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center text-white text-center px-4">
+                        <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                            Seguro de Vida
+                        </h2>
+                        <p className="text-lg mb-6 max-w-2xl">
+                            Entre em contato agora mesmo e agende uma visita. Estamos aqui para ajudar!
                         </p>
                         <a
-                            href="https://wa.me/5541997862323?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20seguro%20DPVAT!"
+                            href={whatsappUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="bg-white text-black hover:text-white px-6 py-3 rounded-lg font-semibold hover:bg-black transition-all duration-800"
+                            className="bg-blue-600 hover:bg-blue-700 transition px-6 py-3 rounded-lg text-white font-semibold"
                         >
-                            Entrar em contato
+                            Agendar Visita
                         </a>
                     </div>
                 </section>

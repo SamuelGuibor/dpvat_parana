@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { Disclosure } from "@headlessui/react";
@@ -108,7 +109,7 @@ export default function Terceiros() {
                     />
                     <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center text-white text-center px-4">
                         <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                            Atendimento Domiciliar
+                            Seguro de Terceiros
                         </h2>
                         <p className="text-lg mb-6 max-w-2xl">
                             Entre em contato agora mesmo e agende uma visita. Estamos aqui para ajudar!
