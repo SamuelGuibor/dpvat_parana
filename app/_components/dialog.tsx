@@ -264,6 +264,49 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     }
   };
 
+  const sendToZapier = async () => {
+    try {
+
+      if (!formData) {
+        return false
+      };
+
+       const payload = {
+        name: formData.name, 
+        cpf: formData.cpf, 
+        rg: formData.rg, 
+        data_nasc: formData.data_nasc,
+        nome_mae: formData.nome_mae, 
+        telefone: formData.telefone, 
+        email: formData.email, 
+        estado_civil: formData.estado_civil, 
+        profissao: formData.profissao, 
+        data_acidente: formData.data_acidente, 
+        atendimento_via: formData.atendimento_via, 
+        hospital: formData.hospital, 
+        outro_hospital: formData.outro_hospital, 
+        lesoes: formData.lesoes, 
+        rua: formData.rua, 
+        numero: formData.numero, 
+        cep: formData.cep, 
+        bairro: formData.bairro, 
+        cidade: formData.cidade,  
+        nacionalidade: formData.nacionalidade,
+        estado: formData.estado
+       };
+       
+      await fetch("/api/zapier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+
+    } catch (err) {
+      console.log("deu erro" + err);
+    }
+  }
+
   const handleDownload = async (key: string, fileName: string) => {
     try {
       setError(null);
@@ -576,6 +619,9 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           <AlertDialogTitle className="text-base sm:text-[20px]">
             Dados do Cliente: <span className="font-bold text-blue-600">{user?.name}</span>
           </AlertDialogTitle>
+          <Button onClick={sendToZapier}>
+            mandar para o zapier
+          </Button>
           <div className="flex flex-col sm:flex-row sm:absolute sm:right-0 sm:pr-5 gap-2 mt-2 sm:mt-0">
             {isDocument && (
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
@@ -826,6 +872,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectItem value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
                       <SelectItem value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
                       <SelectItem value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
+                      <SelectItem value="Descartaveis">Descartaveis</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

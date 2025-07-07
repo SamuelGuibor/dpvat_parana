@@ -60,6 +60,7 @@ const services = [
   { id: '39', name: 'Cobrar Honorários – Resultado Perícia', color: '#164b35', border: '#50253f' },
   { id: '40', name: 'Aguardar Pagamento – Honorários Cobrados', color: '#164b35', border: '#50253f' },
   { id: '41', name: 'Encerrar Processo – DPVAT', color: '#352c63', border: '#50253f' },
+  { id: '42', name: 'Descartaveis', color: '#352c63', border: '#50253f' },
 ];
 
 // Função para escurecer a cor em 20%
