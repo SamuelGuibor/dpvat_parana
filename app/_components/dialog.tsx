@@ -619,17 +619,14 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
           <AlertDialogTitle className="text-base sm:text-[20px]">
             Dados do Cliente: <span className="font-bold text-blue-600">{user?.name}</span>
           </AlertDialogTitle>
-          <Button onClick={sendToZapier}>
-            mandar para o zapier
-          </Button>
           <div className="flex flex-col sm:flex-row sm:absolute sm:right-0 sm:pr-5 gap-2 mt-2 sm:mt-0">
             {isDocument && (
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                 <Button disabled className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
                   Gerar Contrato
                 </Button>
-                <Button disabled className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
-                  Gerar Procuração
+                <Button onClick={sendToZapier} className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
+                  Gerar Procuração 
                 </Button>
               </div>
             )}
