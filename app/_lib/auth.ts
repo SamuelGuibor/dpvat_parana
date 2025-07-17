@@ -27,7 +27,7 @@ export const authOptions: AuthOptions = {
         }
 
         const user = await db.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials.email, password: credentials.password },
         });
 
         if (!user || !user.password) {
