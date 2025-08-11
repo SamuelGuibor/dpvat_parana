@@ -32,6 +32,7 @@ const BentoCard = ({
   description,
   href,
   cta,
+  onStatusClick, // Adicionei prop pro callback
 }: {
   name: string;
   className: string;
@@ -40,14 +41,13 @@ const BentoCard = ({
   description: string;
   href: string;
   cta: string;
+  onStatusClick?: () => void; // Tipagem da prop
 }) => (
   <div
     key={name}
     className={cn(
       "group relative col-span-3 flex flex-col justify-between overflow-hidden rounded-xl",
-      // light styles
       "bg-white [box-shadow:0_0_0_1px_rgba(0,0,0,.03),0_2px_4px_rgba(0,0,0,.05),0_12px_24px_rgba(0,0,0,.05)]",
-      // dark styles
       "transform-gpu dark:bg-black dark:[border:1px_solid_rgba(255,255,255,.1)] dark:[box-shadow:0_-20px_80px_-20px_#ffffff1f_inset]",
       className
     )}
@@ -67,10 +67,17 @@ const BentoCard = ({
       )}
     >
       <Button variant="ghost" asChild size="sm" className="pointer-events-auto">
-        <a href={href}>
-          {cta}
-          <FaArrowRight className="ml-2 h-4 w-4" />
-        </a>
+        {href === "/status" ? (
+          <button onClick={onStatusClick}> {/* Usa button pra dialog */}
+            {cta}
+            <FaArrowRight className="ml-2 h-4 w-4" />
+          </button>
+        ) : (
+          <a href={href}> {/* Mantém link pra outros */}
+            {cta}
+            <FaArrowRight className="ml-2 h-4 w-4" />
+          </a>
+        )}
       </Button>
     </div>
     <div className="pointer-events-none absolute inset-0 transform-gpu transition-all duration-300 group-hover:bg-black/[.03] group-hover:dark:bg-neutral-800/10" />

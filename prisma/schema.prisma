@@ -42,6 +42,7 @@ model User {
   statusStartedAt DateTime?
   service         String?
   obs             String?
+  otherObs        String?
 
   accounts  Account[]
   sessions  Session[]
@@ -57,6 +58,29 @@ model Process {
   id              String    @id @default(cuid())
   userId          String
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String?
+  cpf             String?   
+  data_nasc       DateTime?
+  email           String?    
+  nome_res        String?
+  rg_res          String?
+  cpf_res         String?
+  estado_civil_res String?
+  profissao_res   String?
+  rua             String?
+  bairro          String?
+  numero          String?
+  cep             String?
+  image           String?
+  emailVerified   DateTime?
+  rg              String?
+  nome_mae        String?
+  telefone        String?
+  cidade          String?
+  estado          String?
+  estado_civil    String?
+  profissao       String?
+  nacionalidade   String?
   role            String? 
   statusStartedAt DateTime? 
   data_acidente   DateTime?
@@ -64,8 +88,11 @@ model Process {
   hospital        String?
   outro_hospital  String?
   lesoes          String?
-  type            String?  
-  observacao      String
+  type            String? 
+  service         String? 
+  observacao      String?
+  otherObs        String?
+
   documents       Document[] 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

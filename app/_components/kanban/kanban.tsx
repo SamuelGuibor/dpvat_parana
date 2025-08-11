@@ -81,7 +81,7 @@ export const KanbanCard = ({
 }: KanbanCardProps) => {
   return (
     <Card
-      className={cn('rounded-md p-2 sm:p-3 shadow-sm', className)}
+      className={cn('rounded-xl p-2 sm:p-3 shadow-sm', className)}
       style={{ backgroundColor: '#FFFFFF', color: '#000000' }}
     >
       {children ?? <p className="m-0 font-medium text-xs sm:text-sm">{name}</p>}

@@ -19,6 +19,7 @@ export async function getUserStatus() {
     select: {
       status: true,
       role: true,
+      service: true,
     },
   });
 
@@ -26,7 +27,7 @@ export async function getUserStatus() {
     throw new Error("Usuário não encontrado.");
   }
 
-  return { status: user.status, role: user.role };
+  return { status: user.status, role: user.role, service: user.service };
 }
 
 export async function updateUserStatus(newStatus: Status) {

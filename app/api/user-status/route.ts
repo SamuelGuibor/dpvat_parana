@@ -3,8 +3,8 @@ import { getUserStatus, updateUserStatus } from "../../_actions/user-status";
 
 export async function GET() {
   try {
-    const { status, role } = await getUserStatus();
-    return NextResponse.json({ status, role });
+    const { status, role, service } = await getUserStatus();
+    return NextResponse.json({ status, role, service });
   } catch (error) {
     return NextResponse.json(
       { error: (error as Error).message },

@@ -3,9 +3,9 @@
 
 import { db } from "../_lib/prisma";
 
-export async function updateUserRole({ userId, newRole }: { userId: string; newRole: string }) {
+export async function updateProcessRole({ userId, newRole }: { userId: string; newRole: string }) {
   try {
-    const updatedUser = await db.user.update({
+    const updatedUser = await db.process.update({
       where: { id: userId },
       data: {
         role: newRole,

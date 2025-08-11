@@ -4,6 +4,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 
 interface Step {
   id: number;
@@ -12,7 +13,6 @@ interface Step {
   final?: string;
 }
 
-// Steps for INSS
 const inssSteps: Step[] = [
   {
     id: 1,
@@ -344,8 +344,9 @@ const dpvatSteps: Step[] = [
     final: "Processo encerrado",
   },
 ];
-
 export default function ProgressTimeline() {
+  const { processId } = useParams();
+
   const [serverStatus, setServerStatus] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [service, setService] = useState<string | null>(null);
@@ -354,8 +355,8 @@ export default function ProgressTimeline() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const response = await fetch("/api/user-status", { method: "GET" });
-        if (!response.ok) throw new Error("Erro ao buscar status");
+        const response = await fetch(`/api/process-status?processId=${processId}`, { method: "GET" });
+        if (!response.ok) throw new Error("Erro ao buscar status do processo");
         const { status, role, service } = await response.json();
         setServerStatus(status);
         setUserRole(role);
@@ -367,27 +368,13 @@ export default function ProgressTimeline() {
       }
     };
     fetchStatus();
-  }, []);
 
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch("/api/user-status", { method: "GET" });
-        if (!response.ok) throw new Error("Erro ao buscar status");
-        const { status, role, service } = await response.json();
-        setServerStatus(status);
-        setUserRole(role);
-        setService(service);
-      } catch (error) {
-        console.error(error);
-      }
-    }, 5000);
+    const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [processId]);
 
   if (isLoading) return <div><Loader2 className="h-4 w-4 animate-spin" /></div>;
 
-  // Select the appropriate steps based on the service
   const selectedSteps = (() => {
     switch (service) {
       case "INSS":
@@ -411,7 +398,6 @@ export default function ProgressTimeline() {
     <div className="relative lg:pl-10">
       {selectedSteps.map((step, index) => {
         const isLastStep = index === selectedSteps.length - 1;
-
         return (
           <div
             key={step.id}
@@ -426,7 +412,6 @@ export default function ProgressTimeline() {
                 ></div>
               </div>
             )}
-
             {step.final ? (
               <div
                 className={`absolute left-0 top-0 px-4 py-2 rounded-full text-white font-semibold transition-all duration-300 ease-in-out ${
@@ -444,7 +429,6 @@ export default function ProgressTimeline() {
                 }`}
               ></div>
             )}
-
             <div className="ml-12 p-4 sm:p-6 bg-gray-100 rounded-lg space-y-3 sm:space-y-4">
               {step.title && (
                 <h2 className="text-lg font-semibold">{step.title}</h2>
@@ -466,7 +450,6 @@ const mapServerStatusToCompletedSteps = (
   serverStatus: string | null
 ): number[] => {
   if (!serverStatus) return [];
-
   switch (serverStatus) {
     case "INICIADO":
       return [1];

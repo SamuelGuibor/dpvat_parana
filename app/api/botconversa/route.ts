@@ -6,11 +6,11 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   console.log('📩 Recebi POST do BotConversa:', body);
 
-  // await fetch('https://suaapi.com/registro', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(body),
-  // });
+  await fetch('https://suaapi.com/registro', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
   return NextResponse.json({ ok: true });
 }

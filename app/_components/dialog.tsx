@@ -26,16 +26,19 @@ import {
   SelectValue,
 } from "@/app/_components/ui/select";
 import { getUsers } from "@/app/_actions/get-user";
+import { getProcess } from "@/app/_actions/get-process";
 import { updateUser } from "@/app/_actions/update-users";
+import { updateProcess } from "@/app/_actions/update-process"; // Assumed to exist
 import { Dropzone, DropzoneContent, DropzoneEmptyState } from "./dropzone";
 import { Button } from "./ui/button";
 import { getPresignedUrls } from '@/app/_actions/uploadS3';
 import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from "sonner";
-import { updateUserRole } from "../_actions/statusTimer";
+import { updateProcessRole } from "../_actions/statusTimerProcess"; // Assumed to exist
+import { updateUserRole } from "../_actions/statusTimer"; 
 
-interface UserData {
+interface ItemData {
   id: string;
   name: string;
   status?: string;
@@ -71,7 +74,7 @@ interface UserData {
   obs?: string;
 }
 
-interface UpdateUserData {
+interface UpdateItemData {
   id: string;
   name?: string;
   cpf?: string;
@@ -113,11 +116,13 @@ interface FileWithBase64 {
 
 interface DialogDashProps {
   userId: string;
+  isProcess?: boolean;
   trigger: React.ReactNode;
 }
 
-const DialogDash = ({ userId, trigger }: DialogDashProps) => {
-  const [user, setUser] = useState<UserData | null>(null);
+const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => {
+  const [isOpen, setIsOpen] = useState(false); // State to track if dialog is open
+  const [item, setItem] = useState<ItemData | null>(null);
   const [localStatus, setLocalStatus] = useState({
     iniciado: false,
     aguardandoAssinatura: false,
@@ -129,7 +134,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     pagamentoHonorario: false,
     processoEncerrado: false,
   });
-  const [formData, setFormData] = useState<UserData | null>(null);
+  const [formData, setFormData] = useState<ItemData | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [base64Files, setBase64Files] = useState<FileWithBase64[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -137,7 +142,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDocument, setIsDocument] = useState(true);
-  const [userDocuments, setUserDocuments] = useState<{ key: string; name: string }[]>([]);
+  const [itemDocuments, setItemDocuments] = useState<{ key: string; name: string }[]>([]);
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -170,8 +175,8 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
 
   const uploadFilesToS3 = async () => {
     if (!userId) {
-      setError('Erro: ID do usuário não fornecido.');
-      toast.error('ID do usuário não fornecido.');
+      setError('Erro: ID não fornecido.');
+      toast.error('ID não fornecido.');
       setUploading(false);
       return;
     }
@@ -189,7 +194,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         type: file.type,
       }));
 
-      const response = await getPresignedUrls(fileInfos, userId);
+      const response = await getPresignedUrls(fileInfos, userId, isProcess);
 
       if (!response.success || !response.presignedUrls) {
         throw new Error(response.error || 'Erro ao obter URLs pré-assinadas');
@@ -232,12 +237,13 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
+          isProcess,
           documents: validUploads,
         }),
       });
 
-      setUserDocuments((prev) => [...prev, ...validUploads]);
-      await fetchUserDocuments();
+      setItemDocuments((prev) => [...prev, ...validUploads]);
+      await fetchItemDocuments();
       setFiles([]);
       setBase64Files([]);
 
@@ -250,62 +256,62 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     }
   };
 
-  const fetchUserDocuments = async () => {
+  const fetchItemDocuments = async () => {
     try {
-      const response = await fetch(`/api/documents?userId=${userId}`);
+      const response = await fetch(`/api/documents?userId=${userId}&isProcess=${isProcess}`);
       if (!response.ok) {
         throw new Error('Erro ao buscar documentos');
       }
       const documents = await response.json();
-      setUserDocuments(documents);
+      setItemDocuments(documents);
     } catch (err) {
       console.error('Erro ao buscar documentos:', err);
-      setError('Erro ao carregar documentos do usuário.');
+      setError('Erro ao carregar documentos.');
     }
   };
 
   const sendToZapier = async () => {
     try {
-
       if (!formData) {
-        return false
+        return false;
+      }
+
+      const payload = {
+        name: formData.name,
+        cpf: formData.cpf,
+        rg: formData.rg,
+        data_nasc: formData.data_nasc,
+        nome_mae: formData.nome_mae,
+        telefone: formData.telefone,
+        email: formData.email,
+        estado_civil: formData.estado_civil,
+        profissao: formData.profissao,
+        data_acidente: formData.data_acidente,
+        atendimento_via: formData.atendimento_via,
+        hospital: formData.hospital,
+        outro_hospital: formData.outro_hospital,
+        lesoes: formData.lesoes,
+        rua: formData.rua,
+        numero: formData.numero,
+        cep: formData.cep,
+        bairro: formData.bairro,
+        cidade: formData.cidade,
+        nacionalidade: formData.nacionalidade,
+        estado: formData.estado,
+        isProcess,
       };
 
-       const payload = {
-        name: formData.name, 
-        cpf: formData.cpf, 
-        rg: formData.rg, 
-        data_nasc: formData.data_nasc,
-        nome_mae: formData.nome_mae, 
-        telefone: formData.telefone, 
-        email: formData.email, 
-        estado_civil: formData.estado_civil, 
-        profissao: formData.profissao, 
-        data_acidente: formData.data_acidente, 
-        atendimento_via: formData.atendimento_via, 
-        hospital: formData.hospital, 
-        outro_hospital: formData.outro_hospital, 
-        lesoes: formData.lesoes, 
-        rua: formData.rua, 
-        numero: formData.numero, 
-        cep: formData.cep, 
-        bairro: formData.bairro, 
-        cidade: formData.cidade,  
-        nacionalidade: formData.nacionalidade,
-        estado: formData.estado
-       };
-       
       await fetch("/api/zapier", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-
     } catch (err) {
-      console.log("deu erro" + err);
+      console.error("Erro ao enviar para Zapier:", err);
+      setError("Erro ao enviar dados para Zapier.");
+      toast.error("Erro ao enviar dados para Zapier.");
     }
-  }
+  };
 
   const handleDownload = async (key: string, fileName: string) => {
     try {
@@ -327,73 +333,76 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
     }
   };
 
-  useEffect(() => {
-    async function fetchUser() {
+ useEffect(() => {
+    async function fetchItem() {
       try {
         setIsLoading(true);
-        const userData = await getUsers("full", userId);
-        if (!userData || Array.isArray(userData)) {
-          throw new Error("Usuário não encontrado ou resposta inválida.");
+        const fetchFunction = isProcess ? getProcess : getUsers;
+        const itemData = await fetchFunction("full", userId);
+        if (!itemData || Array.isArray(itemData)) {
+          throw new Error(isProcess ? "Processo não encontrado ou resposta inválida." : "Usuário não encontrado ou resposta inválida.");
         }
-        setUser(userData);
-        setFormData(userData);
+        setItem(itemData);
+        setFormData(itemData);
         setLocalStatus({
-          iniciado: userData.status === "INICIADO" ||
-            userData.status === "AGUARDANDO_ASSINATURA" ||
-            userData.status === "SOLICITAR_DOCUMENTOS" ||
-            userData.status === "COLETA_DOCUMENTOS" ||
-            userData.status === "ANALISE_DOCUMENTOS" ||
-            userData.status === "PERICIAL" ||
-            userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          aguardandoAssinatura: userData.status === "AGUARDANDO_ASSINATURA" ||
-            userData.status === "SOLICITAR_DOCUMENTOS" ||
-            userData.status === "COLETA_DOCUMENTOS" ||
-            userData.status === "ANALISE_DOCUMENTOS" ||
-            userData.status === "PERICIAL" ||
-            userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          solicitarDocumentos: userData.status === "SOLICITAR_DOCUMENTOS" ||
-            userData.status === "COLETA_DOCUMENTOS" ||
-            userData.status === "ANALISE_DOCUMENTOS" ||
-            userData.status === "PERICIAL" ||
-            userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          coletaDocumentos: userData.status === "COLETA_DOCUMENTOS" ||
-            userData.status === "ANALISE_DOCUMENTOS" ||
-            userData.status === "PERICIAL" ||
-            userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          analiseDocumentos: userData.status === "ANALISE_DOCUMENTOS" ||
-            userData.status === "PERICIAL" ||
-            userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          pericial: userData.status === "PERICIAL" ||
-            userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          aguardandoPericial: userData.status === "AGUARDANDO_PERICIAL" ||
-            userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          pagamentoHonorario: userData.status === "PAGAMENTO_HONORARIO" ||
-            userData.status === "PROCESSO_ENCERRADO",
-          processoEncerrado: userData.status === "PROCESSO_ENCERRADO",
+          iniciado: itemData.status === "INICIADO" ||
+            itemData.status === "AGUARDANDO_ASSINATURA" ||
+            itemData.status === "SOLICITAR_DOCUMENTOS" ||
+            itemData.status === "COLETA_DOCUMENTOS" ||
+            itemData.status === "ANALISE_DOCUMENTOS" ||
+            itemData.status === "PERICIAL" ||
+            itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          aguardandoAssinatura: itemData.status === "AGUARDANDO_ASSINATURA" ||
+            itemData.status === "SOLICITAR_DOCUMENTOS" ||
+            itemData.status === "COLETA_DOCUMENTOS" ||
+            itemData.status === "ANALISE_DOCUMENTOS" ||
+            itemData.status === "PERICIAL" ||
+            itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          solicitarDocumentos: itemData.status === "SOLICITAR_DOCUMENTOS" ||
+            itemData.status === "COLETA_DOCUMENTOS" ||
+            itemData.status === "ANALISE_DOCUMENTOS" ||
+            itemData.status === "PERICIAL" ||
+            itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          coletaDocumentos: itemData.status === "COLETA_DOCUMENTOS" ||
+            itemData.status === "ANALISE_DOCUMENTOS" ||
+            itemData.status === "PERICIAL" ||
+            itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          analiseDocumentos: itemData.status === "ANALISE_DOCUMENTOS" ||
+            itemData.status === "PERICIAL" ||
+            itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          pericial: itemData.status === "PERICIAL" ||
+            itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          aguardandoPericial: itemData.status === "AGUARDANDO_PERICIAL" ||
+            itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          pagamentoHonorario: itemData.status === "PAGAMENTO_HONORARIO" ||
+            itemData.status === "PROCESSO_ENCERRADO",
+          processoEncerrado: itemData.status === "PROCESSO_ENCERRADO",
         });
-        await fetchUserDocuments();
+        await fetchItemDocuments();
       } catch (error) {
-        console.error("Erro ao buscar usuário:", error);
-        setError("Não foi possível carregar os dados do usuário.");
+        console.error(`Erro ao buscar ${isProcess ? 'processo' : 'usuário'}:`, error);
+        setError(`Não foi possível carregar os dados do ${isProcess ? 'processo' : 'usuário'}.`);
       } finally {
         setIsLoading(false);
       }
     }
-    fetchUser();
-  }, [userId]);
+    if (isOpen) {
+      fetchItem();
+    }
+  }, [isOpen, userId, isProcess]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -524,7 +533,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
   };
 
   const handleSave = async () => {
-    if (!user || !formData) return;
+    if (!item || !formData) return;
 
     try {
       // Upload files to S3 first, if any
@@ -532,92 +541,92 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
 
       // Check if only the role has changed
       const onlyRoleChanged = Object.keys(formData).every((key) => {
-        const typedKey = key as keyof UserData;
+        const typedKey = key as keyof ItemData;
         if (typedKey === "role") {
-          return formData[typedKey] !== user[typedKey];
+          return formData[typedKey] !== item[typedKey];
         }
-        return formData[typedKey] === user[typedKey];
+        return formData[typedKey] === item[typedKey];
       });
 
-      let updatedUser;
-      if (onlyRoleChanged && formData.role !== user.role) {
-        // Call updateUserRole Server Action for role-only changes
-        updatedUser = await updateUserRole({
+      let updatedItem;
+      if (onlyRoleChanged && formData.role !== item.role) {
+        const updateRoleFunction = isProcess ? updateProcessRole : updateUserRole;
+        updatedItem = await updateRoleFunction({
           userId: formData.id,
-          newRole: formData.role || "USER",
+          newRole: formData.role || (isProcess ? "PROCESS" : "USER"),
         });
-        // Map the response to match the expected UserData structure
-        updatedUser = {
-          ...user,
-          role: updatedUser.role,
-          type: updatedUser.role || "USER",
-          statusStartedAt: updatedUser.statusStartedAt
-            ? updatedUser.statusStartedAt.toISOString()
+        updatedItem = {
+          ...item,
+          role: updatedItem.role,
+          type: updatedItem.role || (isProcess ? "PROCESS" : "USER"),
+          statusStartedAt: updatedItem.statusStartedAt
+            ? updatedItem.statusStartedAt.toISOString()
             : null,
         };
       } else {
-        // Call updateUser Server Action for other changes
-        const updatedData: UpdateUserData = {
+        // Call update function for other changes
+        const updatedData: UpdateItemData = {
           id: formData.id,
-          name: formData.name !== user.name ? formData.name : undefined,
-          cpf: formData.cpf !== user.cpf ? formData.cpf : undefined,
-          data_nasc: formData.data_nasc !== user.data_nasc ? formData.data_nasc : undefined,
-          email: formData.email !== user.email ? formData.email : undefined,
-          rua: formData.rua !== user.rua ? formData.rua : undefined,
-          bairro: formData.bairro !== user.bairro ? formData.bairro : undefined,
-          numero: formData.numero !== user.numero ? formData.numero : undefined,
-          cep: formData.cep !== user.cep ? formData.cep : undefined,
-          rg: formData.rg !== user.rg ? formData.rg : undefined,
-          nome_mae: formData.nome_mae !== user.nome_mae ? formData.nome_mae : undefined,
-          telefone: formData.telefone !== user.telefone ? formData.telefone : undefined,
-          cidade: formData.cidade !== user.cidade ? formData.cidade : undefined,
-          estado: formData.estado !== user.estado ? formData.estado : undefined,
-          estado_civil: formData.estado_civil !== user.estado_civil ? formData.estado_civil : undefined,
-          profissao: formData.profissao !== user.profissao ? formData.profissao : undefined,
-          nacionalidade: formData.nacionalidade !== user.nacionalidade ? formData.nacionalidade : undefined,
-          data_acidente: formData.data_acidente !== user.data_acidente ? formData.data_acidente : undefined,
-          atendimento_via: formData.atendimento_via !== user.atendimento_via ? formData.atendimento_via : undefined,
-          hospital: formData.hospital !== user.hospital ? formData.hospital : undefined,
-          outro_hospital: formData.outro_hospital !== user.outro_hospital ? formData.outro_hospital : undefined,
-          lesoes: formData.lesoes !== user.lesoes ? formData.lesoes : undefined,
-          status: determineStatus() !== user.status ? determineStatus() : undefined,
-          role: formData.role !== user.role ? formData.role : undefined,
-          nome_res: formData.nome_res !== user.nome_res ? formData.nome_res : undefined,
-          rg_res: formData.rg_res !== user.rg_res ? formData.rg_res : undefined,
-          cpf_res: formData.cpf_res !== user.cpf_res ? formData.cpf_res : undefined,
-          estado_civil_res: formData.estado_civil_res !== user.estado_civil_res ? formData.estado_civil_res : undefined,
-          profissao_res: formData.profissao_res !== user.profissao_res ? formData.profissao_res : undefined,
-          obs: formData.obs !== user.obs ? formData.obs : undefined,
-          service: formData.service !== user.service ? formData.service : undefined,
+          name: formData.name !== item.name ? formData.name : undefined,
+          cpf: formData.cpf !== item.cpf ? formData.cpf : undefined,
+          data_nasc: formData.data_nasc !== item.data_nasc ? formData.data_nasc : undefined,
+          email: formData.email !== item.email ? formData.email : undefined,
+          rua: formData.rua !== item.rua ? formData.rua : undefined,
+          bairro: formData.bairro !== item.bairro ? formData.bairro : undefined,
+          numero: formData.numero !== item.numero ? formData.numero : undefined,
+          cep: formData.cep !== item.cep ? formData.cep : undefined,
+          rg: formData.rg !== item.rg ? formData.rg : undefined,
+          nome_mae: formData.nome_mae !== item.nome_mae ? formData.nome_mae : undefined,
+          telefone: formData.telefone !== item.telefone ? formData.telefone : undefined,
+          cidade: formData.cidade !== item.cidade ? formData.cidade : undefined,
+          estado: formData.estado !== item.estado ? formData.estado : undefined,
+          estado_civil: formData.estado_civil !== item.estado_civil ? formData.estado_civil : undefined,
+          profissao: formData.profissao !== item.profissao ? formData.profissao : undefined,
+          nacionalidade: formData.nacionalidade !== item.nacionalidade ? formData.nacionalidade : undefined,
+          data_acidente: formData.data_acidente !== item.data_acidente ? formData.data_acidente : undefined,
+          atendimento_via: formData.atendimento_via !== item.atendimento_via ? formData.atendimento_via : undefined,
+          hospital: formData.hospital !== item.hospital ? formData.hospital : undefined,
+          outro_hospital: formData.outro_hospital !== item.outro_hospital ? formData.outro_hospital : undefined,
+          lesoes: formData.lesoes !== item.lesoes ? formData.lesoes : undefined,
+          status: determineStatus() !== item.status ? determineStatus() : undefined,
+          role: formData.role !== item.role ? formData.role : undefined,
+          nome_res: formData.nome_res !== item.nome_res ? formData.nome_res : undefined,
+          rg_res: formData.rg_res !== item.rg_res ? formData.rg_res : undefined,
+          cpf_res: formData.cpf_res !== item.cpf_res ? formData.cpf_res : undefined,
+          estado_civil_res: formData.estado_civil_res !== item.estado_civil_res ? formData.estado_civil_res : undefined,
+          profissao_res: formData.profissao_res !== item.profissao_res ? formData.profissao_res : undefined,
+          obs: formData.obs !== item.obs ? formData.obs : undefined,
+          service: formData.service !== item.service ? formData.service : undefined,
         };
 
-        // Only call updateUser if there are changes to save
+        // Only call update if there are changes to save
         if (Object.values(updatedData).some((value) => value !== undefined && value !== updatedData.id)) {
-          updatedUser = await updateUser(updatedData);
+          const updateFunction = isProcess ? updateProcess : updateUser;
+          updatedItem = await updateFunction(updatedData);
         } else {
-          // No changes to save, return the current user
-          updatedUser = user;
+          // No changes to save, return the current item
+          updatedItem = item;
         }
       }
 
-      setUser(updatedUser);
-      setFormData(updatedUser);
+      setItem(updatedItem);
+      setFormData(updatedItem);
       setError(null);
       toast.success("Dados salvos com sucesso!");
     } catch (error: any) {
       console.error("Erro ao salvar:", error);
       setError("Não foi possível salvar as alterações: " + error.message);
-      toast.error("Erro ao salvar as alterações: " + error.message);
+      toast.error("Não foi possível salvar as alterações: " + error.message);
     }
   };
 
   return (
-    <AlertDialog>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen} >
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent className="max-w-[95vw] sm:max-w-lg md:max-w-xl lg:max-w-5xl flex flex-col max-h-[80vh] p-4 sm:p-6">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-base sm:text-[20px]">
-            Dados do Cliente: <span className="font-bold text-blue-600">{user?.name}</span>
+            Dados do {isProcess ? 'Processo' : 'Cliente'}: <span className="font-bold text-blue-600">{item?.name}</span>
           </AlertDialogTitle>
           <div className="flex flex-col sm:flex-row sm:absolute sm:right-0 sm:pr-5 gap-2 mt-2 sm:mt-0">
             {isDocument && (
@@ -626,7 +635,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                   Gerar Contrato
                 </Button>
                 <Button onClick={sendToZapier} className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
-                  Gerar Procuração 
+                  Gerar Procuração
                 </Button>
               </div>
             )}
@@ -635,7 +644,7 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
             </Button>
           </div>
           <AlertDialogDescription className="text-sm sm:text-base">
-            Visualize ou altere os dados do cliente.
+            Visualize ou altere os dados do {isProcess ? 'processo' : 'cliente'}.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-2 text-sm">
@@ -761,13 +770,13 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectValue placeholder="Selecione o estado" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="parana">Paraná</SelectItem>
-                      <SelectItem value="santa_catarina">Santa Catarina</SelectItem>
-                      <SelectItem value="sao_paulo">São Paulo</SelectItem>
-                      <SelectItem value="rio_grande_do_sul">Rio Grande do Sul</SelectItem>
-                      <SelectItem value="mato_grosso">Mato Grosso</SelectItem>
-                      <SelectItem value="mato_grosso_do_sul">Mato Grosso do Sul</SelectItem>
-                      <SelectItem value="rio_de_janeiro">Rio de Janeiro</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="parana">Paraná</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="santa_catarina">Santa Catarina</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="sao_paulo">São Paulo</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="rio_grande_do_sul">Rio Grande do Sul</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="mato_grosso">Mato Grosso</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="mato_grosso_do_sul">Mato Grosso do Sul</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="rio_de_janeiro">Rio de Janeiro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -781,11 +790,11 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectValue placeholder="Selecione o estado civil" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Solteiro">Solteiro(a)</SelectItem>
-                      <SelectItem value="Casado">Casado(a)</SelectItem>
-                      <SelectItem value="Divorciado">Divorciado(a)</SelectItem>
-                      <SelectItem value="Viuvo">Viúvo(a)</SelectItem>
-                      <SelectItem value="Uniao_Estavel">União Estável</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solteiro">Solteiro(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Casado">Casado(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Divorciado">Divorciado(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Viuvo">Viúvo(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Uniao_Estavel">União Estável</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -808,13 +817,13 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectValue placeholder="Selecione a nacionalidade" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Brasileiro">Brasileiro(a)</SelectItem>
-                      <SelectItem value="Venezuelano">Venezuelano(a)</SelectItem>
-                      <SelectItem value="Colombiano">Colombiano(a)</SelectItem>
-                      <SelectItem value="Uruguaio">Uruguaio(a)</SelectItem>
-                      <SelectItem value="Argentino">Argentino(a)</SelectItem>
-                      <SelectItem value="Peruano">Peruano(a)</SelectItem>
-                      <SelectItem value="Boliviano">Boliviano(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Brasileiro">Brasileiro(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Venezuelano">Venezuelano(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Colombiano">Colombiano(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Uruguaio">Uruguaio(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Argentino">Argentino(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Peruano">Peruano(a)</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Boliviano">Boliviano(a)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -828,48 +837,48 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectValue placeholder="Selecione um serviço" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
-                      <SelectItem value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
-                      <SelectItem value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
-                      <SelectItem value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
-                      <SelectItem value="Agendar Coleta com Motoboy">Agendar Coleta com Motoboy</SelectItem>
-                      <SelectItem value="Acompanhar Rota do Motoboy">Acompanhar Rota do Motoboy</SelectItem>
-                      <SelectItem value="Fazer Protocolo no Hospital">Fazer Protocolo no Hospital</SelectItem>
-                      <SelectItem value="Protocolar Pasta – Hospital Presencial">Protocolar Pasta – Hospital Presencial</SelectItem>
-                      <SelectItem value="Solicitar Prontuário por E-mail">Solicitar Prontuário por E-mail</SelectItem>
-                      <SelectItem value="Solicitar Prontuário Cajuru por E-mail">Solicitar Prontuário Cajuru por E-mail</SelectItem>
-                      <SelectItem value="Acompanhar Cajuru – Solicitado">Acompanhar Cajuru – Solicitado</SelectItem>
-                      <SelectItem value="Solicitar Prontuário – Outros Hospitais">Solicitar Prontuário – Outros Hospitais</SelectItem>
-                      <SelectItem value="Acompanhar Prontuário – Outros Solicitados">Acompanhar Prontuário – Outros Solicitados</SelectItem>
-                      <SelectItem value="Solicitar Prontuário – Ponta Grossa">Solicitar Prontuário – Ponta Grossa</SelectItem>
-                      <SelectItem value="Aguardar Prontuário – Recebimento Online">Aguardar Prontuário – Recebimento Online</SelectItem>
-                      <SelectItem value="Aguardar Prontuário PG – Recebimento Online">Aguardar Prontuário PG – Recebimento Online</SelectItem>
-                      <SelectItem value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
-                      <SelectItem value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
-                      <SelectItem value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
-                      <SelectItem value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
-                      <SelectItem value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
-                      <SelectItem value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
-                      <SelectItem value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
-                      <SelectItem value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
-                      <SelectItem value="Solicitar Siate">Solicitar Siate</SelectItem>
-                      <SelectItem value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
-                      <SelectItem value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
-                      <SelectItem value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
-                      <SelectItem value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
-                      <SelectItem value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
-                      <SelectItem value="Protocolar DPVAT – Caixa">Protocolar DPVAT – Caixa</SelectItem>
-                      <SelectItem value="Enviar para Reanálise">Enviar para Reanálise</SelectItem>
-                      <SelectItem value="Manter SPVAT em Standby">Manter SPVAT em Standby</SelectItem>
-                      <SelectItem value="Aguardar Análise da Caixa">Aguardar Análise da Caixa</SelectItem>
-                      <SelectItem value="Acompanhar Pendências – Protocolado">Acompanhar Pendências – Protocolado</SelectItem>
-                      <SelectItem value="Protocolar Pendência de B.O.">Protocolar Pendência de B.O.</SelectItem>
-                      <SelectItem value="Avisar Sobre Perícia Administrativa">Avisar Sobre Perícia Administrativa</SelectItem>
-                      <SelectItem value="Aguardar Resultado da Perícia">Aguardar Resultado da Perícia</SelectItem>
-                      <SelectItem value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
-                      <SelectItem value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
-                      <SelectItem value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
-                      <SelectItem value="Descartaveis">Descartaveis</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Agendar Coleta com Motoboy">Agendar Coleta com Motoboy</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Acompanhar Rota do Motoboy">Acompanhar Rota do Motoboy</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Fazer Protocolo no Hospital">Fazer Protocolo no Hospital</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Protocolar Pasta – Hospital Presencial">Protocolar Pasta – Hospital Presencial</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solicitar Prontuário por E-mail">Solicitar Prontuário por E-mail</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solicitar Prontuário Cajuru por E-mail">Solicitar Prontuário Cajuru por E-mail</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Acompanhar Cajuru – Solicitado">Acompanhar Cajuru – Solicitado</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solicitar Prontuário – Outros Hospitais">Solicitar Prontuário – Outros Hospitais</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Acompanhar Prontuário – Outros Solicitados">Acompanhar Prontuário – Outros Solicitados</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solicitar Prontuário – Ponta Grossa">Solicitar Prontuário – Ponta Grossa</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Prontuário – Recebimento Online">Aguardar Prontuário – Recebimento Online</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Prontuário PG – Recebimento Online">Aguardar Prontuário PG – Recebimento Online</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Solicitar Siate">Solicitar Siate</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Protocolar DPVAT – Caixa">Protocolar DPVAT – Caixa</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Enviar para Reanálise">Enviar para Reanálise</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Manter SPVAT em Standby">Manter SPVAT em Standby</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Análise da Caixa">Aguardar Análise da Caixa</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Acompanhar Pendências – Protocolado">Acompanhar Pendências – Protocolado</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Protocolar Pendência de B.O.">Protocolar Pendência de B.O.</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Avisar Sobre Perícia Administrativa">Avisar Sobre Perícia Administrativa</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Resultado da Perícia">Aguardar Resultado da Perícia</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Cobrar Honorários – Resultado Perícia">Cobrar Honorários – Resultado Perícia</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Aguardar Pagamento – Honorários Cobrados">Aguardar Pagamento – Honorários Cobrados</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Encerrar Processo – DPVAT">Encerrar Processo – DPVAT</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Descartaveis">Descartaveis</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -883,12 +892,12 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                       <SelectValue placeholder="Selecione um serviço" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="INSS">INSS</SelectItem>
-                      <SelectItem value="Seguro de Vida">Seguro de Vida</SelectItem>
-                      <SelectItem value="RCF">RCF</SelectItem>
-                      <SelectItem value="DPVAT">DPVAT</SelectItem>
-                      <SelectItem value="SPVAT">SPVAT</SelectItem>
-                      <SelectItem value="TRABALHISTA">TRABALHISTA</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="INSS">INSS</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Seguro de Vida">Seguro de Vida</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="RCF">RCF</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="DPVAT">DPVAT</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="SPVAT">SPVAT</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="TRABALHISTA">TRABALHISTA</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -951,11 +960,11 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         <SelectValue placeholder="Selecione o estado civil" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Solteiro">Solteiro(a)</SelectItem>
-                        <SelectItem value="Casado">Casado(a)</SelectItem>
-                        <SelectItem value="Divorciado">Divorciado(a)</SelectItem>
-                        <SelectItem value="Viuvo">Viúvo(a)</SelectItem>
-                        <SelectItem value="Uniao_Estavel">União Estável</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Solteiro">Solteiro(a)</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Casado">Casado(a)</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Divorciado">Divorciado(a)</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Viuvo">Viúvo(a)</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Uniao_Estavel">União Estável</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -984,10 +993,10 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         <SelectValue placeholder="Selecione o atendimento via" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Siate">SIATE</SelectItem>
-                        <SelectItem value="Samu">SAMU/OUTRAS AMBULÂNCIAS</SelectItem>
-                        <SelectItem value="Procura_Direta">PROCURA DIRETA</SelectItem>
-                        <SelectItem value="Arteris">ARTERIS</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Siate">SIATE</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Samu">SAMU/OUTRAS AMBULÂNCIAS</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Procura_Direta">PROCURA DIRETA</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="Arteris">ARTERIS</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1001,38 +1010,38 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         <SelectValue placeholder="Selecione o hospital" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="trabalhador">Trabalhador</SelectItem>
-                        <SelectItem value="cajuru">Cajuru</SelectItem>
-                        <SelectItem value="evangelico_mackenzie">Evangélico/Mackenzie</SelectItem>
-                        <SelectItem value="angelina_caron">Angelina Caron</SelectItem>
-                        <SelectItem value="h_maternidade_sao_jose_dos_pinhais">
+                        <SelectItem className="hover:bg-slate-100" value="trabalhador">Trabalhador</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="cajuru">Cajuru</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="evangelico_mackenzie">Evangélico/Mackenzie</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="angelina_caron">Angelina Caron</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="h_maternidade_sao_jose_dos_pinhais">
                           H. Maternidade São José dos Pinhais
                         </SelectItem>
-                        <SelectItem value="hma_araucaria">Hma Araucária</SelectItem>
-                        <SelectItem value="rocio">Rocio</SelectItem>
-                        <SelectItem value="onix">Onix</SelectItem>
-                        <SelectItem value="marcelino_champagnat">Marcelino Champagnat</SelectItem>
-                        <SelectItem value="hospital_xv">Hospital XV</SelectItem>
-                        <SelectItem value="vita">Vita</SelectItem>
-                        <SelectItem value="fraturas_novo_mundo">Fraturas Novo Mundo</SelectItem>
-                        <SelectItem value="cwb_santa_cruz">Cwb Santa Cruz</SelectItem>
-                        <SelectItem value="cwb_santa_casa">Cwb Santa Casa</SelectItem>
-                        <SelectItem value="nossa_saude">Nossa Saúde</SelectItem>
-                        <SelectItem value="nacoes">Nações</SelectItem>
-                        <SelectItem value="litoral">Litoral</SelectItem>
-                        <SelectItem value="pg_regional">Pg Regional</SelectItem>
-                        <SelectItem value="upa_santana">Upa Santana</SelectItem>
-                        <SelectItem value="upa_santa_paula">Upa Santa Paula</SelectItem>
-                        <SelectItem value="pg_bom_jesus">Pg Bom Jesus</SelectItem>
-                        <SelectItem value="pg_sao_camilo">Pg São Camilo</SelectItem>
-                        <SelectItem value="pg_unimed">Pg Unimed</SelectItem>
-                        <SelectItem value="pg_santa_casa">Pg Santa Casa</SelectItem>
-                        <SelectItem value="pg_pronto_socorro_amadeu_puppi">
+                        <SelectItem className="hover:bg-slate-100" value="hma_araucaria">Hma Araucária</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="rocio">Rocio</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="onix">Onix</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="marcelino_champagnat">Marcelino Champagnat</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="hospital_xv">Hospital XV</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="vita">Vita</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fraturas_novo_mundo">Fraturas Novo Mundo</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="cwb_santa_cruz">Cwb Santa Cruz</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="cwb_santa_casa">Cwb Santa Casa</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="nossa_saude">Nossa Saúde</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="nacoes">Nações</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="litoral">Litoral</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pg_regional">Pg Regional</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="upa_santana">Upa Santana</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="upa_santa_paula">Upa Santa Paula</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pg_bom_jesus">Pg Bom Jesus</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pg_sao_camilo">Pg São Camilo</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pg_unimed">Pg Unimed</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pg_santa_casa">Pg Santa Casa</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pg_pronto_socorro_amadeu_puppi">
                           Pg Pronto Socorro Amadeu Puppi
                         </SelectItem>
-                        <SelectItem value="idf_telemaco_borba">Idf Telemaco Borba</SelectItem>
-                        <SelectItem value="regional_de_paranagua">Regional de Paranaguá</SelectItem>
-                        <SelectItem value="regional_pg">Regional Pg</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="idf_telemaco_borba">Idf Telemaco Borba</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="regional_de_paranagua">Regional de Paranaguá</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="regional_pg">Regional Pg</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1055,28 +1064,28 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                         <SelectValue placeholder="Selecione as lesões" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="fx_femur">FX Fêmur</SelectItem>
-                        <SelectItem value="fx_tibia">FX Tíbia</SelectItem>
-                        <SelectItem value="fx_pulso_mao_metatarso">FX Pulso/Mão/Metatarso</SelectItem>
-                        <SelectItem value="fx_tornozelo">FX Tornozelo</SelectItem>
-                        <SelectItem value="fx_mindilhos">FX Mindilhos</SelectItem>
-                        <SelectItem value="fx_costela">FX Costela</SelectItem>
-                        <SelectItem value="fx_coluna">FX Vértebra/Coluna</SelectItem>
-                        <SelectItem value="fx_pelve">FX Pelve</SelectItem>
-                        <SelectItem value="fx_joelho">FX Joelho</SelectItem>
-                        <SelectItem value="ligamento_joelho">Lesão no Ligamento Joelho</SelectItem>
-                        <SelectItem value="luxacao">Luxação</SelectItem>
-                        <SelectItem value="traumatismo">Traumatismo</SelectItem>
-                        <SelectItem value="fx_exposta_cirurgia">FX Exposta/Cirurgia</SelectItem>
-                        <SelectItem value="fx_braco">FX Braço</SelectItem>
-                        <SelectItem value="fx_perna">FX Perna</SelectItem>
-                        <SelectItem value="fx_pe">FX Pé</SelectItem>
-                        <SelectItem value="fx_face_maxilar_nariz">FX Face, Maxilar, Nariz</SelectItem>
-                        <SelectItem value="fx_bacia">FX Bacia</SelectItem>
-                        <SelectItem value="laceracao">Laceração</SelectItem>
-                        <SelectItem value="pneumotorax">Pneumotórax</SelectItem>
-                        <SelectItem value="amputacao">Amputação</SelectItem>
-                        <SelectItem value="multiplas_fraturas">Múltiplas Fraturas</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_femur">FX Fêmur</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_tibia">FX Tíbia</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_pulso_mao_metatarso">FX Pulso/Mão/Metatarso</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_tornozelo">FX Tornozelo</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_mindilhos">FX Mindilhos</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_costela">FX Costela</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_coluna">FX Vértebra/Coluna</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_pelve">FX Pelve</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_joelho">FX Joelho</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="ligamento_joelho">Lesão no Ligamento Joelho</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="luxacao">Luxação</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="traumatismo">Traumatismo</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_exposta_cirurgia">FX Exposta/Cirurgia</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_braco">FX Braço</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_perna">FX Perna</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_pe">FX Pé</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_face_maxilar_nariz">FX Face, Maxilar, Nariz</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="fx_bacia">FX Bacia</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="laceracao">Laceração</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="pneumotorax">Pneumotórax</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="amputacao">Amputação</SelectItem>
+                        <SelectItem className="hover:bg-slate-100" value="multiplas_fraturas">Múltiplas Fraturas</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1239,8 +1248,8 @@ const DialogDash = ({ userId, trigger }: DialogDashProps) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {userDocuments.length > 0 ? (
-                    userDocuments.map((doc, index) => (
+                  {itemDocuments.length > 0 ? (
+                    itemDocuments.map((doc, index) => (
                       <tr key={index} className="border-b">
                         <td className="p-2 border flex justify-between items-center">
                           <span className="truncate max-w-[150px] sm:max-w-[200px]">{doc.name}</span>

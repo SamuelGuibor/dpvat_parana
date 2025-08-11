@@ -6,33 +6,39 @@ export function Cards() {
     const cards = [
         {
             id: 1,
-            title: "Proteção completa",
-            image: "chatbot.jpg",
+            title: "Seguro de Vida",
+            image: "dpvat.jpg",
             link: "/seguro-vida",
         },
         {
             id: 2,
-            title: "Atendimento 24h",
+            title: "Seguro de Terceiros",
             image: "car.jpg",
             link: "/seguro-terceiros",
         },
         {
             id: 3,
-            title: "Descontos exclusivos",
+            title: "Seguro de Aplicativos",
             image: "homem.png",
             link: "/exclusivos",
         },
         {
             id: 4,
-            title: "Cobertura nacional",
+            title: "Seguro DPVAT",
             image: "imagemm.jpg",
             link: "/seguro-dpvat",
+        },
+        {
+            id: 5,
+            title: "INSS",
+            image: "imagemm.jpg",
+            link: "/inss",
         },
     ];
 
     return (
-        <section className="w-full py-12 px-6 flex justify-center">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-10">
+        <section className="w-full py-14 px-6 flex justify-center bg-gradient-to-r from-indigo-900 via-purple-900 to-blue-900 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-10">
                 {cards.map(({ id, title, image, link }) => (
                     <div
                         key={id}

@@ -35,6 +35,7 @@ import Image from "next/image";
 import { cn } from "@/app/_lib/utils";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { getContatosPorRole } from "@/app/_actions/getRoleMensage";
 
 interface Mensagem {
   id: string;
@@ -218,36 +219,116 @@ export function Mensagens() {
     }
   };
 
-  const enviarMensagens = async () => {
-    try {
-      const mensagensEnviadas = mensagens
-        .map((mensagem) => ({
-          ...mensagem,
-          SubMessage: mensagem.SubMessage?.filter((sub) =>
-            selecionadas.some(
-              (sel) =>
-                sel.mensagemId === mensagem.id && sel.subMensagemId === sub.id
-            )
-          ),
-        }))
-        .filter((m) => m.SubMessage && m.SubMessage.length > 0);
+  // const enviarMensagens = async () => {
+  //   try {
+  //     const mensagensEnviadas = mensagens
+  //       .map((mensagem) => ({
+  //         ...mensagem,
+  //         SubMessage: mensagem.SubMessage?.filter((sub) =>
+  //           selecionadas.some(
+  //             (sel) =>
+  //               sel.mensagemId === mensagem.id && sel.subMensagemId === sub.id
+  //           )
+  //         ),
+  //       }))
+  //       .filter((m) => m.SubMessage && m.SubMessage.length > 0);
 
-      for (const mensagem of mensagensEnviadas) {
+  //     for (const mensagem of mensagensEnviadas) {
+  //       for (const subMensagem of mensagem.SubMessage || []) {
+  //         await SendMessages({
+  //           role: mensagem.role || "", 
+  //           message: subMensagem.conteudo,
+  //         });
+  //       }
+  //     }
+  //     toast.success("Usuário cadastrado!");
+  //     setTimeout(() => {
+  //       window.location.reload();
+  //     }, 5000);
+  //   } catch (err: any) {
+  //     setError("Erro ao enviar mensagens: " + err.message);
+  //   }
+  // };
+  type Contato = {
+  nome: string;
+  telefone: string; // Ex: "5511999999999"
+};
+
+const enviarMensagemBotConversa = async ({
+  telefone,
+  nome,
+  mensagem,
+}: {
+  telefone: string;
+  nome: string;
+  mensagem: string;
+}) => {
+  const url =
+    "https://new-backend.botconversa.com.br/api/v1/webhooks-automation/catch/21344/V5CoN8pxq442/";
+
+  const payload = {
+    telefone,
+    nome,
+    mensagem,
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      console.error("Erro ao enviar para BotConversa:", await res.text());
+    }
+  } catch (err) {
+    console.error("Erro na requisição BotConversa:", err);
+  }
+};
+
+const enviarMensagens = async () => {
+  try {
+    console.log('clicado');
+    const mensagensEnviadas = mensagens
+      .map((mensagem) => ({
+        ...mensagem,
+        SubMessage: mensagem.SubMessage?.filter((sub) =>
+          selecionadas.some(
+            (sel) =>
+              sel.mensagemId === mensagem.id &&
+              sel.subMensagemId === sub.id
+          )
+        ),
+      }))
+      .filter((m) => m.SubMessage && m.SubMessage.length > 0);
+
+    console.log(mensagensEnviadas);
+
+    for (const mensagem of mensagensEnviadas) {
+      const contatos: Contato[] = await getContatosPorRole(mensagem.role || "");
+
+      for (const contato of contatos) {
         for (const subMensagem of mensagem.SubMessage || []) {
-          await SendMessages({
-            role: mensagem.role || "", 
-            message: subMensagem.conteudo,
+          await enviarMensagemBotConversa({
+            telefone: contato.telefone,
+            nome: contato.nome,
+            mensagem: subMensagem.conteudo,
           });
         }
       }
-      toast.success("Usuário cadastrado!");
-      setTimeout(() => {
-        window.location.reload();
-      }, 5000);
-    } catch (err: any) {
-      setError("Erro ao enviar mensagens: " + err.message);
     }
-  };
+
+    toast.success("Mensagens enviadas com sucesso!");
+    setTimeout(() => {
+      window.location.reload();
+    }, 5000);
+  } catch (err: any) {
+    console.log("Erro ao enviar mensagens: " + err.message);
+  }
+};
 
   const resetForm = () => {
     setTitulo("");
