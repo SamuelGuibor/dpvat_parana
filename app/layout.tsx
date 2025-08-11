@@ -35,7 +35,6 @@ export default function RootLayout({
           name="keywords"
           content="DPVAT Paraná,seguro DPVAT,indenização DPVAT,Paraná Seguros,Curitiba DPVAT,Ponta Grossa DPVAT,Maringá DPVAT"
         />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="canonical" href="https://www.segurosparana.com.br/" />
         <meta
           property="og:title"

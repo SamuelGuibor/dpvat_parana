@@ -41,12 +41,16 @@ export const KanbanBoard = ({
   style,
   isCollapsed,
   toggleCollapse,
-  cardCount, // Adiciona cardCount
+  cardCount,
 }: KanbanBoardProps) => {
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 rounded-md border bg-secondary p-2 text-xs shadow-sm h-auto sm:h-[500px] overflow-y-auto ",
+        'flex flex-col gap-2 rounded-md border bg-secondary p-2 text-xs shadow-sm',
+        // Adjust width dynamically and ensure it fits within viewport
+        isCollapsed ? 'w-[60px] min-w-[60px]' : 'w-[90vw] sm:w-[300px] min-w-[250px] max-w-[350px]',
+        // Responsive height to fit within viewport
+        'h-[calc(100vh-100px)] sm:h-[700px] max-h-[80vh] overflow-y-auto',
         className
       )}
       style={style}
@@ -56,8 +60,8 @@ export const KanbanBoard = ({
         color={style?.backgroundColor || '#FFFFFF'}
         isCollapsed={isCollapsed || false}
         toggleCollapse={toggleCollapse}
-        className="text-[#ffffff] font-semibold uppercase"
-        cardCount={cardCount} // Passa cardCount para o KanbanHeader
+        className="text-[#ffffff] font-semibold uppercase text-xs sm:text-sm"
+        cardCount={cardCount}
       />
       {!isCollapsed && children}
     </div>

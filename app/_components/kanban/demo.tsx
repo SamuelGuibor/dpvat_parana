@@ -296,7 +296,7 @@ const KanbanCombined: FC = () => {
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin mx-auto" />
       ) : (
-        <div className="w-full overflow-x-auto">
+        <div className="w-full h-auto overflow-x-auto">
           <KanbanProvider className="flex flex-row gap-4 p-2 sm:p-4 min-w-fit">
             {serviceFilter === 'Todos'
               ? services.map((service) => {
@@ -320,7 +320,7 @@ const KanbanCombined: FC = () => {
                     toggleCollapse={() => toggleCollapse(service.name)}
                     cardCount={cardCount}
                   >
-                    <KanbanCards className="max-h-[450px] pt-2 overflow-y-auto overflow-x-hidden scrollbar">
+                    <KanbanCards className="h-screen overflow-y-auto overflow-x-hidden scrollbar">
                       {filteredItems
                         .filter((item) => item.status === service.name)
                         .map((item, index) => (
@@ -400,7 +400,7 @@ const KanbanCombined: FC = () => {
                       toggleCollapse={() => toggleCollapse(service.name)}
                       cardCount={cardCount}
                     >
-                      <KanbanCards className="max-h-[450px] overflow-y-auto overflow-x-hidden">
+                      <KanbanCards className=" h-[450px] sm:h-screen overflow-y-auto overflow-x-hidden">
                         {filteredItems
                           .filter((item) => item.status === service.name)
                           .map((item, index) => (
