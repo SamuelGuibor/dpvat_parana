@@ -4,7 +4,7 @@ const Footer = () => {
   return (
     <footer className="overflow-x-clip bg-black py-10 text-center text-sm text-[#BCBCBC]">
       <div className="absolute left-[20px] lg:pt-5 pt-3">
-        © 2025 [Samuel Henrique Guibor, Otto Engelhardt Cabral Santos] Developers
+        © 2025 [Samuel Henrique Guibor] Developer
       </div>
       <div className="container justify-center md:mx-auto md:pl-[10px]">
         <div className="relative bottom-[50px] lg:bottom-0 inline-flex before:absolute before:bottom-0 before:top-2 before:w-full">
