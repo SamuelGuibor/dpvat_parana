@@ -40,13 +40,12 @@ export const HeroHeader = () => {
     ? [
         { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
         { href: "/dashboard", label: "Dashboard", icon: <MdInsertChartOutlined style={{ width: 22, height: 22 }} /> },
-        // { href: "/chats", label: "Chat", icon: <HiOutlineChatAlt2 style={{ width: 22, height: 22 }} /> },
-        { href: "/status", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
+        { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
         { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
       ]
     : [
         { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
-        { href: "/status", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
+        { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
         { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
       ];
 

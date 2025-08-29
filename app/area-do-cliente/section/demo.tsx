@@ -141,7 +141,7 @@ function BentoDemo() {
                   onClick={() => router.push("/status")} // Status geral do usuário
                   className="px-4 py-2 bg-slate-800 text-white rounded-xl shadow-md hover:bg-blue-700 transition-colors duration-200"
                 >
-                  {userStatus.service} - Status Geral
+                  {userStatus.service} - Acidente 1
                 </Button>
               ))}
             </div>

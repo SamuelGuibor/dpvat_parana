@@ -100,7 +100,7 @@ export async function createProcess(data: {
       outro_hospital: validatedData.outro_hospital,
       lesoes: validatedData.lesoes,
       status: "INICIADO",
-      role: "Aplicar Filtro DPVAT",
+      role: "Filtro de Cartões",
       statusStartedAt: new Date(),
       service: validatedData.service
     },

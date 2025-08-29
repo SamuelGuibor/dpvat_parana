@@ -36,7 +36,7 @@ import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from "sonner";
 import { updateProcessRole } from "../_actions/statusTimerProcess"; // Assumed to exist
-import { updateUserRole } from "../_actions/statusTimer"; 
+import { updateUserRole } from "../_actions/statusTimer";
 
 interface ItemData {
   id: string;
@@ -333,7 +333,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
     }
   };
 
- useEffect(() => {
+  useEffect(() => {
     async function fetchItem() {
       try {
         setIsLoading(true);
@@ -837,7 +837,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                       <SelectValue placeholder="Selecione um serviço" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem className="hover:bg-slate-100" value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
+                      <SelectItem className="hover:bg-slate-100" value="Filtro de Cartões">Filtro de Cartões</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>
@@ -856,14 +856,9 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                       <SelectItem className="hover:bg-slate-100" value="Aguardar Prontuário PG – Presencial">Aguardar Prontuário PG – Presencial</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Aguardar Retirada de Prontuário – Presencial">Aguardar Retirada de Prontuário – Presencial</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Retirar Prontuário – Pronto para Retirar">Retirar Prontuário – Pronto para Retirar</SelectItem>
-                      <SelectItem className="hover:bg-slate-100" value="Resolver Problema com B.O.">Resolver Problema com B.O.</SelectItem>
-                      <SelectItem className="hover:bg-slate-100" value="Fazer B.O. – Equipe Rubi">Fazer B.O. – Equipe Rubi</SelectItem>
-                      <SelectItem className="hover:bg-slate-100" value="Orientar Cliente – Fazer B.O.">Orientar Cliente – Fazer B.O.</SelectItem>
-                      <SelectItem className="hover:bg-slate-100" value="Enviar 1ª Mensagem – B.O.">Enviar 1ª Mensagem – B.O.</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Solicitar B.O. ao Cliente – Acidente">Solicitar B.O. ao Cliente – Acidente</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Solicitar Siate">Solicitar Siate</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Aguardar Retorno do Siate">Aguardar Retorno do Siate</SelectItem>
-                      <SelectItem className="hover:bg-slate-100" value="Acompanhar Siate – Pronto">Acompanhar Siate – Pronto</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Enviar Mensagem – Previdenciário">Enviar Mensagem – Previdenciário</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Registrar Óbito – Nova Lei">Registrar Óbito – Nova Lei</SelectItem>
                       <SelectItem className="hover:bg-slate-100" value="Protocolar SPVAT">Protocolar SPVAT</SelectItem>
@@ -907,7 +902,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="obs"
                     value={formData?.obs || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-yellow-100"
                   />
                 </div>
               </div>
@@ -1002,48 +997,12 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                   </div>
                   <div>
                     <Label>Hospital</Label>
-                    <Select
-                      onValueChange={(value) => handleSelectChange("hospital", value)}
+                    <Input
+                      name="hospital"
                       value={formData?.hospital || ""}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione o hospital" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem className="hover:bg-slate-100" value="trabalhador">Trabalhador</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="cajuru">Cajuru</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="evangelico_mackenzie">Evangélico/Mackenzie</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="angelina_caron">Angelina Caron</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="h_maternidade_sao_jose_dos_pinhais">
-                          H. Maternidade São José dos Pinhais
-                        </SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="hma_araucaria">Hma Araucária</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="rocio">Rocio</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="onix">Onix</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="marcelino_champagnat">Marcelino Champagnat</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="hospital_xv">Hospital XV</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="vita">Vita</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fraturas_novo_mundo">Fraturas Novo Mundo</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="cwb_santa_cruz">Cwb Santa Cruz</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="cwb_santa_casa">Cwb Santa Casa</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="nossa_saude">Nossa Saúde</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="nacoes">Nações</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="litoral">Litoral</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pg_regional">Pg Regional</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="upa_santana">Upa Santana</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="upa_santa_paula">Upa Santa Paula</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pg_bom_jesus">Pg Bom Jesus</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pg_sao_camilo">Pg São Camilo</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pg_unimed">Pg Unimed</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pg_santa_casa">Pg Santa Casa</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pg_pronto_socorro_amadeu_puppi">
-                          Pg Pronto Socorro Amadeu Puppi
-                        </SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="idf_telemaco_borba">Idf Telemaco Borba</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="regional_de_paranagua">Regional de Paranaguá</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="regional_pg">Regional Pg</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      onChange={handleInputChange}
+                      className="w-full"
+                    />
                   </div>
                   <div>
                     <Label>Outro Hospital</Label>
@@ -1056,38 +1015,12 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                   </div>
                   <div className="col-span-1 sm:col-span-2">
                     <Label>Lesões</Label>
-                    <Select
-                      onValueChange={(value) => handleSelectChange("lesoes", value)}
+                    <Input
+                      name="lesoes"
                       value={formData?.lesoes || ""}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione as lesões" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem className="hover:bg-slate-100" value="fx_femur">FX Fêmur</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_tibia">FX Tíbia</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_pulso_mao_metatarso">FX Pulso/Mão/Metatarso</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_tornozelo">FX Tornozelo</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_mindilhos">FX Mindilhos</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_costela">FX Costela</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_coluna">FX Vértebra/Coluna</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_pelve">FX Pelve</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_joelho">FX Joelho</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="ligamento_joelho">Lesão no Ligamento Joelho</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="luxacao">Luxação</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="traumatismo">Traumatismo</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_exposta_cirurgia">FX Exposta/Cirurgia</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_braco">FX Braço</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_perna">FX Perna</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_pe">FX Pé</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_face_maxilar_nariz">FX Face, Maxilar, Nariz</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="fx_bacia">FX Bacia</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="laceracao">Laceração</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="pneumotorax">Pneumotórax</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="amputacao">Amputação</SelectItem>
-                        <SelectItem className="hover:bg-slate-100" value="multiplas_fraturas">Múltiplas Fraturas</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      onChange={handleInputChange}
+                      className="w-full"
+                    />
                   </div>
                 </div>
               </div>

@@ -63,7 +63,6 @@ export default function Page() {
     async function fetchData() {
       try {
         const users = await getUsers("basic");
-        console.log("Dados retornados por getUsers:", users);
         if (Array.isArray(users)) {
           const transformedData = users.map((user) => ({
             ...user,

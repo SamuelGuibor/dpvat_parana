@@ -21,7 +21,7 @@ import { ptBR } from 'date-fns/locale';
 import { CreateNewCard } from '../create-newcard';
 
 const services = [
-  { id: '1', name: 'Aplicar Filtro DPVAT', color: '#164b35', border: '#50253f' },
+  { id: '1', name: 'Filtro de Cartões', color: '#164b35', border: '#50253f' },
   { id: '2', name: 'Gerar Procuração Automática', color: '#000000', border: '#50253f' },
   { id: '3', name: 'Coletar Assinatura em Cartório', color: '#164555', border: '#50253f' },
   { id: '4', name: 'Coletar Assinatura Digital', color: '#164555', border: '#50253f' },
@@ -40,30 +40,26 @@ const services = [
   { id: '17', name: 'Aguardar Prontuário PG – Presencial', color: '#702e00', border: '#50253f' },
   { id: '18', name: 'Aguardar Retirada de Prontuário – Presencial', color: '#702e00', border: '#50253f' },
   { id: '19', name: 'Retirar Prontuário – Pronto para Retirar', color: '#702e00', border: '#50253f' },
-  { id: '20', name: 'Resolver Problema com B.O.', color: '#5d1f1a', border: '#50253f' },
-  { id: '21', name: 'Fazer B.O. – Equipe Rubi', color: '#5d1f1a', border: '#50253f' },
-  { id: '22', name: 'Orientar Cliente – Fazer B.O.', color: '#5d1f1a', border: '#50253f' },
-  { id: '23', name: 'Enviar 1ª Mensagem – B.O.', color: '#5d1f1a', border: '#50253f' },
-  { id: '24', name: 'Solicitado ao Cliente fazer B.O. – Acidente', color: '#5d1f1a', border: '#50253f' },
-  { id: '25', name: 'Solicitar Siate', color: '#5d1f1a', border: '#50253f' },
-  { id: '26', name: 'Aguardar Retorno do Siate', color: '#5d1f1a', border: '#50253f' },
-  { id: '27', name: 'Acompanhar Siate – Pronto', color: '#5d1f1a', border: '#50253f' },
-  { id: '28', name: 'Enviar Mensagem – Previdenciário', color: '#09326c', border: '#50253f' },
-  { id: '29', name: 'Registrar Óbito – Nova Lei', color: '#09326c', border: '#50253f' },
-  { id: '30', name: 'Protocolar SPVAT', color: '#5d1f1a', border: '#50253f' },
-  { id: '31', name: 'Protocolar SPVAT - Standby', color: '#5d1f1a', border: '#50253f' },
-  { id: '32', name: 'Enviar para Reanálise', color: '#352c63', border: '#50253f' },
-  { id: '33', name: 'Protocolar DPVAT – Caixa', color: '#352c63', border: '#50253f' },
-  { id: '34', name: 'Aguardar Análise da Caixa', color: '#352c63', border: '#50253f' },
-  { id: '35', name: 'Acompanhar Pendências – Protocolado', color: '#50253f', border: '#50253f' },
-  { id: '36', name: 'Protocolar Pendência de B.O.', color: '#50253f', border: '#50253f' },
-  { id: '37', name: 'Avisar Sobre Perícia Administrativa', color: '#164b35', border: '#50253f' },
-  { id: '38', name: 'Aguardar Resultado da Perícia', color: '#164b35', border: '#50253f' },
-  { id: '39', name: 'Cobrar Honorários – Resultado Perícia', color: '#164b35', border: '#50253f' },
-  { id: '40', name: 'Aguardar Pagamento – Honorários Cobrados', color: '#164b35', border: '#50253f' },
-  { id: '41', name: 'Encerrar Processo – DPVAT', color: '#352c63', border: '#50253f' },
-  { id: '42', name: 'Descartaveis', color: '#352c63', border: '#50253f' },
+  { id: '20', name: 'Solicitado ao Cliente fazer B.O. – Acidente', color: '#5d1f1a', border: '#50253f' },
+  { id: '21', name: 'Solicitar Siate', color: '#5d1f1a', border: '#50253f' },
+  { id: '22', name: 'Aguardar Retorno do Siate', color: '#5d1f1a', border: '#50253f' },
+  { id: '23', name: 'Enviar Mensagem – Previdenciário', color: '#09326c', border: '#50253f' },
+  { id: '24', name: 'Registrar Óbito – Nova Lei', color: '#09326c', border: '#50253f' },
+  { id: '25', name: 'Protocolar SPVAT', color: '#5d1f1a', border: '#50253f' },
+  { id: '26', name: 'Protocolar SPVAT - Standby', color: '#5d1f1a', border: '#50253f' },
+  { id: '27', name: 'Enviar para Reanálise', color: '#352c63', border: '#50253f' },
+  { id: '28', name: 'Protocolar DPVAT – Caixa', color: '#352c63', border: '#50253f' },
+  { id: '29', name: 'Aguardar Análise da Caixa', color: '#352c63', border: '#50253f' },
+  { id: '30', name: 'Acompanhar Pendências – Protocolado', color: '#50253f', border: '#50253f' },
+  { id: '31', name: 'Protocolar Pendência de B.O.', color: '#50253f', border: '#50253f' },
+  { id: '32', name: 'Avisar Sobre Perícia Administrativa', color: '#164b35', border: '#50253f' },
+  { id: '33', name: 'Aguardar Resultado da Perícia', color: '#164b35', border: '#50253f' },
+  { id: '34', name: 'Cobrar Honorários – Resultado Perícia', color: '#164b35', border: '#50253f' },
+  { id: '35', name: 'Aguardar Pagamento – Honorários Cobrados', color: '#164b35', border: '#50253f' },
+  { id: '36', name: 'Encerrar Processo – DPVAT', color: '#352c63', border: '#50253f' },
+  { id: '37', name: 'Descartaveis', color: '#352c63', border: '#50253f' },
 ];
+
 
 const serviceStyles: { [key: string]: { bgColor: string; textColor: string } } = {
   INSS: { bgColor: '#f5cd47', textColor: '#533f04' },
@@ -91,7 +87,7 @@ interface Item {
 }
 
 const roleTimeLimits: { [key: string]: number | null } = {
-  'Aplicar Filtro DPVAT': 1,
+  'Filtro de Cartões': 1,
   'Gerar Procuração Automática': 1,
   'Coletar Assinatura em Cartório': 7,
   'Coletar Assinatura Digital': 3,

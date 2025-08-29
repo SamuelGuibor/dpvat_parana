@@ -81,7 +81,7 @@ const inssSteps: Step[] = [
 
 // Steps for Seguro de Vida
 const seguroVidaSteps: Step[] = [
- {
+  {
     id: 1,
     title: "Processo iniciado",
     description:
@@ -135,7 +135,7 @@ const seguroVidaSteps: Step[] = [
     description: "Em caso de negativa administrativa, nossa equipe jurídica entrará com recurso judicial.",
   },
   {
-    id: 8, // remover
+    id: 8,
     title: "Pagamento de honorários",
     description:
       "Aguardando o pagamento dos honorários pelo trabalho no processo de RCF.",
@@ -146,6 +146,7 @@ const seguroVidaSteps: Step[] = [
   },
 ];
 
+// Steps for RCF
 const rcfSteps: Step[] = [
   {
     id: 1,
@@ -201,7 +202,7 @@ const rcfSteps: Step[] = [
     description: "Em caso de negativa administrativa, nossa equipe jurídica entrará com recurso judicial.",
   },
   {
-    id: 8, // remover
+    id: 8,
     title: "Pagamento de honorários",
     description:
       "Aguardando o pagamento dos honorários pelo trabalho no processo de RCF.",
@@ -279,6 +280,7 @@ const spvatSteps: Step[] = [
   },
 ];
 
+// Steps for DPVAT
 const dpvatSteps: Step[] = [
   {
     id: 1,
@@ -367,21 +369,8 @@ export default function ProgressTimeline() {
       }
     };
     fetchStatus();
-  }, []);
 
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch("/api/user-status", { method: "GET" });
-        if (!response.ok) throw new Error("Erro ao buscar status");
-        const { status, role, service } = await response.json();
-        setServerStatus(status);
-        setUserRole(role);
-        setService(service);
-      } catch (error) {
-        console.error(error);
-      }
-    }, 5000);
+    const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -406,16 +395,20 @@ export default function ProgressTimeline() {
   })();
 
   const completedSteps = mapServerStatusToCompletedSteps(serverStatus);
+  const currentStepId = completedSteps.length > 0 ? Math.max(...completedSteps) + 1 : 1;
+  const isStepVisible = (stepId: number) => stepId <= currentStepId;
 
   return (
     <div className="relative lg:pl-10">
       {selectedSteps.map((step, index) => {
         const isLastStep = index === selectedSteps.length - 1;
+        const isVisible = isStepVisible(step.id);
+        const isCurrentStep = step.id === currentStepId && !completedSteps.includes(step.id);
 
         return (
           <div
             key={step.id}
-            className="relative min-h-[150px] sm:h-[220px] lg:h-[200px] flex flex-col"
+            className={`relative min-h-[150px] sm:h-[220px] lg:h-[200px] flex flex-col ${!isVisible ? "filter blur-sm" : ""}`}
           >
             {!isLastStep && (
               <div className="absolute left-4 top-0 w-0.5 h-full bg-gray-200">
@@ -439,8 +432,12 @@ export default function ProgressTimeline() {
               </div>
             ) : (
               <div
-                className={`absolute left-2 top-0 w-5 h-5 rounded-full border-2 border-blue-500 transition-all duration-300 ease-in-out ${
-                  completedSteps.includes(step.id) ? "bg-blue-500" : "bg-white"
+                className={`absolute left-2 top-0 w-5 h-5 rounded-full border-2 transition-all duration-300 ease-in-out ${
+                  completedSteps.includes(step.id)
+                    ? "bg-blue-500 border-blue-500"
+                    : isCurrentStep
+                    ? "bg-white border-red-500 animate-pulse"
+                    : "bg-white border-blue-500"
                 }`}
               ></div>
             )}

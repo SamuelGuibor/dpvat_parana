@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import SidebarButton from "./sidebar-button";
 import Link from "next/link";
 import Image from "next/image";
-import { AiOutlineCar } from "react-icons/ai";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { PiHouseBold } from "react-icons/pi";
 import { RxAvatar } from "react-icons/rx";
@@ -58,9 +57,6 @@ const Sidebar = () => {
             <RxAvatar className="w-5 h-5" /> Area do cliente
           </SidebarButton>
 
-          <SidebarButton href="/status" onClick={() => setIsOpen(false)}>
-            <AiOutlineCar className="w-5 h-5" /> Status
-          </SidebarButton>
 
           <SidebarButton href="/documents" onClick={() => setIsOpen(false)}>
             <IoDocumentsOutline className="w-5 h-5" /> Documentos

@@ -110,6 +110,9 @@ export function CreateNewCard() {
         lesoes,
       });
       toast.success("Processo criado com sucesso!");
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
       setSelectedUser("");
       setType("");
       setDataAcidente("");
@@ -170,9 +173,8 @@ export function CreateNewCard() {
                 {filteredUsers.map((user) => (
                   <li
                     key={user.id}
-                    className={`px-4 py-2 cursor-pointer hover:bg-gray-100 ${
-                      selectedUser === user.id ? "bg-blue-100 font-semibold" : ""
-                    }`}
+                    className={`px-4 py-2 cursor-pointer hover:bg-gray-100 ${selectedUser === user.id ? "bg-blue-100 font-semibold" : ""
+                      }`}
                     onClick={() => handleUserSelect(user.id)}
                   >
                     {user.name}

@@ -117,7 +117,7 @@ const columns: ColumnDef<DataType>[] = [
     cell: ({ row }) => {
       const type = row.original.type;
       const badgeColor =
-        type === "Aplicar Filtro DPVAT"
+        type === "Filtro de Cartões"
           ? "bg-green-100 text-green-800 border-green-300"
           : type === "Gerar Procuração Automática"
             ? "bg-green-100 text-green-800 border-green-300"
@@ -215,7 +215,7 @@ const columns: ColumnDef<DataType>[] = [
     cell: ({ row }) => {
       const user = row.original;
       const roleTimeLimits: { [key: string]: number | null } = {
-        "Aplicar Filtro DPVAT": 7,
+        "Filtro de Cartões": 7,
         "Gerar Procuração Automática": 3,
         "Coletar Assinatura em Cartório": 5,
         "Coletar Assinatura Digital": 3,
@@ -452,7 +452,7 @@ export function DataTable({ data }: { data: DataType[] }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem className="hover:bg-gray-200" value="Todos">Todos</SelectItem>
-              <SelectItem className="hover:bg-gray-200" value="Aplicar Filtro DPVAT">Aplicar Filtro DPVAT</SelectItem>
+              <SelectItem className="hover:bg-gray-200" value="Filtro de Cartões">Filtro de Cartões</SelectItem>
               <SelectItem className="hover:bg-gray-200" value="Gerar Procuração Automática">Gerar Procuração Automática</SelectItem>
               <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura em Cartório">Coletar Assinatura em Cartório</SelectItem>
               <SelectItem className="hover:bg-gray-200" value="Coletar Assinatura Digital">Coletar Assinatura Digital</SelectItem>

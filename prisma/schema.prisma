@@ -25,7 +25,7 @@ model User {
   cep             String?
   image           String?
   emailVerified   DateTime?
-  role            String    @default("Aplicar Filtro DPVAT")
+  role            String    @default("Filtro de Cartões")
   rg              String?
   nome_mae        String?
   telefone        String?
