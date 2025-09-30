@@ -36,6 +36,8 @@ interface UserData {
   lesoes?: string;
   obs?: string;
   service?: string;
+  fixed?: boolean;
+  roleFixed?: string;
 }
 
 export async function getUsers(
@@ -78,6 +80,8 @@ export async function getUsers(
           lesoes: true,
           obs: true,
           service: true,
+          fixed: true,
+          roleFixed: true,
         }
       : {
           id: true,
@@ -86,6 +90,8 @@ export async function getUsers(
           obs: true,
           service: true,
           statusStartedAt: true,
+          fixed: true,
+          roleFixed: true,
         };
 
   if (userId) {
@@ -106,6 +112,8 @@ export async function getUsers(
       role: user.role || "USER",
       obs: user.obs || "",
       service: user.service || "",
+      fixed: user.fixed ?? false,
+      roleFixed: user.roleFixed || "",
       statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null, // Adicionado
       ...(fields === "full" && {
         cpf: user.cpf || "",
@@ -148,6 +156,8 @@ export async function getUsers(
     role: user.role || "USER",
     obs: user.obs || "",
     service: user.service || "",
+    fixed: user.fixed ?? false,
+    roleFixed: user.roleFixed || "",
     statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null, // Adicionado
     ...(fields === "full" && {
       cpf: user.cpf || "",

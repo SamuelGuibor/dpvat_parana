@@ -35,7 +35,9 @@ interface ProcessGet {
   outro_hospital?: string;
   lesoes?: string;
   observacao?: string;
-  service?: string
+  service?: string;
+  fixed?: boolean;
+  roleFixed?: string;
 }
 
 export async function getProcess(
@@ -77,7 +79,9 @@ export async function getProcess(
           outro_hospital: true,
           lesoes: true,
           observacao: true,
-          service: true
+          service: true,
+          fixed: true,
+          roleFixed: true,
         }
       : {
           id: true,
@@ -86,7 +90,9 @@ export async function getProcess(
           role: true,
           observacao: true,
           statusStartedAt: true,
-          service: true
+          service: true,
+          fixed: true,
+          roleFixed: true,
         };
 
   if (processId) {
@@ -106,6 +112,8 @@ export async function getProcess(
       type: process.type || "",
       role: process.role || "PROCESS",
       observacao: process.observacao || "",
+      fixed: process.fixed ?? false,
+      roleFixed: process.roleFixed || "",
       statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
       ...(fields === "full" && {
         cpf: process.cpf || "",
@@ -147,6 +155,8 @@ export async function getProcess(
     type: process.type || "",
     role: process.role || "PROCESS",
     observacao: process.observacao || "",
+    fixed: process.fixed ?? false,
+    roleFixed: process.roleFixed || "",
     statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
     service: process.service || "DPVAT",
     ...(fields === "full" && {

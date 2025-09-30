@@ -37,6 +37,8 @@ import { Download, Loader2 } from 'lucide-react';
 import { toast } from "sonner";
 import { updateProcessRole } from "../_actions/statusTimerProcess"; // Assumed to exist
 import { updateUserRole } from "../_actions/statusTimer";
+import { ToggleFixedButton } from "./toggle";
+import { toggleFixed } from "../_actions/uploadStatusFixed";
 
 interface ItemData {
   id: string;
@@ -72,6 +74,7 @@ interface ItemData {
   lesoes?: string;
   service?: string;
   obs?: string;
+  fixed?: boolean;
 }
 
 interface UpdateItemData {
@@ -120,6 +123,11 @@ interface DialogDashProps {
   trigger: React.ReactNode;
 }
 
+interface Fixed {
+  userId: string,
+  fixed?: boolean
+}
+
 const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => {
   const [isOpen, setIsOpen] = useState(false); // State to track if dialog is open
   const [item, setItem] = useState<ItemData | null>(null);
@@ -143,6 +151,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
   const [error, setError] = useState<string | null>(null);
   const [isDocument, setIsDocument] = useState(true);
   const [itemDocuments, setItemDocuments] = useState<{ key: string; name: string }[]>([]);
+  const [fixed, setFixed] = useState<Fixed | null>(null);
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -613,10 +622,29 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
       setFormData(updatedItem);
       setError(null);
       toast.success("Dados salvos com sucesso!");
+      setTimeout(() => {
+      window.location.reload();
+    }, 500);
     } catch (error: any) {
       console.error("Erro ao salvar:", error);
       setError("Não foi possível salvar as alterações: " + error.message);
       toast.error("Não foi possível salvar as alterações: " + error.message);
+    }
+  };
+
+  const handleToggleFixed = async () => {
+    try {
+      const updated = await toggleFixed({ userId, isProcess });
+      setItem(prev => prev ? { ...prev, fixed: updated.fixed } : null);
+      setFormData(prev => prev ? { ...prev, fixed: updated.fixed } : null);
+      setFixed(updated);
+      setTimeout(() => {
+      window.location.reload();
+    }, 500);
+    } catch (error: any) {
+      console.error("Erro ao atualizar fixed:", error);
+      setError("Não foi possível atualizar o status fixed: " + error.message);
+      toast.error("Não foi possível atualizar o status fixed: " + error.message);
     }
   };
 
@@ -629,6 +657,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
             Dados do {isProcess ? 'Processo' : 'Cliente'}: <span className="font-bold text-blue-600">{item?.name}</span>
           </AlertDialogTitle>
           <div className="flex flex-col sm:flex-row sm:absolute sm:right-0 sm:pr-5 gap-2 mt-2 sm:mt-0">
+            {!(item?.fixed ?? false) && <ToggleFixedButton fixed={item?.fixed ?? false} onToggle={handleToggleFixed} />}
             {isDocument && (
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                 <Button disabled className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">

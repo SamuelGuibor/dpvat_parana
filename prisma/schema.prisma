@@ -43,6 +43,8 @@ model User {
   service         String?
   obs             String?
   otherObs        String?
+  fixed           Boolean?  @default(true)
+  roleFixed       String?   @default("Acompanhamento de fluxo 1")
 
   accounts  Account[]
   sessions  Session[]
@@ -92,6 +94,8 @@ model Process {
   service         String? 
   observacao      String?
   otherObs        String?
+  fixed           Boolean?  @default(true)
+  roleFixed       String?   @default("Acompanhamento de fluxo 1")
 
   documents       Document[] 
   createdAt       DateTime  @default(now())
@@ -174,6 +178,6 @@ model Document {
   key        String
   name       String
   uploadedAt DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   process    Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
 }
