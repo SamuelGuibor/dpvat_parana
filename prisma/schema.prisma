@@ -160,6 +160,9 @@ model Message {
   titulo       String
   role         String         @default("USER")
   multipleMessages SubMessage[]
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
 }
 
 model SubMessage {
@@ -169,6 +172,9 @@ model SubMessage {
   mediaType  String?
   messageId  String
   message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
 }
 
 model Document {
@@ -180,4 +186,7 @@ model Document {
   uploadedAt DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   process    Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
 }

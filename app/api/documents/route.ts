@@ -6,7 +6,7 @@ export async function POST(request: Request) {
     const { userId, documents } = await request.json();
 
     const createdDocuments = await Promise.all(
-      documents.map(async (doc: { key: string; name: string }) => {
+      documents.map(async (doc: {key: string; name: string }) => {
         return db.document.create({
           data: {
             userId,
@@ -36,7 +36,8 @@ export async function GET(request: Request) {
     // Buscar documentos do usuário
     const documents = await db.document.findMany({
       where: { userId },
-      select: { key: true, name: true },
+      select: {id: true, key: true, name: true },
+      orderBy: { createdAt: 'asc' },
     });
 
     return NextResponse.json(documents);

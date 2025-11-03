@@ -33,12 +33,16 @@ import { Dropzone, DropzoneContent, DropzoneEmptyState } from "./dropzone";
 import { Button } from "./ui/button";
 import { getPresignedUrls } from '@/app/_actions/uploadS3';
 import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, Trash } from 'lucide-react';
 import { toast } from "sonner";
 import { updateProcessRole } from "../_actions/statusTimerProcess";
 import { updateUserRole } from "../_actions/statusTimer";
 import { ToggleFixedButton } from "./toggle";
 import { toggleFixed } from "../_actions/uploadStatusFixed";
+import { updateDocumentName } from "../_actions/updateNameDoc";
+import { CiEdit } from "react-icons/ci";
+import { deletDoc } from "../_actions/delet_document";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 
 interface ItemData {
     id: string;
@@ -138,7 +142,64 @@ const DialogDashFixed = ({ userId, isProcess = false, trigger }: DialogDashProps
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isDocument, setIsDocument] = useState(true);
-    const [itemDocuments, setItemDocuments] = useState<{ key: string; name: string }[]>([]);
+    const [itemDocuments, setItemDocuments] = useState<{ id?: string, key: string; name: string }[]>([]);
+    const [editingId, setEditingId] = useState<string | null>(null);
+      const [editedName, setEditedName] = useState("");
+      const [saving, setSaving] = useState<string | null>(null);
+      const [confirmationDoc, setConfirmation] = useState(false);
+      const [deletingId, setDeletingId] = useState<string | null>(null);
+      const [nameDocDelet, setNameDocDelet] = useState<string | null>(null);
+    
+      const handleDeleteClick = (doc: any) => {
+        setDeletingId(doc.id);
+        setConfirmation(true);
+        setNameDocDelet(doc.name)
+      };
+    
+      const deletDocument = async (id: string) => {
+        try {
+          await deletDoc(id);
+          setItemDocuments((prevDocuments) =>
+            prevDocuments.filter((doc) => doc.id !== id)
+          );
+          toast.success("Deletado com Sucesso!");
+        } catch (error) {
+          console.error(error);
+          toast.error("Erro ao deletar o arquivo. Tente novamente.");
+        } finally {
+          setConfirmation(false);
+          setDeletingId(null);
+        }
+      };
+    
+      const handleEditClick = (doc: any) => {
+        console.log(doc.id)
+        console.log(doc.name)
+        setEditingId(doc.id);
+        setEditedName(doc.name);
+      };
+    
+    
+      const newNameDoc = async (id: string) => {
+        try {
+          setSaving(id);
+          await updateDocumentName({ id, newName: editedName });
+    
+          // Optimistically update the local state to reflect the new name immediately
+          setItemDocuments((prevDocuments) =>
+            prevDocuments.map((doc) =>
+              doc.id === id ? { ...doc, name: editedName } : doc
+            )
+          );
+        } catch (error) {
+          console.error("Erro ao atualizar o nome:", error);
+          // Optional: Revert the optimistic update on error if needed, or show a toast
+        } finally {
+          setSaving(null);
+          setEditingId(null); // Always exit edit mode
+        }
+      };
+    
 
     const fileToBase64 = (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
@@ -792,45 +853,130 @@ const DialogDashFixed = ({ userId, isProcess = false, trigger }: DialogDashProps
                         </form>
                     ) : (
                         <div className="mt-4 overflow-x-auto">
-                            <table className="w-full text-xs sm:text-sm text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-muted">
-                                        <th className="p-2 border">Nome do Arquivo</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {itemDocuments.length > 0 ? (
-                                        itemDocuments.map((doc, index) => (
-                                            <tr key={index} className="border-b">
-                                                <td className="p-2 border flex justify-between items-center">
-                                                    <span className="truncate max-w-[150px] sm:max-w-[200px]">{doc.name}</span>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        onClick={() => handleDownload(doc.key, doc.name)}
-                                                        disabled={downloading === doc.key}
-                                                        className="h-8 w-8"
-                                                        aria-label={downloading === doc.key ? 'Baixando arquivo' : 'Baixar arquivo'}
-                                                    >
-                                                        {downloading === doc.key ? (
-                                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                                        ) : (
-                                                            <Download className="h-4 w-4" />
-                                                        )}
-                                                    </Button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={2} className="p-2 border text-center">Nenhum documento encontrado</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+              <table className="w-full text-xs sm:text-sm text-left border-collapse">
+                <thead>
+                  <tr className="bg-muted">
+                    <th className="p-2 border">Nome do Arquivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemDocuments.length > 0 ? (
+                    itemDocuments.map((doc: any, index: number) => (
+                      <tr key={index} className="border-b">
+                        <td className="p-2 border flex justify-between items-center gap-2">
+                          {editingId === doc.id ? (
+                            <div className="flex items-center gap-2 w-full">
+                              <input
+                                type="text"
+                                value={editedName}
+                                onChange={(e) => setEditedName(e.target.value)}
+                                className="border px-2 py-1 text-sm w-full rounded"
+                                autoFocus
+                              />
+                              <Button
+                                onClick={() => newNameDoc(doc.id)}
+                                disabled={saving === doc.id}
+                                className="h-8"
+                              >
+                                {saving === doc.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  "Salvar"
+                                )}
+                              </Button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="truncate max-w-[150px] sm:max-w-[400px]">
+                                {doc.name}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleEditClick(doc)}
+                                  className="h-8 w-8"
+                                >
+                                  <CiEdit className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDownload(doc.key, doc.name)}
+                                  disabled={downloading === doc.key}
+                                  className="h-8 w-8"
+                                  aria-label={
+                                    downloading === doc.key
+                                      ? "Baixando arquivo"
+                                      : "Baixar arquivo"
+                                  }
+                                >
+                                  {downloading === doc.key ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Download className="h-4 w-4" />
+                                  )}
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-red-500 hover:text-red-600"
+                                  onClick={() => handleDeleteClick(doc)}
+                                >
+                                  <Trash className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={2}
+                        className="p-2 border text-center text-gray-500"
+                      >
+                        Nenhum documento encontrado
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+          )}
+          <Dialog open={confirmationDoc} onOpenChange={setConfirmation}>
+            <DialogContent className="w-[70%] h-auto rounded-xl">
+              <DialogHeader>
+              <DialogTitle className="w-[90%]">{`Você quer deletar o documento "${nameDocDelet}"?`}</DialogTitle>
+                <DialogDescription>
+                  Tem certeza que deseja deletar? Essa ação é irreversível.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex flex-row gap-3">
+                <DialogClose asChild>
+                  <Button variant="secondary" className="w-full">
+                    Voltar
+                  </Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => {
+                      if (deletingId) deletDocument(deletingId);
+                    }}
+                  >
+                    Confirmar
+                  </Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
                 <AlertDialogFooter className="border-t pt-4">
                     <div className="flex flex-col sm:flex-row gap-2 mx-auto w-full justify-center">
                         <AlertDialogCancel className="bg-red-600 hover:bg-red-700 text-white w-full">
