@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
@@ -5,6 +6,16 @@ import { HeroHeader } from "../section/hero9-header";
 import Footer from "../section/footer";
 import { Disclosure } from "@headlessui/react";
 import { ChevronUpIcon } from "lucide-react";
+import { Input } from "../_components/ui/input";
+import { Textarea } from "../_components/ui/textarea";
+import { Button } from "@/app/_components/ui/button";
+import { FaUser } from "react-icons/fa";
+import { FaPhoneAlt } from "react-icons/fa";
+import { FaWhatsapp } from "react-icons/fa";
+import { ContactUsers } from "@/app/_actions/createContact";
+import { useEffect, useRef, useState } from "react";
+import { useFormState, useFormStatus } from "react-dom";
+import { toast } from "sonner";
 
 const faqList = [
     {
@@ -33,31 +44,139 @@ const faqList = [
     },
 ];
 
+
+function SubmitButton() {
+    const { pending } = useFormStatus();
+    return (
+        <Button
+            type="submit"
+            className="w-full h-12 rounded-2xl bg-green-500 hover:bg-green-600 text-white text-md font-semibold mt-2"
+            disabled={pending}
+        >
+            <FaWhatsapp /> {pending ? 'Enviando...' : 'Enviar Mensagem'}
+        </Button>
+    );
+}
+
 export default function Inss() {
+    const initialState = { success: false, message: 'Erro ao enviar Contato' };
     const whatsappUrl =
         "https://wa.me/5541997862323?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20seguro%20DPVAT";
+    const formRef = useRef<HTMLFormElement>(null);
+    const [state, formAction] = useFormState(ContactUsers, initialState);
+    const [value, setValue] = useState("");
 
+
+    const formatPhone = (raw: string) => {
+        // Remove qualquer coisa que não seja número
+        raw = raw.replace(/\D/g, "");
+
+        // Limita a 11 dígitos
+        raw = raw.slice(0, 11);
+
+        // (99)
+        if (raw.length <= 2) return `(${raw}`;
+
+        // (99) 9
+        if (raw.length <= 3) return `(${raw.slice(0, 2)}) ${raw.slice(2)}`;
+
+        // (99) 9XXXX
+        if (raw.length <= 7)
+            return `(${raw.slice(0, 2)}) ${raw.slice(2, 3)}${raw.slice(3)}`;
+
+        // (99) 9XXXX-XXXX
+        return `(${raw.slice(0, 2)}) ${raw.slice(2, 3)}${raw.slice(3, 7)}-${raw.slice(7)}`;
+    };
+
+    const handleChange = (e: any) => {
+        const input = e.target.value;
+        const formatted = formatPhone(input);
+        setValue(formatted);
+    };
+
+    useEffect(() => {
+        if (state.success) {
+            toast.success('Enviado com sucesso');
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+        } else if (state.message) {
+            toast.error("Erro ao enviar Contato");
+        }
+    }, [state]);
     return (
         <>
             <HeroHeader />
             <main className="overflow-hidden bg-white text-gray-800">
                 <div className="relative h-[500px]">
                     <img
-                        src="/transparencia.jpg"
+                        src="/mulhera.jpg"
                         alt="Seguro contra terceiros"
-                        className="absolute inset-0 w-full h-full object-cover"
+                        className="absolute w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col justify-center items-center text-center px-4 z-10">
-                        <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                    <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col pt-24 items-center text-center px-4 z-10">
+                        {/* <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
                             Assessoria para o INSS
-                        </h1>
-                        <a
+                        </h1> */}
+
+                        <div className="mx-auto w-[320px] sm:w-[480px] bg-white rounded-3xl p-6 shadow-lg">
+                            <h1 className="text-center text-md font-light leading-tight">
+                                Proteja <span className="font-bold">Seus Direitos</span> com <span className="font-bold">Especialistas em Seguros</span>
+                            </h1>
+
+
+                            <form
+                                ref={formRef}
+                                className="mt-5 space-y-4"
+                                action={formAction}
+                            >
+                                <div className="relative">
+                                    <span className="absolute left-3 top-4 text-gray-500">
+                                        <FaUser />
+                                    </span>
+
+                                    <Input
+                                        name="name"
+                                        placeholder="Nome"
+                                        className="pl-10 h-12 rounded-xl bg-gray-100 border-0 shadow-inner"
+                                        required
+                                    />
+                                </div>
+
+                                <div className="relative">
+                                    <span className="absolute left-3 top-4 text-gray-500">
+                                        <FaPhoneAlt />
+                                    </span>
+
+                                    <Input
+                                        name="number"
+                                        placeholder="Telefone | WhatsApp"
+                                        className="pl-10 h-12 rounded-xl bg-gray-100 border-0 shadow-inner"
+                                        value={value}
+                                        onChange={handleChange}
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <Textarea
+                                        name="desc"
+                                        placeholder="Comente um pouco sobre seu acidente | (opcional)"
+                                        className="h-24 rounded-xl bg-gray-100 border-0 shadow-inner mt-1"
+                                    />
+                                </div>
+
+                                <SubmitButton />
+                            </form>
+                        </div>
+
+                        {/* <a
                             target="_blank"
                             rel="noopener noreferrer"
                             className="bg-blue-600 hover:bg-blue-700 transition px-6 py-3 rounded-lg text-white font-semibold"
                         >
                             Fale com um Especialista
-                        </a>
+                        </a> */}
                     </div>
                 </div>
 
@@ -332,9 +451,9 @@ export default function Inss() {
 
                 <section className="relative mt-10">
                     <img
-                        src="/car.jpg"
+                        src="/auxilio2.png"
                         alt="Ajuda com seguro contra terceiros"
-                        className="w-full h-[270px] object-cover"
+                        className="w-full h-[270px] object-cover object-[center_-630px]"
                     />
                     <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center text-white text-center px-4">
                         <h2 className="text-3xl md:text-4xl font-bold mb-4">

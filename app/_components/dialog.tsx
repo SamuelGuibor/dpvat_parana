@@ -19,15 +19,6 @@ import {
   AlertDialogTrigger,
 } from "@/app/_components/ui/alert-dialog";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "./ui/sheet"
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -52,7 +43,6 @@ import { updateDocumentName } from "../_actions/updateNameDoc";
 import { CiEdit } from "react-icons/ci";
 import { deletDoc } from "../_actions/delet_document";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import doc from "pdfkit";
 
 interface ItemData {
   id: string;

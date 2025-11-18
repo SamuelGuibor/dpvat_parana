@@ -27,6 +27,11 @@ const data = {
       url: "/dashboard",
       icon: MdInsertChartOutlined,
     },
+     {
+      title: "Contato Leads",
+      url: "/contact-leads",
+      icon: HiOutlineChatAlt2,
+    },
   ],
   chats: [
     // {
