@@ -160,7 +160,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">WhatsApp Oficial</span>
-                <span className="text-muted-foreground">Seguros Parana</span>
+                <span className="text-muted-foreground font-bold">(41) 99786-2323</span>
               </div>
             </a>
 
@@ -175,7 +175,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">Instagram</span>
-                <span className="text-muted-foreground">@paranasegurospr</span>
+                <span className="text-muted-foreground font-bold">@paranasegurospr</span>
               </div>
             </a>
 
@@ -190,7 +190,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">Facebook</span>
-                <span className="text-muted-foreground">Seguros Parana</span>
+                <span className="text-muted-foreground font-bold">Seguros Parana</span>
               </div>
             </a>
 
@@ -205,7 +205,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">LinkedIn</span>
-                <span className="text-muted-foreground">Seguros Parana</span>
+                <span className="text-muted-foreground font-bold">Seguros Parana</span>
               </div>
             </a>
 
@@ -220,7 +220,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">Avaliações Google</span>
-                <span className="text-muted-foreground">5,0 ✮✮✮✮✮</span>
+                <span className="text-muted-foreground font-bold">5,0 ✮✮✮✮✮</span>
               </div>
             </a>
 
@@ -235,7 +235,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">Site</span>
-                <span className="text-muted-foreground">segurosparana.com.br</span>
+                <span className="text-muted-foreground font-bold">segurosparana.com.br</span>
               </div>
             </a>
 
