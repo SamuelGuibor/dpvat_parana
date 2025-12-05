@@ -8,6 +8,12 @@ import { Button } from "../_components/ui/button";
 import { Input } from "../_components/ui/input";
 import { Label } from "../_components/ui/label";
 import { Textarea } from "../_components/ui/textarea";
+import { FiMessageCircle } from "react-icons/fi";
+import { FaInstagram } from "react-icons/fa";
+import { SlSocialFacebook } from "react-icons/sl";
+import { LuLinkedin } from "react-icons/lu";
+import { FaGoogle } from "react-icons/fa";
+import { LuGlobe } from "react-icons/lu";
 
 interface FaqItem {
   id: string;
@@ -51,20 +57,20 @@ const Faq = ({
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const whatsappMessage = `Olá! Meu nome é ${formData.name}\n` +
       `Telefone: ${formData.phone}\n` +
       `Mensagem: ${formData.message}`;
 
     const encodedMessage = encodeURIComponent(whatsappMessage);
     const whatsappUrl = `https://wa.me/5541997862323?text=${encodedMessage}`;
-    
+
     window.open(whatsappUrl, "_blank");
   };
 
   return (
     <section className="py-3">
-      <div className="container mx-auto flex flex-col items-center space-y-16">
+      <div className="container mx-auto flex flex-col items-center space-y-10">
         {/* Seção de Suporte */}
         <div className="mx-auto flex flex-col items-center justify-center max-w-6xl w-[350px] lg:w-[825px] rounded-lg bg-accent p-4 text-center md:rounded-xl md:p-6 lg:p-8">
           <div className="relative mb-6 flex justify-center">
@@ -138,6 +144,105 @@ const Faq = ({
             </div>
           </form>
         </div>
+        <span>Ou</span>
+        <div className="w-full max-w-6xl mx-auto">
+          <section id="fale-conosco">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-4">
+
+            {/* WHATSAPP */}
+            <a
+              href="https://wa.me/41997862323"
+              target="_blank"
+              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-orange-500 text-2xl"><FiMessageCircle /></span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold">WhatsApp Oficial</span>
+                <span className="text-muted-foreground">Seguros Parana</span>
+              </div>
+            </a>
+
+            {/* INSTAGRAM */}
+            <a
+              href="https://www.instagram.com/paranasegurospr"
+              target="_blank"
+              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-orange-500 text-2xl"><FaInstagram /></span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold">Instagram</span>
+                <span className="text-muted-foreground">@segurosparana</span>
+              </div>
+            </a>
+
+            {/* FACEBOOK */}
+            <a
+              href="https://www.facebook.com/paranadpvat"
+              target="_blank"
+              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-orange-500 text-2xl"><SlSocialFacebook /></span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold">Facebook</span>
+                <span className="text-muted-foreground">Seguros Parana</span>
+              </div>
+            </a>
+
+            {/* LINKEDIN */}
+            <a
+              href="https://www.linkedin.com/company/paran%C3%A1-seguros-e-previd%C3%AAncia/?trk=public_profile_topcard-current-company&originalSubdomain=br"
+              target="_blank"
+              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-orange-500 text-2xl"><LuLinkedin /></span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold">LinkedIn</span>
+                <span className="text-muted-foreground">Seguros Parana</span>
+              </div>
+            </a>
+
+            {/* EMAIL */}
+            <a
+              href="https://www.google.com/search?rlz=1C1RXQR_pt-PTBR1157BR1157&sca_esv=a66b742956e23bc7&cs=1&sxsrf=AE3TifOKGXZKMk5fLsCzSO4XCETRPUaT-w:1764948466223&kgmid=/g/11bv30kx9_&q=PARAN%C3%81+SEGUROS+%7C+Resgate+DPVAT+%7C+INSS+%7C+RCF+%7C+Seguros&shndl=30&shem=damc,lcuae,uaasie,shrtsdl&source=sh/x/loc/uni/m1/1&kgs=fce4174fd12de9de&utm_source=damc,lcuae,uaasie,shrtsdl,sh/x/loc/uni/m1/1#lrd=0x94dce3b97d8af1ed:0x31b528852e233c24,1,,,,"
+              target="_blank"
+              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-orange-500 text-2xl"><FaGoogle /></span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold">Avaliações Google</span>
+                <span className="text-muted-foreground">5,0 ✮✮✮✮✮</span>
+              </div>
+            </a>
+
+            {/* SITE */}
+            <a
+              href="https://segurosparana.com.br"
+              target="_blank"
+              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-orange-500 text-2xl"><LuGlobe /></span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold">Site</span>
+                <span className="text-muted-foreground">segurosparana.com.br</span>
+              </div>
+            </a>
+
+          </div>
+          </section>
+        </div>
+
       </div>
     </section>
   );
