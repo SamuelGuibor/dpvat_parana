@@ -175,7 +175,7 @@ const Faq = ({
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold">Instagram</span>
-                <span className="text-muted-foreground">@segurosparana</span>
+                <span className="text-muted-foreground">@paranasegurospr</span>
               </div>
             </a>
 
