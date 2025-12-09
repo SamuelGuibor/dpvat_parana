@@ -6,7 +6,7 @@ import React from "react";
 import { useScroll, motion } from "framer-motion";
 import { cn } from "../_lib/utils";
 import Image from "next/image";
-import { FaInstagram } from "react-icons/fa";
+// import { FaInstagram } from "react-icons/fa";
 import { Avatar, AvatarImage } from "../_components/ui/avatar";
 import { signOut, useSession } from "next-auth/react";
 import { AiOutlineCar } from "react-icons/ai";
@@ -85,7 +85,7 @@ export const HeroHeader = () => {
               )}
             >
               <div className="flex items-center space-x-2 sm:space-x-3">
-                <div className="flex gap-4">
+                {/* <div className="flex gap-4">
                   <Link
                     href="https://www.instagram.com/paranasegurospr?igsh=bGJsN2UyZDhic2Fu&utm_source=qr"
                     aria-label="Veja nosso Instagram"
@@ -95,7 +95,7 @@ export const HeroHeader = () => {
                       className={scrolled ? "text-black" : "lg:text-white text-white"}
                     />
                   </Link>
-                </div>
+                </div> */}
                 {!session?.user ? (
                   <div>
 
