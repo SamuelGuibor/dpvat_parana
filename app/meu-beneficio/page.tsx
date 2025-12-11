@@ -40,11 +40,10 @@ export default function MeuBeneficio() {
     };
 
     const isElegivel = () => {
-        const { sequelas, afastado, tempoAcidente, advogado } = formData;
+        const { sequelas, tempoAcidente, advogado } = formData;
 
         return (
             sequelas === 'sim' &&
-            afastado === 'sim' &&
             advogado === 'nao' &&
             tempoAcidente === 'nao'
         );
