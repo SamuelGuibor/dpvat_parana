@@ -5,8 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { Button } from "../_components/ui/button";
-import { Calendar } from "../_components/ui/calendar";
-import { ptBR } from "date-fns/locale";
 import { ContactUsers } from "@/app/_actions/createContact";
 
 
@@ -18,7 +16,6 @@ export default function MeuBeneficio() {
         nome: string;
         telefone: string;
         tempoAcidente: string;
-        dataAcidente: Date | undefined;
         sequelas: string;
         advogado: string;
         detalhesSequelas: string;
@@ -27,7 +24,6 @@ export default function MeuBeneficio() {
         nome: '',
         telefone: '',
         tempoAcidente: '',
-        dataAcidente: undefined,
         sequelas: '',
         advogado: '',
         detalhesSequelas: '',
@@ -43,26 +39,14 @@ export default function MeuBeneficio() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const yearsSince = (date: any) => {
-        if (!date) return Infinity;
-        const now = new Date();
-        const diffMs = now.getTime() - new Date(date).getTime();
-        const anos = diffMs / (1000 * 60 * 60 * 24 * 365.25);
-        return anos;
-    };
-
     const isElegivel = () => {
-        const { sequelas, afastado, dataAcidente, advogado } = formData;
-
-        if (!dataAcidente) return false;
-
-        const anos = yearsSince(dataAcidente);
+        const { sequelas, afastado, tempoAcidente, advogado } = formData;
 
         return (
             sequelas === 'sim' &&
             afastado === 'sim' &&
             advogado === 'nao' &&
-            anos <= 15
+            tempoAcidente === 'nao'
         );
     };
 
@@ -87,7 +71,7 @@ export default function MeuBeneficio() {
     };
 
     const getStepKeys = () => {
-        const keys = ['dataAcidente', 'sequelas', 'afastado', 'advogado'];
+        const keys = ['tempoAcidente', 'sequelas', 'afastado', 'advogado'];
         if (isElegivel()) {
             keys.push('nome');
             keys.push('telefone');
@@ -101,8 +85,7 @@ export default function MeuBeneficio() {
         if (!currentKey) return true;
 
         switch (currentKey) {
-            case 'dataAcidente':
-                return formData.dataAcidente !== undefined;
+            case 'tempoAcidente':
             case 'sequelas':
             case 'afastado':
             case 'advogado':
@@ -145,38 +128,17 @@ export default function MeuBeneficio() {
         const stepDataAcidente = (
             <div className="mt-6">
                 <label className="block text-sm font-medium mb-2">
-                    Quando ocorreu o acidente?
+                    Faz mais de 15 anos o seu acidente? 
                 </label>
 
-                <input
-                    type="text"
-                    name="tempoAcidente"
-                    value={formData.tempoAcidente}
-                    readOnly
-                    placeholder="Selecione a data no calendário abaixo"
-                    className="w-full p-2 border rounded mb-4 bg-white/90"
-                />
-
-                <Calendar
-                    mode="single"
-                    locale={ptBR}
-                    selected={formData.dataAcidente}
-                    onSelect={(date) => {
-                        if (!date) {
-                            setFormData(prev => ({ ...prev, dataAcidente: undefined, tempoAcidente: '' }));
-                            return;
-                        }
-                        const d = new Date(date);
-                        const formatted = d.toLocaleDateString();
-                        setFormData(prev => ({
-                            ...prev,
-                            dataAcidente: d,
-                            tempoAcidente: formatted
-                        }));
-                    }}
-                    className="rounded-md border"
-                />
-
+                <div className="flex items-center mb-4">
+                    <label className="mr-4">
+                        <input type="radio" name="tempoAcidente" value="sim" checked={formData.tempoAcidente === 'sim'} onChange={handleChange} /> Sim
+                    </label>
+                    <label>
+                        <input type="radio" name="tempoAcidente" value="nao" checked={formData.tempoAcidente === 'nao'} onChange={handleChange} /> Não
+                    </label>
+                </div>
             </div>
         );
 
@@ -210,7 +172,7 @@ export default function MeuBeneficio() {
 
         const stepAdvogado = (
             <div className="mt-6">
-                <label className="block text-sm font-medium mb-2">Deu entrada com advogado?</label>
+                <label className="block text-sm font-medium mb-2">Chegou a dar entrada com o advogado contra o INSS?</label>
                 <div className="flex items-center mb-4">
                     <label className="mr-4">
                         <input type="radio" name="advogado" value="sim" checked={formData.advogado === 'sim'} onChange={handleChange} /> Sim
