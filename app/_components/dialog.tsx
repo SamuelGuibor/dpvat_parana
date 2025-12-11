@@ -43,6 +43,7 @@ import { updateDocumentName } from "../_actions/updateNameDoc";
 import { CiEdit } from "react-icons/ci";
 import { deletDoc } from "../_actions/delet_document";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { MentionsInput, Mention } from "react-mentions";
 
 interface ItemData {
   id: string;
@@ -708,6 +709,18 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
     }
   };
 
+  // MENÇÕES 
+  const [value, setValue] = useState("");
+  const users = [
+    { id: "cmazo6j870000ia0gw5ppb486", display: "Samuel" },
+    { id: "cmazuwrcj0000iav499hqf5ij", display: "Thomaz" },
+    { id: "cmb07q4i40000jr04pze42w3r", display: "Eduardo Camargo Martinez" },
+  ];
+
+  const handleSend = () => {
+    toast.success(`Mensagem enviada: ${value}`);
+  };
+
   return (
     <AlertDialog open={isOpen} onOpenChange={setIsOpen} >
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
@@ -746,7 +759,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="name"
                     value={formData?.name || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -755,7 +768,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="cpf"
                     value={formData?.cpf || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -765,7 +778,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     type="date"
                     value={formData?.data_nasc || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -774,7 +787,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="email"
                     value={formData?.email || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -783,7 +796,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="rua"
                     value={formData?.rua || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -792,7 +805,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="bairro"
                     value={formData?.bairro || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -801,7 +814,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="numero"
                     value={formData?.numero || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -810,7 +823,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="cep"
                     value={formData?.cep || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -819,7 +832,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="rg"
                     value={formData?.rg || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -828,7 +841,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="nome_mae"
                     value={formData?.nome_mae || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -837,7 +850,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="telefone"
                     value={formData?.telefone || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -846,7 +859,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     name="cidade"
                     value={formData?.cidade || ""}
                     onChange={handleInputChange}
-                    className="w-full"
+                    className="w-full bg-[#091e420f]"
                   />
                 </div>
                 <div>
@@ -994,8 +1007,29 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     className="w-full bg-yellow-100"
                   />
                 </div>
+                <div className="p-4 space-y-4">
+                  <MentionsInput
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="Digite algo e use @ para mencionar..."
+                  >
+                    <Mention
+                      trigger="@"
+                      data={users}
+                      markup="@[{__id__}]( __display__ )"
+                      displayTransform={(id, display) => `@${display}`}
+                    />
+                  </MentionsInput>
+
+                  <button
+                    onClick={handleSend}
+                    className="px-4 py-2 bg-blue-600 text-white rounded"
+                  >
+                    Enviar
+                  </button>
+                </div>
               </div>
-              <div className="mt-4">
+              {/* <div className="mt-4">
                 <h2 className="text-base sm:text-lg font-semibold mb-2 text-blue-600">É menor de idade? Preencha os dados:</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -1053,7 +1087,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                     </Select>
                   </div>
                 </div>
-              </div>
+              </div> */}
               <div className="mt-4">
                 <h2 className="text-base sm:text-lg font-semibold mb-2 text-blue-600">Dados do Acidente</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1361,7 +1395,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
           <Dialog open={confirmationDoc} onOpenChange={setConfirmation}>
             <DialogContent className="w-[70%] h-auto rounded-xl">
               <DialogHeader>
-              <DialogTitle className="w-[90%]">{`Você quer deletar o documento "${nameDocDelet}"?`}</DialogTitle>
+                <DialogTitle className="w-[90%]">{`Você quer deletar o documento "${nameDocDelet}"?`}</DialogTitle>
                 <DialogDescription>
                   Tem certeza que deseja deletar? Essa ação é irreversível.
                 </DialogDescription>

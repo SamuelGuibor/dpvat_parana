@@ -3,6 +3,7 @@ import { Faq } from "./section/faq";
 import { FeatureSteps } from "./section/feature-section";
 import Footer from "./section/footer";
 import Hero from "./section/hero-section";
+import { ClientReviews } from "./section/reviews";
 import Stats from "./section/stats";
 import WhatsAppButton from "./section/whatsapp";
 
@@ -78,6 +79,113 @@ export default function Home() {
       image: "/conecg.jpg",
     },
   ];
+  const demoReviews = [
+    {
+      rating: 5,
+      reviewer: "Joao Pedro Ferreira da Silva",
+      roleReviewer: "",
+      review:
+        "Uma empresa super profissional, ótima de ser atendido e deve ser muito boa de trabalhar. Indico muito essa empresa, muito boa, se pudesse dar 1000 estrelas daria, mas como a melhor é 5, dei 5 mesmo kkkkk",
+      date: "2025-02-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Jose Junior",
+      roleReviewer: "Local Guide",
+      review:
+        "Ótimo atendimento, excelência no trabalho.",
+      date: "2025-11-20"
+    },
+    {
+      rating: 5,
+      reviewer: "KABULOZA",
+      roleReviewer: "Local Guide",
+      review:
+        "Simplesmente perfeito 👍 o atendimento tudo corretamente organizado e resolvido!!",
+      date: "2024-12-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Tibianos Um começo",
+      roleReviewer: "",
+      review:
+        "Ótimo atendimento, me ajudaram muito. Recomendo!!!",
+      date: "2025-05-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Robson",
+      roleReviewer: "",
+      review:
+        "Nunca me senti tão seguro e confortável! Atendimento excelente e agradável, tudo muito bem higienizado e exemplar. Voltarei mais vezes.",
+      date: "2024-12-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Wilson Trovao",
+      roleReviewer: "",
+      review:
+        "Serviço sério com respeito. 5 estrelas bem merecido, graças a Deus e ao trabalho da equipe. Obrigado.",
+      date: "2025-06-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Gelson Lima",
+      roleReviewer: "",
+      review:
+        "Foi muito bom contar com o apoio desta equipe pois me ajudou muito e facilitou para receber o seguro. O processo é demorado e precisa de tempo para fazer. Eu recomendo para quem precise deste tipo de trabalho.",
+      date: "2024-12-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Kalebe Herrero Rodrigues",
+      roleReviewer: "",
+      review:
+        "Muito bom, atendimento muito ótimo. Obrigado por serem respeitosos.",
+      date: "2024-12-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Alfeu Alves",
+      roleReviewer: "",
+      review:
+        "Empresa séria, com profissionais bem qualificados, me ajudaram muito. Obrigado.",
+      date: "2025-05-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Keivison Oliveira",
+      roleReviewer: "",
+      review:
+        "Foi muito bom o atendimento, nota 10 👌🏻",
+      date: "2025-02-01"
+    },
+    {
+      rating: 5,
+      reviewer: "Patricia Cavalin",
+      roleReviewer: "",
+      review:
+        "São profissionais ágeis, sérios, realmente vale a pena. Resolvem mesmo sem que a gente precise se incomodar ou se preocupar! Parabéns a esse escritório e essa equipe top.",
+      date: "2025-11-25"
+    },
+    {
+      rating: 5,
+      reviewer: "Kauan Fernandes",
+      roleReviewer: "",
+      review:
+        "Uma empresa muito séria e confiável. Resolveu meu problema, achei incrível o atendimento. Recomendo demais.",
+      date: "2025-10-15"
+    },
+    {
+      rating: 5,
+      reviewer: "Isadora Bittencourt",
+      roleReviewer: "Local Guide",
+      review:
+        "Empresa abençoada. Graças a eles resgatei depois de 3 anos, após um acidente, meu seguro DPVAT. Nem tinha mais esperanças. Empresa confiável e atendentes muito atenciosos. Nota 10.",
+      date: "2025-07-01"
+    }
+  ];
+
 
   return (
     <>
@@ -92,6 +200,7 @@ export default function Home() {
       />
       <Cards />
       <Stats />
+      <ClientReviews reviews={demoReviews} />
       <Faq
         heading="Perguntas Frequentes"
         description="Tudo o que você precisa saber sobre o DPVAT. Não encontrou a resposta que procura? Sinta-se à vontade para entrar em contato com nossa equipe de suporte"
@@ -104,3 +213,4 @@ export default function Home() {
     </>
   );
 }
+

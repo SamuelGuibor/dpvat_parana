@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { getContacts } from "@/app/_actions/getContact";
+import { DeleteContact } from "@/app/_actions/deletContact";
+import { CiTrash } from "react-icons/ci";
 
 type Contact = {
   id: string;
@@ -11,7 +13,6 @@ type Contact = {
   createdAt: Date | null;
   updatedAt: Date | null;
 };
-
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -34,6 +35,12 @@ export default function ContactsPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // 🗑️ Função para deletar
+  const handleDelete = async (id: string) => {
+    await DeleteContact(id);
+    loadContacts(); // atualiza tabela após deletar
+  };
+
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Meus Contatos</h1>
@@ -47,6 +54,7 @@ export default function ContactsPage() {
               <th className="py-2 px-4 border-b text-left">Nome</th>
               <th className="py-2 px-4 border-b text-left">Número</th>
               <th className="py-2 px-4 border-b text-left">Descrição</th>
+              <th className="py-2 px-4 border-b text-left"></th>
             </tr>
           </thead>
           <tbody>
@@ -54,7 +62,14 @@ export default function ContactsPage() {
               <tr key={contact.id} className="hover:bg-gray-50">
                 <td className="py-2 px-4 border-b">{contact.name}</td>
                 <td className="py-2 px-4 border-b">{contact.number}</td>
-                <td className="py-2 px-4 border-b">{contact.desc}</td>
+                <td className="py-2 px-4 border-b w-64 max-w-xs break-words">{contact.desc}</td>
+                <td className="py-2 px-4 border-b">
+                  <CiTrash
+                    className="cursor-pointer text-red-600 hover:text-red-800"
+                    size={22}
+                    onClick={() => handleDelete(contact.id)}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
