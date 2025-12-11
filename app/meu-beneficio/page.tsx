@@ -273,7 +273,7 @@ export default function MeuBeneficio() {
                 width={200}
                 height={200}
                 alt="boneca ana paula"
-                className="absolute right-0 sm:right-44 pt-[480px] sm:pt-44 
+                className="absolute right-0 sm:right-44 pt-[450px] sm:pt-44 
                    w-40 sm:w-44 md:w-64 lg:w-64"
             />
 
