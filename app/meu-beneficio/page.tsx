@@ -82,7 +82,7 @@ export default function MeuBeneficio() {
 
 
     const getImage = () => {
-        if (!completed) return "/ana_paula.png";
+        if (!completed) return "/ana_paula.PNG";
         return isElegivel() ? "/ana_paula_feliz.png" : "/ana_paula_triste.png";
     };
 
