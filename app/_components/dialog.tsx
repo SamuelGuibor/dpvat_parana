@@ -44,6 +44,7 @@ import { CiEdit } from "react-icons/ci";
 import { deletDoc } from "../_actions/delet_document";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { MentionsInput, Mention } from "react-mentions";
+import { IoMdSend } from "react-icons/io";
 
 interface ItemData {
   id: string;
@@ -474,6 +475,33 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
     }
   }, [isOpen, userId, isProcess]);
 
+  useEffect(() => {
+    const cep = formData?.cep?.replace(/\D/g, "");
+    if (!cep || cep.length !== 8) return;
+
+    async function fetchCEP() {
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        const data = await res.json();
+        if (data.erro) return;
+
+        setFormData(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rua: data.logradouro || "",
+            bairro: data.bairro || ""
+          };
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    fetchCEP();
+  }, [formData?.cep]);
+
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
@@ -606,10 +634,8 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
     if (!item || !formData) return;
 
     try {
-      // Upload files to S3 first, if any
       await uploadFilesToS3();
 
-      // Check if only the role has changed
       const onlyRoleChanged = Object.keys(formData).every((key) => {
         const typedKey = key as keyof ItemData;
         if (typedKey === "role") {
@@ -634,7 +660,6 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
             : null,
         };
       } else {
-        // Call update function for other changes
         const updatedData: UpdateItemData = {
           id: formData.id,
           name: formData.name !== item.name ? formData.name : undefined,
@@ -721,6 +746,39 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
     toast.success(`Mensagem enviada: ${value}`);
   };
 
+  const solicitarProntuario = () => {
+    if (!item) return;
+
+    const nomeHospital = item?.hospital || "hospital";
+    const nomeCliente = item?.name || "cliente";
+    const cpfCliente = item?.cpf || "";
+
+    // Mensagem que vai ser enviada
+    const mensagem = `
+      Olá Hospital ${nomeHospital},
+
+      Estamos entrando em contato para solicitar informações e o prontuário referente ao paciente:
+
+      Nome: ${nomeCliente}
+      CPF: ${cpfCliente}
+
+      Necessitamos desses dados para continuidade do processo administrativo/jurídico.
+
+      Agradecemos desde já pelo retorno.
+    `;
+
+    const assunto = `Solicitação de Prontuário - ${nomeCliente}`;
+
+    // Gerando URL do Gmail
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=&su=${encodeURIComponent(
+      assunto
+    )}&body=${encodeURIComponent(mensagem)}&authuser=N`;
+
+    // Abrir Gmail
+    window.open(gmailUrl, "_blank");
+  };
+
+
   return (
     <AlertDialog open={isOpen} onOpenChange={setIsOpen} >
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
@@ -730,11 +788,10 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
             Dados do {isProcess ? 'Processo' : 'Cliente'}: <span className="font-bold text-blue-600">{item?.name}</span>
           </AlertDialogTitle>
           <div className="flex flex-col sm:flex-row sm:absolute sm:right-0 sm:pr-5 gap-2 mt-2 sm:mt-0">
-            {!(item?.fixed ?? false) && <ToggleFixedButton fixed={item?.fixed ?? false} onToggle={handleToggleFixed} />}
             {isDocument && (
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
-                <Button disabled className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
-                  Gerar Contrato
+                <Button onClick={solicitarProntuario} className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
+                  Solicitar Prontuario
                 </Button>
                 <Button onClick={sendToZapier} className="bg-indigo-800 hover:bg-indigo-900 w-full sm:w-auto">
                   Gerar Procuração
@@ -791,6 +848,15 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                   />
                 </div>
                 <div>
+                  <Label>CEP</Label>
+                  <Input
+                    name="cep"
+                    value={formData?.cep || ""}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#091e420f]"
+                  />
+                </div>
+                <div>
                   <Label>Rua</Label>
                   <Input
                     name="rua"
@@ -813,15 +879,6 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
                   <Input
                     name="numero"
                     value={formData?.numero || ""}
-                    onChange={handleInputChange}
-                    className="w-full bg-[#091e420f]"
-                  />
-                </div>
-                <div>
-                  <Label>CEP</Label>
-                  <Input
-                    name="cep"
-                    value={formData?.cep || ""}
                     onChange={handleInputChange}
                     className="w-full bg-[#091e420f]"
                   />

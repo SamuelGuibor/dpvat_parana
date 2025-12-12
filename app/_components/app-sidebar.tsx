@@ -43,6 +43,11 @@ const data = {
       name: "Mensagens Automaticas",
       url: "/mensagens",
       icon: HiOutlineChatAlt2, 
+    },
+    {
+      name: "Enviar Gmail",
+      url: "/send_email",
+      icon: HiOutlineChatAlt2, 
     }
   ],
   options: [

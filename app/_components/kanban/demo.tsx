@@ -19,7 +19,6 @@ import { Loader2 } from 'lucide-react';
 import { differenceInDays, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CreateNewCard } from '../create-newcard';
-import DialogDashFixed from '../dialogFixed';
 
 const services = [
   { id: '1', name: 'Filtro de Cartões', color: '#164b35', border: '#50253f' },
@@ -135,11 +134,6 @@ const roleTimeLimits: { [key: string]: number | null } = {
   PROCESS: null,
   ADMIN: null,
 };
-
-const fixes = [
-  { id: '1', name: 'Acompanhamento de fluxo 1', color: '#DEB887', border: '#DEB887' },
-  { id: '2', name: 'Acompanhamento de fluxo 2', color: '#DEB887', border: '#DEB887' },
-];
 
 
 const KanbanCombined: FC = () => {
@@ -303,92 +297,6 @@ const KanbanCombined: FC = () => {
         <div className="w-full h-auto overflow-x-auto">
           <KanbanProvider className="flex flex-row gap-4 p-2 sm:p-4 min-w-fit">
             {/* Fixed Columns (Processo 1 and Processo 2) */}
-            {fixes.map((fixed) => {
-              const cardCount = filteredItems.filter(
-                (item) => item.fixed && item.roleFixed === fixed.name
-              ).length;
-              return (
-                <KanbanBoard
-                  key={fixed.name}
-                  id={fixed.name}
-                  className={
-                    collapsedBoards[fixed.name]
-                      ? 'w-[50px] min-w-[50px]'
-                      : 'w-80 min-w-80 max-w-80 mb-4 sm:mb-0 shadow-lg border-4'
-                  }
-                  style={{
-                    backgroundColor: fixed.color,
-                    border: `4px solid ${fixed.border}`,
-                  }}
-                  isCollapsed={collapsedBoards[fixed.name] || false}
-                  toggleCollapse={() => toggleCollapse(fixed.name)}
-                  cardCount={cardCount}
-                >
-                  <KanbanCards className="h-[450px] sm:h-screen overflow-y-auto overflow-x-hidden scrollbar">
-                    {filteredItems.filter((item) => item.fixed && item.roleFixed === fixed.name).length === 0 ? (
-                      <div className="text-center text-gray-500 text-sm">Nenhum item fixado encontrado</div>
-                    ) : (
-                      filteredItems
-                        .filter((item) => item.fixed && item.roleFixed === fixed.name)
-                        .map((item, index) => (
-                          <KanbanCard
-                            key={item.id}
-                            id={item.id}
-                            name={item.name}
-                            parent={fixed.name}
-                            index={index}
-                            className="mb-2 w-[99%]"
-                          >
-                            <div className="flex flex-col gap-1 w-full">
-                              <div className="flex items-center justify-between gap-2">
-                                <DialogDashFixed
-                                  userId={item.id}
-                                  isProcess={item.isProcess}
-                                  trigger={
-                                    <span className="cursor-pointer hover:underline font-medium text-xs sm:text-sm">
-                                      {item.name} <span className="font-bold">{item.isProcess ? '(Processo)' : '(Usuário)'}</span>
-                                    </span>
-                                  }
-                                />
-                              </div>
-                              <Badge
-                                variant="outline"
-                                className="px-2 text-center text-xs sm:text-sm"
-                                style={{
-                                  backgroundColor:
-                                    item.service && serviceStyles[item.service]
-                                      ? serviceStyles[item.service].bgColor
-                                      : defaultServiceStyle.bgColor,
-                                  color:
-                                    item.service && serviceStyles[item.service]
-                                      ? serviceStyles[item.service].textColor
-                                      : defaultServiceStyle.textColor,
-                                }}
-                              >
-                                <span className="mx-auto font-bold uppercase">
-                                  {item.service || 'Sem serviço'}
-                                  {item.isProcess && item.type ? ` - ${item.type}` : ''}
-                                </span>
-                              </Badge>
-                              <div
-                                className="p-2 border rounded-md bg-gray-50 text-xs sm:text-sm text-gray-700"
-                                style={{ maxHeight: '60px', overflowY: 'auto' }}
-                              >
-                                {item.obs || 'Sem observações'}
-                              </div>
-                            </div>
-                          </KanbanCard>
-                        ))
-                    )}
-                  </KanbanCards>
-                </KanbanBoard>
-              );
-            })}
-
-            <div
-              className="w-1 bg-black self-stretch mx-2 h-20 my-auto rounded-md"
-              
-            ></div>
 
             {/* Dynamic Service Columns */}
             {serviceFilter === 'Todos'

@@ -15,7 +15,8 @@ export function SiteHeader() {
     "/chats": "Chats",
     "/mensagens": "Mensagens Automaticas",
     "/create": "Criar Conta",
-    "/contact-leads": "Contato INSS"
+    "/contact-leads": "Contato INSS",
+    "/send_email": "Enviar Gmail"
   };
 
   const pageTitle = pageTitles[pathname] || "Dashboard";

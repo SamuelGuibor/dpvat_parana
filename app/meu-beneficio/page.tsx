@@ -65,7 +65,7 @@ export default function MeuBeneficio() {
 
 
     const getImage = () => {
-        if (!completed) return "/ana_paula.PNG";
+        if (!completed) return "/ana_paula.png";
         return isElegivel() ? "/ana_paula_feliz.png" : "/ana_paula_triste.png";
     };
 
@@ -127,7 +127,7 @@ export default function MeuBeneficio() {
         const stepDataAcidente = (
             <div className="mt-6">
                 <label className="block text-sm font-medium mb-2">
-                    Faz mais de 15 anos o seu acidente? 
+                    Seu acidente aconteceu há mais de 15 anos? 
                 </label>
 
                 <div className="flex items-center mb-4">
@@ -143,7 +143,7 @@ export default function MeuBeneficio() {
 
         const stepFratura = (
             <div className="mt-6">
-                <label className="block text-sm font-medium mb-2">Houve Fratura?</label>
+                <label className="block text-sm font-medium mb-2">Você sofreu alguma fratura?</label>
                 <div className="flex items-center mb-4">
                     <label className="mr-4">
                         <input type="radio" name="sequelas" value="sim" checked={formData.sequelas === 'sim'} onChange={handleChange} /> Sim
@@ -157,7 +157,7 @@ export default function MeuBeneficio() {
 
         const stepAfastado = (
             <div className="mt-6">
-                <label className="block text-sm font-medium mb-2">Ficou afastado pelo INSS?</label>
+                <label className="block text-sm font-medium mb-2">Você ficou afastado pelo INSS?</label>
                 <div className="flex items-center mb-4">
                     <label className="mr-4">
                         <input type="radio" name="afastado" value="sim" checked={formData.afastado === 'sim'} onChange={handleChange} /> Sim
@@ -171,7 +171,7 @@ export default function MeuBeneficio() {
 
         const stepAdvogado = (
             <div className="mt-6">
-                <label className="block text-sm font-medium mb-2">Chegou a dar entrada com o advogado contra o INSS?</label>
+                <label className="block text-sm font-medium mb-2">Você chegou a dar entrada com o advogado contra o INSS?</label>
                 <div className="flex items-center mb-4">
                     <label className="mr-4">
                         <input type="radio" name="advogado" value="sim" checked={formData.advogado === 'sim'} onChange={handleChange} /> Sim

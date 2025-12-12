@@ -3,6 +3,7 @@ import "./globals.css";
 import { Mulish } from "next/font/google";
 import AuthProvider from "./_providers/auth";
 import { Toaster } from "./_components/ui/sonner";
+import Script from "next/script";
 
 const mulish = Mulish({
   subsets: ["latin-ext"],
@@ -26,6 +27,20 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <head>
+        <Script
+          async
+          src="https://www.googletagmanager.com/gtag/js?id=G-4ETETM1CP7"
+        />
+
+        <Script id="gtag-init">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-4ETETM1CP7');
+          `}
+        </Script>
+
         <title>Paraná Seguros - Indenização Rápida e Segura</title>
         <meta
           name="description"
