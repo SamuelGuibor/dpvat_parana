@@ -43,7 +43,7 @@ export default function MeuBeneficio() {
         const { sequelas, tempoAcidente, advogado } = formData;
 
         return (
-            sequelas === 'nao' &&
+            sequelas === 'sim' &&
             advogado === 'nao' &&
             tempoAcidente === 'nao'
         );
