@@ -5,7 +5,7 @@ import Footer from "./section/footer";
 import Hero from "./section/hero-section";
 import { ClientReviews } from "./section/reviews";
 import Stats from "./section/stats";
-import WhatsAppButton from "./section/whatsapp";
+// import WhatsAppButton from "./section/whatsapp";
 
 export const metadata = {
   title: "Paraná Seguros - Indenização Rápida e Segura",
@@ -190,7 +190,7 @@ export default function Home() {
   return (
     <>
       <Hero />
-      <WhatsAppButton />
+      {/* <WhatsAppButton /> */}
       <FeatureSteps
         features={features}
         title="Conheça Nossas Soluções"

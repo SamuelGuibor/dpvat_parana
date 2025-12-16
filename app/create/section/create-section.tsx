@@ -5,11 +5,27 @@
 
 import { createUser } from "@/app/_actions/create-user";
 import { Form } from "@/app/_components/ui/form";
+import { Input } from "@/app/_components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { z } from "zod";
+import { any, z } from "zod";
+import * as XLSX from "xlsx";
+import { importUsers } from "@/app/_actions/importUser";
+
+type Row = {
+  cpf?: string;
+  nome?: string;
+  email?: string;
+  rua?: string;
+  bairro?: string;
+  numero?: string;
+  cep?: string;
+  cidade?: string;
+  estado?: string;
+  telefone?: string;
+};
 
 const registerSchema = z.object({
   name: z.string().min(2, "Nome muito curto"),
@@ -52,10 +68,43 @@ export default function CreateAccountForm() {
     }
   }
 
+  async function handleFileUpload(file: File) {
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+      // ✅ Tipagem correta
+      const rows = XLSX.utils.sheet_to_json<Row>(sheet);
+
+      await importUsers(rows);
+    };
+
+    reader.readAsArrayBuffer(file);
+    toast.success('Inserido no banco com sucesso')
+    setTimeout(() => {
+      window.location.reload();
+    }, 2100);
+  }
+
   return (
     <div className="flex justify-center items-start min-h-screen bg-white p-6 font-sans overflow-hidden">
       <div className="w-full max-w-md mt-100">
         <h1 className="text-2xl font-bold text-gray-800 mb-10 text-center">Criar nova conta</h1>
+        <label>Insira o documento com informações pré setadas</label>
+        <Input
+          type="file"
+          accept=".xlsx"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileUpload(file);
+          }}
+        />
+        <br />
+        <p className="pl-52">Ou</p>
+        <br />
         <Form {...registerForm}>
           <form className="space-y-5" onSubmit={registerForm.handleSubmit(handleRegister)}>
             <div className="gap-5">
@@ -66,7 +115,7 @@ export default function CreateAccountForm() {
                   id="firstName"
                   {...registerForm.register("name")}
                   required
-                  className="w-full px-0 py-2 border-b border-gray-300 focus:outline-none focus:ring-0 focus:border-blue-500 focus:shadow-sm transition-all duration-200"                />
+                  className="w-full px-0 py-2 border-b border-gray-300 focus:outline-none focus:ring-0 focus:border-blue-500 focus:shadow-sm transition-all duration-200" />
               </div>
             </div>
 

@@ -16,7 +16,7 @@ import { ContactUsers } from "@/app/_actions/createContact";
 import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { toast } from "sonner";
-import WhatsAppButton from "../section/whatsapp";
+// import WhatsAppButton from "../section/whatsapp";
 
 const faqList = [
     {
@@ -108,7 +108,7 @@ export default function Inss() {
     return (
         <>
             <HeroHeader />
-            <WhatsAppButton />
+            {/* <WhatsAppButton /> */}
             <main className="overflow-hidden bg-white text-gray-800">
                 <div className="relative h-[500px]">
                     <img
