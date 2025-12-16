@@ -43,7 +43,7 @@ export default function MeuBeneficio() {
         const { sequelas, tempoAcidente, advogado } = formData;
 
         return (
-            sequelas === 'sim' &&
+            sequelas === 'nao' &&
             advogado === 'nao' &&
             tempoAcidente === 'nao'
         );
@@ -65,8 +65,8 @@ export default function MeuBeneficio() {
 
 
     const getImage = () => {
-        if (!completed) return "/ana_paula.png";
-        return isElegivel() ? "/ana_paula_feliz.png" : "/ana_paula_triste.png";
+        if (!completed) return "/ana_paula_1.png";
+        return isElegivel() ? "/ana_paula_feliz_1.png" : "/ana_paula_triste_1.png";
     };
 
     const getStepKeys = () => {
@@ -127,7 +127,7 @@ export default function MeuBeneficio() {
         const stepDataAcidente = (
             <div className="mt-6">
                 <label className="block text-sm font-medium mb-2">
-                    Seu acidente aconteceu há mais de 15 anos? 
+                    Seu acidente aconteceu há <span className="font-bold">menos</span> de 15 anos? 
                 </label>
 
                 <div className="flex items-center mb-4">
