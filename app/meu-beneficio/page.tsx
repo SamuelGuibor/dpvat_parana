@@ -127,7 +127,7 @@ export default function MeuBeneficio() {
         const stepDataAcidente = (
             <div className="mt-6">
                 <label className="block text-sm font-medium mb-2">
-                    Seu acidente aconteceu há <span className="font-bold">menos</span> de 15 anos? 
+                    Seu acidente aconteceu há <span className="font-bold">MENOS</span> de 15 anos? 
                 </label>
 
                 <div className="flex items-center mb-4">
