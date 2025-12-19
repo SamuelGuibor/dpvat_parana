@@ -1,14 +1,10 @@
-import { Calendar, User, Clock, Share2, Facebook, Twitter, Linkedin, Mail, ArrowLeft, Tag, ChevronRight } from 'lucide-react';
+import { Calendar, User, Clock, Share2, Facebook, Twitter, Linkedin, Mail, Tag, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import { Footer } from '../../_components/landing_page/Footer';
 import { Header } from '../../_components/landing_page/Header';
 import Link from 'next/link';
 
-interface BlogArticleProps {
-  onBack: () => void;
-}
-
-export default function BlogArticle({ onBack }: BlogArticleProps) {
+export default function BlogArticle() {
   return (
     <>
       <Header />
@@ -17,13 +13,6 @@ export default function BlogArticle({ onBack }: BlogArticleProps) {
         <div className="bg-white border-b border-gray-200">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <nav className="flex items-center gap-2 text-sm">
-              <button
-                onClick={onBack}
-                className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Voltar ao Blog
-              </button>
               <ChevronRight className="w-4 h-4 text-gray-400" />
               <span className="text-gray-600">INSS</span>
               <ChevronRight className="w-4 h-4 text-gray-400" />
