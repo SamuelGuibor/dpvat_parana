@@ -42,6 +42,7 @@ export default function RootLayout({
         </Script>
 
         <title>Paraná Seguros - Indenização Rápida e Segura</title>
+        <meta name="facebook-domain-verification" content="1rkpryx50xubl50ps6z82tb2is9887" />
         <meta
           name="description"
           content="Especialistas em indenizações de acidentes de trânsito no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em todo o Paraná."

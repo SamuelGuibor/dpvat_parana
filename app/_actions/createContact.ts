@@ -18,6 +18,8 @@ export async function ContactUsers(prevState: any, formData: FormData) {
       },
     });
 
+    console.log(name, number, desc)
+
     return { success: true, message: 'Enviado com sucesso' };
   } catch (error) {
     return { success: false, message: 'Ocorreu um erro ao enviar.' };

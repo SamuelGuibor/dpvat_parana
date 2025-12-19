@@ -10,8 +10,8 @@ export default function Send_Email() {
 
   async function mandarEmail() {
     try {
-      await fetch("/api/send_email", {
-        method: "POST",
+      await fetch("/api/send", {
+        method: "GET",
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {

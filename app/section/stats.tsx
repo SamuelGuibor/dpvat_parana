@@ -2,7 +2,7 @@ import Image from "next/image";
 
 const Stats = () => {
   return (
-    <section className="py-12 md:py-20 bg-white">
+    <section className="py-12 md:py-20 bg-gray-50">
       <div className="mx-auto max-w-7xl space-y-12 px-6">
           <div className="flex justify-center relative bottom-5">
             <Image src="/paranaseguros.png" width={250} height={250} alt="" />
