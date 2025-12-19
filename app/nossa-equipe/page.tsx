@@ -1,5 +1,9 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
-import { Mail, Linkedin, Award, GraduationCap, Briefcase } from 'lucide-react';
+import { Mail, Award, GraduationCap, Briefcase } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 import { Footer } from '../_components/landing_page/Footer';

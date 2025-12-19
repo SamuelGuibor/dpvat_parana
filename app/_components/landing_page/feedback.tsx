@@ -132,7 +132,7 @@ export function Testimonials() {
 
               {/* Testimonial Text */}
               <p className="text-gray-700 leading-relaxed">
-                "{testimonial.text}"
+                {testimonial.text}
               </p>
             </div>
           ))}
