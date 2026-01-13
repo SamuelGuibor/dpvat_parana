@@ -46,6 +46,10 @@ model User {
   fixed           Boolean?  @default(true)
   roleFixed       String?   @default("Acompanhamento de fluxo 1")
 
+  commentsAsAuthor  Comment[] @relation("CommentAuthor")
+  commentsOnCard    Comment[] @relation("UserComments")
+  notifications     Notification[] @relation("UserNotifications")
+
   accounts  Account[]
   sessions  Session[]
   document  Document[]
@@ -97,11 +101,38 @@ model Process {
   fixed           Boolean?  @default(true)
   roleFixed       String?   @default("Acompanhamento de fluxo 1")
 
+  commentsOnProcess Comment[] @relation("ProcessComments")
+
   documents       Document[] 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   status Status?
+}
+
+model Comment {
+  id          String   @id @default(cuid())
+  text        String
+  authorId    String   // ID do usuário que escreveu o comentário
+  authorName  String   // Nome para exibição rápida (opcional, pode ser denormalizado)
+  
+  // Campos separados para identificar o dono do comentário
+  userId      String?  // Se for comentário em um cartão de User (Kanban de clientes)
+  processId   String?  // Se for comentário em um Process
+  targetName  String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relações corretas e não ambíguas
+  author      User     @relation("CommentAuthor", fields: [authorId], references: [id])
+  
+  user        User?    @relation("UserComments", fields: [userId], references: [id])
+  process     Process? @relation("ProcessComments", fields: [processId], references: [id])
+
+  @@index([userId])
+  @@index([processId])
+  @@index([authorId])
 }
 
 enum Status {
@@ -198,4 +229,34 @@ model Contact {
   desc       String? 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt 
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  recipientId  String
+  authorId     String
+  authorName   String
+  message      String
+  targetName   String
+
+  commentId    String?
+  userId       String?
+  processId    String?
+
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  recipient    User     @relation("UserNotifications", fields: [recipientId], references: [id])
+
+  @@index([recipientId])
+}
+
+model Botconversa {
+  id           String   @id @default(cuid())
+  nome         String
+  evento       String
+  telefone     String
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
 }
