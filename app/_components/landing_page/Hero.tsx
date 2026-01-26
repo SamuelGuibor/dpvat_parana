@@ -1,8 +1,25 @@
+'use client'
 import { ArrowRight } from 'lucide-react';
+import { useSession } from 'next-auth/react';
 import Image from "next/image";
-
+import mixpanel from "@/app/_lib/mixpanel";
+import { useEffect } from 'react';
 
 export function Hero() {
+    const { data: session } = useSession(); // Obter dados da sessão
+    
+    const consultProcessUrl = session?.user ? "/area-do-cliente" : "/login";
+    useEffect(() => {
+      if (!session?.user?.id) return;
+
+      mixpanel.identify(session.user.id);
+
+      mixpanel.people.set({
+        $name: session.user.name,
+        $email: session.user.email,
+      });
+    }, [session]);
+
   return (
     <section id="inicio" className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white">
       <div className="absolute inset-0 bg-black/20"></div>
@@ -16,7 +33,7 @@ export function Hero() {
               Especialistas em DPVAT, Auxílio-Acidente INSS e recuperação de danos causados por acidentes de trânsito. Sua justiça é nossa missão.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <a href="/login" className="bg-white text-blue-900 px-8 py-4 rounded-lg hover:bg-blue-50 transition-colors flex items-center justify-center gap-2">
+              <a href={consultProcessUrl} className="bg-white text-blue-900 px-8 py-4 rounded-lg hover:bg-blue-50 transition-colors flex items-center justify-center gap-2">
                 Consulte seu Processo
                 <ArrowRight className="w-5 h-5" />
               </a>
@@ -38,3 +55,5 @@ export function Hero() {
     </section>
   );
 }
+
+

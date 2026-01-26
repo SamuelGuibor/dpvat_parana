@@ -7,8 +7,8 @@ const EVENT_MAP: Record<string, StatusKey> = {
   nao_contratado: 'indeferidos',
   nao_qualificado: 'indeferidos',
   iniciado: 'emAndamento',
-  em_explicacao: 'emAndamento',
-  em_negociacao: 'emAndamento',
+  em_conversa: 'emAndamento',
+  em_honorario: 'emAndamento',
   aguardando: 'emAndamento',
 };
 

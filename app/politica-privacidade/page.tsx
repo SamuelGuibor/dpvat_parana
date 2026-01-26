@@ -35,11 +35,11 @@ export default function PrivacyPolicy() {
           <div className="bg-white rounded-lg shadow-md p-8 prose max-w-none">
 
             <p className="text-lg text-gray-700 font-semibold">
-              POLÍTICA DE PRIVACIDADE — KARINA DIAS CAMARGO PREPARAÇÃO DE DOCUMENTOS LTDA
+              POLÍTICA DE PRIVACIDADE — PARANÁ CONSULTORIA EM SEGUROS
             </p>
 
             <p>
-              A <strong>KARINA DIAS CAMARGO PREPARAÇÃO DE DOCUMENTOS LTDA</strong>,
+              A <strong>PARANÁ CONSULTORIA EM SEGUROS</strong>,
               pessoa jurídica de direito privado, leva a sua privacidade a sério
               e se compromete com a transparência no tratamento de dados pessoais
               dos usuários do site <strong>https://segurosparana.com.br</strong>.

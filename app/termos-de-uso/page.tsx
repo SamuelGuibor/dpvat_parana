@@ -38,11 +38,11 @@ export default function TermsOfUse() {
           <div className="bg-white rounded-lg shadow-md p-8 prose max-w-none">
 
             <p className="text-lg text-gray-700">
-              <strong>TERMOS DE USO — KARINA DIAS CAMARGO PREPARAÇÃO DE DOCUMENTOS LTDA</strong>
+              <strong>TERMOS DE USO — PARANÁ CONSULTORIA EM SEGUROS</strong>
             </p>
 
             <p>
-              KARINA DIAS CAMARGO PREPARAÇÃO DE DOCUMENTOS LTDA, pessoa jurídica
+              PARANÁ CONSULTORIA EM SEGUROS, pessoa jurídica
               de direito privado, descreve neste documento as regras de uso do
               site <strong>https://segurosparana.com.br</strong> e quaisquer outros
               sites, lojas ou aplicativos operados pelo proprietário.

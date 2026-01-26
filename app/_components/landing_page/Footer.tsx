@@ -55,8 +55,8 @@ export function Footer() {
         <div className="border-t border-gray-800 pt-8 text-sm text-center">
           <p>&copy; 2025 Paraná Seguros. Todos os direitos reservados.</p>
           <p className="mt-2">
-            Paraná seguros e previdência
-            CNPJ:  59.600.345/0001-29
+            Paraná Consultoria em Seguros 
+            CNPJ:  48.270.397/0001-68
           </p>
           <p>
             Susep 221140431

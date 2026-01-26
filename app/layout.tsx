@@ -4,6 +4,8 @@ import { Mulish } from "next/font/google";
 import AuthProvider from "./_providers/auth";
 import { Toaster } from "./_components/ui/sonner";
 import Script from "next/script";
+import { MixpanelProvider } from "./_providers/mixpanel-provider";
+import { NotificationsProvider } from "./store/provider";
 
 const mulish = Mulish({
   subsets: ["latin-ext"],
@@ -24,10 +26,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  
   return (
     <html lang="pt-BR">
       <head>
-        <Script id="mixpanel-init" strategy="afterInteractive">
+        <Script id="mixpanel-init" strategy="afterInteractive" type="text/javascript">
           {`(function(e,c){if(!c.__SV){var l,h;window.mixpanel=c;c._i=[];c.init=function(q,r,f){
             function t(d,a){var g=a.split(".");2==g.length&&(d=d[g[0]],a=g[1]);
             d[a]=function(){d.push([a].concat(Array.prototype.slice.call(arguments,0)))}}
@@ -120,8 +123,9 @@ export default function RootLayout({
         />
       </head>
       <body className={`${mulish.className} antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider><NotificationsProvider>{children}</NotificationsProvider></AuthProvider>
         <Toaster />
+        <MixpanelProvider />
         <script type="text/javascript" async
           src="https://d335luupugsy2.cloudfront.net/js/loader-scripts/549d8d30-be36-4f81-860f-9377b7717532-loader.js" >
         </script>
