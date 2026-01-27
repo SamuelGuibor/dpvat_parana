@@ -1,0 +1,13 @@
+import { db } from '@/app/_lib/prisma';
+import { NextResponse } from 'next/server';
+
+/* GET - Listar */
+export async function GET() {
+  const data = await db.botconversa.findMany({
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+
+  return NextResponse.json(data);
+}

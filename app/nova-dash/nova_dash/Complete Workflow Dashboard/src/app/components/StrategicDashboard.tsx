@@ -28,6 +28,7 @@ import { FaPersonCircleCheck } from "react-icons/fa6";
 import { LuAlignHorizontalJustifyStart } from "react-icons/lu";
 import { count } from 'console';
 import { FaSquare } from "react-icons/fa";
+import { MiniKanban } from './minikanban';
 
 type Counts = {
   contratado?: number;
@@ -259,8 +260,8 @@ export const StrategicDashboard: React.FC = () => {
       <Tabs defaultValue="analytics" className="space-y-4">
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="leads">Leads</TabsTrigger>
+          {/* <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="leads">Leads</TabsTrigger> */}
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
         </TabsList>
 
@@ -341,42 +342,10 @@ export const StrategicDashboard: React.FC = () => {
             </Card>
           </div>
 
-          {/* Alertas */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Alertas e Notificações</CardTitle>
-                  <CardDescription>Atenção necessária</CardDescription>
-                </div>
-                <Badge variant="destructive">{alerts.filter(a => a.priority === 'high').length} Urgentes</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[200px]">
-                <div className="space-y-2">
-                  {alerts.map((alert) => (
-                    <div
-                      key={alert.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border ${alert.priority === 'high' ? 'bg-red-50 border-red-200' :
-                        alert.priority === 'medium' ? 'bg-yellow-50 border-yellow-200' :
-                          'bg-blue-50 border-blue-200'
-                        }`}
-                    >
-                      {getAlertIcon(alert.type)}
-                      <span className="flex-1 text-sm">{alert.title}</span>
-                      <Button size="sm" variant="outline">
-                        Ver Detalhes
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+          <MiniKanban />
         </TabsContent>
 
-        <TabsContent value="performance" className="space-y-4">
+        {/* <TabsContent value="performance" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Performance por Pessoa</CardTitle>
@@ -499,7 +468,7 @@ export const StrategicDashboard: React.FC = () => {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
+        </TabsContent> */}
 
         <TabsContent value="integrations" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
