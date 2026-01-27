@@ -2,18 +2,19 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users } from 'lucide-react';
+import { LayoutDashboard, Users } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/ui/tabs';
 import { Button } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/ui/button';
 import { Badge } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/ui/badge';
 
-import { KanbanBoard } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/KanbanBoard';
+// import { KanbanBoard } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/KanbanBoard';
 import { StrategicDashboard } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/StrategicDashboard';
 import Team from '../_components/team_dash';
 
 import { NotificationDropdown } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/box';
 import { DbNotification } from '@/app/_types/notifications';
+import Link from 'next/link';
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -39,8 +40,9 @@ export default function Page() {
       <header className="bg-white border-b sticky top-0 z-50">
         <div className="px-6">
           <div className="flex items-center justify-between">
-            <Image src="/paranaseguros.png" width={200} height={200} alt="Logo" />
-
+            <Link href='/'>
+              <Image src="/paranaseguros.png" width={200} height={200} alt="Logo" />
+            </Link>
             <div className="flex items-center gap-3">
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                 🟢 Sistema Online
@@ -63,10 +65,10 @@ export default function Page() {
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard Estratégico
             </TabsTrigger>
-            <TabsTrigger value="kanban">
+            {/* <TabsTrigger value="kanban">
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
-            </TabsTrigger>
+            </TabsTrigger> */}
           </TabsList>
         </Tabs>
       </header>
@@ -76,15 +78,15 @@ export default function Page() {
           <TabsContent value="dashboard">
             <StrategicDashboard />
           </TabsContent>
-          <TabsContent value="kanban">
+          {/* <TabsContent value="kanban">
             <KanbanBoard />
-          </TabsContent>
+          </TabsContent> */}
         </Tabs>
       </main>
 
       <footer className="bg-white border-t mt-12">
         <div className="px-6 py-4 text-sm text-gray-500">
-          © 2025 Sistema de Gestão.
+          © 2025 Sistema de Gestão Seguros Paraná.
         </div>
       </footer>
     </div>
