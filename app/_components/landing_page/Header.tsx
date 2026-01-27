@@ -19,7 +19,7 @@ export function Header() {
   const toggleSheet = () => {
     setSheetOpen((prev) => !prev);
   };
-  const menuOptions = session?.user?.role === "ADMIN"
+  const menuOptions = session?.user?.role === "ADMIN" && session?.user?.role === "ADMIN+" && session?.user?.role === "ADMIN++"
     ? [
       { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
       { href: "/nova-dash", label: "Dashboard", icon: <MdInsertChartOutlined style={{ width: 22, height: 22 }} /> },
