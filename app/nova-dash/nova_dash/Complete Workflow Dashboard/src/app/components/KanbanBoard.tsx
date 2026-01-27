@@ -18,6 +18,8 @@ import { Input } from '@/app/_components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
 import { FaSearch } from 'react-icons/fa';
 import { CardDialog } from './CardDialog';
+import { useRef } from 'react';
+
 
 export interface KanbanCard {
   id: string;
@@ -25,7 +27,7 @@ export interface KanbanCard {
   description: string;
   assignee: string;
   status?: string
-  timer: number; 
+  timer: number;
   comments: Comment[];
   attachments: Attachment[];
   observations: string;
@@ -34,7 +36,7 @@ export interface KanbanCard {
   createdAt: Date;
   updatedAt: Date;
   statusStartedAt?: string | null;
-  service?: string; 
+  service?: string;
   type?: string;
   isProcess: boolean;
   cpf?: string;
@@ -250,9 +252,13 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
   //   }
   // }
 
+  const ref = useRef<HTMLDivElement>(null);
+
+  drag(ref);
+
   return (
     <div
-      ref={drag}
+      ref={ref}
       style={{ opacity: isDragging ? 0.5 : 1 }}
       className="cursor-move"
     >
@@ -357,6 +363,8 @@ interface DroppableColumnProps {
 }
 
 const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCardClick, onQuickAction, isCollapsed, toggleCollapse }) => {
+  const ref = useRef<HTMLDivElement>(null);
+
   const [{ isDragging }, drop] = useDrop(() => ({
     accept: 'CARD',
     drop: (item: { cardId: string; sourceColumnId: string }) => {
@@ -371,10 +379,11 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCar
   const bgColor = isDragging ? '#eff6ff' : service?.color || '#f0f0f0';
   const borderColor = service?.border || '#d1d5db';
 
+  drop(ref);
   if (isCollapsed) {
     return (
       <div
-        ref={drop}
+        ref={ref}
         style={{ backgroundColor: bgColor, border: `2px solid ${isDragging ? '#93c5fd' : borderColor}` }}
         className={`flex-shrink-0 w-12 rounded-lg p-1 ${isDragging ? 'border-blue-300' : ''}`}
       >
@@ -390,8 +399,8 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCar
 
   return (
     <div
-      ref={drop}
-      style={{opacity: isDragging ? 0.5 : 1  }}
+      ref={ref}
+      style={{ opacity: isDragging ? 0.5 : 1 }}
       className={`flex-shrink-0 w-80 rounded-lg p-3 ${isDragging ? 'border-2 border-blue-300' : 'border'}`}
     >
       <div className="flex items-center justify-between mb-3">
@@ -437,17 +446,17 @@ export const KanbanBoard: React.FC = () => {
 
         const users = Array.isArray(usersData)
           ? usersData.map((user) => ({
-              ...user,
-              status: user.status || user.type,
-              isProcess: false,
-            }))
+            ...user,
+            status: user.status || user.type,
+            isProcess: false,
+          }))
           : [];
         const processes = Array.isArray(processesData)
           ? processesData.map((process) => ({
-              ...process,
-              status: process.status || process.role,
-              isProcess: true,
-            }))
+            ...process,
+            status: process.status || process.role,
+            isProcess: true,
+          }))
           : [];
 
         const combinedData = [...users, ...processes];
@@ -550,26 +559,26 @@ export const KanbanBoard: React.FC = () => {
   };
 
   const handleCardUpdate = (updatedCard: KanbanCard) => {
-  const safeStatus = updatedCard.status ?? 'Filtro de Cartões'; // ou outro default que faça sentido
+    const safeStatus = updatedCard.status ?? 'Filtro de Cartões'; // ou outro default que faça sentido
 
-  const safeCard: KanbanCard = {
-    ...updatedCard,
-    status: safeStatus,
-    // Se precisar garantir outros campos obrigatórios do KanbanCard:
-    // title: updatedCard.title ?? '',
-    // description: updatedCard.description ?? '',
-    // etc.
+    const safeCard: KanbanCard = {
+      ...updatedCard,
+      status: safeStatus,
+      // Se precisar garantir outros campos obrigatórios do KanbanCard:
+      // title: updatedCard.title ?? '',
+      // description: updatedCard.description ?? '',
+      // etc.
+    };
+
+    setColumns((prevColumns) => {
+      return prevColumns.map(column => ({
+        ...column,
+        cards: column.cards.map(card =>
+          card.id === safeCard.id ? safeCard : card
+        )
+      }));
+    });
   };
-
-  setColumns((prevColumns) => {
-    return prevColumns.map(column => ({
-      ...column,
-      cards: column.cards.map(card =>
-        card.id === safeCard.id ? safeCard : card
-      )
-    }));
-  });
-};
 
   const toggleCollapse = (colId: string) => {
     setCollapsedColumns((prev) => ({
