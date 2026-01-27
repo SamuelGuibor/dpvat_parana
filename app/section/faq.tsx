@@ -224,20 +224,6 @@ const Faq = ({
               </div>
             </a>
 
-            {/* SITE */}
-            <a
-              href="https://segurosparana.com.br"
-              target="_blank"
-              className="flex items-center gap-4 bg-accent p-4 rounded-xl hover:bg-accent/80 transition"
-            >
-              <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
-                <span className="text-orange-500 text-2xl"><LuGlobe /></span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-semibold">Site</span>
-                <span className="text-muted-foreground font-bold">segurosparana.com.br</span>
-              </div>
-            </a>
 
           </div>
           </section>
