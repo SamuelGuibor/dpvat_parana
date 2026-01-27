@@ -70,9 +70,7 @@ export function Contact() {
       setTimeout(() => {
         window.location.reload();
       }, 500);
-    } else if (state.message) {
-      toast.error("Erro ao enviar Contato");
-    }
+    } 
   }, [state]);
   return (
     <section id="contato" className="py-20 bg-gray-50">
