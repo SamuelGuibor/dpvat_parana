@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
-import { KanbanBoard } from './components/KanbanBoard';
+// import { KanbanBoard } from './components/KanbanBoard';
 import { StrategicDashboard } from './components/StrategicDashboard';
 import { LayoutDashboard, Trello, Settings } from 'lucide-react';
 import { Button } from './components/ui/button';
@@ -57,9 +57,9 @@ export default function App() {
             <StrategicDashboard />
           </TabsContent>
 
-          <TabsContent value="kanban" className="m-0">
+          {/* <TabsContent value="kanban" className="m-0">
             <KanbanBoard />
-          </TabsContent>
+          </TabsContent> */}
         </Tabs>
       </main>
 
