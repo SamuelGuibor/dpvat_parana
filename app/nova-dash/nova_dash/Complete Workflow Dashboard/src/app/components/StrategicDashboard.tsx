@@ -47,7 +47,9 @@ export const StrategicDashboard: React.FC = () => {
 
   useEffect(() => {
     async function loadMonthly() {
-      const res = await fetch('/api/botconversa/monthly');
+      const res = await fetch('/api/botconversa/monthly', {
+        cache: 'no-store',
+      });
       const data = await res.json();
       setMonthlyData(data);
       setLoading(false);
@@ -59,7 +61,9 @@ export const StrategicDashboard: React.FC = () => {
   useEffect(() => {
     async function loadCounts() {
       try {
-        const res = await fetch('/api/botconversa/counts');
+        const res = await fetch('/api/botconversa/counts', {
+          cache: 'no-store',
+        });
         const data = await res.json();
         setCounts(data);
       } finally {
@@ -296,29 +300,29 @@ export const StrategicDashboard: React.FC = () => {
                 <CardDescription>Visão geral do pipeline atual</CardDescription>
               </CardHeader>
               <div className="absolute space-y-1 text-sm right-10 pt-2">
-                  <div className="flex items-center gap-2">
-                    <FaSquare className="w-3 h-3 text-[#f59e0b]" />
-                    <span>Iniciado | Não Responde</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <FaSquare className="w-3 h-3 text-[#3b82f6]" />
-                    <span>Em honorário | Em conversa</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <FaSquare className="w-3 h-3 text-[#ef4444]" />
-                    <span>Não Qualificado | Não contratado</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <FaSquare className="w-3 h-3 text-[#10b981]" />
-                    <span>Contratado</span>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <FaSquare className="w-3 h-3 text-[#f59e0b]" />
+                  <span>Iniciado | Não Responde</span>
                 </div>
 
+                <div className="flex items-center gap-2">
+                  <FaSquare className="w-3 h-3 text-[#3b82f6]" />
+                  <span>Em honorário | Em conversa</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <FaSquare className="w-3 h-3 text-[#ef4444]" />
+                  <span>Não Qualificado | Não contratado</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <FaSquare className="w-3 h-3 text-[#10b981]" />
+                  <span>Contratado</span>
+                </div>
+              </div>
+
               <CardContent>
-                
+
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
