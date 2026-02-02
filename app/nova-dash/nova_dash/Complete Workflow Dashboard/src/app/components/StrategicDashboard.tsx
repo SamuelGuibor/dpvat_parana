@@ -46,34 +46,26 @@ export const StrategicDashboard: React.FC = () => {
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
 
   useEffect(() => {
-    async function loadMonthly() {
-      const res = await fetch('/api/botconversa/monthly', {
-        cache: 'no-store',
-      });
-      const data = await res.json();
-      setMonthlyData(data);
-      setLoading(false);
-    }
-
-    loadMonthly();
-  }, []);
-
-  useEffect(() => {
-    async function loadCounts() {
+    async function loadAll() {
       try {
-        const res = await fetch('/api/botconversa/counts', {
-          cache: 'no-store',
-        });
-        const data = await res.json();
-        setCounts(data);
+        const [countsRes, monthRes] = await Promise.all([
+          fetch('/api/botconversa/counts', { cache: 'no-store' }),
+          fetch('/api/botconversa/monthly', { cache: 'no-store' }),
+        ]);
+
+        const countsData = await countsRes.json();
+        const monthData = await monthRes.json();
+
+        setCounts(countsData);
+        setMonthlyData(monthData);
+
       } finally {
         setLoading(false);
       }
     }
 
-    loadCounts();
+    loadAll();
   }, []);
-
   // Dados mockados para os gráficos
 
   const performanceData = [

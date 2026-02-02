@@ -24,12 +24,16 @@ type MonthlyItem = {
   emAndamento: number;
 };
 
+
+
 export async function getEventsByMonth(year = new Date().getFullYear()) {
+  const start = new Date(year, 0, 1);
+  const end = new Date(year, 11, 31, 23, 59, 59);
   const events = await db.botconversa.findMany({
     where: {
       createdAt: {
-        gte: new Date(`${year}-01-01`),
-        lte: new Date(`${year}-12-31`),
+        gte: start,
+        lte: end,
       },
     },
     select: {
