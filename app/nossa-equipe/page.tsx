@@ -134,14 +134,14 @@ const teamMembers = [
   },
   {
     id: 12,
-    name: 'Taynara Cristina Magalhães',
-    role: 'Auxiliar Administrativa',
-    specialty: 'Especialista na Aréa Administrativa',
+    name: 'Dra Taynara Cristina Magalhães',
+    role: 'Advogada',
+    specialty: 'Especialista na Aréa Jurídica',
     image: '/taynara.jpeg',
     email: 'taynara.cristina@segurosparana.com.br',
-    experience: '1 ano de experiência',
+    experience: '10 ano de experiência',
     education: 'Bacharel em Direito - Universidade Santa Cruz',
-    bio: 'Atendimento humanizado e dedicado aos clientes.',
+    bio: 'Especialista na Aréa Jurídica',
   },
 ];
 
