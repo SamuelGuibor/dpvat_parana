@@ -30,7 +30,7 @@ const teamMembers = [
     image: '/nic.jpeg',
     email: 'nikolas.kosien@segurosparana.com.br',
     experience: '10 anos de experiência',
-    education: 'Bacharelado em Direito - UP',
+    education: 'Bacharelado em Direito - UP \n Bacharel em Relações Internacionais',
     bio: 'Especializada em Auxílio-Acidente e benefícios do INSS.',
   },
   {
