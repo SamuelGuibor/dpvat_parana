@@ -10,6 +10,7 @@ const EVENT_MAP: Record<string, StatusKey> = {
   em_conversa: 'emAndamento',
   em_honorario: 'emAndamento',
   aguardando: 'emAndamento',
+  enviou_documentos: 'emAndamento'
 };
 
 const MONTHS = [

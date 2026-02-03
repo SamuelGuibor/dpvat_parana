@@ -57,6 +57,17 @@ const teamMembers = [
   },
   {
     id: 5,
+    name: 'Samuel Henrique Guibor',
+    role: 'Desenvolvedor Full Stack',
+    specialty: 'Especialista na Aréa de Desenvolvimento de Software e Design de Website',
+    image: '/samu.jpeg',
+    email: 'mucaguibor@gmail.com',
+    experience: '2 anos de experiência',
+    education: 'Tecnólogo em Análise e Desenvolvimento de Sistemas',
+    bio: 'Desenvolvedor Front end | Back end',
+  },
+  {
+    id: 6,
     name: 'Lincoln Gustavo Marcondes Silva',
     role: 'Auxiliar Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
@@ -67,7 +78,7 @@ const teamMembers = [
     bio: 'Atendimento humanizado e dedicado aos clientes.',
   },
   {
-    id: 6,
+    id: 7,
     name: 'Vittor Augusto Ferraz',
     role: 'Auxiliar Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
@@ -78,7 +89,7 @@ const teamMembers = [
     bio: 'Atendimento humanizado e dedicado aos clientes.',
   },
   {
-    id: 7,
+    id: 8,
     name: 'Kauan De Lima Fernandes',
     role: 'Auxiliar Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
@@ -89,7 +100,7 @@ const teamMembers = [
     bio: 'Atendimento humanizado e dedicado aos clientes.',
   },
   {
-    id: 8,
+    id: 9,
     name: 'Eduardo Camargo Martinez',
     role: 'Auxiliar Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
@@ -100,15 +111,37 @@ const teamMembers = [
     bio: 'Gestão de Projetos',
   },
   {
-    id: 9,
+    id: 10,
     name: 'Matheus Kovalski De Lima Correa',
     role: 'Auxiliar Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
     image: '/ko.jpeg',
     email: 'matheus.kovalski@segurosparana.com.br',
-    experience: '1 anos de experiência',
+    experience: '1 ano de experiência',
     education: 'Bacharel em Relações Internacionais',
     bio: 'Especialista em Gestão de Projetos',
+  },
+  {
+    id: 11,
+    name: 'Maria Fernanda Alves Jager',
+    role: 'Auxiliar Administrativa',
+    specialty: 'Especialista na Aréa Administrativa',
+    image: '/maria.jpeg',
+    email: 'maria.fernanda@segurosparana.com.br',
+    experience: '1 ano de experiência',
+    education: 'Especialista em Tele Atendimento',
+    bio: 'Atendimento humanizado e dedicado aos clientes.',
+  },
+  {
+    id: 12,
+    name: 'Taynara Cristina Magalhães',
+    role: 'Auxiliar Administrativa',
+    specialty: 'Especialista na Aréa Administrativa',
+    image: '/taynara.jpeg',
+    email: 'taynara.cristina@segurosparana.com.br',
+    experience: '1 ano de experiência',
+    education: 'Bacharel em Direito - Universidade Santa Cruz',
+    bio: 'Atendimento humanizado e dedicado aos clientes.',
   },
 ];
 
@@ -120,7 +153,7 @@ function TeamMemberCard({ member }: TeamMemberCardProps) {
   const [isFlipped, setIsFlipped] = useState(false);
 
   return (
-    <div 
+    <div
       className="relative h-[640px] cursor-pointer perspective group"
       onMouseEnter={() => setIsFlipped(true)}
       onMouseLeave={() => setIsFlipped(false)}
@@ -132,7 +165,7 @@ function TeamMemberCard({ member }: TeamMemberCardProps) {
             <div className="relative h-[450px] overflow-hidden">
               <Image
                 width={500}
-                height={500} 
+                height={500}
                 src={member.image}
                 alt={member.name}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
@@ -163,7 +196,7 @@ function TeamMemberCard({ member }: TeamMemberCardProps) {
           <div className="bg-gradient-to-br from-gray-900 to-gray-900 rounded-lg shadow-lg h-full p-6 text-white flex flex-col">
             <h3 className="text-2xl mb-2">{member.name}</h3>
             <p className="text-blue-200 mb-4">{member.role}</p>
-            
+
             <div className="space-y-3 mb-4 flex-1">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -172,14 +205,14 @@ function TeamMemberCard({ member }: TeamMemberCardProps) {
                 </div>
                 <p className="text-sm text-blue-100 ml-6">{member.education}</p>
               </div>
-              
+
               <div>
                 <p className="text-sm text-blue-100 leading-relaxed">{member.bio}</p>
               </div>
             </div>
 
             <div className="space-y-2 pt-4 border-t border-blue-500">
-              <a 
+              <a
                 href={`mailto:${member.email}`}
                 className="flex items-center gap-2 text-sm hover:text-blue-200 transition-colors"
               >
@@ -197,84 +230,84 @@ function TeamMemberCard({ member }: TeamMemberCardProps) {
 export default function TeamPage() {
   return (
     <>
-    <Header />
-    <div className="min-h-screen bg-gray-50">
-      {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white py-14 overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400 rounded-full blur-3xl"></div>
+      <Header />
+      <div className="min-h-screen bg-gray-50">
+        {/* Hero Section */}
+        <div className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white py-14 overflow-hidden">
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400 rounded-full blur-3xl"></div>
+          </div>
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h1 className="text-4xl lg:text-5xl mb-4">Nossa Equipe</h1>
+            <p className="text-xl text-blue-100 max-w-3xl mx-auto mb-8">
+              Profissionais dedicados e experientes, prontos para defender seus direitos
+            </p>
+          </div>
         </div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h1 className="text-4xl lg:text-5xl mb-4">Nossa Equipe</h1>
-          <p className="text-xl text-blue-100 max-w-3xl mx-auto mb-8">
-            Profissionais dedicados e experientes, prontos para defender seus direitos
-          </p>
-        </div>
-      </div>
 
-      {/* Team Grid */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {teamMembers.map((member) => (
-            <TeamMemberCard key={member.id} member={member} />
-          ))}
+        {/* Team Grid */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {teamMembers.map((member) => (
+              <TeamMemberCard key={member.id} member={member} />
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Values Section */}
-      <div className="bg-white py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl text-center text-gray-900 mb-12">Nossos Valores</h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center p-6">
-              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Award className="w-8 h-8 text-blue-600" />
+        {/* Values Section */}
+        <div className="bg-white py-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 className="text-3xl text-center text-gray-900 mb-12">Nossos Valores</h2>
+            <div className="grid md:grid-cols-3 gap-8">
+              <div className="text-center p-6">
+                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Award className="w-8 h-8 text-blue-600" />
+                </div>
+                <h3 className="text-xl text-gray-900 mb-3">Excelência</h3>
+                <p className="text-gray-600">
+                  Comprometimento com a qualidade e resultados superiores em cada caso
+                </p>
               </div>
-              <h3 className="text-xl text-gray-900 mb-3">Excelência</h3>
-              <p className="text-gray-600">
-                Comprometimento com a qualidade e resultados superiores em cada caso
-              </p>
-            </div>
-            <div className="text-center p-6">
-              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Briefcase className="w-8 h-8 text-blue-600" />
+              <div className="text-center p-6">
+                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Briefcase className="w-8 h-8 text-blue-600" />
+                </div>
+                <h3 className="text-xl text-gray-900 mb-3">Profissionalismo</h3>
+                <p className="text-gray-600">
+                  Atuação ética e transparente, sempre dentro dos mais altos padrões
+                </p>
               </div>
-              <h3 className="text-xl text-gray-900 mb-3">Profissionalismo</h3>
-              <p className="text-gray-600">
-                Atuação ética e transparente, sempre dentro dos mais altos padrões
-              </p>
-            </div>
-            <div className="text-center p-6">
-              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <GraduationCap className="w-8 h-8 text-blue-600" />
+              <div className="text-center p-6">
+                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <GraduationCap className="w-8 h-8 text-blue-600" />
+                </div>
+                <h3 className="text-xl text-gray-900 mb-3">Atualização</h3>
+                <p className="text-gray-600">
+                  Estudo constante das mudanças legislativas e jurisprudenciais
+                </p>
               </div>
-              <h3 className="text-xl text-gray-900 mb-3">Atualização</h3>
-              <p className="text-gray-600">
-                Estudo constante das mudanças legislativas e jurisprudenciais
-              </p>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* CTA Section */}
-      <div className="bg-gradient-to-br from-blue-900 to-blue-900 py-16">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
-          <h2 className="text-3xl mb-4">Precisa de Assistência Jurídica?</h2>
-          <p className="text-xl text-blue-100 mb-8">
-            Nossa equipe está pronta para analisar seu caso e oferecer a melhor solução
-          </p>
-          <a 
-            href="/#contato"
-            className="inline-block bg-white text-blue-900 px-8 py-4 rounded-lg hover:bg-blue-50 transition-colors"
-          >
-            Agende uma Consulta Gratuita
-          </a>
+        {/* CTA Section */}
+        <div className="bg-gradient-to-br from-blue-900 to-blue-900 py-16">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
+            <h2 className="text-3xl mb-4">Precisa de Assistência Jurídica?</h2>
+            <p className="text-xl text-blue-100 mb-8">
+              Nossa equipe está pronta para analisar seu caso e oferecer a melhor solução
+            </p>
+            <a
+              href="/#contato"
+              className="inline-block bg-white text-blue-900 px-8 py-4 rounded-lg hover:bg-blue-50 transition-colors"
+            >
+              Agende uma Consulta Gratuita
+            </a>
+          </div>
         </div>
       </div>
-    </div>
-    <Footer />
+      <Footer />
     </>
   );
 }

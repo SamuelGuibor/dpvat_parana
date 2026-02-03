@@ -17,6 +17,7 @@ const STAGES = [
     'iniciado',
     'em_conversa',
     'em_honorario',
+    'enviou_documentos',
     'aguardando',
     'nao_contratado',
     'nao_qualificado',

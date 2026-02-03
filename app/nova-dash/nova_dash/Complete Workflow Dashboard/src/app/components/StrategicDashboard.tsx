@@ -29,6 +29,7 @@ import { LuAlignHorizontalJustifyStart } from "react-icons/lu";
 import { count } from 'console';
 import { FaSquare } from "react-icons/fa";
 import { MiniKanban } from './minikanban';
+import { IoDocuments } from "react-icons/io5";
 
 type Counts = {
   contratado?: number;
@@ -38,6 +39,7 @@ type Counts = {
   aguardando?: number;
   nao_contratado?: number;
   nao_qualificado?: number;
+  enviou_documentos?: number
 };
 
 export const StrategicDashboard: React.FC = () => {
@@ -78,8 +80,8 @@ export const StrategicDashboard: React.FC = () => {
   ];
 
   const soma_indeferidos = (counts.nao_contratado ?? 0) + (counts.nao_qualificado ?? 0);
-  const soma_analise = (counts.em_conversa ?? 0) + (counts.em_honorario ?? 0);
-  const soma_aguardando = (counts.aguardando ?? 0) + (counts.iniciado ?? 0)
+  const soma_analise = (counts.em_conversa ?? 0) + (counts.em_honorario ?? 0) + (counts.enviou_documentos ?? 0)
+  const soma_aguardando = (counts.aguardando ?? 0) + (counts.iniciado ?? 0) 
 
   const statusDistribution = [
     { name: 'Aprovados', value: counts.contratado ?? 0, color: '#10b981' },
@@ -182,6 +184,22 @@ export const StrategicDashboard: React.FC = () => {
             ) : (
               <div className="text-3xl font-bold text-blue-600">
                 {counts.em_honorario ?? 0}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-md">Enviou Documentos</CardTitle>
+            <IoDocuments className="text-blue-600" size={30} />
+          </CardHeader>
+          <CardContent className="h-[60px] flex items-center justify-center">
+            {loading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            ) : (
+              <div className="text-3xl font-bold text-blue-600">
+                {counts.enviou_documentos ?? 0}
               </div>
             )}
           </CardContent>
@@ -299,7 +317,7 @@ export const StrategicDashboard: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                   <FaSquare className="w-3 h-3 text-[#3b82f6]" />
-                  <span>Em honorário | Em conversa</span>
+                  <span>Em honorário | Em conversa | Envio Documentos</span>
                 </div>
 
                 <div className="flex items-center gap-2">
