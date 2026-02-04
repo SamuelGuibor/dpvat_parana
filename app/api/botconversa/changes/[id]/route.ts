@@ -1,6 +1,9 @@
 import { db } from '@/app/_lib/prisma';
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
+
 interface Params {
   params: {
     id: string;
@@ -27,5 +30,9 @@ export async function DELETE(_: Request, { params }: Params) {
     },
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true }, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    },
+  });
 }

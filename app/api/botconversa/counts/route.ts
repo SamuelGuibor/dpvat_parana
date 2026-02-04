@@ -4,5 +4,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const counts = await getEventsCount();
-  return NextResponse.json(counts);
+  return NextResponse.json(counts, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    },
+  });
 }

@@ -29,13 +29,21 @@ export const MiniKanban: React.FC = () => {
     const [items, setItems] = useState<KanbanItem[]>([]);
 
     async function fetchData() {
-        const res = await fetch('/api/botconversa/get-kanban', {
-            cache: 'no-store',
-        });
-        const data = await res.json();
-        console.log(data)
+        try {
+            const res = await fetch('/api/botconversa/get-kanban', {
+                cache: 'no-store',
+            });
 
-        setItems(data);
+            if (!res.ok) {
+                throw new Error('Erro no GET');
+            }
+
+            const data = await res.json();
+            setItems(data);
+
+        } catch (err) {
+            console.error('Erro Kanban:', err);
+        }
     }
 
     useEffect(() => {
