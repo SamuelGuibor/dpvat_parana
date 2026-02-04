@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -12,28 +14,28 @@ import { Badge } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src
 import { StrategicDashboard } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/StrategicDashboard';
 import Team from '../_components/team_dash';
 
-import { NotificationDropdown } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/box';
-import { DbNotification } from '@/app/_types/notifications';
+// import { NotificationDropdown } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/box';
+// import { DbNotification } from '@/app/_types/notifications';
 import Link from 'next/link';
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<DbNotification[]>([]);
+  // const [notifications, setNotifications] = useState<DbNotification[]>([]);
 
-  useEffect(() => {
-  async function load() {
-    const res = await fetch('/api/notification', {
-      cache: 'no-store',
-    });
-    const data = await res.json();
-    setNotifications(data);
-  }
+//   useEffect(() => {
+//   async function load() {
+//     const res = await fetch('/api/notification', {
+//       cache: 'no-store',
+//     });
+//     const data = await res.json();
+//     setNotifications(data);
+//   }
 
-  load();
-  const interval = setInterval(load, 10000);
-  return () => clearInterval(interval);
-}, []);
+//   load();
+//   const interval = setInterval(load, 10000);
+//   return () => clearInterval(interval);
+// }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -54,7 +56,7 @@ export default function Page() {
               </Button>
 
               <Team open={open} onClose={() => setOpen(false)} />
-              <NotificationDropdown notifications={notifications} />
+              {/* <NotificationDropdown notifications={notifications} /> */}
             </div>
           </div>
         </div>

@@ -29,7 +29,9 @@ export const MiniKanban: React.FC = () => {
     const [items, setItems] = useState<KanbanItem[]>([]);
 
     async function fetchData() {
-        const res = await fetch('/api/botconversa/get-kanban');
+        const res = await fetch('/api/botconversa/get-kanban', {
+            cache: 'no-store',
+        });
         const data = await res.json();
         console.log(data)
 
@@ -50,6 +52,7 @@ export const MiniKanban: React.FC = () => {
             body: JSON.stringify({
                 evento: newStatus,
             }),
+            cache: 'no-store',
         });
 
         fetchData();
