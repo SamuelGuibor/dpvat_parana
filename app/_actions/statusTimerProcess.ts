@@ -1,7 +1,9 @@
 // app/_actions/statusTimer.ts
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { db } from "../_lib/prisma";
+
 
 export async function updateProcessRole({ userId, newRole }: { userId: string; newRole: string }) {
   try {
@@ -12,6 +14,7 @@ export async function updateProcessRole({ userId, newRole }: { userId: string; n
         statusStartedAt: new Date(),
       },
     });
+    revalidatePath('/nova-dash')
 
     return {
       id: updatedUser.id,
@@ -22,4 +25,5 @@ export async function updateProcessRole({ userId, newRole }: { userId: string; n
     console.error("Erro ao atualizar role:", error);
     throw new Error("Não foi possível atualizar o role do usuário.");
   }
+
 }

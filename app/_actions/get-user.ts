@@ -6,6 +6,7 @@ import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
 import { format } from "date-fns";
+import { unstable_noStore as noStore } from "next/cache";
 
 interface UserData {
   id: string;
@@ -44,6 +45,7 @@ export async function getUsers(
   fields: "basic" | "full" = "basic",
   userId?: string
 ): Promise<UserData[] | UserData | null> {
+  noStore();
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {

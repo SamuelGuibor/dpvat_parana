@@ -4,19 +4,20 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Users } from 'lucide-react';
+import { LayoutDashboard, Trello, Users } from 'lucide-react';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/ui/tabs';
-import { Button } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/ui/button';
-import { Badge } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
+import { Button } from '@/app/_components/ui/button';
+import { Badge } from '@/app/_components/ui/badge';
 
-// import { KanbanBoard } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/KanbanBoard';
-import { StrategicDashboard } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/StrategicDashboard';
+import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
+import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
 import Team from '../_components/team_dash';
 
 // import { NotificationDropdown } from '@/app/nova-dash/nova_dash/Complete Workflow Dashboard/src/app/components/box';
 // import { DbNotification } from '@/app/_types/notifications';
 import Link from 'next/link';
+export const dynamic = "force-dynamic";
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -67,10 +68,10 @@ export default function Page() {
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard Estratégico
             </TabsTrigger>
-            {/* <TabsTrigger value="kanban">
+            <TabsTrigger value="kanban">
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
-            </TabsTrigger> */}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
@@ -80,9 +81,9 @@ export default function Page() {
           <TabsContent value="dashboard">
             <StrategicDashboard />
           </TabsContent>
-          {/* <TabsContent value="kanban">
+          <TabsContent value="kanban">
             <KanbanBoard />
-          </TabsContent> */}
+          </TabsContent>
         </Tabs>
       </main>
 

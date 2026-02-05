@@ -2,6 +2,7 @@
 "use server";
 
 import { db } from "../_lib/prisma";
+import { revalidatePath } from "next/cache";
 
 export async function updateUserRole({ userId, newRole }: { userId: string; newRole: string }) {
   try {
@@ -12,6 +13,8 @@ export async function updateUserRole({ userId, newRole }: { userId: string; newR
         statusStartedAt: new Date(),
       },
     });
+
+    revalidatePath('/nova-dash')
 
     return {
       id: updatedUser.id,
