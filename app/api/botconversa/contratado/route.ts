@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
             name: nome,
             email: `inserir_email-${nome}@gmail.com`,
             telefone,
+            role: 'Gerar Procuração Automática',
             password: 'segurosparana1',
           },
         });
