@@ -3,6 +3,9 @@ import React, { useState } from 'react';
 import { Badge } from '@/app/_components/ui/badge';
 import { Calendar, Phone, User, Clock } from 'lucide-react';
 import { useEffect } from 'react';
+import { toast } from "sonner";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../_components/ui/dialog';
+import { Button } from '../_components/ui/button';
 
 interface KanbanItem {
     id: string;
@@ -27,6 +30,9 @@ const STAGES = [
 
 export const MiniKanban: React.FC = () => {
     const [items, setItems] = useState<KanbanItem[]>([]);
+    const [openDelete, setOpenDelete] = useState(false);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+
 
     async function fetchData() {
         try {
@@ -64,6 +70,26 @@ export const MiniKanban: React.FC = () => {
         });
 
         fetchData();
+    }
+
+    async function deleteItem(id: string) {
+        try {
+            const res = await fetch(`/api/botconversa/changes/${id}`, {
+                method: "DELETE",
+                cache: "no-store",
+            });
+
+            if (!res.ok) {
+                throw new Error("Erro ao deletar");
+            }
+
+            toast.success("Item removido com sucesso 🗑️");
+
+            fetchData(); // Recarrega lista
+        } catch (err) {
+            console.error(err);
+            toast.error("Erro ao remover ❌");
+        }
     }
 
     function formatDate(date: string) {
@@ -138,13 +164,30 @@ export const MiniKanban: React.FC = () => {
                                                     <Phone className="w-3 h-3" />
                                                     <span>{item.telefone}</span>
                                                 </div>
-                                                <button className="text-[9px] bg-green-600 text-white px-2 py-0.5 rounded-full hover:bg-green-700 transition-colors">
-                                                    Ligar
+                                                <button
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(item.telefone);
+
+                                                        toast.success("Copiado para a área de transferência ✅");
+                                                    }}
+                                                    className="text-[9px] bg-green-600 text-white px-2 py-0.5 rounded-full hover:bg-green-700 transition-colors"
+                                                >
+                                                    Copiar
                                                 </button>
                                             </div>
                                         </div>
 
                                         <div className="flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedId(item.id);
+                                                    setOpenDelete(true);
+                                                }}
+                                                className="py-1.5 px-2 text-[10px] font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 active:scale-95 transition-all"
+                                            >
+                                                🗑 Excluir
+                                            </button>
+
                                             {STAGES.indexOf(stage) > 0 && (
                                                 <button
                                                     onClick={() => moveItem(item.id, STAGES[STAGES.indexOf(stage) - 1])}
@@ -174,6 +217,42 @@ export const MiniKanban: React.FC = () => {
                     ))}
                 </div>
             </div>
+            <Dialog open={openDelete} onOpenChange={setOpenDelete}>
+                <DialogContent className="w-[60%] h-auto rounded-xl">
+                    <DialogHeader>
+                        <DialogTitle>Confirmar exclusão</DialogTitle>
+
+                        <DialogDescription>
+                            Tem certeza que deseja deletar? Essa ação é irreversível.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <DialogFooter className="flex flex-row gap-3">
+                        <DialogClose asChild>
+                            <Button variant="secondary" className="w-full">
+                                Voltar
+                            </Button>
+                        </DialogClose>
+
+                        <Button
+                            variant="destructive"
+                            className="w-full"
+                            onClick={async () => {
+                                if (selectedId) {
+                                    await deleteItem(selectedId);
+                                }
+
+                                setOpenDelete(false);
+                                setSelectedId(null);
+                            }}
+                        >
+                            Confirmar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
         </div>
+
     );
 };

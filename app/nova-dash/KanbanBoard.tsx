@@ -22,6 +22,20 @@ import { CreateNewCard } from '@/app/_components/create-newcard';
 import { differenceInDays, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { updateKanbanStatus } from '@/app/_actions/update-kanban';
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json())
+
+export function useComments({ userId, processId }: { userId?: string; processId?: string }) {
+  const params = new URLSearchParams();
+  if (userId) params.append('userId', userId);
+  if (processId) params.append('processId', processId);
+  const query = params.toString() ? `/api/comments?${params.toString()}` : '/api/comments';
+  return useSWR(query, fetcher, {
+    refreshInterval: 5000,
+    revalidateOnFocus: true,
+  });
+}
 
 export interface KanbanCard {
   id: string;

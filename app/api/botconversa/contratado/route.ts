@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       where: { telefone },
     });
 
+    // 👉 Se já existir no botconversa
     if (existing) {
       if (existing.evento !== evento) {
         await db.botconversa.update({
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, updated: true });
     }
 
+    // 👉 Se NÃO existir → cria botconversa
     await db.botconversa.create({
       data: {
         nome,
@@ -39,9 +41,35 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // 👉 REGRA: só cria usuário se evento = enviou_documentos
+    if (evento === 'enviou_documentos') {
+      const userExists = await db.user.findFirst({
+        where: {
+          telefone,
+        },
+      });
+
+      // 👉 Só cria se ainda não existir
+      if (!userExists) {
+        await db.user.create({
+          data: {
+            name: nome,
+            email: `inserir_email-${nome}@gmail.com`,
+            telefone,
+            password: 'segurosparana1',
+          },
+        });
+      }
+    }
+
     return NextResponse.json({ success: true, created: true });
+
   } catch (err) {
     console.error('Erro webhook BotConversa', err);
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+
+    return NextResponse.json(
+      { error: 'Erro interno' },
+      { status: 500 }
+    );
   }
 }

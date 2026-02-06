@@ -41,9 +41,9 @@ import useSWR from 'swr'
 import { createComment } from '@/app/_actions/comment-actions';
 import { Avatar, AvatarFallback } from '@/app/_components/ui/avatar';
 import { IoIosDocument } from "react-icons/io";
-import { useRouter } from 'next/navigation';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
+
 export function useComments({ userId, processId }: { userId?: string; processId?: string }) {
   const params = new URLSearchParams();
   if (userId) params.append('userId', userId);
@@ -54,6 +54,7 @@ export function useComments({ userId, processId }: { userId?: string; processId?
     revalidateOnFocus: true,
   });
 }
+
 interface ExtendedKanbanCard extends KanbanCard {
   id: string;
   cpf?: string;
