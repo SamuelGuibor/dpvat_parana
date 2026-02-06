@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 👉 REGRA: só cria usuário se evento = enviou_documentos
-    if (evento === 'enviou_documentos') {
+    if (evento === 'contratado') {
       const userExists = await db.user.findFirst({
         where: {
           telefone,

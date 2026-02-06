@@ -112,7 +112,7 @@ export default function Team({ open, onClose }: CardDialogProps) {
 
                                     <TableCell>
                                         <Select
-                                            
+                                            disabled
                                             value={member.role}
                                             onValueChange={(value) =>
                                                 handleRoleChange(member.id, value)
