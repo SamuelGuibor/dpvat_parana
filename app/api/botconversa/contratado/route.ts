@@ -4,9 +4,8 @@ import { db } from '@/app/_lib/prisma';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-
     const { nome, telefone, evento } = body;
-
+  console.log(nome, telefone, evento)
     if (!telefone || !evento) {
       return NextResponse.json(
         { error: 'Telefone e evento são obrigatórios' },
@@ -18,7 +17,6 @@ export async function POST(req: NextRequest) {
       where: { telefone },
     });
 
-    // 👉 Se já existir no botconversa
     if (existing) {
       if (existing.evento !== evento) {
         await db.botconversa.update({
@@ -32,7 +30,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, updated: true });
     }
 
-    // 👉 Se NÃO existir → cria botconversa
     await db.botconversa.create({
       data: {
         nome,
@@ -41,7 +38,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 👉 REGRA: só cria usuário se evento = enviou_documentos
     if (evento === 'contratado') {
       const userExists = await db.user.findFirst({
         where: {
@@ -49,7 +45,6 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 👉 Só cria se ainda não existir
       if (!userExists) {
         await db.user.create({
           data: {
