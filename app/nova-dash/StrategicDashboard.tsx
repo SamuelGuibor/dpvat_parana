@@ -151,7 +151,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold">{counts.iniciado ?? 0}</div>
+              <div className="text-6xl font-bold">{counts.iniciado ?? 0}</div>
             )}
           </CardContent>
         </Card>
@@ -166,7 +166,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-blue-600">
+              <div className="text-6xl font-bold text-blue-600">
                 {counts.em_conversa ?? 0}
               </div>
             )}
@@ -182,7 +182,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-blue-600">
+              <div className="text-6xl font-bold text-blue-600">
                 {counts.em_honorario ?? 0}
               </div>
             )}
@@ -191,14 +191,14 @@ export const StrategicDashboard: React.FC = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Enviou Documentos</CardTitle>
+            <CardTitle className="text-md">Enviada Lista Documentos</CardTitle>
             <IoDocuments className="text-blue-600" size={30} />
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-blue-600">
+              <div className="text-6xl font-bold text-blue-600">
                 {counts.enviou_documentos ?? 0}
               </div>
             )}
@@ -214,7 +214,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-orange-600">
+              <div className="text-6xl font-bold text-orange-600">
                 {counts.aguardando ?? 0}
               </div>
             )}
@@ -230,7 +230,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-red-600">
+              <div className="text-6xl font-bold text-red-600">
                 {counts.nao_contratado ?? 0}
               </div>
             )}
@@ -246,7 +246,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-[#8a0303]">
+              <div className="text-6xl font-bold text-[#8a0303]">
                 {counts.nao_qualificado ?? 0}
               </div>
             )}
@@ -262,7 +262,7 @@ export const StrategicDashboard: React.FC = () => {
             {loading ? (
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             ) : (
-              <div className="text-3xl font-bold text-green-600">
+              <div className="text-6xl font-bold text-green-600">
                 {counts.contratado ?? 0}
               </div>
             )}
