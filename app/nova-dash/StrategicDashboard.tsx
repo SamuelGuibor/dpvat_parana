@@ -70,6 +70,10 @@ export const StrategicDashboard: React.FC = () => {
   }, []);
   // Dados mockados para os gráficos
 
+  const currentMonthIndex = new Date().getMonth();
+  const contratadoMesAtual = monthlyData[currentMonthIndex]?.aprovados ?? 0;
+
+
   const performanceData = [
     { name: 'João Silva', processos: 89, taxa: 94, tempo: 3.2 },
     { name: 'Maria Santos', processos: 76, taxa: 97, tempo: 2.8 },
@@ -81,7 +85,7 @@ export const StrategicDashboard: React.FC = () => {
 
   const soma_indeferidos = (counts.nao_contratado ?? 0) + (counts.nao_qualificado ?? 0);
   const soma_analise = (counts.em_conversa ?? 0) + (counts.em_honorario ?? 0) + (counts.enviou_documentos ?? 0)
-  const soma_aguardando = (counts.aguardando ?? 0) + (counts.iniciado ?? 0) 
+  const soma_aguardando = (counts.aguardando ?? 0) + (counts.iniciado ?? 0)
 
   const statusDistribution = [
     { name: 'Aprovados', value: counts.contratado ?? 0, color: '#10b981' },
@@ -264,6 +268,22 @@ export const StrategicDashboard: React.FC = () => {
             ) : (
               <div className="text-6xl font-bold text-green-600">
                 {counts.contratado ?? 0}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-md">Contratado <span className='font-bold'>(Mês Atual)</span></CardTitle>
+            <FaPersonCircleCheck className="text-green-600" size={32} />
+          </CardHeader>
+          <CardContent className="h-[60px] flex items-center justify-center">
+            {loading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            ) : (
+              <div className="text-6xl font-bold text-green-600">
+                {contratadoMesAtual}
               </div>
             )}
           </CardContent>
