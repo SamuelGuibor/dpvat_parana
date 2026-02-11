@@ -5,12 +5,32 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { nome, telefone, evento } = body;
-  console.log(nome, telefone, evento)
+    console.log(nome, telefone, evento)
     if (!telefone || !evento) {
       return NextResponse.json(
         { error: 'Telefone e evento são obrigatórios' },
         { status: 400 }
       );
+    }
+
+    if (evento === 'contratado') {
+      const userExists = await db.user.findFirst({
+        where: {
+          telefone,
+        },
+      });
+
+      if (!userExists) {
+        await db.user.create({
+          data: {
+            name: nome,
+            email: `inserir_email-${nome}@gmail.com`,
+            telefone,
+            role: 'Gerar Procuração Automática',
+            password: 'segurosparana1',
+          },
+        });
+      }
     }
 
     const existing = await db.botconversa.findFirst({
@@ -37,26 +57,6 @@ export async function POST(req: NextRequest) {
         evento,
       },
     });
-
-    if (evento === 'contratado') {
-      const userExists = await db.user.findFirst({
-        where: {
-          telefone,
-        },
-      });
-
-      if (!userExists) {
-        await db.user.create({
-          data: {
-            name: nome,
-            email: `inserir_email-${nome}@gmail.com`,
-            telefone,
-            role: 'Gerar Procuração Automática',
-            password: 'segurosparana1',
-          },
-        });
-      }
-    }
 
     return NextResponse.json({ success: true, created: true });
 
