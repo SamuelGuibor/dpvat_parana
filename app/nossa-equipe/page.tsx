@@ -16,7 +16,7 @@ const teamMembers = [
     name: 'Thomaz Martinez',
     role: 'Sócio Fundador',
     specialty: 'Especialista em Direito Civil e Indenizações',
-    image: '/dr.jpeg',
+    image: '/drrr.jpeg',
     email: 'thomaz.martinez@segurosparana.com.br',
     experience: '19 anos de experiência',
     education: 'Bacharelado em Direito - UNIC',
