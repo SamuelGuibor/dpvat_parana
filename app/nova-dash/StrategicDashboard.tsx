@@ -28,7 +28,8 @@ import { FaPersonCircleCheck } from "react-icons/fa6";
 import { LuAlignHorizontalJustifyStart } from "react-icons/lu";
 import { count } from 'console';
 import { FaSquare } from "react-icons/fa";
-import { MiniKanban } from './minikanban';
+import { MiniKanban } from '@/app/nova-dash/minikanban'
+
 import { IoDocuments } from "react-icons/io5";
 
 type Counts = {
@@ -46,7 +47,20 @@ export const StrategicDashboard: React.FC = () => {
   const [counts, setCounts] = useState<Counts>({});
   const [loading, setLoading] = useState(true);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [kanbanItems, setKanbanItems] = useState([])
 
+useEffect(() => {
+  async function fetchData() {
+    const res = await fetch('/api/botconversa/get-kanban', {
+      cache: 'no-store'
+    })
+
+    const data = await res.json()
+    setKanbanItems(data)
+  }
+
+  fetchData()
+}, [])
   useEffect(() => {
     async function loadAll() {
       try {

@@ -4,7 +4,7 @@ import { Mulish } from "next/font/google";
 import AuthProvider from "./_providers/auth";
 import { Toaster } from "./_components/ui/sonner";
 import Script from "next/script";
-import { MixpanelProvider } from "./_providers/mixpanel-provider";
+// import { MixpanelProvider } from "./_providers/mixpanel-provider";
 import { NotificationsProvider } from "./store/provider";
 
 const mulish = Mulish({
@@ -125,7 +125,7 @@ export default function RootLayout({
       <body className={`${mulish.className} antialiased`}>
         <AuthProvider><NotificationsProvider>{children}</NotificationsProvider></AuthProvider>
         <Toaster />
-        <MixpanelProvider />
+        {/* <MixpanelProvider /> */}
         <script type="text/javascript" async
           src="https://d335luupugsy2.cloudfront.net/js/loader-scripts/549d8d30-be36-4f81-860f-9377b7717532-loader.js" >
         </script>

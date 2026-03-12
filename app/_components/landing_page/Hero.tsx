@@ -2,23 +2,23 @@
 import { ArrowRight } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Image from "next/image";
-import mixpanel from "@/app/_lib/mixpanel";
-import { useEffect } from 'react';
+// import mixpanel from "@/app/_lib/mixpanel";
+// import { useEffect } from 'react';
 
 export function Hero() {
     const { data: session } = useSession(); // Obter dados da sessão
     
     const consultProcessUrl = session?.user ? "/area-do-cliente" : "/login";
-    useEffect(() => {
-      if (!session?.user?.id) return;
+    // useEffect(() => {
+    //   if (!session?.user?.id) return;
 
-      mixpanel.identify(session.user.id);
+    //   // mixpanel.identify(session.user.id);
 
-      mixpanel.people.set({
-        $name: session.user.name,
-        $email: session.user.email,
-      });
-    }, [session]);
+    //   // mixpanel.people.set({
+    //   //   $name: session.user.name,
+    //   //   $email: session.user.email,
+    //   // });
+    // }, [session]);
 
   return (
     <section id="inicio" className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white">
