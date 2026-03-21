@@ -123,11 +123,11 @@ const teamMembers = [
   },
   {
     id: 11,
-    name: 'Maria Fernanda Alves Jager',
+    name: 'Isadora Martins Marcon',
     role: 'Auxiliar Administrativa',
     specialty: 'Especialista na Aréa Administrativa',
-    image: '/maria.jpeg',
-    email: 'maria.fernanda@segurosparana.com.br',
+    image: '/isa.jpeg',
+    email: 'isadora.martins@segurosparana.com.br',
     experience: '1 ano de experiência',
     education: 'Especialista em Tele Atendimento',
     bio: 'Atendimento humanizado e dedicado aos clientes.',
@@ -143,6 +143,17 @@ const teamMembers = [
     education: 'Bacharel em Direito - Universidade Santa Cruz',
     bio: 'Especialista na Aréa Jurídica',
   },
+  {
+    id: 13,
+    name: 'Emmanuelle Cavalcante Faria ',
+    role: 'Auxiliar Administrativa',
+    specialty: 'Especialista na Aréa Administrativa',
+    image: '/ema.jpeg',
+    email: 'emmanuelle.Cavalcante@segurosparana.com.br',
+    experience: '1 ano de experiência',
+    education: 'Especialista em Tele Atendimento',
+    bio: 'Atendimento humanizado e dedicado aos clientes.',
+  }
 ];
 
 interface TeamMemberCardProps {
