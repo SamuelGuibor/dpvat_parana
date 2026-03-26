@@ -4,6 +4,7 @@ import { Badge } from '@/app/_components/ui/badge';
 import { Calendar, Phone, User, Clock, Trash2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea, ScrollBar } from '@/app/_components/ui/scroll-area';
+import { FixedSizeList as List } from 'react-window';
 
 interface KanbanItem {
     id: string;
@@ -130,7 +131,11 @@ export const MiniKanban: React.FC = () => {
             const stageName = STAGES[STAGE_KEYS.indexOf(newStatus)];
             toast.success(`Movido para ${stageName}`);
 
-            fetchData();
+            setItems(prev =>
+                prev.map(item =>
+                    item.id === id ? { ...item, evento: newStatus } : item
+                )
+            );
 
         } catch (err) {
             console.error(err);
@@ -152,8 +157,7 @@ export const MiniKanban: React.FC = () => {
 
             toast.success("Item removido com sucesso 🗑️");
 
-            fetchData();
-
+            setItems(prev => prev.filter(item => item.id !== id));
         } catch (err) {
             console.error(err);
             toast.error("Erro ao remover ❌");
@@ -235,26 +239,32 @@ interface VirtualColumnProps {
 
 function VirtualColumn({ items, stageIndex, moveItem, deleteItem, copyPhone }: VirtualColumnProps) {
     if (items.length === 0) {
-        return (
-            <div className="flex-1 flex flex-col items-center justify-center py-12 border-2 border-dashed border-gray-300 rounded-xl bg-white/30">
-                <p className="text-xs text-gray-400 font-medium">Vazio</p>
-            </div>
-        );
+        return;
     }
 
     return (
-        <div className="flex flex-col gap-3 max-h-[700px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-            {items.map((item) => (
-                <KanbanCard
-                    key={item.id}
-                    item={item}
-                    stageIndex={stageIndex}
-                    moveItem={moveItem}
-                    deleteItem={deleteItem}
-                    copyPhone={copyPhone}
-                />
-            ))}
-        </div>
+        <List
+            height={700}
+            itemCount={items.length}
+            itemSize={250} // altura do card (ajuste fino)
+            width="100%"
+        >
+            {({ index, style }) => {
+                const item = items[index];
+
+                return (
+                    <div style={style}>
+                        <KanbanCard
+                            item={item}
+                            stageIndex={stageIndex}
+                            moveItem={moveItem}
+                            deleteItem={deleteItem}
+                            copyPhone={copyPhone}
+                        />
+                    </div>
+                );
+            }}
+        </List>
     );
 }
 

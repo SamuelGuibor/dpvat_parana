@@ -104,7 +104,7 @@ const teamMembers = [
     name: 'Eduardo Camargo Martinez',
     role: 'Auxiliar Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
-    image: '/edu.jpeg',
+    image: '/eduardo.jpeg',
     email: 'eduardo.martinez@segurosparana.com.br',
     experience: '5 anos de experiência',
     education: 'Bacharelado em Direito - UP',
