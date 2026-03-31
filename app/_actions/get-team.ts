@@ -18,17 +18,21 @@ export async function getAdmins() {
     select: {
       id: true,
       name: true,
+      email: true,
       role: true,
       fixed: true,
       roleFixed: true,
+      createdAt: true,
     },
   });
 
   return admins.map((user) => ({
     id: user.id,
     name: user.name || "Sem nome",
+    email: user.email || "",
     role: user.role,
     fixed: user.fixed ?? false,
     roleFixed: user.roleFixed || "",
+    createdAt: user.createdAt,
   }));
 }

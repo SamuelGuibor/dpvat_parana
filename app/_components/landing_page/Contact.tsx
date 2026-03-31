@@ -89,6 +89,7 @@ export function Contact() {
             <div className="bg-white p-8 rounded-lg shadow-md mb-8">
               <h3 className="text-2xl text-gray-900 mb-6">Envie uma Mensagem</h3>
               <form className="space-y-6" action={formAction} ref={formRef}>
+                <input type="text" name="company" style={{ display: 'none' }} />
                 <div>
                   <label htmlFor="name" className="block text-gray-700 mb-2">Nome Completo</label>
                   <input

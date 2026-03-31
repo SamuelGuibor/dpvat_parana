@@ -6,9 +6,21 @@ import { db } from "../_lib/prisma";
 
 export async function ContactUsers(prevState: any, formData: FormData) {
   try {
+
+    if (formData.get('company')) {
+      return { success: false, message: 'Spam detectado' };
+    }
+
     const name = formData.get('name') as string;
     const number = formData.get('number') as string;
-    const desc = formData.get('desc') as string | null;
+    
+    const desc = formData.get('desc') as '';
+
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+    if (urlRegex.test(desc)) {
+      return { success: false, message: 'Links não permitidos' };
+    }
 
     await db.contact.create({
       data: {

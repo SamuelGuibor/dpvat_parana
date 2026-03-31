@@ -31,6 +31,7 @@ import { FaSquare } from "react-icons/fa";
 import { MiniKanban } from '@/app/nova-dash/minikanban'
 
 import { IoDocuments } from "react-icons/io5";
+import { LeadsTable } from './form-leads';
 
 type Counts = {
   contratado?: number;
@@ -308,6 +309,7 @@ useEffect(() => {
       <Tabs defaultValue="analytics" className="space-y-4">
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="form-leads">Leads</TabsTrigger>
           {/* <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger> */}
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
@@ -447,76 +449,14 @@ useEffect(() => {
               </Card>
             ))}
           </div>
-        </TabsContent>
+        </TabsContent>*/}
 
-        <TabsContent value="leads" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Leads por Semana</CardTitle>
-                <CardDescription>Aquisição e conversão</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={leadsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="week" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Area type="monotone" dataKey="leads" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} name="Leads" />
-                    <Area type="monotone" dataKey="conversao" stroke="#10b981" fill="#10b981" fillOpacity={0.6} name="Conversões" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Funil de Conversão</CardTitle>
-                <CardDescription>Taxa de conversão de leads</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Leads Totais</span>
-                    <span className="font-semibold">165</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full" style={{ width: '100%' }} />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Qualificados</span>
-                    <span className="font-semibold">89 (54%)</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full" style={{ width: '54%' }} />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Convertidos</span>
-                    <span className="font-semibold">67 (41%)</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-green-600 h-2 rounded-full" style={{ width: '41%' }} />
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">Taxa de Conversão</span>
-                    <Badge className="bg-green-600">40.6%</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent> */}
+        <TabsContent value="form-leads" className="space-y-4">
+            <LeadsTable />
+            
+        
+        </TabsContent> 
 
         <TabsContent value="integrations" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -6,14 +6,16 @@ interface CreateUserProps {
   name: string;
   email: string;
   password: string;
+  role: string
 }
 
-export const createUser = async ({ name, email, password }: CreateUserProps) => {
+export const createUser = async ({ name, email, password, role }: CreateUserProps) => {
   const user = await db.user.create({
     data: {
       name,
       email,
       password, 
+      role
     },
   });
 

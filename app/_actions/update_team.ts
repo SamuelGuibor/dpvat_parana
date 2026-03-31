@@ -26,10 +26,10 @@ export async function UpdateRole(data: UpdateUserData) {
     throw new Error("Usuário da sessão não encontrado.");
   }
 
-  // 🚨 REGRA DE OURO
-  if (sessionUser.role !== "ADMIN++") {
-    throw new Error("Você não tem permissão para alterar cargos.");
-  }
+  // // 🚨 REGRA DE OURO
+  // if (sessionUser.role !== "ADMIN++") {
+  //   throw new Error("Você não tem permissão para alterar cargos.");
+  // }
 
   // 🔎 Usuário que será alterado
   const targetUser = await db.user.findUnique({
