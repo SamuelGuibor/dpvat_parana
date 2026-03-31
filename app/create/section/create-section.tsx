@@ -30,7 +30,8 @@ type Row = {
 const registerSchema = z.object({
   name: z.string().min(2, "Nome muito curto"),
   email: z.string().email("Email inválido"),
-  password: z.string().min(8, "A senha deve ter pelo menos 8 caractéres")
+  password: z.string().min(8, "A senha deve ter pelo menos 8 caractéres"),
+  role: z.string()
 })
 
 type FormSchema = z.infer<typeof registerSchema>
@@ -53,7 +54,8 @@ export default function CreateAccountForm() {
       await createUser({
         name: values.name,
         email: values.email,
-        password: values.password
+        password: values.password,
+        role: values.role
       })
       toast.success("Usuário cadastrado!");
       setTimeout(() => {
