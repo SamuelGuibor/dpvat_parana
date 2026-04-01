@@ -1,11 +1,16 @@
 import { Client, GatewayIntentBits } from "discord.js";
+import dotenv from "dotenv";
+import { startWorker } from "./worker.js";
 
-const client = new Client({
+dotenv.config(); 
+
+export const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`🤖 Bot online: ${client.user.tag}`);
+  startWorker();
 });
 
 client.login(process.env.DISCORD_TOKEN);

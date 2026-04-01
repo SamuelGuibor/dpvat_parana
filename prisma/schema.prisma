@@ -260,3 +260,21 @@ model Botconversa {
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
 }
+
+model Discord {
+  id           String   @id @default(cuid())
+  message      String
+  channelId    String
+  executeAt    DateTime
+  sent         Boolean  @default(false)
+
+  nome        String?
+  telefone    String?
+  evento      String?
+  hours       String?     
+  
+  @@map("discord")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime? @updatedAt
+}

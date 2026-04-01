@@ -4,7 +4,7 @@ import { db } from '@/app/_lib/prisma';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { nome, telefone, evento } = body;
+    const { nome, telefone, evento, equipe, hours, channel } = body;
     console.log(nome, telefone, evento)
     if (!telefone || !evento) {
       return NextResponse.json(
@@ -12,6 +12,26 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const delayHours = (hours || 0);
+
+    const executeAt = new Date(
+      Date.now() + delayHours * 60 * 60 * 1000
+    );
+
+    // const mensagemPersonalizada = `"${nome || 'Cliente'}" com o telefone "${telefone}", será notificada em "${delayHours}h" "@${equipe || 'equipe'}"`;
+
+    // Salva tudo que precisamos
+    await db.discord.create({
+      data: {
+        message: equipe,     
+        channelId: channel,
+        executeAt,
+        nome: nome || null,
+        telefone: telefone,                 // importante para buscar depois
+        hours: delayHours,
+      },
+    });
 
     if (evento === 'contratado') {
       const userExists = await db.user.findFirst({
