@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     const action = body?.action;
     const model_format = body.model
 
-    if (action?.type === "updateCard" && action.data?.listAfter) {
+    if (action?.type === "updateCard" && action.data.listAfter) {
         const card = action.data.card;
         const listAfter = action.data.listAfter.name;
 
