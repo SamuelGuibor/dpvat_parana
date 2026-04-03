@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     
 
     const hoursNumber = parseInt(hours, 10);
-    const executeAt = new Date(Date.now() + hoursNumber * 60 * 1000);
+    const executeAt = new Date(Date.now() + hoursNumber * 60 * 60 * 1000);
 
     const delayHours = (hours || 0);
 
