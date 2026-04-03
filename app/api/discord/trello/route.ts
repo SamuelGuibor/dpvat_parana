@@ -14,6 +14,16 @@ export async function POST(req: NextRequest) {
 
     const action = body?.action;
     const model_format = body.model
+    const actionId = action.id;
+
+    const processed = new Set();
+
+    if (processed.has(action.id)) {
+        console.log("⚠️ Evento duplicado ignorado");
+        return NextResponse.json({ ok: true });
+    }
+
+    processed.add(action.id);
 
     if (action?.type === "updateCard" && action.data.listAfter) {
         const card = action.data.card;
