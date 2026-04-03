@@ -267,6 +267,7 @@ model Discord {
   channelId    String
   executeAt    DateTime
   sent         Boolean  @default(false)
+  firstSent    Boolean   @default(false)
 
   nome        String?
   telefone    String?

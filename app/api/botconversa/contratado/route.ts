@@ -12,26 +12,33 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    
+
+    const hoursNumber = parseInt(hours, 10);
+    const executeAt = new Date(Date.now() + hoursNumber * 60 * 1000);
 
     const delayHours = (hours || 0);
 
-    const executeAt = new Date(
-      Date.now() + delayHours * 60 * 60 * 1000
-    );
+    // const notifyAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+    // ou em minutos para testar primeiro:
 
     // const mensagemPersonalizada = `"${nome || 'Cliente'}" com o telefone "${telefone}", será notificada em "${delayHours}h" "@${equipe || 'equipe'}"`;
 
     // Salva tudo que precisamos
     await db.discord.create({
       data: {
-        message: equipe,     
+        message: equipe,
         channelId: channel,
-        executeAt,
+        executeAt: executeAt,
         nome: nome || null,
-        telefone: telefone,                 // importante para buscar depois
+        telefone: telefone,
         hours: delayHours,
       },
     });
+
+    console.log(`✅ Notificação agendada para ${hoursNumber}h no futuro (executeAt: ${executeAt})`);
+
+    
 
     if (evento === 'contratado') {
       const userExists = await db.user.findFirst({
