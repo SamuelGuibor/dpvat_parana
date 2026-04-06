@@ -14,16 +14,15 @@ export async function POST(req: NextRequest) {
 
     const action = body?.action;
     const model_format = body.model
-    const actionId = action.id;
 
     const processed = new Set();
 
-    if (processed.has(action.id)) {
+    if (processed.has(!action.data.old.idList)) {
         console.log("⚠️ Evento duplicado ignorado");
         return NextResponse.json({ ok: true });
     }
 
-    processed.add(action.id);
+    processed.add(!action.data.old.idList);
 
     if (action?.type === "updateCard" && action.data.listAfter) {
         const card = action.data.card;
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest) {
         }
 
         else if (listAfter === "FAZER ROTEIRO PREV") {
-            await fetch(`${process.env.DISCORD_WEBHOOK_URL}?thread_id=1489626851516219492`, {
+            await fetch(`${process.env.DISCORD_WEBHOOK_URL}?thread_id=1490716935225348156`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
