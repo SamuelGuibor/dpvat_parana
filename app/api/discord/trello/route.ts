@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         }
 
         else if (listAfter === "FAZER ROTEIRO PREV") {
-            await fetch(`${process.env.DISCORD_WEBHOOK_URL}?thread_id=1490716935225348156`, {
+            await fetch(`${process.env.DISCORD_WEBHOOK_URL_JURIDICO}?thread_id=1490716935225348156`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
