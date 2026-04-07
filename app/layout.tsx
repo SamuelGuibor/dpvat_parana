@@ -1,3 +1,5 @@
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable jsx-a11y/alt-text */
 import type { Metadata } from "next";
 import "./globals.css";
 import { Mulish } from "next/font/google";
@@ -26,7 +28,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  
+
   return (
     <html lang="pt-BR">
       <head>
@@ -121,6 +123,24 @@ export default function RootLayout({
           name="robots"
           content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1"
         />
+
+        <Script id="facebook-pixel" strategy="afterInteractive">
+          {`
+            !function(f,b,e,v,n,t,s)
+            {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+            n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+            if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+            n.queue=[];t=b.createElement(e);t.async=!0;
+            t.src=v;s=b.getElementsByTagName(e)[0];
+            s.parentNode.insertBefore(t,s)}(window, document,'script',
+            'https://connect.facebook.net/en_US/fbevents.js');
+
+            fbq('init', '874771071591185');
+            fbq('track', 'PageView');
+          `}
+        </Script>
+
+
       </head>
       <body className={`${mulish.className} antialiased`}>
         <AuthProvider><NotificationsProvider>{children}</NotificationsProvider></AuthProvider>
@@ -152,6 +172,15 @@ export default function RootLayout({
             }),
           }}
         />
+
+        <noscript>
+          <img
+            height="1"
+            width="1"
+            style={{ display: "none" }}
+            src="https://www.facebook.com/tr?id=874771071591185&ev=PageView&noscript=1"
+          />
+        </noscript>
       </body>
     </html>
   );
