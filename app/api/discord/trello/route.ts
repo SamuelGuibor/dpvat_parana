@@ -15,15 +15,6 @@ export async function POST(req: NextRequest) {
     const action = body?.action;
     const model_format = body.model
 
-    const processed = new Set();
-
-    if (processed.has(!action.data.old.idList)) {
-        console.log("⚠️ Evento duplicado ignorado");
-        return NextResponse.json({ ok: true });
-    }
-
-    processed.add(!action.data.old.idList);
-
     if (action?.type === "updateCard" && action.data.listAfter) {
         const card = action.data.card;
         const listAfter = action.data.listAfter.name;
