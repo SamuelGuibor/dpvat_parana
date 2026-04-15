@@ -36,10 +36,23 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      console.log(`✅ Notificação agendada para ${hoursNumber}h no futuro (executeAt: ${executeAt})`);
     }
 
     if (evento === 'contratado') {
+
+      const executeAt = new Date(Date.now())
+
+      await db.discord.create({
+        data: {
+          message: equipe,
+          channelId: channel,
+          executeAt: executeAt,
+          nome: nome || null,
+          telefone: telefone,
+        },
+      });
+
+
       const userExists = await db.user.findFirst({
         where: {
           telefone,
