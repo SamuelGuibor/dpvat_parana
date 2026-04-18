@@ -90,30 +90,6 @@ export async function POST(req: NextRequest) {
                     hours: "",
                 },
             });
-            await fetch(`${process.env.DISCORD_WEBHOOK_URL_PRONTUARIO}?thread_id=1491866020820811837`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    content: `<@&1489369880854794463>`,
-                    embeds: [
-                        {
-                            title: "📢 Solicitação urgente: elaboração de roteiro previdenciário",
-                            description: `**${card.name}**`,
-                            color: 0xfce4a6,
-                            fields: [
-                                {
-                                    name: "🏷️ Etiqueta",
-                                    value: model_format.name,
-                                    inline: false,
-                                },
-                            ],
-                            timestamp: new Date().toISOString(),
-                        },
-                    ],
-                }),
-            });
 
             console.log("✅ Mensagem enviada pro Discord");
         }
@@ -129,31 +105,6 @@ export async function POST(req: NextRequest) {
                     hours: "",
                 },
             });
-            await fetch(`${process.env.DISCORD_WEBHOOK_URL_PRONTUARIO}?thread_id=1491866065293283428`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    content: `<@&1489369880854794463>`,
-                    embeds: [
-                        {
-                            title: "📢 Solicitação urgente: elaboração de roteiro previdenciário",
-                            description: `**${card.name}**`,
-                            color: 0xfce4a6,
-                            fields: [
-                                {
-                                    name: "🏷️ Etiqueta",
-                                    value: model_format.name,
-                                    inline: false,
-                                },
-                            ],
-                            timestamp: new Date().toISOString(),
-                        },
-                    ],
-                }),
-            });
-
             console.log("✅ Mensagem enviada pro Discord");
         }
     }
