@@ -15,7 +15,7 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 const loginSchema = z.object({
-  email: z.string().email("E-mail inválido"),
+  cpf: z.string().min(11, "CPF deve conter pelo menos 11 caracteres"),
   password: z.string().min(7, "Obrigatório"),
 });
 
@@ -34,19 +34,27 @@ const AuthSection = () => {
   });
 
   const handleLogin = async (data: LoginForm) => {
-    setError(null);
-    const result = await signIn("credentials", {
-      redirect: false,
-      email: data.email,
-      password: data.password,
-    });
+    console.log("Login data:", data);
+    try {
+      setError(null);
+      const cleanCpf = data.cpf.replace(/\D/g, "");
+      const result = await signIn("credentials", {
+        redirect: false,
+        cpf: cleanCpf,
+        password: data.password,
+      });
 
-    if (result?.error) {
-      setError("Email ou senha incorretos");
-    } else {
-      toast.success("Login realizado com sucesso!");
-      router.push("/");
+      if (result?.error) {
+        setError("Email ou senha incorretos");
+      } else {
+        toast.success("Login realizado com sucesso!");
+        router.push("/");
+      }
+    } catch (err: any) {
+      toast.error("Ocorreu um erro ao tentar fazer login", err);
+      return;
     }
+
   };
 
   return (
@@ -72,10 +80,10 @@ const AuthSection = () => {
 
           <div className="mt-6 space-y-6">
             <div>
-              <Label htmlFor="email">Email</Label>
-              <Input {...register("email")} type="email" placeholder="Email" />
-              {errors.email && (
-                <p className="text-red-500 text-sm">{errors.email.message}</p>
+              <Label htmlFor="cpf">CPF</Label>
+              <Input {...register("cpf")} type="text" placeholder="CPF" />
+              {errors.cpf && (
+                <p className="text-red-500 text-sm">{errors.cpf.message}</p>
               )}
             </div>
 

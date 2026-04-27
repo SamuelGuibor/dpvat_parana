@@ -335,7 +335,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
           <div className="flex flex-wrap gap-2 mb-4">
             <Badge
               variant="outline"
-              className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm"
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 "
               style={{
                 backgroundColor: style.bgColor,
                 color: style.textColor,
@@ -348,7 +348,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
               {renderTimerBadge(card)}
             </div>
           </div>
-         
+
 
           <div className="flex items-center justify-between border-t border-gray-50 pt-3">
             <div className="flex items-center gap-3 text-gray-400">
@@ -425,10 +425,10 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCar
             <ChevronRight className="w-5 h-5 text-gray-400" />
           </Button>
           <div className="flex-1 flex flex-col items-center gap-4 overflow-hidden">
-            <Badge className="bg-gray-100 text-gray-600 border-none font-black h-8 w-8 flex items-center justify-center rounded-xl">
+            <Badge className="bg-gray-100 text-gray-600 border-none font-black h-8 w-8 flex items-center justify-center rounded-xl hover:bg-gray-200">
               {column.cards.length}
             </Badge>
-            <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 writing-mode-vertical-rl transform rotate-180 whitespace-nowrap">
+            <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 [writing-mode:vertical-rl] whitespace-nowrap text-center">
               {column.title}
             </h3>
           </div>
@@ -463,27 +463,26 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCar
         </div>
       </div>
 
-      <ScrollArea className="flex-1 px-3 pt-4">
-        <div className="pb-4">
-          {column.cards.map((card) => (
-            <DraggableCard
-              key={card.id}
-              card={card}
-              columnId={column.id}
-              onCardClick={onCardClick}
-              onQuickAction={onQuickAction}
-            />
-          ))}
-          {column.cards.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 opacity-30">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-2">
-                <Briefcase className="w-6 h-6 text-gray-400" />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Sem processos</p>
+
+      <div className="flex-1 overflow-y-auto px-2 p-4">
+        {column.cards.map((card) => (
+          <DraggableCard
+            key={card.id}
+            card={card}
+            columnId={column.id}
+            onCardClick={onCardClick}
+            onQuickAction={onQuickAction}
+          />
+        ))}
+        {column.cards.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 opacity-30">
+            <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-2">
+              <Briefcase className="w-6 h-6 text-gray-400" />
             </div>
-          )}
-        </div>
-      </ScrollArea>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Sem processos</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -729,7 +728,7 @@ export const KanbanBoard: React.FC = () => {
         </div>
 
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+          <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
             <div className="relative">
               <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
               <div className="absolute inset-0 flex items-center justify-center">

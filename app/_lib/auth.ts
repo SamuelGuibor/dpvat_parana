@@ -18,16 +18,17 @@ export const authOptions: AuthOptions = {
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        cpf: { label: "CPF", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email e senha são obrigatórios");
+        if (!credentials?.cpf || !credentials?.password) {
+          throw new Error("CPF e senha são obrigatórios");
         }
 
-        const user = await db.user.findUnique({
-          where: { email: credentials.email, password: credentials.password },
+        const user = await db.user.findFirst({
+          select: { id: true, email: true, name: true, role: true, password: true },
+          where: { cpf: credentials.cpf, password: credentials.password },
         });
 
         if (!user || !user.password) {
