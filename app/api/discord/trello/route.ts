@@ -12,7 +12,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const executeAt = new Date();
 
-
     console.log("🔥 CHEGOU EVENTO DO TRELLO");
     console.log(JSON.stringify(body, null, 2));
 
