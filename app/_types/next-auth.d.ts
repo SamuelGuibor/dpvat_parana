@@ -10,6 +10,8 @@ import { JWT } from "next-auth/jwt";
 declare module "next-auth" {
   interface User {
     role?: string;
+    type?: string;
+    service?: string;
   }
 
   interface Session {
@@ -17,6 +19,8 @@ declare module "next-auth" {
     user: {
       id: string;
       role: string;
+      type?: string;
+      service?: string;
       name?: string | null;
       email?: string | null;
     };
@@ -27,6 +31,8 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
     role?: string;
+    type?: string;
+    service?: string;
     accessToken?: string;
   }
 }
