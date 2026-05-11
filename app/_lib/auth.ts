@@ -28,7 +28,7 @@ export const authOptions: AuthOptions = {
         }
 
         const user = await db.user.findFirst({
-          select: { id: true, email: true, name: true, role: true, password: true, type: true, service: true },
+          select: { id: true, email: true, name: true, role: true, password: true, service: true },
           where: { cpf: credentials.cpf, password: credentials.password },
         });
 
@@ -41,7 +41,6 @@ export const authOptions: AuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
-          type: user.type ?? undefined,
           service: user.service ?? undefined,
         };
       },
@@ -52,7 +51,6 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role;
-        token.type = user.type;
         token.service = user.service;
       }
       if (account) {
