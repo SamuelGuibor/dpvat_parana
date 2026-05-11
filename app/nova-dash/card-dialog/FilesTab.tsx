@@ -1,0 +1,259 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from 'react';
+import { Dropzone, DropzoneContent, DropzoneEmptyState } from '@/app/_components/dropzone';
+import { Button } from '@/app/_components/ui/button';
+import { Input } from '@/app/_components/ui/input';
+import { Label } from '@/app/_components/ui/label';
+import { Separator } from '@/app/_components/ui/separator';
+import { Download, Loader2, Trash } from 'lucide-react';
+import { CiEdit } from 'react-icons/ci';
+import { toast } from 'sonner';
+import { getPresignedUrls } from '@/app/_actions/uploadS3';
+import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
+import { updateDocumentName } from '@/app/_actions/updateNameDoc';
+import { deletDoc } from '@/app/_actions/delet_document';
+import { DeleteConfirmDialog } from '@/app/nova-dash/card-dialog/DeleteConfirmDialog';
+import type { FileWithBase64 } from './types';
+
+interface Props {
+  cardId: string;
+  isProcess: boolean;
+  ownerId?: string;
+}
+
+interface Doc { id: string; key: string; name: string }
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+export function FilesTab({ cardId, isProcess, ownerId }: Props) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [base64Files, setBase64Files] = useState<FileWithBase64[]>([]);
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editedName, setEditedName] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
+
+  useEffect(() => { loadDocs(); }, [cardId, isProcess]);
+
+  async function loadDocs() {
+    try {
+      const params = new URLSearchParams();
+      if (isProcess) params.set('processId', cardId);
+      else params.set('userId', cardId);
+      const res = await fetch(`/api/documents?${params.toString()}`);
+      if (!res.ok) throw new Error('Erro ao buscar documentos');
+      setDocs(await res.json());
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao carregar documentos.');
+    }
+  }
+
+  async function handleDrop(accepted: File[]) {
+    try {
+      const filesB64 = await Promise.all(
+        accepted.map(async (f) => ({ name: f.name, type: f.type, base64: await fileToBase64(f) }))
+      );
+      setFiles((p) => [...p, ...accepted]);
+      setBase64Files((p) => [...p, ...filesB64]);
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao processar arquivos.');
+    }
+  }
+
+  async function uploadFiles() {
+    if (!cardId) return toast.error('ID não fornecido.');
+    if (base64Files.length === 0) return;
+
+    setUploading(true);
+    setError(null);
+    try {
+      const fileInfos = base64Files.map((f) => ({ name: f.name, type: f.type }));
+      const response = await getPresignedUrls(fileInfos, cardId, isProcess);
+      if (!response.success || !response.presignedUrls) {
+        throw new Error(response.error || 'Erro ao obter URLs pré-assinadas');
+      }
+
+      const uploaded = await Promise.all(
+        response.presignedUrls.map(async ({ fileName, url, key }) => {
+          const file = base64Files.find((f) => f.name === fileName);
+          if (!file) return null;
+          const base64Data = file.base64.split(',')[1];
+          const bytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+          const blob = new Blob([bytes], { type: file.type });
+          const res = await fetch(url, {
+            method: 'PUT',
+            body: blob,
+            headers: {
+              'Content-Type': file.type,
+              'Content-Disposition': `attachment; filename="${fileName}"`,
+            },
+          });
+          if (!res.ok) throw new Error(`Erro ao enviar ${fileName}`);
+          return { key, name: fileName };
+        })
+      );
+
+      const valid = uploaded.filter(Boolean) as { key: string; name: string }[];
+
+      await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: ownerId,
+          processId: isProcess ? cardId : null,
+          documents: valid,
+        }),
+      });
+
+      await loadDocs();
+      setFiles([]);
+      setBase64Files([]);
+      toast.success('Upload concluído.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Erro ao fazer upload: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDownload(key: string, fileName: string) {
+    try {
+      setDownloading(key);
+      const res = await downloadFileFromS3(key, fileName);
+      if (!res.success || !res.presignedUrl) throw new Error(res.error);
+      window.location.href = res.presignedUrl;
+    } catch (err: any) {
+      toast.error('Erro ao baixar: ' + err.message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function saveName(id: string) {
+    try {
+      setSavingId(id);
+      await updateDocumentName({ id, newName: editedName });
+      setDocs((p) => p.map((d) => (d.id === id ? { ...d, name: editedName } : d)));
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao renomear');
+    } finally {
+      setSavingId(null);
+      setEditingId(null);
+    }
+  }
+
+  async function confirmDeleteDoc() {
+    if (!deletingDoc) return;
+    try {
+      await deletDoc(deletingDoc.id);
+      setDocs((p) => p.filter((d) => d.id !== deletingDoc.id));
+      toast.success('Documento deletado.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao deletar.');
+    } finally {
+      setDeletingDoc(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4 px-1">
+      <Dropzone onDrop={handleDrop} src={files} onError={console.error} className="w-full">
+        <DropzoneEmptyState />
+        <DropzoneContent />
+      </Dropzone>
+
+      {files.length > 0 && (
+        <Button onClick={uploadFiles} disabled={uploading}>
+          {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          Enviar {files.length} arquivo{files.length > 1 ? 's' : ''}
+        </Button>
+      )}
+
+      {error && <p className="text-red-500 text-sm">{error}</p>}
+
+      <Separator />
+
+      <div className="space-y-2">
+        <Label>Arquivos Anexados ({docs.length})</Label>
+        {docs.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 border-2 border-dashed rounded-lg">
+            Nenhum documento encontrado
+          </div>
+        ) : (
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left p-3 font-medium">Nome do Arquivo</th>
+                  <th className="text-right p-3 font-medium w-32">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {docs.map((doc) => (
+                  <tr key={doc.id} className="hover:bg-gray-50">
+                    <td className="p-3">
+                      {editingId === doc.id ? (
+                        <div className="flex items-center gap-2">
+                          <Input value={editedName} onChange={(e) => setEditedName(e.target.value)} className="h-8 text-sm" autoFocus />
+                          <Button size="sm" onClick={() => saveName(doc.id)} disabled={savingId === doc.id}>
+                            {savingId === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
+                        </div>
+                      ) : (
+                        <span className="block truncate max-w-md">{doc.name}</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">
+                      {editingId !== doc.id && (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8"
+                            onClick={() => { setEditingId(doc.id); setEditedName(doc.name); }}>
+                            <CiEdit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8"
+                            onClick={() => handleDownload(doc.key, doc.name)} disabled={downloading === doc.key}>
+                            {downloading === doc.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600"
+                            onClick={() => setDeletingDoc(doc)}>
+                            <Trash className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <DeleteConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(o) => !o && setDeletingDoc(null)}
+        title={`Deletar "${deletingDoc?.name}"?`}
+        description="Tem certeza que deseja deletar? Essa ação é irreversível."
+        onConfirm={confirmDeleteDoc}
+      />
+    </div>
+  );
+}

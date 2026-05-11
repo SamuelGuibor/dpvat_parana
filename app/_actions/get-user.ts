@@ -39,6 +39,8 @@ interface UserData {
   service?: string;
   fixed?: boolean;
   roleFixed?: string;
+  labelId?: string | null;
+  label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
 }
 
 export async function getUsers(
@@ -88,12 +90,13 @@ export async function getUsers(
       : {
           id: true,
           name: true,
-          role: true,
-          obs: true,
-          service: true,
+          labelId: true,
+          label: { select: { id: true, name: true, color: true, timeLimitDays: true } },
           statusStartedAt: true,
+          service: true,
+          obs: true,
           fixed: true,
-          roleFixed: true,
+          status: true,
         };
 
   if (userId) {
@@ -110,6 +113,8 @@ export async function getUsers(
       id: user.id,
       name: user.name || "Sem nome",
       status: user.status || undefined,
+      labelId: user.labelId ?? null,       // ← estava faltando
+      label: user.label ?? null,   // ← estava faltando
       type: user.role || "USER",
       role: user.role || "USER",
       obs: user.obs || "",
@@ -155,6 +160,8 @@ export async function getUsers(
     name: user.name || "Sem nome",
     status: user.status || undefined,
     type: user.role || "USER",
+    labelId: user.labelId ?? null,       // ← estava faltando
+    label: user.label ?? null, 
     role: user.role || "USER",
     obs: user.obs || "",
     service: user.service || "",

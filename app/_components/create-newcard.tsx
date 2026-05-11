@@ -32,11 +32,21 @@ import { Label } from "./ui/label";
 interface User {
   id: string;
   name: string;
-  type: string;
+
   status?: string;
   statusStartedAt?: string | null;
+
   service?: string;
   obs?: string;
+
+  labelId?: string | null;
+
+  label?: {
+    id: string;
+    name: string;
+    color: string;
+    timeLimitDays?: number | null;
+  } | null;
 }
 
 export function CreateNewCard() {
@@ -58,7 +68,6 @@ export function CreateNewCard() {
       setIsLoading(true);
       try {
         const usersData = await getUsers("basic");
-        console.log("Dados recebidos:", usersData);
         if (Array.isArray(usersData)) {
           setUsers(usersData);
         } else {
@@ -84,7 +93,9 @@ export function CreateNewCard() {
     return filtered;
   }, [users, search]);
 
-  const selectedUserName = users.find((u) => u.id === selectedUser)?.name;
+  const selectedUserData = users.find((u) => u.id === selectedUser);
+
+  const selectedUserName = selectedUserData?.name;
 
   const handleUserSelect = (userId: string) => {
     console.log("Usuário selecionado:", userId);
@@ -99,7 +110,7 @@ export function CreateNewCard() {
 
     setIsLoading(true);
     try {
-      const newProcess = await createProcess({
+      await createProcess({
         userId: selectedUser,
         type,
         service,
@@ -120,6 +131,7 @@ export function CreateNewCard() {
       setHospital("");
       setOutroHospital("");
       setLesoes("");
+      setService("");
     } catch (error: any) {
       setError("Erro ao criar processo: " + error.message);
       toast.error("Erro ao criar processo: " + error.message);

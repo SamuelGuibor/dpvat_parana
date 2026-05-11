@@ -75,7 +75,7 @@ const menuOptions = isAdmin
                 <>
                   <Avatar onClick={toggleSheet} className="cursor-pointer">
                     <AvatarImage
-                      src={session?.user?.image || "/homem.png"}
+                      src={"/homem.png"}
                       alt="Avatar"
                     />
                   </Avatar>

@@ -40,19 +40,20 @@ export async function POST(request: Request) {
   }
 }
 
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const processId = searchParams.get('processId');
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId é obrigatório' }, { status: 400 });
+    if (!userId && !processId) {
+      return NextResponse.json({ error: 'userId ou processId é obrigatório' }, { status: 400 });
     }
 
-    // Buscar documentos do usuário
+    const where = processId ? { processId } : { userId: userId! };
+
     const documents = await db.document.findMany({
-      where: { userId },
+      where,
       select: { id: true, key: true, name: true },
       orderBy: { createdAt: 'asc' },
     });

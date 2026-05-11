@@ -44,6 +44,7 @@ const blogPosts = [
     //     date: '1 de Dezembro, 2025',
     //     category: 'Danos Morais',
     //     author: 'Dr. Carlos Silva',
+    //     link: '/blog-seguros-parana/xanaina'
     // },
     // {
     //     id: 5,

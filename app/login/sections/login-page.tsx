@@ -34,7 +34,6 @@ const AuthSection = () => {
   });
 
   const handleLogin = async (data: LoginForm) => {
-    console.log("Login data:", data);
     try {
       setError(null);
       const cleanCpf = data.cpf.replace(/\D/g, "");

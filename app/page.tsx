@@ -7,8 +7,9 @@ import { Footer } from '../app/_components/landing_page/Footer';
 import Stats from './section/stats';
 import Video from './_components/landing_page/video';
 import { Testimonials } from './_components/landing_page/feedback';
+import type { Metadata, Viewport } from "next";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Paraná Seguros - Indenização Rápida e Segura",
   description:
     "Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia.",
@@ -18,13 +19,12 @@ export const metadata = {
   openGraph: {
     title: "Paraná Seguros - Indenização Rápida e Segura com DPVAT",
     description:
-      "Especialistas em indenizações de Acidentes de Transito no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em todo o Paraná.",
+      "Especialistas em indenizações de Acidentes de Transito no Paraná.",
     url: "https://www.segurosparana.com.br/",
     siteName: "Paraná Seguros",
     images: [
       {
         url: "https://www.segurosparana.com.br/paranaseguros.png",
-        secure_url: "https://www.segurosparana.com.br/paranaseguros.png",
         width: 1200,
         height: 630,
         alt: "Paraná Seguros - Indenização DPVAT",
@@ -52,7 +52,11 @@ export const metadata = {
       "max-snippet": -1,
     },
   },
-  viewport: "width=device-width, initial-scale=1",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function App() {

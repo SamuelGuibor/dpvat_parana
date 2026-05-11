@@ -1,4 +1,3 @@
-// app/_actions/create-process.ts
 "use server";
 
 import { db } from "../_lib/prisma";
@@ -25,7 +24,7 @@ export async function createProcess(data: {
   hospital?: string;
   outro_hospital?: string;
   lesoes?: string;
-  service: string;
+  service?: string;
 }) {
   const session = await getServerSession(authOptions);
 
@@ -67,13 +66,22 @@ export async function createProcess(data: {
     throw new Error("Usuário não encontrado.");
   }
 
+  // Busca a label padrão
+  const defaultLabel = await db.label.findFirst({
+    where: {
+      name: "Filtro de Cartões",
+    },
+  });
+
   const process = await db.process.create({
     data: {
       userId: validatedData.userId,
+
+      // dados copiados do usuário
       name: user.name,
       cpf: user.cpf,
       data_nasc: user.data_nasc,
-      email: user.email, 
+      email: user.email,
       rua: user.rua,
       bairro: user.bairro,
       numero: user.numero,
@@ -86,23 +94,36 @@ export async function createProcess(data: {
       estado_civil: user.estado_civil,
       profissao: user.profissao,
       nacionalidade: user.nacionalidade,
+
       nome_res: user.nome_res,
       rg_res: user.rg_res,
       cpf_res: user.cpf_res,
       estado_civil_res: user.estado_civil_res,
       profissao_res: user.profissao_res,
+
+      // processo
       type: validatedData.type,
+
       data_acidente: validatedData.data_acidente
         ? new Date(validatedData.data_acidente)
-        : undefined,
+        : null,
+
       atendimento_via: validatedData.atendimento_via,
       hospital: validatedData.hospital,
       outro_hospital: validatedData.outro_hospital,
       lesoes: validatedData.lesoes,
+
       status: "INICIADO",
-      role: "Filtro de Cartões",
       statusStartedAt: new Date(),
-      service: validatedData.service
+
+      service: validatedData.service,
+
+      // NOVO SISTEMA
+      labelId: defaultLabel?.id || null,
+    },
+
+    include: {
+      label: true,
     },
   });
 
@@ -111,6 +132,9 @@ export async function createProcess(data: {
     userId: process.userId,
     type: process.type,
     status: process.status,
-    service: process.service
+    service: process.service,
+
+    labelId: process.labelId,
+    label: process.label,
   };
 }

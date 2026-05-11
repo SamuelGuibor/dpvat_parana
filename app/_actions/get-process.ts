@@ -38,6 +38,9 @@ interface ProcessGet {
   service?: string;
   fixed?: boolean;
   roleFixed?: string;
+  userId?: string;
+  labelId?: string | null;
+  label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
 }
 
 export async function getProcess(
@@ -84,16 +87,18 @@ export async function getProcess(
           roleFixed: true,
         }
       : {
-          id: true,
-          name: true,
-          type: true,
-          role: true,
-          observacao: true,
-          statusStartedAt: true,
-          service: true,
-          fixed: true,
-          roleFixed: true,
-        };
+        id: true,
+        name: true,
+        userId: true,
+        type: true,   
+        labelId: true,
+        label: { select: { id: true, name: true, color: true, timeLimitDays: true } },
+        statusStartedAt: true,
+        service: true,
+        observacao: true,
+        fixed: true,
+        status: true,
+      };
 
   if (processId) {
     const process = await db.process.findUnique({
@@ -109,6 +114,9 @@ export async function getProcess(
       id: process.id,
       name: process.name || "Sem nome",
       status: process.status || undefined,
+      userId: process.userId,        // ← estava faltando (crítico para upload)
+      labelId: process.labelId ?? null,      // ← estava faltando
+      label: process.label ?? null,
       type: process.type || "",
       role: process.role || "PROCESS",
       observacao: process.observacao || "",
@@ -152,6 +160,9 @@ export async function getProcess(
     id: process.id,
     name: process.name || "Sem nome",
     status: process.status || undefined,
+    userId: process.userId,        // ← estava faltando (crítico para upload)
+    labelId: process.labelId ?? null,      // ← estava faltando
+    label: process.label ?? null,
     type: process.type || "",
     role: process.role || "PROCESS",
     observacao: process.observacao || "",

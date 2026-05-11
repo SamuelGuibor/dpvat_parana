@@ -4,6 +4,7 @@ import { db } from '@/app/_lib/prisma';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    console.log('Recebido webhook BotConversa:', body);
     const { nome, telefone, evento, equipe, hours, channel } = body;
     console.log(nome, telefone, evento)
     if (!telefone || !evento) {

@@ -7,6 +7,7 @@ import { db } from "./prisma";
 import { Adapter } from "next-auth/adapters";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
+import jwt from "jsonwebtoken";
 
 export const authOptions: AuthOptions = {
   adapter: PrismaAdapter(db) as Adapter,
@@ -34,7 +35,7 @@ export const authOptions: AuthOptions = {
         if (!user || !user.password) {
           throw new Error("Usuário não encontrado ou senha não configurada");
         }
-        
+
         return {
           id: user.id,
           email: user.email,
@@ -49,6 +50,11 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.accessToken = jwt.sign(
+          { id: user.id, role: user.role },
+          process.env.NEXT_AUTH_SECRET as string,
+          { expiresIn: "7d" }
+        );
       }
       return token;
     },
@@ -57,6 +63,7 @@ export const authOptions: AuthOptions = {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
       }
+      session.accessToken = token.accessToken as string;
       return session;
     },
   },

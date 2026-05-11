@@ -1,28 +1,41 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
 export const dynamic = "force-dynamic";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase, ChevronRight, ChevronLeft, Search } from 'lucide-react';
+import {
+  Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
+  ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
+} from 'lucide-react';
 import { Card, CardContent } from '@/app/_components/ui/card';
 import { Badge } from '@/app/_components/ui/badge';
 import { Button } from '@/app/_components/ui/button';
-import { ScrollArea } from '@/app/_components/ui/scroll-area';
 import { Input } from '@/app/_components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
-import { Loader2 } from 'lucide-react';
+import { Label as UILabel } from '@/app/_components/ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/app/_components/ui/select';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from '@/app/_components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/app/_components/ui/dropdown-menu';
 import { CardDialog } from './CardDialog';
-import { useRef } from 'react';
 import { cn } from '@/app/_utils/utils';
 import { getUsers } from '@/app/_actions/get-user';
 import { getProcess } from '@/app/_actions/get-process';
 import { CreateNewCard } from '@/app/_components/create-newcard';
-import { differenceInDays, formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { differenceInDays } from 'date-fns';
 import { updateKanbanStatus } from '@/app/_actions/update-kanban';
 import useSWR from 'swr';
+import { getLabels } from '../_actions/get-labels';
+import { deleteCard } from '../_actions/delete-card';
+import { toast } from "sonner";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
@@ -82,6 +95,10 @@ export interface KanbanCard {
   estado_civil_res?: string;
   profissao_res?: string;
   fixed?: boolean;
+  labelId?: string | null
+  label?: Label | null
+  ownerId?: string
+  cardId?: string
 }
 
 export interface Comment {
@@ -111,7 +128,22 @@ export interface ChecklistItem {
 interface Column {
   id: string;
   title: string;
+  color?: string;
+  timeLimitDays?: number | null;
   cards: KanbanCard[];
+}
+
+interface Label {
+  id: string
+  name: string
+  color: string
+  timeLimitDays: number | null
+}
+
+interface LabelInput {
+  name: string;
+  color: string;
+  timeLimitDays?: number | null;
 }
 
 const services = [
@@ -154,55 +186,6 @@ const services = [
   { id: '37', name: 'Descartaveis', color: '#4b5563', border: '#4b5563' },
 ];
 
-const roleTimeLimits: { [key: string]: number | null } = {
-  'Filtro de Cartões': 1,
-  'Gerar Procuração Automática': 1,
-  'Coletar Assinatura em Cartório': 7,
-  'Coletar Assinatura Digital': 3,
-  'Agendar Coleta com Motoboy': 2,
-  'Acompanhar Rota do Motoboy': 2,
-  'Fazer Protocolo no Hospital': 1,
-  'Protocolar Pasta – Hospital Presencial': 5,
-  'Solicitar Prontuário por E-mail': 2,
-  'Solicitar Prontuário Cajuru por E-mail': 1,
-  'Acompanhar Cajuru – Solicitado': 15,
-  'Solicitar Prontuário – Outros Hospitais': 3,
-  'Acompanhar Prontuário – Outros Solicitados': 20,
-  'Solicitar Prontuário – Ponta Grossa': 3,
-  'Aguardar Prontuário – Recebimento Online': 15,
-  'Aguardar Prontuário PG – Recebimento Online': 15,
-  'Aguardar Prontuário PG – Presencial': 30,
-  'Aguardar Retirada de Prontuário – Presencial': 30,
-  'Retirar Prontuário – Pronto para Retirar': 5,
-  'Resolver Problema com B.O.': 5,
-  'Fazer B.O. – Equipe Rubi': 5,
-  'Orientar Cliente – Fazer B.O.': 3,
-  'Enviar 1ª Mensagem – B.O.': 2,
-  'Solicitar B.O. ao Cliente – Acidente': 5,
-  'Solicitar Siate': 3,
-  'Aguardar Retorno do Siate': 7,
-  'Acompanhar Siate – Pronto': 5,
-  'Enviar Mensagem – Previdenciário': 3,
-  'Registrar Óbito – Nova Lei': null,
-  'Protocolar SPVAT': null,
-  'Protocolar DPVAT – Caixa': 5,
-  'Enviar para Reanálise': 5,
-  'Manter SPVAT em Standby': null,
-  'Aguardar Análise da Caixa': 15,
-  'Acompanhar Pendências – Protocolado': 5,
-  'Protocolar Pendência de B.O.': 5,
-  'Avisar Sobre Perícia Administrativa': 1,
-  'Aguardar Resultado da Perícia': 2,
-  'Cobrar Honorários – Resultado Perícia': 1,
-  'Aguardar Pagamento – Honorários Cobrados': 1,
-  'Encerrar Processo – DPVAT': null,
-  USER: null,
-  PROCESS: null,
-  ADMIN: null,
-};
-
-
-
 const serviceStyles: { [key: string]: { bgColor: string; textColor: string } } = {
   INSS: { bgColor: '#fef9c3', textColor: '#854d0e' },
   'Seguro de Vida': { bgColor: '#f5f3ff', textColor: '#5b21b6' },
@@ -212,216 +195,327 @@ const serviceStyles: { [key: string]: { bgColor: string; textColor: string } } =
   TRABALHISTA: { bgColor: '#fef2f2', textColor: '#991b1b' },
 };
 
-const defaultServiceStyle = {
-  bgColor: '#f3f4f6',
-  textColor: '#374151',
-};
+const defaultServiceStyle = { bgColor: '#f3f4f6', textColor: '#374151' };
 
 interface Item {
-  id: string;
-  name: string;
-  type: string;
-  status?: string;
-  statusStartedAt?: string | null;
-  service?: string;
-  fixed?: boolean;
-  role?: string;
-  obs?: string;
-  isProcess?: boolean;
+  id: string
+  name: string
+  type?: string
+  labelId?: string | null
+  label?: Label | null
+  statusStartedAt?: string | null
+  service?: string
+  obs?: string
+  observacao?: string
+  fixed?: boolean
+  isProcess?: boolean
+  userId?: string
+  status?: string
+  ownerId?: string
 }
 
 const renderTimerBadge = (card: KanbanCard) => {
-  if (!card.status || !card.statusStartedAt) {
-    return <Badge variant="outline">Sem data</Badge>;
+  if (!card.statusStartedAt) return <Badge variant="outline">Sem data</Badge>
+  const startedAt = new Date(card.statusStartedAt)
+  if (isNaN(startedAt.getTime())) return <Badge variant="outline">Data inválida</Badge>
+  const days = differenceInDays(new Date(), startedAt)
+  const limit = card.label?.timeLimitDays ?? null
+  const overdue = limit !== null && days > limit
+  return (
+    <Badge variant="outline" className={`px-2 text-xs ${overdue ? 'text-red-600 font-semibold' : 'text-blue-700 font-semibold'}`}>
+      {days} dias
+      {overdue && <span className="ml-1 text-[10px] font-bold">(Excedeu {days - limit!} dias)</span>}
+    </Badge>
+  )
+}
+
+// =============================================
+// Modal genérico de Etiqueta (criar OU editar)
+// =============================================
+interface LabelDialogProps {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  initial?: { name: string; color: string; timeLimitDays: number | null };
+  title: string;
+  submitLabel: string;
+  onSubmit: (data: LabelInput) => Promise<void>;
+}
+
+const LabelDialog: React.FC<LabelDialogProps> = ({ open, onOpenChange, initial, title, submitLabel, onSubmit }) => {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [color, setColor] = useState(initial?.color ?? '#3b82f6');
+  const [timeLimit, setTimeLimit] = useState<string>(initial?.timeLimitDays?.toString() ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName(initial?.name ?? '');
+      setColor(initial?.color ?? '#3b82f6');
+      setTimeLimit(initial?.timeLimitDays?.toString() ?? '');
+    }
+  }, [open, initial]);
+
+  async function handle() {
+    if (!name.trim()) {
+      toast.error('Informe um nome para a etiqueta.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        color,
+        timeLimitDays: timeLimit ? parseInt(timeLimit, 10) : null,
+      });
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   }
-
-  const startedAt = new Date(card.statusStartedAt);
-
-  if (isNaN(startedAt.getTime())) {
-    return <Badge variant="outline">Data inválida</Badge>;
-  }
-
-  const days = differenceInDays(new Date(), startedAt);
-
-  const roleKey = card.status ?? card.type;
-
-  const limit = roleTimeLimits[roleKey] ?? null;
-
-  const overdue = limit !== null && days > limit;
 
   return (
-    <Badge
-      variant="outline"
-      className={`px-2 text-xs ${overdue
-        ? 'text-red-600 font-semibold'
-        : 'text-blue-700 font-semibold'
-        }`}
-    >
-      {days} dias
-
-      {overdue && (
-        <span className="ml-1 text-[10px] font-bold">
-          (Excedeu {days - limit} dias)
-        </span>
-      )}
-    </Badge>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md rounded-xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>Configure os dados da etiqueta.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <UILabel>Nome</UILabel>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Aguardando perícia" />
+          </div>
+          <div className="space-y-2">
+            <UILabel>Cor</UILabel>
+            <div className="flex items-center gap-3">
+              <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-20 p-1" />
+              <Input value={color} onChange={(e) => setColor(e.target.value)} className="flex-1" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <UILabel>Dias limite (opcional)</UILabel>
+            <Input
+              type="number"
+              min={0}
+              value={timeLimit}
+              onChange={(e) => setTimeLimit(e.target.value)}
+              placeholder="Ex: 7"
+            />
+            <p className="text-[11px] text-gray-500">Cards nessa etiqueta ficam destacados em vermelho após esse prazo.</p>
+          </div>
+        </div>
+        <DialogFooter className="flex flex-row gap-3">
+          <Button variant="secondary" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button className="flex-1" onClick={handle} disabled={saving || !name.trim()}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : submitLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 
+// =============================================
+// Botão "Criar Etiqueta" pro header
+// =============================================
+const CreateLabelButton: React.FC<{ onCreate: (data: LabelInput) => Promise<void> }> = ({ onCreate }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)} className="h-12 rounded-2xl">
+        <Tag className="w-4 h-4 mr-2" />
+        Criar Etiqueta
+      </Button>
+      <LabelDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Criar Etiqueta"
+        submitLabel="Criar"
+        onSubmit={onCreate}
+      />
+    </>
+  );
+};
 
-
-
+// =============================================
+// DraggableCard
+// =============================================
 interface DraggableCardProps {
   card: KanbanCard;
   columnId: string;
   onCardClick: (card: KanbanCard) => void;
   onQuickAction: (cardId: string, action: string) => void;
+  onDelete: (cardId: string) => void;
 }
 
-const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction }) => {
+const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
     item: { cardId: card.id, sourceColumnId: columnId },
-    collect: (monitor) => ({
-      isDragging: !!monitor.isDragging(),
-    }),
+    collect: (monitor) => ({ isDragging: !!monitor.isDragging() }),
   }));
-
   const ref = useRef<HTMLDivElement>(null);
   drag(ref);
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteCard({ id: card.id, isProcess: card.isProcess });
+      toast.success("Card excluído!");
+      onDelete(card.id);
+    } catch (e: any) {
+      toast.error("Erro ao excluir: " + e.message);
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   const style = card.service && serviceStyles[card.service] ? serviceStyles[card.service] : defaultServiceStyle;
 
   return (
-    <div
-      ref={ref}
-      style={{ opacity: isDragging ? 0.5 : 1 }}
-      className="cursor-move group"
-    >
-      <Card className={cn(
-        "mb-3 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white",
-        card.isProcess ? "ring-1 ring-blue-100" : "ring-1 ring-gray-100"
-      )}>
-        {/* Color stripe based on type */}
-        <div className={cn(
-          "absolute top-0 left-0 w-1.5 h-full",
-          card.isProcess ? "bg-blue-600" : "bg-gray-400"
-        )} />
-
-        <CardContent className="p-4 pl-6">
-          <div className="flex items-start justify-between mb-2">
-            <h4 className="font-bold text-sm text-gray-900 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
-              {card.title}
-            </h4>
-            <div className="shrink-0 ml-2">
-              {card.isProcess ? (
-                <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-100">
-                  <Briefcase className="w-3 h-3 text-blue-600" />
-                </div>
-              ) : (
-                <div className="bg-gray-50 p-1.5 rounded-lg border border-gray-100">
-                  <UserIcon className="w-3 h-3 text-gray-600" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="mb-3">
-            <div className="text-[11px] text-gray-500 bg-gray-50/50 p-2 rounded-lg border border-gray-100/50 line-clamp-2 italic">
-              {card.description || 'Nenhuma descrição detalhada.'}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Badge
-              variant="outline"
-              className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 "
-              style={{
-                backgroundColor: style.bgColor,
-                color: style.textColor,
-              }}
-            >
-              {card.service}
-            </Badge>
-            <div className="relative flex items-center gap-1 ml-auto">
-              <Clock className="w-4 h-4" />
-              {renderTimerBadge(card)}
-            </div>
-          </div>
-
-
-          <div className="flex items-center justify-between border-t border-gray-50 pt-3">
-            <div className="flex items-center gap-3 text-gray-400">
-              <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-bold">{card.comments.length}</span>
-              </div>
-              <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
-                <Paperclip className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-bold">{card.attachments.length}</span>
+    <>
+      <div ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }} className="cursor-move group">
+        <Card className={cn(
+          "mb-3 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white",
+          card.isProcess ? "ring-1 ring-blue-100" : "ring-1 ring-gray-100"
+        )}>
+          <div className={cn("absolute top-0 left-0 w-1.5 h-full", card.isProcess ? "bg-blue-600" : "bg-gray-400")} />
+          <CardContent className="p-4 pl-6">
+            <div className="flex items-start justify-between mb-2">
+              <h4 className="font-bold text-sm text-gray-900 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
+                {card.title}
+              </h4>
+              <div className="shrink-0 ml-2">
+                {card.isProcess ? (
+                  <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-100">
+                    <Briefcase className="w-3 h-3 text-blue-600" />
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                    <UserIcon className="w-3 h-3 text-gray-600" />
+                  </div>
+                )}
               </div>
             </div>
-
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-              <Button
-                size="icon"
-                variant="secondary"
-                className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-blue-50 hover:text-blue-600"
-                onClick={() => onCardClick(card)}
-              >
-                <Edit className="w-3.5 h-3.5" />
-              </Button>
+            <div className="mb-3">
+              <div className="text-[11px] text-gray-500 bg-gray-50/50 p-2 rounded-lg border border-gray-100/50 line-clamp-2 italic">
+                {card.description || 'Nenhuma descrição detalhada.'}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <Badge variant="outline" className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
+                {card.service}
+              </Badge>
+              <div className="relative flex items-center gap-1 ml-auto">
+                <Clock className="w-4 h-4" />
+                {renderTimerBadge(card)}
+              </div>
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-50 pt-3">
+              <div className="flex items-center gap-3 text-gray-400">
+                <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-bold">{card.comments.length}</span>
+                </div>
+                <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-bold">{card.attachments.length}</span>
+                </div>
+              </div>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-blue-50 hover:text-blue-600" onClick={() => onCardClick(card)}>
+                  <Edit className="w-3.5 h-3.5" />
+                </Button>
+                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-red-50 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle>Excluir card</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir <strong>{card.title}</strong>? Essa ação é irreversível.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-row gap-3">
+            <Button variant="secondary" className="flex-1" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Excluir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
+// =============================================
+// DroppableColumn
+// =============================================
 interface DroppableColumnProps {
   column: Column;
   onDrop: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
   onCardClick: (card: KanbanCard) => void;
   onQuickAction: (cardId: string, action: string) => void;
+  onDelete: (cardId: string) => void;
+  onLabelEdit: (id: string, data: LabelInput) => Promise<void>;
+  onLabelDelete: (id: string) => Promise<void>;
   isCollapsed: boolean;
   toggleCollapse: () => void;
 }
 
-const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCardClick, onQuickAction, isCollapsed, toggleCollapse }) => {
+const DroppableColumn: React.FC<DroppableColumnProps> = ({
+  column, onDrop, onCardClick, onQuickAction, onDelete,
+  onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse,
+}) => {
   const ref = useRef<HTMLDivElement>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [confirmDeleteLabel, setConfirmDeleteLabel] = useState(false);
+  const [deletingLabel, setDeletingLabel] = useState(false);
 
   const [{ isOver }, drop] = useDrop(() => ({
     accept: 'CARD',
     drop: (item: { cardId: string; sourceColumnId: string }) => {
       onDrop(item.cardId, item.sourceColumnId, column.id);
     },
-    collect: (monitor) => ({
-      isOver: !!monitor.isOver(),
-    }),
+    collect: (monitor) => ({ isOver: !!monitor.isOver() }),
   }));
-
-  const service = services.find(s => s.name === column.title);
-  const columnColor = service?.color || '#3b82f6';
-
   drop(ref);
+
+  // prefere a cor da label salva no banco; cai no services hardcoded só como fallback
+  const fallbackColor = services.find(s => s.name === column.title)?.color;
+  const columnColor = column.color || fallbackColor || '#3b82f6';
+
+  async function handleConfirmDelete() {
+    setDeletingLabel(true);
+    try {
+      await onLabelDelete(column.id);
+      setConfirmDeleteLabel(false);
+    } finally {
+      setDeletingLabel(false);
+    }
+  }
 
   if (isCollapsed) {
     return (
-      <div
-        ref={ref}
-        className={cn(
-          "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-[calc(100vh-200px)]",
-          isOver ? "bg-blue-50 border-blue-200" : "bg-white border-gray-100 shadow-sm"
-        )}
-      >
+      <div ref={ref} className={cn(
+        "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-[calc(100vh-200px)]",
+        isOver ? "bg-blue-50 border-blue-200" : "bg-white border-gray-100 shadow-sm"
+      )}>
         <div className="flex flex-col items-center h-full">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="mb-4 h-10 w-10 rounded-xl hover:bg-gray-100"
-            onClick={toggleCollapse}
-          >
+          <Button variant="ghost" size="icon" className="mb-4 h-10 w-10 rounded-xl hover:bg-gray-100" onClick={toggleCollapse}>
             <ChevronRight className="w-5 h-5 text-gray-400" />
           </Button>
           <div className="flex-1 flex flex-col items-center gap-4 overflow-hidden">
@@ -431,6 +525,40 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCar
             <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 [writing-mode:vertical-rl] whitespace-nowrap text-center">
               {column.title}
             </h3>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-gray-100"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical className="w-3.5 h-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="w-48">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setTimeout(() => setIsEditOpen(true), 0);
+                  }}
+                  className="cursor-pointer"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Editar etiqueta
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setTimeout(() => setConfirmDeleteLabel(true), 0);
+                  }}
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir etiqueta
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
@@ -438,55 +566,123 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({ column, onDrop, onCar
   }
 
   return (
-    <div
-      ref={ref}
-      className={cn(
-        "flex-shrink-0 w-80 rounded-2xl flex flex-col h-[calc(100vh-200px)] transition-all duration-300 border shadow-sm",
+    <>
+      <div ref={ref} className={cn(
+        "flex-shrink-0 w-[450px] rounded-2xl flex flex-col h-[calc(100vh-200px)] transition-all duration-300 border shadow-sm",
         isOver ? "bg-blue-50 border-blue-400 ring-2 ring-blue-100" : "bg-gray-50/50 border-gray-200"
-      )}
-    >
-      <div
-        className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white shadow-sm"
-        style={{ borderTop: `4px solid ${columnColor}` }}
-      >
-        <div className="flex items-center gap-2 overflow-hidden">
-          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: columnColor, boxShadow: `0 0 8px ${columnColor}66` }}></div>
-          <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 truncate">{column.title}</h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge className="bg-gray-100 text-gray-600 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
-            {column.cards.length}
-          </Badge>
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-gray-400 hover:text-gray-900" onClick={toggleCollapse}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-
-
-      <div className="flex-1 overflow-y-auto px-2 p-4">
-        {column.cards.map((card) => (
-          <DraggableCard
-            key={card.id}
-            card={card}
-            columnId={column.id}
-            onCardClick={onCardClick}
-            onQuickAction={onQuickAction}
-          />
-        ))}
-        {column.cards.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 opacity-30">
-            <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-2">
-              <Briefcase className="w-6 h-6 text-gray-400" />
-            </div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Sem processos</p>
+      )}>
+        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: columnColor, boxShadow: `0 0 8px ${columnColor}66` }} />
+            <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 truncate">{column.title}</h3>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <Badge className="bg-gray-100 text-gray-600 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
+              {column.cards.length}
+            </Badge>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-gray-100"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical className="w-3.5 h-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="w-48">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setTimeout(() => setIsEditOpen(true), 0);
+                  }}
+                  className="cursor-pointer"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Editar etiqueta
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setTimeout(() => setConfirmDeleteLabel(true), 0);
+                  }}
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir etiqueta
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-gray-400 hover:text-gray-900" onClick={toggleCollapse}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2 p-4">
+          {column.cards.map((card) => (
+            <DraggableCard
+              key={card.id}
+              card={card}
+              columnId={column.id}
+              onCardClick={onCardClick}
+              onQuickAction={onQuickAction}
+              onDelete={onDelete}
+            />
+          ))}
+          {column.cards.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 opacity-30">
+              <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-2">
+                <Briefcase className="w-6 h-6 text-gray-400" />
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Sem processos</p>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      <LabelDialog
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        initial={{
+          name: column.title,
+          color: column.color || '#3b82f6',
+          timeLimitDays: column.timeLimitDays ?? null,
+        }}
+        title="Editar Etiqueta"
+        submitLabel="Salvar"
+        onSubmit={(data) => onLabelEdit(column.id, data)}
+      />
+
+      <Dialog open={confirmDeleteLabel} onOpenChange={setConfirmDeleteLabel}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle>Excluir etiqueta</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir <strong>{column.title}</strong>?
+              {column.cards.length > 0 && (
+                <span className="block mt-2 text-red-600 font-medium">
+                  Atenção: {column.cards.length} card{column.cards.length > 1 ? 's' : ''} ficar{column.cards.length > 1 ? 'ão' : 'á'} sem etiqueta.
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-row gap-3">
+            <Button variant="secondary" className="flex-1" onClick={() => setConfirmDeleteLabel(false)} disabled={deletingLabel}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1" onClick={handleConfirmDelete} disabled={deletingLabel}>
+              {deletingLabel ? <Loader2 className="w-4 h-4 animate-spin" /> : "Excluir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
+// =============================================
+// KanbanBoard
+// =============================================
 export const KanbanBoard: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -496,38 +692,29 @@ export const KanbanBoard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>({});
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
+  const [labels, setLabels] = useState<Label[]>([]);
 
   useEffect(() => {
     async function fetchData() {
       setIsLoading(true);
       try {
-        const [usersData, processesData] = await Promise.all([
+        const [labelsData, usersData, processesData] = await Promise.all([
+          getLabels(),
           getUsers('basic'),
           getProcess('basic'),
         ]);
-
+        setLabels(labelsData);
         const users = Array.isArray(usersData)
-          ? usersData.map((user) => ({
-            ...user,
-            status: user.status || user.type,
-            isProcess: false,
-          }))
+          ? usersData.map(u => ({ ...u, isProcess: false, ownerId: u.id }))
           : [];
         const processes = Array.isArray(processesData)
-          ? processesData.map((process) => ({
-            ...process,
-            status: process.status || process.role,
-            isProcess: true,
-          }))
+          ? processesData.map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
           : [];
-
-        const combinedData = [...users, ...processes];
-        setItems(combinedData);
-        setFilteredItems(combinedData);
-      } catch (error) {
-        console.error('Erro ao carregar os dados:', error);
-        setItems([]);
-        setFilteredItems([]);
+        const combined = [...users, ...processes];
+        setItems(combined);
+        setFilteredItems(combined);
+      } catch (err) {
+        console.error(err);
       } finally {
         setIsLoading(false);
       }
@@ -537,109 +724,126 @@ export const KanbanBoard: React.FC = () => {
 
   useEffect(() => {
     let filtered = items;
-
     if (searchQuery) {
       filtered = filtered.filter((item) =>
         item.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-
     if (serviceFilter !== 'Todos') {
-      filtered = filtered.filter((item) => item.status === serviceFilter);
+      filtered = filtered.filter((item) => item.label?.name === serviceFilter);
     }
-
     setFilteredItems(filtered);
   }, [searchQuery, serviceFilter, items]);
 
   useEffect(() => {
-    const kanbanCards: KanbanCard[] = filteredItems.map((item) => ({
+    const kanbanCards: KanbanCard[] = filteredItems.map(item => ({
       id: item.id,
-      title: item.name,
-      description: item.obs || '',
-      assignee: item.type || '',
-      status: item.status || 'Filtro de Cartões',
+      title: item.name ?? '',
+      description: item.obs ?? '',
+      assignee: item.type ?? '',
+      labelId: item.labelId,
+      label: item.label ?? null,
+      status: item.label?.name ?? 'Filtro de Cartões',
       timer: 0,
       comments: [],
       attachments: [],
-      observations: item.obs || '',
+      observations: item.obs ?? '',
       checklistItems: [],
-      createdAt: new Date(item.statusStartedAt || Date.now()),
+      createdAt: new Date(item.statusStartedAt ?? Date.now()),
       updatedAt: new Date(),
       statusStartedAt: item.statusStartedAt,
       service: item.service,
       type: item.type,
       isProcess: !!item.isProcess,
+      ownerId: item.ownerId,
     }));
 
-    const columnTitles = services.map((s) => s.name);
-    const displayedTitles = serviceFilter === 'Todos' ? columnTitles : columnTitles.filter((t) => t === serviceFilter);
+    const displayedLabels = serviceFilter === 'Todos'
+      ? labels
+      : labels.filter(l => l.name === serviceFilter);
 
-    const newColumns = services
-      .filter((s) => displayedTitles.includes(s.name))
-      .map((service, index) => ({
-        id: service.id,
-        title: service.name,
-        cards: kanbanCards.filter((card) => card.status === service.name),
-      }));
+    const newColumns = displayedLabels.map(label => ({
+      id: label.id,
+      title: label.name,
+      color: label.color,
+      timeLimitDays: label.timeLimitDays,
+      cards: kanbanCards.filter(c => c.labelId === label.id),
+    }));
 
     setColumns(newColumns);
-  }, [filteredItems, serviceFilter]);
+  }, [filteredItems, labels, serviceFilter]);
 
-  const updateCardStatus = async (
-    id: string,
-    status: string,
-    isProcess: boolean
-  ) => {
+  // ============= LABEL CRUD =============
+  async function createLabel(data: LabelInput) {
     try {
-      await fetch('/api/kanban/update-status', {
+      const res = await fetch('/api/labels', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id,
-          status,
-          isProcess,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       });
-    } catch (err) {
-      console.error('Erro ao salvar:', err);
+      if (!res.ok) throw new Error('Erro ao criar etiqueta');
+      const newLabel: Label = await res.json();
+      setLabels((prev) => [...prev, newLabel]);
+      toast.success('Etiqueta criada!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message);
+      throw err;
     }
-  };
+  }
+
+  async function updateLabel(id: string, data: LabelInput) {
+    try {
+      const res = await fetch(`/api/labels/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar etiqueta');
+      const updated: Label = await res.json();
+      setLabels((prev) => prev.map((l) => (l.id === id ? updated : l)));
+      toast.success('Etiqueta atualizada!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message);
+      throw err;
+    }
+  }
+
+  async function deleteLabel(id: string) {
+    try {
+      const res = await fetch(`/api/labels/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Erro ao excluir etiqueta');
+      setLabels((prev) => prev.filter((l) => l.id !== id));
+      // tira a etiqueta dos cards que estavam nela (no client; backend deve fazer o mesmo)
+      setItems((prev) => prev.map((it) =>
+        it.labelId === id ? { ...it, labelId: null, label: null } : it
+      ));
+      toast.success('Etiqueta excluída!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message);
+      throw err;
+    }
+  }
 
   // eslint-disable-next-line prefer-const
   let [movedCard, setMovedCard] = useState<KanbanCard | null>(null);
-  const handleDrop = async (
-    cardId: string,
-    sourceColumnId: string,
-    targetColumnId: string
-  ) => {
-
+  const handleDrop = async (cardId: string, sourceColumnId: string, targetColumnId: string) => {
     if (sourceColumnId === targetColumnId) return;
-
     setColumns((prev) => {
       const newCols = structuredClone(prev);
-
       const source = newCols.find(c => c.id === sourceColumnId);
       const target = newCols.find(c => c.id === targetColumnId);
-
       if (!source || !target) return prev;
-
       const index = source.cards.findIndex(c => c.id === cardId);
-
       if (index === -1) return prev;
-
       [movedCard] = source.cards.splice(index, 1);
-
       movedCard.status = target.title;
       movedCard.statusStartedAt = new Date().toISOString();
-
       target.cards.push(movedCard);
-
       return newCols;
     });
-
-    // Persiste no banco
     if (movedCard) {
       try {
         await updateKanbanStatus({
@@ -653,41 +857,35 @@ export const KanbanBoard: React.FC = () => {
     }
   };
 
-
   const handleQuickAction = (cardId: string, action: string) => {
     const card = columns.flatMap(col => col.cards).find(c => c.id === cardId);
     if (!card) return;
-
-    if (action === 'email') {
-      alert(`📧 Enviando email para ${card.assignee} sobre: ${card.title}`);
-    } else if (action === 'whatsapp') {
-      alert(`💬 Enviando WhatsApp para ${card.assignee} sobre: ${card.title}`);
-    }
+    if (action === 'email') alert(`📧 Enviando email para ${card.assignee} sobre: ${card.title}`);
+    else if (action === 'whatsapp') alert(`💬 Enviando WhatsApp para ${card.assignee} sobre: ${card.title}`);
   };
 
   const handleCardUpdate = (updatedCard: KanbanCard) => {
     const safeStatus = updatedCard.status ?? 'Filtro de Cartões';
-
-    const safeCard: KanbanCard = {
-      ...updatedCard,
-      status: safeStatus,
-    };
-
-    setColumns((prevColumns) => {
-      return prevColumns.map(column => ({
+    const safeCard: KanbanCard = { ...updatedCard, status: safeStatus };
+    setColumns((prevColumns) =>
+      prevColumns.map(column => ({
         ...column,
-        cards: column.cards.map(card =>
-          card.id === safeCard.id ? safeCard : card
-        )
-      }));
-    });
+        cards: column.cards.map(card => card.id === safeCard.id ? safeCard : card)
+      }))
+    );
+  };
+
+  const handleDeleteCard = (cardId: string) => {
+    setColumns((prev) =>
+      prev.map((col) => ({ ...col, cards: col.cards.filter((c) => c.id !== cardId) }))
+    );
+    setItems((prev) => prev.filter((i) => i.id !== cardId));
+    setFilteredItems((prev) => prev.filter((i) => i.id !== cardId));
+    if (selectedCard?.id === cardId) setSelectedCard(null);
   };
 
   const toggleCollapse = (colId: string) => {
-    setCollapsedColumns((prev) => ({
-      ...prev,
-      [colId]: !prev[colId],
-    }));
+    setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
   };
 
   return (
@@ -705,17 +903,14 @@ export const KanbanBoard: React.FC = () => {
                 className="pl-10 h-12 w-full rounded-2xl border-gray-200 focus:ring-blue-500 bg-gray-50/50"
               />
             </div>
-
             <Select value={serviceFilter} onValueChange={setServiceFilter}>
               <SelectTrigger className="w-full md:w-[280px] h-12 rounded-2xl border-gray-200 bg-gray-50/50">
                 <SelectValue placeholder="Filtrar Etapa" />
               </SelectTrigger>
               <SelectContent className="rounded-2xl">
                 <SelectItem value="Todos">Todas as Etapas</SelectItem>
-                {services.map((service) => (
-                  <SelectItem key={service.id} value={service.name}>
-                    {service.name}
-                  </SelectItem>
+                {labels.map((label) => (
+                  <SelectItem key={label.id} value={label.name}>{label.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -723,6 +918,7 @@ export const KanbanBoard: React.FC = () => {
 
           <div className="flex items-center gap-3 shrink-0">
             <div className="h-10 w-[1px] bg-gray-100 mx-2 hidden lg:block" />
+            <CreateLabelButton onCreate={createLabel} />
             <CreateNewCard />
           </div>
         </div>
@@ -747,6 +943,9 @@ export const KanbanBoard: React.FC = () => {
                   onDrop={handleDrop}
                   onCardClick={setSelectedCard}
                   onQuickAction={handleQuickAction}
+                  onDelete={handleDeleteCard}
+                  onLabelEdit={updateLabel}
+                  onLabelDelete={deleteLabel}
                   isCollapsed={collapsedColumns[column.id] || false}
                   toggleCollapse={() => toggleCollapse(column.id)}
                 />
@@ -761,7 +960,9 @@ export const KanbanBoard: React.FC = () => {
             open={!!selectedCard}
             onClose={() => setSelectedCard(null)}
             onUpdate={handleCardUpdate}
-            userId={selectedCard.id}
+            onDelete={handleDeleteCard}
+            cardId={selectedCard.id}
+            ownerId={selectedCard.ownerId}
             isProcess={selectedCard.isProcess}
           />
         )}
@@ -769,5 +970,3 @@ export const KanbanBoard: React.FC = () => {
     </DndProvider>
   );
 };
-
-
