@@ -12,7 +12,8 @@ function formatarData(data?: Date | null) {
 
 export async function gerarProcuracaoById(
     id: string,
-    type: Tipo
+    type: Tipo,
+    template?: string
 ) {
     let data: any;
 
@@ -50,7 +51,7 @@ export async function gerarProcuracaoById(
         data: formatarData(new Date()),
     };
 
-    const buffer = await gerarProcuracao(dados);
+    const buffer = await gerarProcuracao(dados, template);
     return buffer;
 
 }

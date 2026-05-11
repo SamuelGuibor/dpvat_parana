@@ -9,6 +9,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
+  User,
 } from 'lucide-react';
 import { Card, CardContent } from '@/app/_components/ui/card';
 import { Badge } from '@/app/_components/ui/badge';
@@ -35,6 +36,7 @@ import { updateKanbanStatus } from '@/app/_actions/update-kanban';
 import useSWR from 'swr';
 import { getLabels } from '../_actions/get-labels';
 import { deleteCard } from '../_actions/delete-card';
+import { createUser } from '../_actions/create-user';
 import { toast } from "sonner";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
@@ -335,6 +337,110 @@ const CreateLabelButton: React.FC<{ onCreate: (data: LabelInput) => Promise<void
         submitLabel="Criar"
         onSubmit={onCreate}
       />
+    </>
+  );
+};
+
+const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ labels, onCreated }) => {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [labelId, setLabelId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName('');
+      setCpf('');
+      setPassword('');
+      setEmail('');
+      setLabelId('');
+    }
+  }, [open]);
+
+  async function handle() {
+    if (!name.trim() || !cpf.trim() || !password.trim()) {
+      toast.error('Nome, CPF e senha são obrigatórios.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await createUser({
+        name: name.trim(),
+        cpf: cpf.trim(),
+        password: password.trim(),
+        email: email.trim() || undefined,
+        labelId: labelId || undefined,
+      });
+      toast.success('Cliente criado com sucesso!');
+      setOpen(false);
+      onCreated();
+    } catch {
+      toast.error('Erro ao criar cliente.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)} className="h-12 rounded-2xl">
+        <User className="w-4 h-4 mr-2" />
+        Criar Card Cliente
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle>Criar Card Cliente</DialogTitle>
+            <DialogDescription>Preencha os dados do novo cliente.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <UILabel>Nome *</UILabel>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome completo" />
+            </div>
+            <div className="space-y-2">
+              <UILabel>CPF *</UILabel>
+              <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" />
+            </div>
+            <div className="space-y-2">
+              <UILabel>Senha *</UILabel>
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha de acesso" />
+            </div>
+            <div className="space-y-2">
+              <UILabel>Email (opcional)</UILabel>
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="inserir-email@gmail.com" />
+            </div>
+            <div className="space-y-2">
+              <UILabel>Etiqueta</UILabel>
+              <Select value={labelId} onValueChange={setLabelId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Primeira etiqueta (padrão)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {labels.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: l.color }} />
+                        {l.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button onClick={handle} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Criar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
@@ -693,6 +799,7 @@ export const KanbanBoard: React.FC = () => {
   const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>({});
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [labels, setLabels] = useState<Label[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
@@ -720,7 +827,7 @@ export const KanbanBoard: React.FC = () => {
       }
     }
     fetchData();
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     let filtered = items;
@@ -919,6 +1026,7 @@ export const KanbanBoard: React.FC = () => {
           <div className="flex items-center gap-3 shrink-0">
             <div className="h-10 w-[1px] bg-gray-100 mx-2 hidden lg:block" />
             <CreateLabelButton onCreate={createLabel} />
+            <CreatePerson labels={labels} onCreated={() => setRefreshKey((k) => k + 1)} />
             <CreateNewCard />
           </div>
         </div>

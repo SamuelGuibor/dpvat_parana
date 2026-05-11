@@ -1,9 +1,9 @@
 import { gerarProcuracaoById } from "@/app/_utils/gerarProcuracaoById";
 
 export async function POST(req: Request) {
-    const { id, type } = await req.json();
+    const { id, type, template } = await req.json();
 
-    const buffer = await gerarProcuracaoById(id, type);
+    const buffer = await gerarProcuracaoById(id, type, template);
 
     return new Response(
         new Uint8Array(buffer),

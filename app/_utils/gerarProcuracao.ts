@@ -6,12 +6,13 @@ import Docxtemplater from "docxtemplater";
 
 export async function gerarProcuracao(
   dados: any,
+  template?: string,
 ) {
-  // Caminho do template
+  const filename = template || "procuracao.docx";
   const templatePath = path.join(
     process.cwd(),
     "templates",
-    "procuracao.docx"
+    filename
   );
 
   const content = fs.readFileSync(templatePath, "binary");
@@ -22,8 +23,8 @@ export async function gerarProcuracao(
         paragraphLoop: true,
         linebreaks: true,
         delimiters: {
-            start: "[[",
-            end: "]]",
+            start: "<<",
+            end: ">>",
         },
     });
 

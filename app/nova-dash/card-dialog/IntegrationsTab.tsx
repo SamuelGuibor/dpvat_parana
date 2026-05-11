@@ -1,7 +1,16 @@
+"use client";
+
+import { useState, useEffect } from 'react';
 import { Button } from '@/app/_components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
 import { Mail, MessageCircle } from 'lucide-react';
 import { IoIosDocument } from 'react-icons/io';
 import type { ExtendedKanbanCard } from './types';
+
+interface Template {
+  filename: string;
+  label: string;
+}
 
 interface Props {
   editedCard: ExtendedKanbanCard;
@@ -46,11 +55,29 @@ function IntegrationCard({
 }
 
 export function IntegrationsTab({ editedCard, isProcess }: Props) {
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/procuracao/templates")
+      .then((res) => res.json())
+      .then((data: Template[]) => {
+        setTemplates(data);
+        if (data.length > 0) setSelectedTemplate(data[0].filename);
+      });
+  }, []);
+
   async function generateProcuracao() {
+    if (!selectedTemplate) return;
+
     const res = await fetch('/api/procuracao', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: editedCard.id, type: isProcess ? 'process' : 'user' }),
+      body: JSON.stringify({
+        id: editedCard.id,
+        type: isProcess ? 'process' : 'user',
+        template: selectedTemplate,
+      }),
     });
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
@@ -74,9 +101,27 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
             </div>
             <h4 className="text-lg font-black text-indigo-950">Geração de Procuração</h4>
           </div>
-          <Button onClick={generateProcuracao} className="bg-indigo-800 hover:bg-indigo-950 text-white font-bold h-12 rounded-xl shadow-md shadow-indigo-200 transition-all active:scale-95 w-full">
-            <IoIosDocument className="w-4 h-4 mr-2" /> Gerar Procuração
-          </Button>
+          <div className="space-y-3 relative z-10">
+            <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+              <SelectTrigger className="w-full bg-white">
+                <SelectValue placeholder="Selecione o modelo" />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem className="hover:bg-indigo-100" key={t.filename} value={t.filename}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={generateProcuracao}
+              disabled={!selectedTemplate}
+              className="bg-indigo-800 hover:bg-indigo-950 text-white font-bold h-12 rounded-xl shadow-md shadow-indigo-200 transition-all active:scale-95 w-full"
+            >
+              <IoIosDocument className="w-4 h-4 mr-2" /> Gerar Procuração
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
