@@ -62,7 +62,6 @@ export const authOptions: AuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
-        session.user.type = token.type as string;
         session.user.service = token.service as string;
       }
       session.accessToken = token.accessToken as string;
