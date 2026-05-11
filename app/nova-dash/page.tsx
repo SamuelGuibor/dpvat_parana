@@ -16,7 +16,7 @@ import Team from '../_components/team_dash';
 
 import { DbNotification } from '@/app/_types/notifications';
 import Link from 'next/link';
-import { NotificationDropdown } from './box';
+// import { NotificationDropdown } from './box';
 export const dynamic = "force-dynamic";
 
 export default function Page() {
