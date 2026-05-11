@@ -24,7 +24,7 @@ export async function getStatus(id: string): Promise<userStatus[]> {
 
     return userStatus;
   } catch (error) {
-    console.error("Erro ao buscar processos:", error, { id, service });
+    console.error("Erro ao buscar processos:", error, { id });
     return [];
   }
 }
