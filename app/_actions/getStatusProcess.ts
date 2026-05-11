@@ -10,13 +10,11 @@ interface userProcess {
   service: string | null
 }
 
-export async function getStatusProcess(type: string, userId: string, service: string): Promise<userProcess[]> {
+export async function getStatusProcess(userId: string): Promise<userProcess[]> {
   try {
     const processes = await db.process.findMany({
       where: {
         userId: userId,
-        type: type,
-        service: service
       },
       select: {
         id: true,

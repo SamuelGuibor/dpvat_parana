@@ -9,12 +9,11 @@ interface userStatus {
   service: string | null;
 }
 
-export async function getStatus(id: string, service: string | null): Promise<userStatus[]> {
+export async function getStatus(id: string): Promise<userStatus[]> {
   try {
     const userStatus = await db.user.findMany({
       where: {
         id: id,
-        service: service,
       },
       select: {
         id: true,

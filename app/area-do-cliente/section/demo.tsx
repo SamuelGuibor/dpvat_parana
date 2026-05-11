@@ -86,16 +86,8 @@ function BentoDemo() {
           return;
         }
 
-        const processes = await getStatusProcess(
-          session.user.type ?? "",
-          session.user.id,
-          session.user.service ?? ""
-        );
-
-        const userStatus = await getStatus(
-          session.user.id,
-          session.user.service ?? ""
-        );
+        const processes = await getStatusProcess(session.user.id);
+        const userStatus = await getStatus(session.user.id);
 
         setData(processes);
         setDataUser(userStatus);
