@@ -28,7 +28,7 @@ export const authOptions: AuthOptions = {
         }
 
         const user = await db.user.findFirst({
-          select: { id: true, email: true, name: true, role: true, password: true },
+          select: { id: true, email: true, name: true, role: true, password: true, type: true, service: true },
           where: { cpf: credentials.cpf, password: credentials.password },
         });
 
@@ -41,20 +41,22 @@ export const authOptions: AuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
+          type: user.type ?? undefined,
+          service: user.service ?? undefined,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
-        token.accessToken = jwt.sign(
-          { id: user.id, role: user.role },
-          process.env.NEXT_AUTH_SECRET as string,
-          { expiresIn: "7d" }
-        );
+        token.type = user.type;
+        token.service = user.service;
+      }
+      if (account) {
+        token.accessToken = account.access_token;
       }
       return token;
     },
@@ -62,6 +64,8 @@ export const authOptions: AuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        session.user.type = token.type as string;
+        session.user.service = token.service as string;
       }
       session.accessToken = token.accessToken as string;
       return session;
