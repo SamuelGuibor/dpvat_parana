@@ -97,8 +97,24 @@ export function DetailsTab({ editedCard, onChange, labels }: Props) {
 
         <SelectField id="nacionalidade" label="Nacionalidade" value={editedCard.nacionalidade}
           options={toOptions(NACIONALIDADES)} onChange={onChange} placeholder="Selecione a nacionalidade" />
-        <SelectField id="role" label="Etiquetas (Role)" value={editedCard.role}
-          options={toOptions(labels.map((l: any) => l.name))} onChange={onChange} placeholder="Selecione uma etiqueta" />
+        <div className="space-y-2">
+          <Label htmlFor="labelId">Etiqueta</Label>
+          <select
+            id="labelId"
+            value={editedCard.labelId || ''}
+            onChange={(e) => {
+              const selected = labels.find((l: any) => l.id === e.target.value);
+              onChange('labelId', e.target.value);
+              if (selected) onChange('role', selected.name);
+            }}
+            className={selectClass}
+          >
+            <option value="">Selecione uma etiqueta</option>
+            {labels.map((l: any) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+        </div>
         <SelectField id="service" label="Serviços" value={editedCard.service}
           options={toOptions(SERVICE_OPTIONS)} onChange={onChange} placeholder="Selecione um serviço" />
 

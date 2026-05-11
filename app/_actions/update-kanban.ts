@@ -7,13 +7,13 @@ import { revalidatePath } from "next/cache";
 
 interface UpdateKanbanStatusProps {
   id: string;
-  status: string;
+  labelId: string;
   isProcess: boolean;
 }
 
 export async function updateKanbanStatus({
   id,
-  status,
+  labelId,
   isProcess,
 }: UpdateKanbanStatusProps) {
   const session = await getServerSession(authOptions);
@@ -22,27 +22,22 @@ export async function updateKanbanStatus({
     throw new Error("Não autenticado");
   }
 
+  const label = await db.label.findUnique({ where: { id: labelId } });
+  if (!label) throw new Error("Etiqueta não encontrada");
+
   const now = new Date();
+  const data = {
+    labelId: label.id,
+    role: label.name,
+    statusStartedAt: now,
+  };
 
   if (isProcess) {
-    await db.process.update({
-      where: { id },
-      data: {
-        role: status,
-        statusStartedAt: now,
-      },
-    });
-    revalidatePath('/nova-dash')
+    await db.process.update({ where: { id }, data });
   } else {
-    await db.user.update({
-      where: { id },
-      data: {
-        role: status,
-        statusStartedAt: now,
-      },
-    });
-    revalidatePath('/nova-dash')
-
+    await db.user.update({ where: { id }, data });
   }
+
+  revalidatePath('/nova-dash');
   return { success: true };
 }

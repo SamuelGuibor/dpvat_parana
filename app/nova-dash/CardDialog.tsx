@@ -15,9 +15,8 @@ import { getUsers } from '@/app/_actions/get-user';
 import { getProcess } from '@/app/_actions/get-process';
 import { updateUser } from '@/app/_actions/update-users';
 import { updateProcess } from '@/app/_actions/update-process';
-import { updateProcessRole } from '@/app/_actions/statusTimerProcess';
-import { updateUserRole } from '@/app/_actions/statusTimer';
 import { deleteCard } from '@/app/_actions/delete-card';
+import { updateKanbanStatus } from '@/app/_actions/update-kanban';
 
 import type { ExtendedKanbanCard } from './card-dialog/types';
 import { DetailsTab } from './card-dialog/DetailsTab';
@@ -45,6 +44,7 @@ const EDITABLE_FIELDS = [
   'rg', 'nome_mae', 'telefone', 'cidade', 'estado', 'estado_civil',
   'profissao', 'nacionalidade', 'data_acidente', 'atendimento_via',
   'hospital', 'outro_hospital', 'lesoes', 'status', 'role', 'obs', 'service',
+  'labelId',
 ] as const;
 
 export const CardDialog: React.FC<CardDialogProps> = ({
@@ -111,38 +111,38 @@ export const CardDialog: React.FC<CardDialogProps> = ({
 
   async function handleSave() {
     try {
-      const onlyRoleChanged =
-        editedCard.role !== card.role &&
-        EDITABLE_FIELDS.every((f) => f === 'role' || editedCard[f] === card[f]);
+      const labelChanged = editedCard.labelId !== card.labelId && !!editedCard.labelId;
 
-      let updatedItem: any;
-      if (onlyRoleChanged) {
-        const fn = isProcess ? updateProcessRole : updateUserRole;
-        const result = await fn({
-          userId: editedCard.id,
-          newRole: editedCard.role || (isProcess ? 'PROCESS' : 'USER'),
+      if (labelChanged) {
+        await updateKanbanStatus({
+          id: editedCard.id,
+          labelId: editedCard.labelId!,
+          isProcess,
         });
-        updatedItem = {
-          ...card,
-          role: result.role,
-          statusStartedAt: result.statusStartedAt ? result.statusStartedAt.toISOString() : null,
-        };
-      } else {
-        const changes: any = { id: editedCard.id };
-        for (const f of EDITABLE_FIELDS) {
-          if (editedCard[f] !== card[f]) {
-            // o backend usa "name" mas o form usa "title"
-            changes[f === 'title' ? 'name' : f] = editedCard[f];
-          }
-        }
-        if (Object.keys(changes).length > 1) {
-          const fn = isProcess ? updateProcess : updateUser;
-          updatedItem = await fn(changes);
-        } else {
-          updatedItem = card;
+      }
+
+      const changes: any = { id: editedCard.id };
+      for (const f of EDITABLE_FIELDS) {
+        if (f === 'labelId' || f === 'role') continue;
+        if (editedCard[f] !== card[f]) {
+          changes[f === 'title' ? 'name' : f] = editedCard[f];
         }
       }
-      onUpdate({ ...editedCard, ...updatedItem });
+
+      let updatedItem: any = card;
+      if (Object.keys(changes).length > 1) {
+        const fn = isProcess ? updateProcess : updateUser;
+        updatedItem = await fn(changes);
+      }
+
+      const newLabel = labels.find((l: any) => l.id === editedCard.labelId) ?? null;
+      onUpdate({
+        ...editedCard,
+        ...updatedItem,
+        labelId: editedCard.labelId,
+        label: newLabel,
+        status: newLabel?.name ?? editedCard.status,
+      });
       toast.success('Dados salvos com sucesso!');
     } catch (err: any) {
       console.error(err);

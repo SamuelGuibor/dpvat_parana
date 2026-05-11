@@ -934,10 +934,12 @@ export const KanbanBoard: React.FC = () => {
     }
   }
 
-  // eslint-disable-next-line prefer-const
-  let [movedCard, setMovedCard] = useState<KanbanCard | null>(null);
   const handleDrop = async (cardId: string, sourceColumnId: string, targetColumnId: string) => {
     if (sourceColumnId === targetColumnId) return;
+
+    const targetLabel = labels.find(l => l.id === targetColumnId) ?? null;
+    let droppedCard: KanbanCard | null = null;
+
     setColumns((prev) => {
       const newCols = structuredClone(prev);
       const source = newCols.find(c => c.id === sourceColumnId);
@@ -945,21 +947,34 @@ export const KanbanBoard: React.FC = () => {
       if (!source || !target) return prev;
       const index = source.cards.findIndex(c => c.id === cardId);
       if (index === -1) return prev;
-      [movedCard] = source.cards.splice(index, 1);
-      movedCard.status = target.title;
-      movedCard.statusStartedAt = new Date().toISOString();
-      target.cards.push(movedCard);
+      const [card] = source.cards.splice(index, 1);
+      card.labelId = targetColumnId;
+      card.label = targetLabel;
+      card.status = target.title;
+      card.statusStartedAt = new Date().toISOString();
+      target.cards.push(card);
+      droppedCard = card;
       return newCols;
     });
-    if (movedCard) {
+
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === cardId
+          ? { ...it, labelId: targetColumnId, label: targetLabel }
+          : it
+      )
+    );
+
+    if (droppedCard) {
       try {
         await updateKanbanStatus({
-          id: movedCard.id,
-          status: movedCard.status!,
-          isProcess: movedCard.isProcess,
+          id: (droppedCard as KanbanCard).id,
+          labelId: targetColumnId,
+          isProcess: (droppedCard as KanbanCard).isProcess,
         });
       } catch (err) {
         console.error("Erro ao salvar:", err);
+        toast.error("Erro ao mover card");
       }
     }
   };
@@ -974,11 +989,13 @@ export const KanbanBoard: React.FC = () => {
   const handleCardUpdate = (updatedCard: KanbanCard) => {
     const safeStatus = updatedCard.status ?? 'Filtro de Cartões';
     const safeCard: KanbanCard = { ...updatedCard, status: safeStatus };
-    setColumns((prevColumns) =>
-      prevColumns.map(column => ({
-        ...column,
-        cards: column.cards.map(card => card.id === safeCard.id ? safeCard : card)
-      }))
+
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === safeCard.id
+          ? { ...it, labelId: safeCard.labelId, label: safeCard.label }
+          : it
+      )
     );
   };
 
