@@ -18,6 +18,7 @@ export async function getAdmins() {
     select: {
       id: true,
       name: true,
+      cpf: true,
       email: true,
       role: true,
       fixed: true,
@@ -29,6 +30,7 @@ export async function getAdmins() {
   return admins.map((user) => ({
     id: user.id,
     name: user.name || "Sem nome",
+    cpf: user.cpf || "",
     email: user.email || "",
     role: user.role,
     fixed: user.fixed ?? false,

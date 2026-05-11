@@ -50,6 +50,7 @@ import { getAdmins } from "@/app/_actions/get-team";
 import { UpdateRole } from "@/app/_actions/update_team";
 import { createUser } from "@/app/_actions/create-user";
 import { deleteAdmin } from "../_actions/delete-user";
+import { cp } from "fs";
 
 interface CardDialogProps {
     open: boolean;
@@ -59,6 +60,7 @@ interface CardDialogProps {
 type Member = {
     id: string;
     name: string;
+    cpf?: string;
     email?: string;
     role: string;
     avatar?: string;
@@ -79,6 +81,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
 
     const [newMember, setNewMember] = useState({
         name: "",
+        cpf: "",
         email: "",
         password: "",
         role: "ADMIN"
@@ -93,6 +96,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                 const formatted = data.map((item: any) => ({
                     id: item.id,
                     name: item.name || "Sem nome",
+                    cpf: item.cpf || "",
                     email: item.email || "",
                     role: item.role,
                     avatar: (item.name || "SN")
@@ -158,6 +162,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                 name: created.name || "Sem nome",
                 email: created.email,
                 role: created.role,
+                cpf: created.cpf || "",
                 avatar: (created.name || "SN")
                     .split(" ")
                     .map((n: string) => n[0])
@@ -169,7 +174,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
 
             setMembers(prev => [...prev, member]);
 
-            setNewMember({ name: "", email: "", password: "", role: "ADMIN" });
+            setNewMember({ name: "", email: "", password: "", role: "ADMIN", cpf: "" });
             setShowAddForm(false);
 
             toast.success("Administrador criado!");
@@ -180,19 +185,19 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
     }
 
     async function handleDeleteMember(id: string) {
-    const member = members.find(m => m.id === id);
+        const member = members.find(m => m.id === id);
 
-    try {
-        await deleteAdmin(id);
+        try {
+            await deleteAdmin(id);
 
-        setMembers(prev => prev.filter(m => m.id !== id));
+            setMembers(prev => prev.filter(m => m.id !== id));
 
-        toast.success(`${member?.name} removido`);
-    } catch (error: any) {
-        console.error(error);
-        toast.error(error.message || "Erro ao remover");
+            toast.success(`${member?.name} removido`);
+        } catch (error: any) {
+            console.error(error);
+            toast.error(error.message || "Erro ao remover");
+        }
     }
-}
 
     // ✅ SAVE ROLES
     async function handleSave() {
@@ -225,7 +230,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogContent className="max-w-[1400px] max-h-[90vh] overflow-hidden flex flex-col">
                 <DialogHeader>
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -318,7 +323,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                         Adicionar Novo Membro
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                     <div>
                                         <label className="text-sm font-medium text-gray-700 mb-1 block">
                                             Nome Completo
@@ -335,6 +340,15 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                         </label>
                                         <input placeholder="Email" value={newMember.email}
                                             onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                            CPF
+                                        </label>
+                                        <input placeholder="CPF" value={newMember.cpf}
+                                            onChange={(e) => setNewMember({ ...newMember, cpf: e.target.value })}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                     </div>
 
@@ -371,7 +385,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                             variant="outline"
                                             onClick={() => {
                                                 setShowAddForm(false);
-                                                setNewMember({ name: "", email: "", password: "", role: "" });
+                                                setNewMember({ name: "", email: "", password: "", role: "", cpf: "" });
                                             }}
                                         >
                                             <X className="w-4 h-4 mr-2" />
@@ -399,6 +413,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                             <TableRow>
                                 <TableHead>Nome</TableHead>
                                 <TableHead>Email</TableHead>
+                                <TableHead>CPF</TableHead>
                                 <TableHead>Cargo</TableHead>
                                 <TableHead>Ações</TableHead>
                             </TableRow>
@@ -413,7 +428,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                     <TableRow key={member.id}>
                                         <TableCell>{member.name}</TableCell>
                                         <TableCell>{member.email}</TableCell>
-
+                                        <TableCell>{member.cpf}</TableCell>
                                         <TableCell>
                                             <Select value={member.role}
                                                 onValueChange={(value) => handleRoleChange(member.id, value)}>
