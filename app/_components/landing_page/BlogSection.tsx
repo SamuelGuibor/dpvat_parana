@@ -6,7 +6,7 @@ const blogPosts = [
     id: 1,
     title: 'Como Funciona o Seguro DPVAT em 2025',
     excerpt: 'Entenda seus direitos e como solicitar a indenização do seguro obrigatório para vítimas de acidentes de trânsito.',
-    image: '/dpvat_photo.jpeg',
+    image: '/fotodpvat.png',
     date: '15 de Dezembro, 2025',
     category: 'DPVAT',
     src: '/blog-seguros-parana/dpvat'
@@ -15,11 +15,13 @@ const blogPosts = [
     id: 2,
     title: 'Auxílio-Acidente do INSS: Guia Completo',
     excerpt: 'Saiba quando você tem direito ao benefício e como dar entrada no pedido junto ao INSS.',
-    image: '/inss_photo.jpeg',
+    image: 'https://images.unsplash.com/photo-1516069677018-378515003435?q=80&w=1829&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
     date: '10 de Dezembro, 2025',
     category: 'INSS',
     src: '/blog-seguros-parana/inss'
   },
+
+  /*
   {
     id: 3,
     title: 'Documentos Necessários para Processos de Indenização',
@@ -28,6 +30,18 @@ const blogPosts = [
     date: '5 de Dezembro, 2025',
     category: 'Documentação',
     src: '/blog-seguros-parana/documentacao'
+  },
+  */
+
+  {
+    id: 3,
+    title: 'O que é a licença maternidade e quem pode recebê-lo?',
+    excerpt: 'Descubra em quais situações você pode solicitar indenização por danos morais e como calcular o valor justo da sua reparação.',
+    image: 'https://images.unsplash.com/photo-1581998392741-67879e0ef04a?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
+    date: '12 de maio, 2026',
+    category: 'INSS',
+    author: '',
+    src: '/blog-seguros-parana/auxilio-maternidade'
   },
 ];
 
@@ -47,7 +61,7 @@ export function BlogSection() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {blogPosts.map((post) => (
             <article key={post.id} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow">
-              <Image 
+              <Image
                 src={post.image}
                 alt={post.title}
                 width={600}

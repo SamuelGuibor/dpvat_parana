@@ -7,7 +7,7 @@ const blogPosts = [
         id: 1,
         title: 'Como Funciona o Seguro DPVAT em 2025',
         excerpt: 'Entenda seus direitos e como solicitar a indenização do seguro obrigatório para vítimas de acidentes de trânsito. Saiba quais documentos reunir e os prazos.',
-        image: 'https://images.unsplash.com/photo-1637763723578-79a4ca9225f7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBhY2NpZGVudCUyMGluc3VyYW5jZXxlbnwxfHx8fDE3NjU4OTY4OTd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+        image: '/fotodpvat.png',
         date: '15 de Dezembro, 2025',
         category: 'DPVAT',
         author: 'Dr. Carlos Silva',
@@ -16,7 +16,7 @@ const blogPosts = [
         id: 2,
         title: 'Auxílio-Acidente do INSS: Guia Completo',
         excerpt: 'Saiba quando você tem direito ao benefício e como dar entrada no pedido junto ao INSS. Conheça os requisitos e valores atualizados para 2025.',
-        image: 'https://images.unsplash.com/photo-1722336760994-8e33dc1c116a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx0cmFmZmljJTIwYWNjaWRlbnQlMjBsYXd8ZW58MXx8fHwxNzY1OTc5OTY0fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+        image: 'https://images.unsplash.com/photo-1516069677018-378515003435?q=80&w=1829&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
         date: '10 de Dezembro, 2025',
         category: 'INSS',
         author: 'Dra. Ana Santos',
@@ -56,6 +56,16 @@ const blogPosts = [
         date: '22 de Novembro, 2025',
         category: 'Legislação',
         author: 'Dr. Paulo Mendes',
+    },
+    {
+        id: 7,
+        title: 'O que é a licença maternidade e quem pode recebê-lo?',
+        excerpt: 'Descubra em quais situações você pode solicitar indenização por danos morais e como calcular o valor justo da sua reparação.',
+        image: 'https://images.unsplash.com/photo-1581998392741-67879e0ef04a?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
+        date: '12 de maio, 2026',
+        category: 'INSS',
+        author: '',
+        link: '/blog-seguros-parana/auxilio-maternidade'
     },
 ];
 

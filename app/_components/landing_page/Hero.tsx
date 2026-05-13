@@ -37,13 +37,13 @@ export function Hero() {
                 Consulte seu Processo
                 <ArrowRight className="w-5 h-5" />
               </a>
-              <a href="#servicos" className="border-2 border-white text-white px-8 py-4 rounded-lg hover:bg-white/10 transition-colors flex items-center justify-center">
+              <a href="#servicos" className="border-2 border-white text-white px-8 py-4 rounded-lg hover:bg-white/20 transition-colors flex items-center justify-center">
                 Nossos Serviços
               </a>
             </div>
           </div>
           <div className="hidden lg:block">
-            <Image src='/clientes.png' width={700} height={200} alt='' className='rounded-xl'/>
+            <Image src='/img1.2.png' width={700} height={200} alt='' className='rounded-xl'/>
             {/* <ImageWithFallback 
               src="https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGNvbnN1bHRhdGlvbiUyMG9mZmljZXxlbnwxfHx8fDE3NjU5Nzk5NjR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
               alt="Consultoria jurídica"
