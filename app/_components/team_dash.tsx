@@ -413,7 +413,6 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                             <TableRow>
                                 <TableHead>Nome</TableHead>
                                 <TableHead>Email</TableHead>
-                                <TableHead>CPF</TableHead>
                                 <TableHead>Cargo</TableHead>
                                 <TableHead>Ações</TableHead>
                             </TableRow>
@@ -428,7 +427,6 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                     <TableRow key={member.id}>
                                         <TableCell>{member.name}</TableCell>
                                         <TableCell>{member.email}</TableCell>
-                                        <TableCell>{member.cpf}</TableCell>
                                         <TableCell>
                                             <Select value={member.role}
                                                 onValueChange={(value) => handleRoleChange(member.id, value)}>
