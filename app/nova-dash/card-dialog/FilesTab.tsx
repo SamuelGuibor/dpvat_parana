@@ -99,7 +99,6 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
             body: blob,
             headers: {
               'Content-Type': file.type,
-              'Content-Disposition': `attachment; filename="${fileName}"`,
             },
           });
           if (!res.ok) throw new Error(`Erro ao enviar ${fileName}`);
