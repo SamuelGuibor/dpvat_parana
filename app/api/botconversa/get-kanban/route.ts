@@ -1,18 +1,11 @@
-import { db } from '@/app/_lib/prisma';
 import { NextResponse } from 'next/server';
+import { fetchBotconversaAll } from '@/app/_lib/db/botconversa';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const data = await db.botconversa.findMany({
-    orderBy: {
-      createdAt: 'desc',
-    },
-  });
-
+  const data = await fetchBotconversaAll();
   return NextResponse.json(data, {
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-    },
+    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   });
 }

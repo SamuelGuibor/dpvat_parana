@@ -1,30 +1,20 @@
-// app/_actions/getStatusUser.ts
 'use server';
 
-import { db } from "@/app/_lib/prisma";
+import { fetchUserById } from "@/app/_lib/db/users";
 
-interface userStatus {
+interface UserStatus {
   id: string;
   name: string | null;
   service: string | null;
 }
 
-export async function getStatus(id: string): Promise<userStatus[]> {
+export async function getStatus(id: string): Promise<UserStatus[]> {
   try {
-    const userStatus = await db.user.findMany({
-      where: {
-        id: id,
-      },
-      select: {
-        id: true,
-        name: true,
-        service: true,
-      },
-    });
-
-    return userStatus;
+    const user = await fetchUserById(id);
+    if (!user) return [];
+    return [{ id: user.id, name: user.name ?? null, service: user.service ?? null }];
   } catch (error) {
-    console.error("Erro ao buscar processos:", error, { id });
+    console.error("Erro ao buscar status do usuário:", error, { id });
     return [];
   }
 }

@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server";
 
-import { db } from "../_lib/prisma";
+import { fetchUsersByRole } from "@/app/_lib/db/users";
 
 interface Contato {
   nome: string;
@@ -9,18 +8,6 @@ interface Contato {
 }
 
 export async function getContatosPorRole(role: string): Promise<Contato[]> {
-  const usuarios = await db.user.findMany({
-    where: {
-      role,
-    },
-    select: {
-      name: true,
-      telefone: true,
-    },
-  });
-
-  return usuarios.map((user: any) => ({
-    nome: user.name, 
-    telefone: user.telefone,
-  }));
+  const users = await fetchUsersByRole(role);
+  return users.map((u) => ({ nome: u.name ?? "", telefone: u.telefone ?? "" }));
 }

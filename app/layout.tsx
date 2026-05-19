@@ -8,7 +8,7 @@ import { Toaster } from "./_components/ui/sonner";
 import Script from "next/script";
 // import { MixpanelProvider } from "./_providers/mixpanel-provider";
 import { NotificationsProvider } from "./store/provider";
-// import { ChatBot } from "./_components/chatbot";
+import { ChatBot } from "./_components/chatbot";
 
 const mulish = Mulish({
   subsets: ["latin-ext"],
@@ -144,8 +144,7 @@ export default function RootLayout({
 
       </head>
       <body className={`${mulish.className} antialiased`}>
-        <AuthProvider><NotificationsProvider>{children}</NotificationsProvider></AuthProvider>
-        {/*<ChatBot /> */}
+        <AuthProvider><NotificationsProvider>{children}</NotificationsProvider><ChatBot /></AuthProvider>
         <Toaster />
         {/* <MixpanelProvider /> */}
         <script type="text/javascript" async

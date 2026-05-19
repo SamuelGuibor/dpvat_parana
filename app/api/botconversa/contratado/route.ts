@@ -53,21 +53,20 @@ export async function POST(req: NextRequest) {
         },
       });
 
-
-      const userExists = await db.user.findFirst({
-        where: {
-          telefone,
-        },
-      });
+      const [userExists, label] = await Promise.all([
+        db.user.findFirst({ where: { telefone } }),
+        db.label.findFirst({ where: { order: 2 } }),
+      ]);
 
       if (!userExists) {
         await db.user.create({
           data: {
             name: nome,
-            email: `inserir_email-${nome}@gmail.com`,
+            email: `inserir_email-${telefone}@gmail.com`,
             telefone,
             role: 'Gerar Procuração Automática',
             password: 'segurosparana1',
+            ...(label && { labelId: label.id }),
           },
         });
       }

@@ -1,11 +1,9 @@
-/* eslint-disable no-unused-vars */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 "use server";
 
-import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
 import { format } from "date-fns";
+import { fetchProcesses, fetchProcessById } from "@/app/_lib/db/processes";
 
 interface ProcessGet {
   id: string;
@@ -43,133 +41,22 @@ interface ProcessGet {
   label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
 }
 
-export async function getProcess(
-  fields: "basic" | "full" = "basic",
-  processId?: string
-): Promise<ProcessGet[] | ProcessGet | null> {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.email) {
-    throw new Error("Usuário não autenticado.");
-  }
-
-  const selectFields =
-    fields === "full"
-      ? {
-          id: true,
-          name: true,
-          status: true,
-          role: true,
-          statusStartedAt: true,
-          cpf: true,
-          data_nasc: true,
-          email: true,
-          rua: true,
-          bairro: true,
-          numero: true,
-          cep: true,
-          rg: true,
-          nome_mae: true,
-          telefone: true,
-          cidade: true,
-          estado: true,
-          estado_civil: true,
-          profissao: true,
-          nacionalidade: true,
-          data_acidente: true,
-          atendimento_via: true,
-          hospital: true,
-          outro_hospital: true,
-          lesoes: true,
-          observacao: true,
-          service: true,
-          fixed: true,
-          roleFixed: true,
-        }
-      : {
-        id: true,
-        name: true,
-        userId: true,
-        type: true,   
-        labelId: true,
-        label: { select: { id: true, name: true, color: true, timeLimitDays: true } },
-        statusStartedAt: true,
-        service: true,
-        observacao: true,
-        fixed: true,
-        status: true,
-      };
-
-  if (processId) {
-    const process = await db.process.findUnique({
-      where: { id: processId },
-      select: selectFields,
-    });
-
-    if (!process) {
-      return null;
-    }
-
-    return {
-      id: process.id,
-      name: process.name || "Sem nome",
-      status: process.status || undefined,
-      userId: process.userId,        // ← estava faltando (crítico para upload)
-      labelId: process.labelId ?? null,      // ← estava faltando
-      label: process.label ?? null,
-      type: process.type || "",
-      role: process.role || "PROCESS",
-      observacao: process.observacao || "",
-      fixed: process.fixed ?? false,
-      roleFixed: process.roleFixed || "",
-      statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
-      ...(fields === "full" && {
-        cpf: process.cpf || "",
-        data_nasc: process.data_nasc ? format(process.data_nasc, "yyyy-MM-dd") : "",
-        email: process.email || "",
-        rua: process.rua || "",
-        bairro: process.bairro || "",
-        numero: process.numero || "",
-        cep: process.cep || "",
-        rg: process.rg || "",
-        nome_mae: process.nome_mae || "",
-        telefone: process.telefone || "",
-        cidade: process.cidade || "",
-        estado: process.estado || "",
-        estado_civil: process.estado_civil || "",
-        profissao: process.profissao || "",
-        nacionalidade: process.nacionalidade || "",
-        data_acidente: process.data_acidente
-          ? format(process.data_acidente, "yyyy-MM-dd")
-          : "",
-        atendimento_via: process.atendimento_via || "",
-        hospital: process.hospital || "",
-        outro_hospital: process.outro_hospital || "",
-        lesoes: process.lesoes || "",
-        observacao: process.observacao || "",
-        service: process.service || "",
-      }),
-    };
-  }
-
-  const processes = await db.process.findMany({
-    select: selectFields,
-  });
-
-  return processes.map((process) => ({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
+  return {
     id: process.id,
     name: process.name || "Sem nome",
     status: process.status || undefined,
-    userId: process.userId,        // ← estava faltando (crítico para upload)
-    labelId: process.labelId ?? null,      // ← estava faltando
+    userId: process.userId,
+    labelId: process.labelId ?? null,
     label: process.label ?? null,
     type: process.type || "",
     role: process.role || "PROCESS",
     observacao: process.observacao || "",
     fixed: process.fixed ?? false,
     roleFixed: process.roleFixed || "",
+    service: process.service || "",
     statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
-    service: process.service || "DPVAT",
     ...(fields === "full" && {
       cpf: process.cpf || "",
       data_nasc: process.data_nasc ? format(process.data_nasc, "yyyy-MM-dd") : "",
@@ -186,15 +73,30 @@ export async function getProcess(
       estado_civil: process.estado_civil || "",
       profissao: process.profissao || "",
       nacionalidade: process.nacionalidade || "",
-      data_acidente: process.data_acidente
-        ? format(process.data_acidente, "yyyy-MM-dd")
-        : "",
+      data_acidente: process.data_acidente ? format(process.data_acidente, "yyyy-MM-dd") : "",
       atendimento_via: process.atendimento_via || "",
       hospital: process.hospital || "",
       outro_hospital: process.outro_hospital || "",
       lesoes: process.lesoes || "",
       observacao: process.observacao || "",
-      service: process.service || "DPVAT",
+      service: process.service || "",
     }),
-  }));
+  };
+}
+
+export async function getProcess(
+  fields: "basic" | "full" = "basic",
+  processId?: string
+): Promise<ProcessGet[] | ProcessGet | null> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Usuário não autenticado.");
+
+  if (processId) {
+    const process = await fetchProcessById(processId, fields);
+    if (!process) return null;
+    return mapProcess(process, fields);
+  }
+
+  const processes = await fetchProcesses();
+  return processes.map((p) => mapProcess(p, fields));
 }

@@ -1,30 +1,17 @@
-// app/_actions/get-process.ts
 'use server';
 
-import { db } from "@/app/_lib/prisma";
+import { fetchProcessesByUserId } from "@/app/_lib/db/processes";
 
-interface userProcess {
+interface UserProcess {
   id: string;
-  name: string | null; // Allow null for name
-  type: string | null; // Allow null for type
-  service: string | null
+  name: string | null;
+  type: string | null;
+  service: string | null;
 }
 
-export async function getStatusProcess(userId: string): Promise<userProcess[]> {
+export async function getStatusProcess(userId: string): Promise<UserProcess[]> {
   try {
-    const processes = await db.process.findMany({
-      where: {
-        userId: userId,
-      },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        service: true
-      },
-    });
-
-    return processes;
+    return await fetchProcessesByUserId(userId);
   } catch (error) {
     console.error("Erro ao buscar processos:", error);
     return [];
