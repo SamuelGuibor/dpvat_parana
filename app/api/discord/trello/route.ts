@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from '@/app/_lib/prisma';
-import axios from "axios";
+// import axios from "axios";
 
 export async function HEAD() {
     return new NextResponse(null, { status: 200 });
@@ -18,28 +18,28 @@ export async function POST(req: NextRequest) {
     const action = body?.action;
     const model_format = body.model
 
-    if (action?.type === "copyCard"){
-        const name = action?.data.cardSource.name
+    // if (action?.type === "copyCard"){
+    //     const name = action?.data.cardSource.name
 
-        const match = name.match(/^(\d+)/);
-        const currentNumber = parseInt(match[1], 10);
-        const newNumber = currentNumber + 1;
+    //     const match = name.match(/^(\d+)/);
+    //     const currentNumber = parseInt(match[1], 10);
+    //     const newNumber = currentNumber + 1;
 
-        const newName = name.replace(/^(\d+)/, String(newNumber));
-        await axios.put(`https://api.trello.com/1/cards/698cb83f2c7699c911256843`,{},
-            {
-                params: {
-                key: process.env.TRELLO_KEY,
-                token: process.env.TRELLO_TOKEN,
-                name: newName,
-                },
-            }
-        );
+    //     const newName = name.replace(/^(\d+)/, String(newNumber));
+    //     await axios.put(`https://api.trello.com/1/cards/698cb83f2c7699c911256843`,{},
+    //         {
+    //             params: {
+    //             key: process.env.TRELLO_KEY,
+    //             token: process.env.TRELLO_TOKEN,
+    //             name: newName,
+    //             },
+    //         }
+    //     );
         
-        console.log("Atualizado:", newName);
+    //     console.log("Atualizado:", newName);
 
-        return NextResponse.json({ ok: true });
-    }
+    //     return NextResponse.json({ ok: true });
+    // }
 
     if (action?.type === "updateCard" && action.data.listAfter) {
         const card = action.data.card;
