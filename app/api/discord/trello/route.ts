@@ -1,7 +1,6 @@
 // app/api/botconversa/teste/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import { db } from '@/app/_lib/prisma';
 // import axios from "axios";
 
 export async function HEAD() {
@@ -10,7 +9,6 @@ export async function HEAD() {
 
 export async function POST(req: NextRequest) {
     const body = await req.json();
-    const executeAt = new Date();
 
     console.log("🔥 CHEGOU EVENTO DO TRELLO");
     console.log(JSON.stringify(body, null, 2));
@@ -104,18 +102,6 @@ export async function POST(req: NextRequest) {
         }
 
         else if (listAfter === "DISTRIBUIÇÃO DE SOLICITAÇÕES") {
-            await db.discord.create({
-                data: {
-                    sent: true,
-                    firstSent: true,
-                    message: "",
-                    channelId: "1491866020820811837",
-                    executeAt: executeAt,
-                    nome: "",
-                    telefone: "",
-                    hours: "",
-                },
-            });
             await fetch(`${process.env.DISCORD_WEBHOOK_URL_PRONTUARIO}?thread_id=1491866020820811837`, {
                 method: "POST",
                 headers: {
@@ -145,18 +131,6 @@ export async function POST(req: NextRequest) {
         }
 
         else if (listAfter === "DISTRIBUIÇÃO DE PROCESSOS") {
-            await db.discord.create({
-                data: {
-                    sent: true,
-                    firstSent: true,
-                    message: "",
-                    channelId: "1491866065293283428",
-                    executeAt: executeAt,
-                    nome: "",
-                    telefone: "",
-                    hours: "",
-                },
-            });
             await fetch(`${process.env.DISCORD_WEBHOOK_URL_PRONTUARIO}?thread_id=1491866065293283428`, {
                 method: "POST",
                 headers: {
