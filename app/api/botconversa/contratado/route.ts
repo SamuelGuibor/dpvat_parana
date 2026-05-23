@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_lib/prisma';
 
+async function notifyBot(record: unknown) {
+  const url = process.env.BOT_WEBHOOK_URL;
+  if (!url) return;
+  try {
+    await fetch(`${url}/webhook/notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-webhook-secret': process.env.BOT_WEBHOOK_SECRET || '',
+      },
+      body: JSON.stringify(record),
+    });
+  } catch (err) {
+    console.error('Falha ao notificar bot:', err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -20,13 +37,7 @@ export async function POST(req: NextRequest) {
 
       const delayHours = (hours || 0);
 
-      // const notifyAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-      // ou em minutos para testar primeiro:
-
-      // const mensagemPersonalizada = `"${nome || 'Cliente'}" com o telefone "${telefone}", será notificada em "${delayHours}h" "@${equipe || 'equipe'}"`;
-
-      // Salva tudo que precisamos
-      await db.discord.create({
+      const discordRecord = await db.discord.create({
         data: {
           message: equipe,
           channelId: channel,
@@ -37,13 +48,14 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      notifyBot(discordRecord);
     }
 
     if (evento === 'contratado') {
 
       const executeAt = new Date(Date.now())
 
-      await db.discord.create({
+      const discordRecord = await db.discord.create({
         data: {
           message: equipe,
           channelId: channel,
@@ -52,6 +64,8 @@ export async function POST(req: NextRequest) {
           telefone: telefone,
         },
       });
+
+      notifyBot(discordRecord);
 
       const [userExists, label] = await Promise.all([
         db.user.findFirst({ where: { telefone } }),
