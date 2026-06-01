@@ -2,7 +2,6 @@
 import { db } from "@/app/_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
-import { Status } from "@prisma/client"; // Import the Status enum from Prisma
 
 export async function getProcessStatus(processId: string) {
     try {
@@ -33,7 +32,7 @@ export async function getProcessStatus(processId: string) {
     }
 }
 
-export async function updateProcessStatus(processId: string, newStatus: Status) {
+export async function updateProcessStatus(processId: string, newStatus: string) {
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.email) {
@@ -41,12 +40,6 @@ export async function updateProcessStatus(processId: string, newStatus: Status) 
     }
 
     try {
-        // Optional: Validate that newStatus is a valid enum value
-        const validStatuses = Object.values(Status);
-        if (!validStatuses.includes(newStatus)) {
-            throw new Error(`Status inválido: ${newStatus}`);
-        }
-
         const updated = await db.process.update({
             where: {
                 id: processId,

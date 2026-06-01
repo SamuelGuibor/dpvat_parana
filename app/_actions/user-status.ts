@@ -1,6 +1,5 @@
 "use server";
 
-import { Status } from "@prisma/client";
 import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
@@ -30,7 +29,7 @@ export async function getUserStatus() {
   return { status: user.status, role: user.role, service: user.service };
 }
 
-export async function updateUserStatus(newStatus: Status) {
+export async function updateUserStatus(newStatus: string) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {
