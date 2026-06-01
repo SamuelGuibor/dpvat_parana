@@ -134,6 +134,26 @@ interface Fixed {
   fixed?: boolean
 }
 
+const DPVAT_ORDER = ['DPVAT_S1','DPVAT_S2','DPVAT_S3','DPVAT_S4','DPVAT_S5','DPVAT_S6','DPVAT_S7'];
+const INSS_ORDER  = ['INSS_S1','INSS_S2','INSS_S3','INSS_S4','INSS_S5','INSS_S6','INSS_S7','INSS_S8'];
+const GENERIC_ORDER = ['INICIADO','AGUARDANDO_ASSINATURA','SOLICITAR_DOCUMENTOS','COLETA_DOCUMENTOS','ANALISE_DOCUMENTOS','PERICIAL','AGUARDANDO_PERICIAL','PAGAMENTO_HONORARIO','PROCESSO_ENCERRADO'];
+
+function statusToFlags(status: string | undefined, service: string | undefined) {
+  const order = service === 'DPVAT' ? DPVAT_ORDER : service === 'INSS' ? INSS_ORDER : GENERIC_ORDER;
+  const idx = status ? order.indexOf(status) : -1;
+  return {
+    iniciado:             idx >= 0,
+    aguardandoAssinatura: idx >= 1,
+    solicitarDocumentos:  idx >= 2,
+    coletaDocumentos:     idx >= 3,
+    analiseDocumentos:    idx >= 4,
+    pericial:             idx >= 5,
+    aguardandoPericial:   idx >= 6,
+    pagamentoHonorario:   idx >= 7,
+    processoEncerrado:    idx >= 8,
+  };
+}
+
 const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => {
   const [isOpen, setIsOpen] = useState(false); // State to track if dialog is open
   const [item, setItem] = useState<ItemData | null>(null);
@@ -290,7 +310,6 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
             body: blob,
             headers: {
               'Content-Type': file.type,
-              'Content-Disposition': `attachment; filename="${fileName}"`,
             },
           });
 
@@ -415,53 +434,7 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
         }
         setItem(itemData);
         setFormData(itemData);
-        setLocalStatus({
-          iniciado: itemData.status === "INICIADO" ||
-            itemData.status === "AGUARDANDO_ASSINATURA" ||
-            itemData.status === "SOLICITAR_DOCUMENTOS" ||
-            itemData.status === "COLETA_DOCUMENTOS" ||
-            itemData.status === "ANALISE_DOCUMENTOS" ||
-            itemData.status === "PERICIAL" ||
-            itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          aguardandoAssinatura: itemData.status === "AGUARDANDO_ASSINATURA" ||
-            itemData.status === "SOLICITAR_DOCUMENTOS" ||
-            itemData.status === "COLETA_DOCUMENTOS" ||
-            itemData.status === "ANALISE_DOCUMENTOS" ||
-            itemData.status === "PERICIAL" ||
-            itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          solicitarDocumentos: itemData.status === "SOLICITAR_DOCUMENTOS" ||
-            itemData.status === "COLETA_DOCUMENTOS" ||
-            itemData.status === "ANALISE_DOCUMENTOS" ||
-            itemData.status === "PERICIAL" ||
-            itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          coletaDocumentos: itemData.status === "COLETA_DOCUMENTOS" ||
-            itemData.status === "ANALISE_DOCUMENTOS" ||
-            itemData.status === "PERICIAL" ||
-            itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          analiseDocumentos: itemData.status === "ANALISE_DOCUMENTOS" ||
-            itemData.status === "PERICIAL" ||
-            itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          pericial: itemData.status === "PERICIAL" ||
-            itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          aguardandoPericial: itemData.status === "AGUARDANDO_PERICIAL" ||
-            itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          pagamentoHonorario: itemData.status === "PAGAMENTO_HONORARIO" ||
-            itemData.status === "PROCESSO_ENCERRADO",
-          processoEncerrado: itemData.status === "PROCESSO_ENCERRADO",
-        });
+        setLocalStatus(statusToFlags(itemData.status, itemData.service));
         await fetchItemDocuments();
       } catch (error) {
         console.error(`Erro ao buscar ${isProcess ? 'processo' : 'usuário'}:`, error);
@@ -512,16 +485,21 @@ const DialogDash = ({ userId, isProcess = false, trigger }: DialogDashProps) => 
   };
 
   const determineStatus = () => {
-    if (localStatus.processoEncerrado) return "PROCESSO_ENCERRADO";
-    if (localStatus.pagamentoHonorario) return "PAGAMENTO_HONORARIO";
-    if (localStatus.aguardandoPericial) return "AGUARDANDO_PERICIAL";
-    if (localStatus.pericial) return "PERICIAL";
-    if (localStatus.analiseDocumentos) return "ANALISE_DOCUMENTOS";
-    if (localStatus.coletaDocumentos) return "COLETA_DOCUMENTOS";
-    if (localStatus.solicitarDocumentos) return "SOLICITAR_DOCUMENTOS";
-    if (localStatus.aguardandoAssinatura) return "AGUARDANDO_ASSINATURA";
-    if (localStatus.iniciado) return "INICIADO";
-    return undefined;
+    const dpvatOrder = ['DPVAT_S1','DPVAT_S2','DPVAT_S3','DPVAT_S4','DPVAT_S5','DPVAT_S6','DPVAT_S7'];
+    const inssOrder  = ['INSS_S1','INSS_S2','INSS_S3','INSS_S4','INSS_S5','INSS_S6','INSS_S7','INSS_S8'];
+    const genericOrder = ['INICIADO','AGUARDANDO_ASSINATURA','SOLICITAR_DOCUMENTOS','COLETA_DOCUMENTOS','ANALISE_DOCUMENTOS','PERICIAL','AGUARDANDO_PERICIAL','PAGAMENTO_HONORARIO','PROCESSO_ENCERRADO'];
+
+    const flags = [
+      localStatus.iniciado, localStatus.aguardandoAssinatura, localStatus.solicitarDocumentos,
+      localStatus.coletaDocumentos, localStatus.analiseDocumentos, localStatus.pericial,
+      localStatus.aguardandoPericial, localStatus.pagamentoHonorario, localStatus.processoEncerrado,
+    ];
+    const highestIdx = flags.lastIndexOf(true);
+    if (highestIdx < 0) return undefined;
+
+    const service = item?.service;
+    const order = service === 'DPVAT' ? dpvatOrder : service === 'INSS' ? inssOrder : genericOrder;
+    return order[Math.min(highestIdx, order.length - 1)];
   };
 
   const handleCheckboxChange = (key: keyof typeof localStatus) => {

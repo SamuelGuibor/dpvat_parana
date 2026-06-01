@@ -23,8 +23,8 @@ export async function gerarProcuracao(
         paragraphLoop: true,
         linebreaks: true,
         delimiters: {
-            start: "<<",
-            end: ">>",
+            start: "[[",
+            end: "]]",
         },
     });
 

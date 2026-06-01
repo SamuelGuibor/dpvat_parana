@@ -23,6 +23,8 @@ const processFullSelect = {
   type: true,
   role: true,
   roleFixed: true,
+  labelId: true,
+  label: { select: { id: true, name: true, color: true, timeLimitDays: true } },
   statusStartedAt: true,
   status: true,
   cpf: true,
@@ -51,7 +53,7 @@ const processFullSelect = {
 };
 
 export async function fetchProcesses() {
-  return db.process.findMany({ select: processBasicSelect });
+  return db.process.findMany({ orderBy: { createdAt: "asc" }, select: processBasicSelect });
 }
 
 export async function fetchProcessById(id: string, fields: "basic" | "full" = "basic") {

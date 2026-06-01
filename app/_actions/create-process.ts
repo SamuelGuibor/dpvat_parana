@@ -113,7 +113,7 @@ export async function createProcess(data: {
       outro_hospital: validatedData.outro_hospital,
       lesoes: validatedData.lesoes,
 
-      status: "INICIADO",
+      status: validatedData.service === 'INSS' ? 'INSS_S1' : 'DPVAT_S1',
       statusStartedAt: new Date(),
 
       service: validatedData.service,

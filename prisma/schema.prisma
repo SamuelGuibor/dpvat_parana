@@ -30,7 +30,7 @@ model User {
   nome_mae         String?
   profissao        String?
   rg               String?
-  status           Status?
+  status           String?
   telefone         String?
   atendimento_via  String?
   data_acidente    DateTime?
@@ -50,6 +50,7 @@ model User {
   roleFixed        String?        @default("Acompanhamento de fluxo 1")
   labelId          String?
   label            Label?  @relation("UserLabel", fields: [labelId], references: [id])
+  apto             Boolean        @default(false)
 
 
   accounts         Account[]
@@ -75,7 +76,7 @@ model Process {
   observacao        String?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
-  status            Status?
+  status            String?
   bairro            String?
   cep               String?
   cidade            String?
@@ -282,14 +283,3 @@ model WorkSession {
   @@unique([discordId, date])
 }
 
-enum Status {
-  INICIADO
-  AGUARDANDO_ASSINATURA
-  SOLICITAR_DOCUMENTOS
-  COLETA_DOCUMENTOS
-  ANALISE_DOCUMENTOS
-  PERICIAL
-  AGUARDANDO_PERICIAL
-  PAGAMENTO_HONORARIO
-  PROCESSO_ENCERRADO
-}

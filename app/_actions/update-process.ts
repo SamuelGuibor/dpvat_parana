@@ -4,9 +4,6 @@ import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
 
-const VALID_STATUSES = ["INICIADO", "AGUARDANDO_ASSINATURA", "SOLICITAR_DOCUMENTOS", "COLETA_DOCUMENTOS", "ANALISE_DOCUMENTOS", "PERICIAL", "AGUARDANDO_PERICIAL", "PAGAMENTO_HONORARIO", "PROCESSO_ENCERRADO"] as const;
-type Status = typeof VALID_STATUSES[number];
-
 interface UpdateProcessData {
   id: string;
   name?: string;
@@ -39,16 +36,6 @@ interface UpdateProcessData {
   role?: string;
   service?: string;
   obs?: string;
-}
-
-function mapStringToStatus(status: string | undefined): Status | undefined {
-  if (!status) return undefined;
-
-  if (!VALID_STATUSES.includes(status as Status)) {
-    throw new Error(`Status inválido: ${status}`);
-  }
-
-  return status as Status;
 }
 
 export async function updateProcess(data: UpdateProcessData) {
@@ -100,7 +87,7 @@ export async function updateProcess(data: UpdateProcessData) {
         hospital: data.hospital,
         outro_hospital: data.outro_hospital,
         lesoes: data.lesoes,
-        status: mapStringToStatus(data.status),
+        status: data.status || undefined,
         role: data.role,
         statusStartedAt: shouldUpdateTimer ? new Date() : currentProcess.statusStartedAt,
         observacao: data.obs,

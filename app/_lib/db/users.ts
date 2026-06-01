@@ -19,6 +19,8 @@ const userFullSelect = {
   name: true,
   role: true,
   roleFixed: true,
+  labelId: true,
+  label: { select: { id: true, name: true, color: true, timeLimitDays: true } },
   statusStartedAt: true,
   status: true,
   cpf: true,
@@ -48,6 +50,7 @@ const userFullSelect = {
 
 export async function fetchUsers(options?: { role?: string }) {
   return db.user.findMany({
+    orderBy: { createdAt: "asc" },
     where: {
       ...(options?.role && { role: options.role }),
     },

@@ -1,4 +1,47 @@
-export const STATUS_ORDER = [
+export const DPVAT_STATUS_ORDER = [
+  'DPVAT_S1',
+  'DPVAT_S2',
+  'DPVAT_S3',
+  'DPVAT_S4',
+  'DPVAT_S5',
+  'DPVAT_S6',
+  'DPVAT_S7',
+] as const;
+
+export const DPVAT_STATUS_LABELS: Record<typeof DPVAT_STATUS_ORDER[number], string> = {
+  DPVAT_S1: 'Processo iniciado',
+  DPVAT_S2: 'Prontuário',
+  DPVAT_S3: 'Boletim de Ocorrência',
+  DPVAT_S4: 'Análise documental',
+  DPVAT_S5: 'Perícia médica',
+  DPVAT_S6: 'Pagamento',
+  DPVAT_S7: 'Processo finalizado',
+};
+
+export const INSS_STATUS_ORDER = [
+  'INSS_S1',
+  'INSS_S2',
+  'INSS_S3',
+  'INSS_S4',
+  'INSS_S5',
+  'INSS_S6',
+  'INSS_S7',
+  'INSS_S8',
+] as const;
+
+export const INSS_STATUS_LABELS: Record<typeof INSS_STATUS_ORDER[number], string> = {
+  INSS_S1: 'Processo iniciado',
+  INSS_S2: 'Documentação médica hospitalar',
+  INSS_S3: 'Documentos INSS',
+  INSS_S4: 'Aguardando perícia administrativa',
+  INSS_S5: 'Perícia realizada',
+  INSS_S6: 'Enviado ao departamento jurídico',
+  INSS_S7: 'Acompanhamento judicial',
+  INSS_S8: 'Processo finalizado',
+};
+
+// Fallback genérico para demais serviços (Seguro de Vida, RCF, SPVAT, etc.)
+export const GENERIC_STATUS_ORDER = [
   'INICIADO',
   'AGUARDANDO_ASSINATURA',
   'SOLICITAR_DOCUMENTOS',
@@ -10,7 +53,7 @@ export const STATUS_ORDER = [
   'PROCESSO_ENCERRADO',
 ] as const;
 
-export const STATUS_LABELS: Record<typeof STATUS_ORDER[number], string> = {
+export const GENERIC_STATUS_LABELS: Record<typeof GENERIC_STATUS_ORDER[number], string> = {
   INICIADO: 'Processo iniciado',
   AGUARDANDO_ASSINATURA: 'Aguardando assinatura',
   SOLICITAR_DOCUMENTOS: 'Fase de solicitação de documentos',
@@ -21,6 +64,22 @@ export const STATUS_LABELS: Record<typeof STATUS_ORDER[number], string> = {
   PAGAMENTO_HONORARIO: 'Pagamento de honorários',
   PROCESSO_ENCERRADO: 'Processo encerrado',
 };
+
+export function getStatusOrderByService(service?: string | null): readonly string[] {
+  switch (service) {
+    case 'DPVAT': return DPVAT_STATUS_ORDER;
+    case 'INSS': return INSS_STATUS_ORDER;
+    default: return GENERIC_STATUS_ORDER;
+  }
+}
+
+export function getStatusLabelsByService(service?: string | null): Record<string, string> {
+  switch (service) {
+    case 'DPVAT': return DPVAT_STATUS_LABELS;
+    case 'INSS': return INSS_STATUS_LABELS;
+    default: return GENERIC_STATUS_LABELS;
+  }
+}
 
 export const MENTIONABLE_USERS = [
   { id: 'cmazuwrcj0000iav499hqf5ij', display: 'Thomaz Martinez' },

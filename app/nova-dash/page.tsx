@@ -14,29 +14,13 @@ import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
 import Team from '../_components/team_dash';
 
-import { DbNotification } from '@/app/_types/notifications';
 import Link from 'next/link';
-// import { NotificationDropdown } from './box';
+import { NotificationDropdown } from './box';
 export const dynamic = "force-dynamic";
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [open, setOpen] = useState(false);
-//   const [notifications, setNotifications] = useState<DbNotification[]>([]);
-
-//   useEffect(() => {
-//   async function load() {
-//     const res = await fetch('/api/notification', {
-//       cache: 'no-store',
-//     });
-//     const data = await res.json();
-//     setNotifications(data);
-//   }
-
-//   load();
-//   const interval = setInterval(load, 10000);
-//   return () => clearInterval(interval);
-// }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -57,7 +41,7 @@ export default function Page() {
               </Button>
 
               <Team open={open} onClose={() => setOpen(false)} />
-              {/* <NotificationDropdown notifications={notifications} /> */}
+              <NotificationDropdown />
             </div>
           </div>
         </div>

@@ -75,7 +75,7 @@ export function DetailsTab({ editedCard, onChange, labels }: Props) {
   return (
     <div className="space-y-4 px-1">
       <Separator />
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 font-semibold text-lg">
         <Field id="title" label="Nome" value={editedCard.title} onChange={onChange} />
         <Field id="cpf" label="CPF" value={editedCard.cpf} onChange={onChange} />
         <Field id="data_nasc" label="Data Nascimento" type="date" value={editedCard.data_nasc} onChange={onChange} />

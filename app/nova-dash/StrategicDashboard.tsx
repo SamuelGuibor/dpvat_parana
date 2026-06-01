@@ -32,6 +32,7 @@ import { MiniKanban } from '@/app/nova-dash/minikanban'
 
 import { IoDocuments } from "react-icons/io5";
 import { LeadsTable } from './form-leads';
+import { CalendarTab } from './CalendarTab';
 
 type Counts = {
   contratado?: number;
@@ -42,6 +43,91 @@ type Counts = {
   nao_contratado?: number;
   nao_qualificado?: number;
   enviou_documentos?: number
+};
+
+const BotIAControl: React.FC = () => {
+  const [acao, setAcao] = useState<'pausar' | 'reativar'>('pausar');
+  const [numero, setNumero] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resultado, setResultado] = useState<{ tipo: 'sucesso' | 'erro'; msg: string } | null>(null);
+
+  async function handleEnviar() {
+    if (!numero.trim()) return;
+    setLoading(true);
+    setResultado(null);
+    try {
+      const res = await fetch(`http://localhost:3333/bot/${acao}/${numero.trim()}`, { method: 'POST' });
+      if (res.ok) {
+        setResultado({ tipo: 'sucesso', msg: `Bot ${acao === 'pausar' ? 'pausado' : 'reativado'} para ${numero} com sucesso.` });
+        setNumero('');
+      } else {
+        setResultado({ tipo: 'erro', msg: `Erro ao ${acao} o bot. Status: ${res.status}` });
+      }
+    } catch {
+      setResultado({ tipo: 'erro', msg: 'Não foi possível conectar ao servidor do bot.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[40vh]">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="w-5 h-5" />
+            Controle do Bot WhatsApp
+          </CardTitle>
+          <CardDescription>Pause ou reative o bot para um número específico</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-gray-700">Ação</label>
+            <select
+              value={acao}
+              onChange={e => setAcao(e.target.value as 'pausar' | 'reativar')}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="pausar">Pausar bot</option>
+              <option value="reativar">Reativar bot</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-gray-700">Número do cliente</label>
+            <input
+              type="text"
+              placeholder="Ex: 5541999999999"
+              value={numero}
+              onChange={e => setNumero(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <Button
+            onClick={handleEnviar}
+            disabled={loading || !numero.trim()}
+            className={`w-full ${acao === 'pausar' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : acao === 'pausar' ? (
+              <CiPause1 className="w-4 h-4 mr-2" />
+            ) : (
+              <Zap className="w-4 h-4 mr-2" />
+            )}
+            {loading ? 'Enviando...' : acao === 'pausar' ? 'Pausar bot' : 'Reativar bot'}
+          </Button>
+
+          {resultado && (
+            <div className={`text-sm rounded-md px-3 py-2 ${resultado.tipo === 'sucesso' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {resultado.msg}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 };
 
 export const StrategicDashboard: React.FC = () => {
@@ -313,6 +399,8 @@ useEffect(() => {
           {/* <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger> */}
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
+          <TabsTrigger value="calendario">Calendário</TabsTrigger>
+          <TabsTrigger value="botIA">Bot IA</TabsTrigger>
         </TabsList>
 
         <TabsContent value="analytics" className="space-y-4">
@@ -544,6 +632,14 @@ useEffect(() => {
               </CardContent>
             </Card> */}
           </div>
+        </TabsContent>
+
+        <TabsContent value="calendario">
+            <CalendarTab />
+        </TabsContent>
+
+        <TabsContent value="botIA" className="space-y-4">
+            <BotIAControl />
         </TabsContent>
       </Tabs>
     </div>

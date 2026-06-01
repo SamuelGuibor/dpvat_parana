@@ -12,344 +12,184 @@ interface Step {
   final?: string;
 }
 
-// Steps for INSS
-const inssSteps: Step[] = [
-  {
-    id: 1,
-    title: "Processo iniciado",
-    description:
-      "Confirmado o envio dos seus documentos iniciais. Agora nossa equipe da Paraná Seguros vai preparar o protocolo de entrada e enviará o contrato e procuração para colher sua assinatura.",
-  },
-  {
-    id: 2,
-    title: "Aguardando assinatura",
-    description:
-      "Enviamos o contrato e procuração e agora estamos aguardando a sua assinatura.",
-  },
-  {
-    id: 3,
-    title: "Fase de Solicitação de Documentos",
-    description:
-      "Nossos procuradores e advogados irão até os hospitais e clínicas médicas em que você recebeu atendimento para solicitar seu prontuário, documentos hospitalares e laudos médicos. Da mesma forma que, em caso de pré-atendimento via SIATE ou SAMU, nossa equipe comparecerá ao Corpo de Bombeiros para solicitar as guias do atendimento da ambulância. Essa é a fase mais demorada do processo, podendo levar de 30-60 dias.",
-  },
-  {
-    id: 4,
-    title: "Coleta de documentos",
-    description:
-      "Após os documentos solicitados ficarem completos, os procuradores irão retirar os documentos e nossa equipe de analistas irá organizar e digitalizar todos os documentos para poder enviar para o INSS. Essa fase dura entre 3-7 dias para ser finalizada.",
-  },
-  {
-    id: 5,
-    title: "Análise e Protocolo",
-    description:
-      "Já preparamos o seu protocolo e encaminhamos os documentos para o INSS. Nesta fase aguardamos a análise documental e agendamento da sua perícia. O prazo que o INSS é de 30 a 60 dias.  Em caso de pendência no processo, nossa equipe irá entrar em contato avisando você.",
-  },
-  {
-    id: 6,
-    title: "Agendamento de perícia",
-    description: (
-      <>
-        Seu processo está na fase de agendamento de perícia médica no INSS. Aguardaremos a data e horário da perícia.{" "}
-        <a
-          href="/faq-inss"
-          className="text-blue-600 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Saiba mais sobre a perícia do INSS
-        </a>
-        . Nossa equipe entrará em contato assim que nos for comunicado o agendamento pericial e passaremos as orientações.  
-      </>
-    ),
-  },
-  {
-    id: 7,
-    title: "Aguardando resultado da perícia",
-    description: "Estamos aguardando o resultado da perícia. O prazo pode variar de 1 até 90 dias, dependendo do caso. Assim que sair, avisamos você.",
-  },
-  {
-    id: 8,
-    title: "Processo Finalizado",
-    description:
-      "O seu pedido administrativo foi finalizado. Em caso de necessidade encaminharemos para o setor jurídico fazer recurso do processo. Entraremos em contato para mais detalhes sobre o procedimento.",
-  },
-  {
-    id: 9,
-    final: "Processo encerrado",
-  },
-];
+// ─── DPVAT ────────────────────────────────────────────────────────────────────
 
-// Steps for Seguro de Vida
-const seguroVidaSteps: Step[] = [
-  {
-    id: 1,
-    title: "Processo iniciado",
-    description:
-      "Confirmado o envio dos seus documentos iniciais. Agora nossa equipe da Paraná Seguros vai preparar o protocolo de entrada e enviará o contrato e procuração para colher sua assinatura.",
-  },
-  {
-    id: 2,
-    title: "Aguardando assinatura",
-    description:
-      "Enviamos o contrato e procuração e agora estamos aguardando a sua assinatura.",
-  },
-  {
-    id: 3,
-    title: "Fase de Solicitação de Documentos",
-    description:
-      "Nossos procuradores e advogados irão até os hospitais e clínicas médicas em que você recebeu atendimento para solicitar seu prontuário, documentos hospitalares e laudos médicos. Da mesma forma que, em caso de pré-atendimento via SIATE ou SAMU, nossa equipe comparecerá ao Corpo de Bombeiros para solicitar as guias do atendimento da ambulância. Essa é a fase mais demorada do processo, podendo levar de 30-60 dias.",
-  },
-  {
-    id: 4,
-    title: "Coleta de documentos e Apuração de dados",
-    description:
-      "Após os documentos solicitados ficarem completos, os procuradores irão retirar os documentos e nossa equipe de analistas irá organizar e digitalizar todos os documentos para poder enviar para a Seguradora.",
-  },
-  {
-    id: 5,
-    title: "Análise e Protocolo",
-    description:
-      "Nossa equipe entrará em contato com a seguradora para tentativa previa de acordo. Os documentos foram enviados, e em breve teremos novidades. O prazo de resposta é de 30 dias para cada envio de documentos, e informaremos caso haja pendências ou atualizações.",
-  },
-  {
-    id: 6,
-    title: "Processo em Andamento",
-    description: (
-      <>
-        O processo está na fase de avaliação do sinistro pela seguradora. Aguardaremos o parecer final.{" "}
-        <a
-          href="/seguro-vida"
-          className="text-blue-600 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Saiba mais sobre o Seguro de Vida
-        </a>
-        .
-      </>
-    ),
-  },
-  {
-    id: 7,
-    title: "Aguardando decisão final",
-    description: "Em caso de negativa administrativa, nossa equipe jurídica entrará com recurso judicial.",
-  },
-  {
-    id: 8,
-    title: "Pagamento de honorários",
-    description:
-      "Aguardando o pagamento dos honorários pelo trabalho no processo de RCF.",
-  },
-  {
-    id: 9,
-    final: "Processo encerrado",
-  },
-];
-
-// Steps for RCF
-const rcfSteps: Step[] = [
-  {
-    id: 1,
-    title: "Processo iniciado",
-    description:
-      "Confirmado o envio dos seus documentos iniciais. Agora nossa equipe da Paraná Seguros vai preparar o protocolo de entrada e enviará o contrato e procuração para colher sua assinatura.",
-  },
-  {
-    id: 2,
-    title: "Aguardando assinatura",
-    description:
-      "Enviamos o contrato e procuração e agora estamos aguardando a sua assinatura.",
-  },
-  {
-    id: 3,
-    title: "Fase de Solicitação de Documentos",
-    description:
-      "Nossos procuradores e advogados irão até os hospitais e clínicas médicas em que você recebeu atendimento para solicitar seu prontuário, documentos hospitalares e laudos médicos. Da mesma forma que, em caso de pré-atendimento via SIATE ou SAMU, nossa equipe comparecerá ao Corpo de Bombeiros para solicitar as guias do atendimento da ambulância. Essa é a fase mais demorada do processo, podendo levar de 30-60 dias.",
-  },
-  {
-    id: 4,
-    title: "Coleta de documentos e Apuração de dados",
-    description:
-      "Após os documentos solicitados ficarem completos, os procuradores irão retirar os documentos e nossa equipe de analistas irá organizar e digitalizar todos os documentos para poder enviar para a Seguradora do causador. Também serão apurados os dados pessoais do causador para eventual citação do mesmo em ação judicial.",
-  },
-  {
-    id: 5,
-    title: "Análise e Protocolo",
-    description:
-      "Nossa equipe entrará em contato com a seguradora para tentativa previa de acordo. Os documentos foram enviados, e em breve teremos novidades. O prazo de resposta é de 30 dias, e informaremos caso haja pendências ou atualizações.",
-  },
-  {
-    id: 6,
-    title: "Processo em Andamento",
-    description: (
-      <>
-        O processo está na fase de avaliação do sinistro pela seguradora do causador. Aguardaremos o parecer final.{" "}
-        <a
-          href="/faq-rcf"
-          className="text-blue-600 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Saiba mais sobre o RCF
-        </a>
-        .
-      </>
-    ),
-  },
-  {
-    id: 7,
-    title: "Aguardando decisão final",
-    description: "Em caso de negativa administrativa, nossa equipe jurídica entrará com recurso judicial.",
-  },
-  {
-    id: 8,
-    title: "Pagamento de honorários",
-    description:
-      "Aguardando o pagamento dos honorários pelo trabalho no processo de RCF.",
-  },
-  {
-    id: 9,
-    final: "Processo encerrado",
-  },
-];
-
-// Steps for SPVAT
-const spvatSteps: Step[] = [
-  {
-    id: 1,
-    title: "Processo iniciado",
-    description:
-      "Confirmado o envio dos seus documentos iniciais. Agora nossa equipe da Paraná Seguros vai preparar o protocolo de entrada e enviará o contrato e procuração para colher sua assinatura.",
-  },
-  {
-    id: 2,
-    title: "Aguardando assinatura",
-    description:
-      "Enviamos o contrato e procuração e agora estamos aguardando a sua assinatura.",
-  },
-  {
-    id: 3,
-    title: "Fase de Solicitação de Documentos",
-    description:
-      "Nossos procuradores e advogados irão até os hospitais e clínicas médicas em que você recebeu atendimento para solicitar seu prontuário, documentos hospitalares e laudos médicos. Da mesma forma que, em caso de pré-atendimento via SIATE ou SAMU, nossa equipe comparecerá ao Corpo de Bombeiros para solicitar as guias do atendimento da ambulância. Essa é a fase mais demorada do processo, podendo levar de 30-60 dias.",
-  },
-  {
-    id: 4,
-    title: "Coleta de documentos",
-    description:
-      "Após os documentos solicitados ficarem completos, os procuradores irão retirar os documentos e nossa equipe de analistas irá organizar e digitalizar todos os documentos para poder enviar para a Seguradora. Essa fase dura entre 3-7 dias para ser finalizada.",
-  },
-  {
-    id: 5,
-    title: "Processo em STANDBY",
-    description:
-      "Quero te atualizar sobre a situação do seguro DPVAT:✅ O DPVAT ainda está realizando pagamentos para vítimas de acidentes ocorridos até 14 de novembro de 2023, desde que sejam solicitados dentro do prazo de 3 anos após a data do acidente, que é o prazo de prescrição.🚫 Para acidentes ocorridos a partir de 15 de novembro de 2023, infelizmente não há mais cobertura nem pagamentos, pois o seguro foi encerrado em razão de mudanças na legislação. O governo chegou a criar um novo seguro chamado SPVAT, que estava previsto para começar em 2025, porém a lei foi revogada antes de entrar em vigor. Ou seja, o SPVAT ainda não está valendo e depende de um novo projeto de lei ser aprovado na Câmara e no Senado, além da regulamentação pela SUSEP. Estamos acompanhando de perto todo esse processo. Assim que tivermos qualquer novidade, aviso você imediatamente.",
-  },
-  {
-    id: 6,
-    title: "Fase pericial",
-    description: (
-      <>
-        Seu processo está na fase de perícia médica do SPVAT. Aguardaremos a data e horário da perícia.{" "}
-        <a
-          href="/faq-spvat"
-          className="text-blue-600 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Saiba mais sobre a perícia do SPVAT
-        </a>
-        .
-      </>
-    ),
-  },
-  {
-    id: 7,
-    title: "Aguardando resultado pericial",
-    description: "Após a perícia, o resultado será liberado em até 7 dias.",
-  },
-  {
-    id: 8,
-    title: "",
-    description:
-      "Aguardando o pagamento dos honorários pelo nosso trabalho no processo do SPVAT.",
-  },
-  {
-    id: 9,
-    final: "Aguardando Regularização da Nova Lei 221/24",
-  },
-];
-
-// Steps for DPVAT
 const dpvatSteps: Step[] = [
   {
     id: 1,
     title: "Processo iniciado",
     description:
-      "Confirmado o envio dos seus documentos iniciais. Agora nossa equipe da Paraná Seguros vai preparar o protocolo de entrada e enviará o contrato e procuração para colher sua assinatura.",
+      "Juntamos toda a sua documentação necessária para dar início ao seu processo. Nossa equipe já está trabalhando para garantir que tudo esteja em ordem.",
   },
   {
     id: 2,
-    title: "Aguardando assinatura",
+    title: "Prontuário",
     description:
-      "Enviamos o contrato e procuração e agora estamos aguardando a sua assinatura.",
+      "Nossos procuradores estão solicitando o seu prontuário médico junto ao hospital ou clínica em que você foi atendido. Conforme o prazo do Conselho Regional de Medicina (CRM), esse processo leva em média 30 dias.",
   },
   {
     id: 3,
-    title: "Fase de solicitação de documentos",
+    title: "Boletim de Ocorrência",
     description:
-      "Nossos procuradores e advogados irão até os hospitais e clínicas médicas em que você recebeu atendimento para solicitar seu prontuário, documentos hospitalares e laudos médicos. Da mesma forma que, em caso de pré-atendimento via SIATE ou SAMU, nossa equipe comparecerá ao Corpo de Bombeiros para solicitar as guias do atendimento da ambulância. Essa é a fase mais demorada do processo, podendo levar de 30-60 dias.",
+      "O B.O. precisa ser validado pela entidade que atendeu a ocorrência — Polícia Militar (PM), Polícia Civil ou Polícia Rodoviária Federal (PRF). Nossa equipe está acompanhando esse processo.",
   },
   {
     id: 4,
-    title: "Coleta de documentos",
+    title: "Análise documental",
     description:
-      "Após os documentos solicitados ficarem completos, os procuradores irão retirar os documentos e nossa equipe de analistas irá organizar e digitalizar todos os documentos para poder enviar para a Seguradora. Essa fase dura entre 3-7 dias para ser finalizada.",
+      "Seus documentos foram enviados para análise pela Caixa Econômica Federal, responsável pelo seguro DPVAT. Essa fase pode levar até 30 dias. Nossa equipe acompanha de perto qualquer pendência e entrará em contato caso necessário.",
   },
   {
     id: 5,
-    title: "Análise de documentos",
-    description:
-      "Seus documentos já foram enviados para a Seguradora e agora devemos aguardar a análise deles. Nesta fase eles analisarão todos os detalhes da documentação e nos comunicarão se precisam de mais documentos. O prazo que a Seguradora coloca para análise de cada leva de documentos enviados é de 30 dias. Em caso de pendência no processo, nossa equipe irá entrar em contato avisando você.",
-  },
-  {
-    id: 6,
-    title: "Fase Pericial",
+    title: "Perícia médica",
     description: (
       <>
-        Reta final do processo. Após muito esforço e dedicação do nosso pessoal, o seu processo finalmente caminhou para a fase de perícia médica. Agora, aguardaremos até quando tivermos a data e horário do agendamento da sua perícia. Fique tranquilo, agora só falta uma pequena etapa para concluir seu processo. Contamos com sua colaboração e agradecemos pela sua paciência.{" "}
+        Reta final do processo! Seu processo chegou à fase de perícia médica. Aguardaremos a data e horário do agendamento.{" "}
         <a
           href="/faq"
           className="text-blue-600 hover:underline"
           target="_blank"
           rel="noopener noreferrer"
         >
-          Para saber mais sobre perícia médica, clique aqui
+          Saiba mais sobre a perícia médica
         </a>
         .
       </>
     ),
   },
   {
-    id: 7,
-    title: "Aguardando resultado pericial",
-    description: "Após realizar a perícia, o resultado sai em até 7 dias.",
-  },
-  {
-    id: 8,
-    title: "Pagamento de honorários",
+    id: 6,
+    title: "Pagamento",
     description:
-      "Aguardando pagamento dos honorários combinados pelo nosso trabalho.",
+      "Ótima notícia! A perícia foi concluída com sucesso. O pagamento leva em torno de 7 dias para ser realizado. Em breve você receberá os valores devidos.",
   },
   {
-    id: 9,
-    final: "Processo encerrado",
+    id: 7,
+    final: "Processo finalizado",
   },
 ];
 
+const dpvatStatusOrder = [
+  'DPVAT_S1', 'DPVAT_S2', 'DPVAT_S3', 'DPVAT_S4', 'DPVAT_S5', 'DPVAT_S6', 'DPVAT_S7',
+];
+
+// ─── INSS – Auxílio-Acidente ──────────────────────────────────────────────────
+
+const inssSteps: Step[] = [
+  {
+    id: 1,
+    title: "Processo iniciado",
+    description:
+      "Estamos analisando seus dados e documentos para darmos seguimento ao seu processo de Auxílio-Acidente no INSS.",
+  },
+  {
+    id: 2,
+    title: "Documentação médica hospitalar",
+    description:
+      "Solicitamos sua documentação médica e hospitalar junto às instituições de saúde que prestaram atendimento. Conforme o prazo do Conselho Regional de Medicina (CRM), essa etapa leva em média 30 dias. É uma fase fundamental para comprovar o acidente e suas sequelas.",
+  },
+  {
+    id: 3,
+    title: "Documentos INSS",
+    description: (
+      <>
+        Solicitamos junto ao INSS o seu dossiê contendo todas as suas informações do histórico previdenciário. Em caso de dúvidas, entre em contato conosco pelo{" "}
+        <a
+          href="https://wa.me/5541999999999"
+          className="text-blue-600 hover:underline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          WhatsApp
+        </a>
+        .
+      </>
+    ),
+  },
+  {
+    id: 4,
+    title: "Aguardando perícia administrativa",
+    description:
+      "Seu processo está aguardando a realização da perícia médica administrativa no INSS. Nossa equipe está acompanhando o agendamento e entrará em contato com as orientações assim que tivermos a data confirmada.",
+  },
+  {
+    id: 5,
+    title: "Fase administrativa realizada",
+    description:
+      "A fase administrativa foi concluída. Estamos preparando os próximos passos do seu processo junto à equipe jurídica.",
+  },
+  {
+    id: 6,
+    title: "Enviado ao departamento jurídico",
+    description:
+      "Nossa equipe de advogados vai formular o pedido do seu benefício na esfera judicial. A partir daqui, seu processo segue para análise e tramitação nos tribunais.",
+  },
+  {
+    id: 7,
+    title: "Acompanhamento judicial",
+    description: (
+      <>
+        Agora você pode acompanhar o seu processo através das plataformas oficiais do governo.{" "}
+        <a
+          href="#"
+          className="text-blue-600 hover:underline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Ver processo
+        </a>
+        . Nossa equipe continua acompanhando cada movimentação.
+      </>
+    ),
+  },
+  {
+    id: 8,
+    final: "Processo finalizado",
+  },
+];
+
+const inssStatusOrder = [
+  'INSS_S1', 'INSS_S2', 'INSS_S3', 'INSS_S4', 'INSS_S5', 'INSS_S6', 'INSS_S7', 'INSS_S8',
+];
+
+// ─── Demais serviços (legado) ─────────────────────────────────────────────────
+
+const genericSteps: Step[] = [
+  { id: 1, title: "Processo iniciado", description: "Confirmado o envio dos seus documentos iniciais. Nossa equipe está preparando o protocolo de entrada." },
+  { id: 2, title: "Aguardando assinatura", description: "Enviamos o contrato e procuração e agora estamos aguardando a sua assinatura." },
+  { id: 3, title: "Fase de Solicitação de Documentos", description: "Nossa equipe está solicitando os documentos necessários junto às instituições responsáveis. Essa fase pode levar de 30 a 60 dias." },
+  { id: 4, title: "Coleta de documentos", description: "Após os documentos ficarem prontos, nossa equipe irá retirá-los e organizar tudo para envio." },
+  { id: 5, title: "Análise e Protocolo", description: "Os documentos foram enviados e estamos aguardando análise. O prazo de resposta é de até 30 dias." },
+  { id: 6, title: "Fase Pericial", description: "Seu processo chegou à fase de perícia. Aguardaremos a data e horário do agendamento." },
+  { id: 7, title: "Aguardando resultado pericial", description: "Após a perícia, o resultado é liberado em até 7 dias." },
+  { id: 8, title: "Pagamento de honorários", description: "Aguardando o pagamento dos honorários pelo trabalho realizado." },
+  { id: 9, final: "Processo encerrado" },
+];
+
+const genericStatusOrder = [
+  'INICIADO', 'AGUARDANDO_ASSINATURA', 'SOLICITAR_DOCUMENTOS', 'COLETA_DOCUMENTOS',
+  'ANALISE_DOCUMENTOS', 'PERICIAL', 'AGUARDANDO_PERICIAL', 'PAGAMENTO_HONORARIO', 'PROCESSO_ENCERRADO',
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getStepsByService(service: string | null) {
+  if (service === 'DPVAT') return { steps: dpvatSteps, order: dpvatStatusOrder };
+  if (service === 'INSS') return { steps: inssSteps, order: inssStatusOrder };
+  return { steps: genericSteps, order: genericStatusOrder };
+}
+
+function getCompletedSteps(status: string | null, order: string[]): number[] {
+  if (!status) return [];
+  const idx = order.indexOf(status);
+  if (idx < 0) return [];
+  return Array.from({ length: idx + 1 }, (_, i) => i + 1);
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
+
 export default function ProgressTimeline() {
   const [serverStatus, setServerStatus] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
   const [service, setService] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -358,9 +198,8 @@ export default function ProgressTimeline() {
       try {
         const response = await fetch("/api/user-status", { method: "GET" });
         if (!response.ok) throw new Error("Erro ao buscar status");
-        const { status, role, service } = await response.json();
+        const { status, service } = await response.json();
         setServerStatus(status);
-        setUserRole(role);
         setService(service);
       } catch (error) {
         console.error(error);
@@ -376,25 +215,8 @@ export default function ProgressTimeline() {
 
   if (isLoading) return <div><Loader2 className="h-4 w-4 animate-spin" /></div>;
 
-  // Select the appropriate steps based on the service
-  const selectedSteps = (() => {
-    switch (service) {
-      case "INSS":
-        return inssSteps;
-      case "Seguro de Vida":
-        return seguroVidaSteps;
-      case "RCF":
-        return rcfSteps;
-      case "SPVAT":
-        return spvatSteps;
-      case "DPVAT":
-        return dpvatSteps;
-      default:
-        return dpvatSteps;
-    }
-  })();
-
-  const completedSteps = mapServerStatusToCompletedSteps(serverStatus);
+  const { steps: selectedSteps, order } = getStepsByService(service);
+  const completedSteps = getCompletedSteps(serverStatus, order);
   const currentStepId = completedSteps.length > 0 ? Math.max(...completedSteps) + 1 : 1;
   const isStepVisible = (stepId: number) => stepId <= currentStepId;
 
@@ -458,32 +280,3 @@ export default function ProgressTimeline() {
     </div>
   );
 }
-
-const mapServerStatusToCompletedSteps = (
-  serverStatus: string | null
-): number[] => {
-  if (!serverStatus) return [];
-
-  switch (serverStatus) {
-    case "INICIADO":
-      return [1];
-    case "AGUARDANDO_ASSINATURA":
-      return [1, 2];
-    case "SOLICITAR_DOCUMENTOS":
-      return [1, 2, 3];
-    case "COLETA_DOCUMENTOS":
-      return [1, 2, 3, 4];
-    case "ANALISE_DOCUMENTOS":
-      return [1, 2, 3, 4, 5];
-    case "PERICIAL":
-      return [1, 2, 3, 4, 5, 6];
-    case "AGUARDANDO_PERICIAL":
-      return [1, 2, 3, 4, 5, 6, 7];
-    case "PAGAMENTO_HONORARIO":
-      return [1, 2, 3, 4, 5, 6, 7, 8];
-    case "PROCESSO_ENCERRADO":
-      return [1, 2, 3, 4, 5, 6, 7, 8, 9];
-    default:
-      return [];
-  }
-};

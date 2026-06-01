@@ -1,5 +1,44 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/_lib/auth";
+import { db } from "@/app/_lib/prisma";
 
 export async function GET() {
-  return NextResponse.json({ message: 'ok' });
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return NextResponse.json([], { status: 401 });
+  }
+
+  const notifications = await db.notification.findMany({
+    where: { recipientId: session.user.id },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  return NextResponse.json(notifications);
+}
+
+export async function PATCH(request: Request) {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  const { ids } = await request.json();
+
+  if (ids === "all") {
+    await db.notification.updateMany({
+      where: { recipientId: session.user.id, read: false },
+      data: { read: true },
+    });
+  } else if (Array.isArray(ids)) {
+    await db.notification.updateMany({
+      where: { id: { in: ids }, recipientId: session.user.id },
+      data: { read: true },
+    });
+  }
+
+  return NextResponse.json({ ok: true });
 }

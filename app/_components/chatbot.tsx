@@ -1,14 +1,12 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, User, Bot } from "lucide-react";
+import { MessageCircle, X, Send, User, Bot, Loader2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
-import { ScrollArea } from "./ui/scroll-area";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { motion, AnimatePresence } from "motion/react";
-import { useSession } from "next-auth/react";
 
 interface Message {
   id: string;
@@ -19,64 +17,80 @@ interface Message {
 
 export function ChatBot() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: "Olá! Sou o Assistente IA da Paraná Seguros. Como posso ajudá-lo hoje?\n\nVocê pode perguntar sobre como funciona o nosso trabalho, tirar dúvidas sobre os pagamentos, acompanhar processos e muito mais!",
+      text: "Olá! Sou o Assistente IA da Paraná Seguros. Como posso ajudá-lo hoje?\n\nVocê pode perguntar sobre dados de clientes, documentos, etapas de processos e muito mais!",
       sender: "bot",
       timestamp: new Date(),
     },
   ]);
   const [inputValue, setInputValue] = useState("");
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const { data: session } = useSession();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
-    if (isOpen) {
-      scrollToBottom();
-    }
+    if (isOpen) scrollToBottom();
   }, [messages, isOpen]);
 
-  const handleSendMessage = () => {
-    if (!inputValue.trim()) return;
+  const handleSendMessage = async () => {
+    const text = inputValue.trim();
+    if (!text || isLoading) return;
 
-    const newMessage: Message = {
+    const userMsg: Message = {
       id: Date.now().toString(),
-      text: inputValue,
+      text,
       sender: "user",
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputValue("");
+    setIsLoading(true);
 
-    setTimeout(() => {
-      const botResponse: Message = {
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pergunta: text }),
+      });
+
+      const data = await res.json();
+
+      const botMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: "Obrigado pela sua mensagem! Em breve um de nossos especialistas irá respondê-lo. Como posso ajudá-lo com mais alguma coisa?",
+        text: res.ok
+          ? data.resposta
+          : data.error ?? "Erro ao processar sua mensagem.",
         sender: "bot",
-        timestamp: new Date(), 
+        timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, botResponse]);
-    }, 1000);
+      setMessages((prev) => [...prev, botMsg]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          text: "Não foi possível conectar ao servidor. Tente novamente.",
+          sender: "bot",
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
   };
-
-  const debugs = () => {
-    console.log("Session data:", session);
-  }
 
   return (
     <>
@@ -89,8 +103,8 @@ export function ChatBot() {
             transition={{ duration: 0.2 }}
             className="fixed bottom-24 right-4 sm:right-6 md:right-8 z-50 w-[calc(100vw-2rem)] sm:w-96 max-w-md"
           >
-            <Card className="flex flex-col h-[500px] max-h-[70vh] shadow-2xl border-2">
-              <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
+            <Card className="flex flex-col h-[500px] max-h-[70vh] shadow-2xl border-2 overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white shrink-0">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10 border-2 border-white">
                     <AvatarFallback className="bg-blue-500">
@@ -112,7 +126,7 @@ export function ChatBot() {
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+              <div className="flex-1 min-h-0 overflow-y-auto p-4">
                 <div className="space-y-4">
                   {messages.map((message) => (
                     <div
@@ -135,7 +149,9 @@ export function ChatBot() {
                             : "bg-gray-100 text-gray-900"
                         }`}
                       >
-                        <p className="text-sm break-words">{message.text}</p>
+                        <p className="text-sm break-words whitespace-pre-wrap">
+                          {message.text}
+                        </p>
                         <p
                           className={`text-xs mt-1 ${
                             message.sender === "user" ? "text-blue-100" : "text-gray-500"
@@ -156,24 +172,39 @@ export function ChatBot() {
                       )}
                     </div>
                   ))}
+
+                  {isLoading && (
+                    <div className="flex gap-3 justify-start">
+                      <Avatar className="h-8 w-8 mt-1 flex-shrink-0">
+                        <AvatarFallback className="bg-blue-100">
+                          <Bot className="h-4 w-4 text-blue-600" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="rounded-lg p-3 bg-gray-100">
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      </div>
+                    </div>
+                  )}
+
                   <div ref={messagesEndRef} />
                 </div>
-              </ScrollArea>
+              </div>
 
-              <div className="p-4 border-t bg-gray-50">
+              <div className="p-4 border-t bg-gray-50 shrink-0">
                 <div className="flex gap-2">
                   <Input
                     placeholder="Digite sua mensagem..."
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
-                    onKeyPress={handleKeyPress}
+                    onKeyDown={handleKeyDown}
+                    disabled={isLoading}
                     className="flex-1"
                   />
                   <Button
-                    onClick={debugs}
+                    onClick={handleSendMessage}
                     size="icon"
                     className="bg-blue-600 hover:bg-blue-700 flex-shrink-0"
-                    disabled={!inputValue.trim()}
+                    disabled={!inputValue.trim() || isLoading}
                   >
                     <Send className="h-4 w-4" />
                   </Button>
@@ -234,8 +265,8 @@ export function ChatBot() {
                   Assistente IA da Paraná Seguros
                 </p>
                 <p className="text-xs text-gray-600">
-                  Você pode solicitar cotações, tirar dúvidas sobre seguros, acompanhar
-                  sinistros e muito mais!
+                  Pergunte sobre dados de clientes, documentos, etapas de processos e
+                  muito mais!
                 </p>
               </div>
             </TooltipContent>
