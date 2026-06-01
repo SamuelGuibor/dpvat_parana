@@ -4,7 +4,6 @@ import { db } from "../_lib/prisma";
 import { authOptions } from "../_lib/auth";
 import { getServerSession } from "next-auth";
 import { extractMentions } from "@/app/_utils/mentions";
-import { notificationEmitter } from "@/app/_lib/notification-emitter";
 
 interface CreateCommentProps {
   text: string;
@@ -64,14 +63,10 @@ export async function createComment({
 
   // 🔥 3️⃣ Extrai menções
   const mentions = extractMentions(text);
-  console.log("[COMMENT] Texto:", text);
-  console.log("[COMMENT] Menções extraídas:", mentions);
-  console.log("[COMMENT] Emitter listeners:", notificationEmitter.listenerCount("new-notification"));
-
   for (const mention of mentions) {
     if (mention.id === session.user.id) continue;
 
-    const notification = await db.notification.create({
+    await db.notification.create({
       data: {
         recipientId: mention.id,
         authorId: session.user.id,
@@ -83,18 +78,7 @@ export async function createComment({
         message: `Você foi mencionado por ${session.user.name} em ${targetName}`,
       },
     });
-
-    console.log("[COMMENT] Emitindo notificação para:", mention.id, mention.display);
-    notificationEmitter.emit("new-notification", {
-      recipientId: mention.id,
-      notification,
-    });
   }
-
-  notificationEmitter.emit("new-comment", {
-    userId: userId ?? null,
-    processId: processId ?? null,
-  });
 
   return comment;
 }

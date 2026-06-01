@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Label } from '@/app/_components/ui/label';
 import { Button } from '@/app/_components/ui/button';
 import { Badge } from '@/app/_components/ui/badge';
@@ -10,7 +10,6 @@ import { MentionsInput, Mention } from 'react-mentions';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 import { createComment } from '@/app/_actions/comment-actions';
-import { useSSE } from '@/app/_hooks/use-sse';
 import { MENTIONABLE_USERS, mentionsStyles } from './constants';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -62,19 +61,10 @@ export function CommentsTab({ cardId, isProcess }: Props) {
 
   const { data: comments = [], mutate } = useSWR(`/api/comments?${params}`, fetcher, {
     revalidateOnFocus: true,
+    refreshInterval: 8_000,
   });
 
   const [newComment, setNewComment] = useState('');
-  const mutateRef = useRef(mutate);
-  mutateRef.current = mutate;
-
-  useSSE((payload) => {
-    if (payload.type === "new-comment") {
-      const d = payload.data as { userId: string | null; processId: string | null };
-      const match = isProcess ? d.processId === cardId : d.userId === cardId;
-      if (match) mutateRef.current();
-    }
-  });
 
   async function send() {
     if (!newComment.trim()) return;

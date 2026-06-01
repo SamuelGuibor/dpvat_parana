@@ -2,12 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { DbNotification } from "@/app/_types/notifications";
-import { useSSE } from "./use-sse";
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<DbNotification[]>([]);
 
-  const loadInitial = useCallback(async () => {
+  const loadNotifications = useCallback(async () => {
     try {
       const res = await fetch("/api/notification", { cache: "no-store" });
       if (res.ok) {
@@ -28,14 +27,10 @@ export function useNotifications() {
   }, []);
 
   useEffect(() => {
-    loadInitial();
-  }, [loadInitial]);
-
-  useSSE((payload) => {
-    if (payload.type === "notification") {
-      setNotifications((prev) => [payload.data as DbNotification, ...prev]);
-    }
-  });
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 60_000);
+    return () => clearInterval(interval);
+  }, [loadNotifications]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
