@@ -79,7 +79,11 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
         const data = await res.json();
         if (data.erro) return;
-        setEditedCard((p) => ({ ...p, rua: data.logradouro || '', bairro: data.bairro || '' }));
+        setEditedCard((p) => ({
+          ...p,
+          ...(data.logradouro ? { rua: data.logradouro } : {}),
+          ...(data.bairro ? { bairro: data.bairro } : {}),
+        }));
       } catch (err) { console.error(err); }
     })();
   }, [editedCard.cep]);
