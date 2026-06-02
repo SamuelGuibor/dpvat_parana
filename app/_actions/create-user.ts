@@ -8,9 +8,10 @@ interface CreateUserProps {
   password: string;
   email?: string;
   labelId?: string;
+  role?: string;
 }
 
-export const createUser = async ({ name, cpf, password, email, labelId }: CreateUserProps) => {
+export const createUser = async ({ name, cpf, password, email, labelId, role }: CreateUserProps) => {
   const finalEmail = email?.trim() || `${cpf}@inserir-email.com`;
 
   const finalLabelId = labelId || (
@@ -23,7 +24,7 @@ export const createUser = async ({ name, cpf, password, email, labelId }: Create
       email: finalEmail,
       cpf,
       password,
-      role: "user",
+      role,
       labelId: finalLabelId,
     },
   });

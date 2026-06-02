@@ -373,6 +373,7 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
         password: password.trim(),
         email: email.trim() || undefined,
         labelId: labelId || undefined,
+        role: labels.find(l => l.id === labelId)?.name || undefined,
       });
       toast.success('Cliente criado com sucesso!');
       setOpen(false);

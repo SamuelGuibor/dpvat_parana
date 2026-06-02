@@ -16,11 +16,15 @@ import Team from '../_components/team_dash';
 
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
+import { useSession } from 'next-auth/react';
 export const dynamic = "force-dynamic";
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [open, setOpen] = useState(false);
+  const { data: session } = useSession();
+
+  if (session?.user?.role !== 'ADMIN') return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
