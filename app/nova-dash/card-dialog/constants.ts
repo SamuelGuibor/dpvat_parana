@@ -90,6 +90,8 @@ export const MENTIONABLE_USERS = [
   { id: 'cmg18v4ni0000jp04lw9fqdi1', display: 'Lincoln Marcondes' },
   { id: 'cmiz5zzdv0000l404208mum30', display: 'Vittor Ferraz' },
   { id: 'cmazo6j870000ia0gw5ppb486', display: 'Samuel' },
+  { id: 'cmpwucq210001jv041oc9twsr', display: 'Daniel Meira' },
+  { id: 'cmmxqposd0000jx04jrkittsl', display: 'Taynara Magalhaes' },
 ];
 
 export const ROLE_OPTIONS = [
