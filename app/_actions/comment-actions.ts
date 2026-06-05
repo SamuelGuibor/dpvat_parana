@@ -26,7 +26,11 @@ export async function createComment({
     throw new Error("Comentário precisa estar ligado a um User ou Process");
   }
 
-  // 🔥 1️⃣ Descobre o nome do card
+  const author = await db.user.findUnique({ where: { id: session.user.id }, select: { id: true } });
+  if (!author) {
+    throw new Error("Autor do comentário não encontrado no banco de dados. Faça login novamente.");
+  }
+
   let targetName = "";
 
   if (userId) {
