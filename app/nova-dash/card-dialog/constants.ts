@@ -137,8 +137,33 @@ export const ROLE_OPTIONS = [
 export const SERVICE_OPTIONS = ['INSS', 'Seguro de Vida', 'RCF', 'DPVAT', 'SPVAT', 'TRABALHISTA'];
 
 export const ESTADOS = [
-  'Paraná', 'Santa Catarina', 'São Paulo', 'Rio Grande do Sul',
-  'Mato Grosso', 'Mato Grosso do Sul', 'Rio de Janeiro',
+  'Acre',
+  'Alagoas',
+  'Amapá',
+  'Amazonas',
+  'Bahia',
+  'Ceará',
+  'Distrito Federal',
+  'Espírito Santo',
+  'Goiás',
+  'Maranhão',
+  'Mato Grosso',
+  'Mato Grosso do Sul',
+  'Minas Gerais',
+  'Pará',
+  'Paraíba',
+  'Paraná',
+  'Pernambuco',
+  'Piauí',
+  'Rio de Janeiro',
+  'Rio Grande do Norte',
+  'Rio Grande do Sul',
+  'Rondônia',
+  'Roraima',
+  'Santa Catarina',
+  'São Paulo',
+  'Sergipe',
+  'Tocantins',
 ];
 
 export const ESTADO_CIVIL = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União Estável'];
