@@ -1,91 +1,174 @@
 import { gerarProcuracaoById } from "@/app/_utils/gerarProcuracaoById";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs";
-import os from "os";
-import path from "path";
+import mammoth from "mammoth";
+import PDFDocument from "pdfkit";
 
-const execAsync = promisify(exec);
+interface TextRun {
+    text: string;
+    bold: boolean;
+    italic: boolean;
+}
 
-async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
-    const tmpDir = os.tmpdir();
-    const uid = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const tmpDocx = path.join(tmpDir, `proc_${uid}.docx`);
-    const expectedPdf = path.join(tmpDir, `proc_${uid}.pdf`);
+interface Block {
+    type: "paragraph" | "heading" | "image";
+    runs?: TextRun[];
+    level?: number;
+    src?: string;
+    align?: string;
+}
 
-    console.log("[procuracao] tmpDir:", tmpDir);
-    console.log("[procuracao] tmpDocx:", tmpDocx);
-    console.log("[procuracao] docxBuffer size:", docxBuffer.length);
+function parseHtmlToBlocks(html: string): Block[] {
+    const blocks: Block[] = [];
 
-    fs.writeFileSync(tmpDocx, docxBuffer);
-    console.log("[procuracao] DOCX escrito em disco");
+    // extract block-level elements
+    const blockPattern = /<(p|h[1-6])([^>]*)>([\s\S]*?)<\/\1>/gi;
+    const imgPattern = /<img[^>]+src="(data:[^"]+)"[^>]*>/i;
 
-    // tenta encontrar soffice no PATH ou no caminho padrão do Windows
-    const sofficeCandidates = [
-        "soffice",
-        "/usr/bin/soffice",
-        "/usr/lib/libreoffice/program/soffice",
-        "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
-    ];
+    let match: RegExpExecArray | null;
+    while ((match = blockPattern.exec(html)) !== null) {
+        const tag = match[1].toLowerCase();
+        const attrs = match[2];
+        const inner = match[3];
 
-    let sofficeCmd = "soffice";
-    for (const candidate of sofficeCandidates) {
-        try {
-            await execAsync(`"${candidate}" --version`);
-            sofficeCmd = `"${candidate}"`;
-            console.log("[procuracao] soffice encontrado:", candidate);
-            break;
-        } catch {
-            console.log("[procuracao] soffice não encontrado em:", candidate);
+        // check for embedded image inside this block
+        const imgMatch = imgPattern.exec(inner);
+        if (imgMatch) {
+            blocks.push({ type: "image", src: imgMatch[1] });
+            continue;
+        }
+
+        const alignMatch = /text-align:\s*(\w+)/i.exec(attrs);
+        const align = alignMatch ? alignMatch[1] : "left";
+
+        const runs = parseInlineRuns(inner);
+        if (runs.length === 0) continue;
+
+        if (tag === "p") {
+            blocks.push({ type: "paragraph", runs, align });
+        } else {
+            const level = parseInt(tag[1]);
+            blocks.push({ type: "heading", runs, level, align });
         }
     }
 
-    const cmd = `${sofficeCmd} --headless --convert-to pdf --outdir "${tmpDir}" "${tmpDocx}"`;
-    console.log("[procuracao] executando:", cmd);
-
-    const { stdout, stderr } = await execAsync(cmd);
-    console.log("[procuracao] stdout:", stdout);
-    if (stderr) console.error("[procuracao] stderr:", stderr);
-
-    const pdfExists = fs.existsSync(expectedPdf);
-    console.log("[procuracao] PDF existe?", pdfExists, expectedPdf);
-
-    if (!pdfExists) {
-        // lista arquivos no tmpDir para diagnóstico
-        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(`proc_${uid}`));
-        console.error("[procuracao] arquivos gerados:", files);
-        throw new Error(`LibreOffice não gerou o PDF. Arquivos: ${files.join(", ")}`);
+    // also pick up standalone images not inside p/h tags
+    const standaloneImg = /<img[^>]+src="(data:[^"]+)"[^>]*>/gi;
+    let imgMatch2: RegExpExecArray | null;
+    while ((imgMatch2 = standaloneImg.exec(html)) !== null) {
+        // avoid duplicates already captured above
+        const alreadyAdded = blocks.some(b => b.type === "image" && b.src === imgMatch2![1]);
+        if (!alreadyAdded) {
+            blocks.push({ type: "image", src: imgMatch2[1] });
+        }
     }
 
-    const pdfBuffer = fs.readFileSync(expectedPdf);
-    console.log("[procuracao] pdfBuffer size:", pdfBuffer.length);
+    return blocks;
+}
 
-    try { fs.unlinkSync(tmpDocx); } catch { /* ignore */ }
-    try { fs.unlinkSync(expectedPdf); } catch { /* ignore */ }
+function parseInlineRuns(html: string): TextRun[] {
+    const runs: TextRun[] = [];
+    const stripped = html.replace(/<br\s*\/?>/gi, "\n");
 
-    return pdfBuffer;
+    // tokenise into text and tags
+    const tokens = stripped.split(/(<[^>]+>)/);
+    let bold = false;
+    let italic = false;
+    let buf = "";
+
+    function flush() {
+        const text = buf.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+        if (text) runs.push({ text, bold, italic });
+        buf = "";
+    }
+
+    for (const token of tokens) {
+        if (!token.startsWith("<")) {
+            buf += token;
+            continue;
+        }
+        const tag = token.replace(/<\/?/, "").replace(/>.*/, "").trim().toLowerCase();
+        flush();
+        if (tag === "strong" || tag === "b") bold = true;
+        else if (tag === "/strong" || tag === "/b") bold = false;
+        else if (tag === "em" || tag === "i") italic = true;
+        else if (tag === "/em" || tag === "/i") italic = false;
+    }
+    flush();
+    return runs;
+}
+
+async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
+    const { value: html } = await mammoth.convertToHtml({ buffer: docxBuffer });
+    const blocks = parseHtmlToBlocks(html);
+
+    return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        const doc = new PDFDocument({ margin: 72, size: "A4" });
+        doc.on("data", (c: Buffer) => chunks.push(c));
+        doc.on("end", () => resolve(Buffer.concat(chunks)));
+        doc.on("error", reject);
+
+        const pageWidth = doc.page.width - 144; // margin both sides
+
+        for (const block of blocks) {
+            if (block.type === "image" && block.src) {
+                try {
+                    const base64Data = block.src.split(",")[1];
+                    const imgBuf = Buffer.from(base64Data, "base64");
+                    doc.image(imgBuf, { fit: [pageWidth, 120], align: "center" });
+                    doc.moveDown(0.5);
+                } catch {
+                    // skip unrenderable images
+                }
+                continue;
+            }
+
+            const runs = block.runs ?? [];
+            const rawText = runs.map(r => r.text).join("");
+            if (!rawText.trim()) {
+                doc.moveDown(0.3);
+                continue;
+            }
+
+            if (block.type === "heading") {
+                const fontSize = block.level === 1 ? 16 : block.level === 2 ? 14 : 12;
+                doc.fontSize(fontSize).font("Helvetica-Bold");
+                doc.text(rawText, { align: (block.align as "left" | "center" | "right" | "justify") ?? "left" });
+                doc.fontSize(11).font("Helvetica");
+                doc.moveDown(0.5);
+                continue;
+            }
+
+            // paragraph — render run by run to preserve bold/italic
+            const align = (block.align as "left" | "center" | "right" | "justify") ?? "justify";
+
+            // pdfkit doesn't do mixed fonts per line easily; detect dominant style
+            const hasBold = runs.some(r => r.bold);
+            const hasItalic = runs.some(r => r.italic);
+            const font = hasBold
+                ? (hasItalic ? "Helvetica-BoldOblique" : "Helvetica-Bold")
+                : (hasItalic ? "Helvetica-Oblique" : "Helvetica");
+
+            doc.font(font).fontSize(11).text(rawText, { align });
+            doc.moveDown(0.3);
+        }
+
+        doc.end();
+    });
 }
 
 export async function POST(req: Request) {
-    console.log("[procuracao] POST iniciado");
     try {
         const { id, type, template } = await req.json();
-        console.log("[procuracao] id:", id, "type:", type, "template:", template);
-
         const docxBuffer = await gerarProcuracaoById(id, type, template);
-        console.log("[procuracao] DOCX gerado, size:", Buffer.from(docxBuffer).length);
-
         const pdfBuffer = await convertDocxToPdf(Buffer.from(docxBuffer));
 
-        return new Response(
-            new Uint8Array(pdfBuffer),
-            {
-                headers: {
-                    "Content-Type": "application/pdf",
-                    "Content-Disposition": 'attachment; filename="procuracao.pdf"',
-                },
-            }
-        );
+        return new Response(new Uint8Array(pdfBuffer), {
+            headers: {
+                "Content-Type": "application/pdf",
+                "Content-Disposition": 'attachment; filename="procuracao.pdf"',
+            },
+        });
     } catch (err) {
         console.error("[procuracao] ERRO:", err);
         return new Response(JSON.stringify({ error: String(err) }), {
