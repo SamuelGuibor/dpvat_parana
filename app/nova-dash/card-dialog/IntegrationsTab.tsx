@@ -83,7 +83,8 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `procuracao-${editedCard.title}.docx`;
+    const templateLabel = templates.find(t => t.filename === selectedTemplate)?.label ?? selectedTemplate;
+    a.download = `${templateLabel} - ${editedCard.title}.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
