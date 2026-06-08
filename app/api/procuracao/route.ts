@@ -1,97 +1,83 @@
 import { gerarProcuracaoById } from "@/app/_utils/gerarProcuracaoById";
 import mammoth from "mammoth";
-import PDFDocument from "pdfkit";
+import React from "react";
+import { renderToBuffer, Document, Page, Text, View, Image as PDFImage, StyleSheet } from "@react-pdf/renderer";
 
-interface TextRun {
-    text: string;
-    bold: boolean;
-    italic: boolean;
-}
+const styles = StyleSheet.create({
+    page: { paddingVertical: 72, paddingHorizontal: 72, fontSize: 11, fontFamily: "Helvetica" },
+    heading1: { fontSize: 16, fontFamily: "Helvetica-Bold", textAlign: "center", marginBottom: 10 },
+    heading2: { fontSize: 13, fontFamily: "Helvetica-Bold", textAlign: "center", marginBottom: 8 },
+    paragraph: { marginBottom: 6, textAlign: "justify", lineHeight: 1.5 },
+    bold: { fontFamily: "Helvetica-Bold" },
+    image: { width: "100%", marginBottom: 10 },
+    spacer: { marginBottom: 4 },
+});
 
+interface TextRun { text: string; bold: boolean; }
 interface Block {
-    type: "paragraph" | "heading" | "image";
+    type: "paragraph" | "heading" | "image" | "spacer";
     runs?: TextRun[];
     level?: number;
-    src?: string;
     align?: string;
+    src?: string;
 }
 
 function parseHtmlToBlocks(html: string): Block[] {
     const blocks: Block[] = [];
-
-    // extract block-level elements
     const blockPattern = /<(p|h[1-6])([^>]*)>([\s\S]*?)<\/\1>/gi;
     const imgPattern = /<img[^>]+src="(data:[^"]+)"[^>]*>/i;
 
-    let match: RegExpExecArray | null;
-    while ((match = blockPattern.exec(html)) !== null) {
-        const tag = match[1].toLowerCase();
-        const attrs = match[2];
-        const inner = match[3];
+    let m: RegExpExecArray | null;
+    while ((m = blockPattern.exec(html)) !== null) {
+        const tag = m[1].toLowerCase();
+        const attrs = m[2];
+        const inner = m[3];
 
-        // check for embedded image inside this block
-        const imgMatch = imgPattern.exec(inner);
-        if (imgMatch) {
-            blocks.push({ type: "image", src: imgMatch[1] });
+        const imgM = imgPattern.exec(inner);
+        if (imgM) {
+            blocks.push({ type: "image", src: imgM[1] });
             continue;
         }
 
-        const alignMatch = /text-align:\s*(\w+)/i.exec(attrs);
-        const align = alignMatch ? alignMatch[1] : "left";
+        const alignM = /text-align:\s*(\w+)/i.exec(attrs);
+        const align = alignM ? alignM[1] : "left";
+        const runs = parseRuns(inner);
 
-        const runs = parseInlineRuns(inner);
-        if (runs.length === 0) continue;
+        if (runs.length === 0) {
+            blocks.push({ type: "spacer" });
+            continue;
+        }
 
         if (tag === "p") {
             blocks.push({ type: "paragraph", runs, align });
         } else {
-            const level = parseInt(tag[1]);
-            blocks.push({ type: "heading", runs, level, align });
-        }
-    }
-
-    // also pick up standalone images not inside p/h tags
-    const standaloneImg = /<img[^>]+src="(data:[^"]+)"[^>]*>/gi;
-    let imgMatch2: RegExpExecArray | null;
-    while ((imgMatch2 = standaloneImg.exec(html)) !== null) {
-        // avoid duplicates already captured above
-        const alreadyAdded = blocks.some(b => b.type === "image" && b.src === imgMatch2![1]);
-        if (!alreadyAdded) {
-            blocks.push({ type: "image", src: imgMatch2[1] });
+            blocks.push({ type: "heading", runs, level: parseInt(tag[1]), align });
         }
     }
 
     return blocks;
 }
 
-function parseInlineRuns(html: string): TextRun[] {
+function parseRuns(html: string): TextRun[] {
     const runs: TextRun[] = [];
-    const stripped = html.replace(/<br\s*\/?>/gi, "\n");
-
-    // tokenise into text and tags
-    const tokens = stripped.split(/(<[^>]+>)/);
+    const tokens = html.replace(/<br\s*\/?>/gi, "\n").split(/(<[^>]+>)/);
     let bold = false;
-    let italic = false;
     let buf = "";
 
     function flush() {
-        const text = buf.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+        const text = buf
+            .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
             .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
-        if (text) runs.push({ text, bold, italic });
+        if (text) runs.push({ text, bold });
         buf = "";
     }
 
-    for (const token of tokens) {
-        if (!token.startsWith("<")) {
-            buf += token;
-            continue;
-        }
-        const tag = token.replace(/<\/?/, "").replace(/>.*/, "").trim().toLowerCase();
+    for (const tok of tokens) {
+        if (!tok.startsWith("<")) { buf += tok; continue; }
+        const tag = tok.replace(/<\/?/, "").replace(/>.*/, "").trim().toLowerCase();
         flush();
         if (tag === "strong" || tag === "b") bold = true;
         else if (tag === "/strong" || tag === "/b") bold = false;
-        else if (tag === "em" || tag === "i") italic = true;
-        else if (tag === "/em" || tag === "/i") italic = false;
     }
     flush();
     return runs;
@@ -101,60 +87,52 @@ async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
     const { value: html } = await mammoth.convertToHtml({ buffer: docxBuffer });
     const blocks = parseHtmlToBlocks(html);
 
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        const doc = new PDFDocument({ margin: 72, size: "A4" });
-        doc.on("data", (c: Buffer) => chunks.push(c));
-        doc.on("end", () => resolve(Buffer.concat(chunks)));
-        doc.on("error", reject);
-
-        const pageWidth = doc.page.width - 144; // margin both sides
-
-        for (const block of blocks) {
-            if (block.type === "image" && block.src) {
-                try {
-                    const base64Data = block.src.split(",")[1];
-                    const imgBuf = Buffer.from(base64Data, "base64");
-                    doc.image(imgBuf, { fit: [pageWidth, 120], align: "center" });
-                    doc.moveDown(0.5);
-                } catch {
-                    // skip unrenderable images
+    const docElement = React.createElement(
+        Document,
+        null,
+        React.createElement(
+            Page,
+            { size: "A4", style: styles.page },
+            ...blocks.map((block, i) => {
+                if (block.type === "spacer") {
+                    return React.createElement(View, { key: i, style: styles.spacer });
                 }
-                continue;
-            }
 
-            const runs = block.runs ?? [];
-            const rawText = runs.map(r => r.text).join("");
-            if (!rawText.trim()) {
-                doc.moveDown(0.3);
-                continue;
-            }
+                if (block.type === "image" && block.src) {
+                    try {
+                        return React.createElement(PDFImage, { key: i, src: block.src, style: styles.image });
+                    } catch {
+                        return React.createElement(View, { key: i });
+                    }
+                }
 
-            if (block.type === "heading") {
-                const fontSize = block.level === 1 ? 16 : block.level === 2 ? 14 : 12;
-                doc.fontSize(fontSize).font("Helvetica-Bold");
-                doc.text(rawText, { align: (block.align as "left" | "center" | "right" | "justify") ?? "left" });
-                doc.fontSize(11).font("Helvetica");
-                doc.moveDown(0.5);
-                continue;
-            }
+                if (block.type === "heading") {
+                    const s = block.level === 1 ? styles.heading1 : styles.heading2;
+                    const text = (block.runs ?? []).map(r => r.text).join("");
+                    return React.createElement(Text, { key: i, style: s }, text);
+                }
 
-            // paragraph — render run by run to preserve bold/italic
-            const align = (block.align as "left" | "center" | "right" | "justify") ?? "justify";
+                // paragraph with mixed bold/normal runs
+                const align = block.align === "center" ? "center"
+                    : block.align === "right" ? "right"
+                    : "justify";
 
-            // pdfkit doesn't do mixed fonts per line easily; detect dominant style
-            const hasBold = runs.some(r => r.bold);
-            const hasItalic = runs.some(r => r.italic);
-            const font = hasBold
-                ? (hasItalic ? "Helvetica-BoldOblique" : "Helvetica-Bold")
-                : (hasItalic ? "Helvetica-Oblique" : "Helvetica");
+                return React.createElement(
+                    Text,
+                    { key: i, style: { ...styles.paragraph, textAlign: align } },
+                    ...(block.runs ?? []).map((run, j) =>
+                        React.createElement(
+                            Text,
+                            { key: j, style: run.bold ? styles.bold : undefined },
+                            run.text
+                        )
+                    )
+                );
+            })
+        )
+    );
 
-            doc.font(font).fontSize(11).text(rawText, { align });
-            doc.moveDown(0.3);
-        }
-
-        doc.end();
-    });
+    return await renderToBuffer(docElement);
 }
 
 export async function POST(req: Request) {
