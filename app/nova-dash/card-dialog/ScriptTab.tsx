@@ -151,16 +151,22 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = reader.result as string;
-        resolve(base64.split(',')[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+  const uploadFileToGoogle = async (file: File): Promise<{ name: string; fileUri: string; mimeType: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/upload-file", {
+      method: "POST",
+      body: formData,
     });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Falha ao fazer upload de "${file.name}"`);
+    }
+
+    const { fileUri, mimeType } = await res.json();
+    return { name: file.name, fileUri, mimeType };
   };
 
   const sendMessage = async () => {
@@ -194,14 +200,14 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
         prompt = `${prompt}\n\n[Documentos anexados: ${names}]`;
       }
 
-      toast.loading('Enviando para IA...');
+      if (selectedFiles.length > 0) {
+        toast.loading('Enviando arquivos...');
+      } else {
+        toast.loading('Enviando para IA...');
+      }
 
       const attachmentsData = selectedFiles.length > 0
-        ? await Promise.all(selectedFiles.map(async f => ({
-            name: f.name,
-            type: f.type || 'application/octet-stream',
-            content: await readFileAsBase64(f),
-          })))
+        ? await Promise.all(selectedFiles.map(f => uploadFileToGoogle(f)))
         : undefined;
 
       const response = await fetch('/api/roteiro', {
@@ -443,7 +449,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
               <div className="bg-muted rounded-lg p-3">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">...</span>
+                  {/* <span className="text-sm">...</span> */}
                 </div>
               </div>
             </div>

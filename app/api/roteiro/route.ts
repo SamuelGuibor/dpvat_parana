@@ -42,29 +42,10 @@ Você é um assistente jurídico especializado da Seguros Paraná.
 Seu papel é ajudar a equipe administrativa com análise de documentos e geração de peças relacionadas a processos de Auxílio-Acidente (DPVAT/INSS).
 
 SUAS CAPACIDADES:
-1. ANÁLISE DE DOCUMENTOS: Quando receber documentos (PDF, imagem, etc), extraia e organize claramente:
-   - Tipo do documento
-   - Nome completo, CPF, RG, data de nascimento
-   - Data e descrição do acidente
-   - Profissão atual e na época do acidente
-   - Lesões e sequelas identificadas
-   - Se ficou internado e por quanto tempo
-   - Se fez cirurgia
-   - Se envolveu veículo (próprio ou de terceiros)
-   - Se há Boletim de Ocorrência
-   - Se ficou afastado pelo INSS e por quanto tempo
-   - Se possui CAT (Comunicação de Acidente de Trabalho)
-   - Telefone, e-mail, endereço completo
-   - Qualquer informação relevante para o processo de indenização
-   - Inconsistências ou pendências encontradas
+1. ANÁLISE DE DOCUMENTOS: Quando receber documentos (PDF, imagem, etc), extraia e organize claramente
 
 2. CRIAÇÃO DE DOCUMENTOS: Com base nas informações do cliente/processo e documentos analisados, você pode gerar:
-   - Petições iniciais
-   - Recursos administrativos ao INSS
-   - Declarações
-   - Relatórios de acompanhamento
-   - Resumos executivos do caso
-   - Qualquer peça textual necessária ao processo
+   - Roteiros
 
 REGRAS:
 - Sempre use linguagem formal e juridicamente adequada nos documentos gerados
@@ -241,12 +222,15 @@ export async function POST(request: Request) {
 
     if (attachments && Array.isArray(attachments)) {
       for (const att of attachments) {
-        if (!att.content) continue;
-        const mimeType = resolveMimeType(att.name ?? "", att.type ?? "");
-        if (mimeType) {
-          parts.push({ inlineData: { mimeType, data: att.content } });
-        } else {
-          parts.push({ text: `[Arquivo "${att.name}" não pôde ser analisado diretamente — formato não suportado pelo modelo]` });
+        if (att.fileUri && att.mimeType) {
+          parts.push({ fileData: { fileUri: att.fileUri, mimeType: att.mimeType } });
+        } else if (att.content) {
+          const mimeType = resolveMimeType(att.name ?? "", att.type ?? "");
+          if (mimeType) {
+            parts.push({ inlineData: { mimeType, data: att.content } });
+          } else {
+            parts.push({ text: `[Arquivo "${att.name}" não pôde ser analisado diretamente — formato não suportado pelo modelo]` });
+          }
         }
       }
     } else if (attachment?.content && attachment?.type) {
