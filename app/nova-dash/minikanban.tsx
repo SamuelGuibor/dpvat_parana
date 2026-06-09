@@ -54,7 +54,11 @@ function formatDate(date: string) {
     return new Date(date).toLocaleDateString('pt-BR');
 }
 
-export const MiniKanban: React.FC = () => {
+interface MiniKanbanProps {
+    data?: KanbanItem[];
+}
+
+export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
     const [items, setItems] = useState<KanbanItem[]>([]);
     const [search, setSearch] = useState('');
 
@@ -68,8 +72,8 @@ export const MiniKanban: React.FC = () => {
                 throw new Error('Erro no GET');
             }
 
-            const data = await res.json();
-            setItems(data);
+            const d = await res.json();
+            setItems(d);
 
         } catch (err) {
             console.error('Erro Kanban:', err);
@@ -77,8 +81,12 @@ export const MiniKanban: React.FC = () => {
     }
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        if (data) {
+            setItems(data);
+        } else {
+            fetchData();
+        }
+    }, [data]);
 
     const deferredSearch = useDeferredValue(search);
 

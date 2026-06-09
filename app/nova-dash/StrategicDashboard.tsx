@@ -2,7 +2,7 @@
 'use client'
 /* eslint-disable no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -33,6 +33,7 @@ import { MiniKanban } from '@/app/nova-dash/minikanban'
 import { IoDocuments } from "react-icons/io5";
 import { LeadsTable } from './form-leads';
 import { CalendarTab } from './CalendarTab';
+import { DateFilter, getDefaultDateRange, type DateRange } from './DateFilter';
 
 type Counts = {
   contratado?: number;
@@ -44,6 +45,10 @@ type Counts = {
   nao_qualificado?: number;
   enviou_documentos?: number
 };
+
+function buildDateParams(range: DateRange): string {
+  return `from=${range.from.toISOString()}&to=${range.to.toISOString()}`;
+}
 
 const BotIAControl: React.FC = () => {
   const [acao, setAcao] = useState<'pausar' | 'reativar'>('pausar');
@@ -131,45 +136,44 @@ const BotIAControl: React.FC = () => {
 };
 
 export const StrategicDashboard: React.FC = () => {
+  const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const [counts, setCounts] = useState<Counts>({});
   const [loading, setLoading] = useState(true);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [kanbanItems, setKanbanItems] = useState([])
 
-useEffect(() => {
-  async function fetchData() {
-    const res = await fetch('/api/botconversa/get-kanban', {
-      cache: 'no-store'
-    })
+  const fetchAllData = useCallback(async (range: DateRange) => {
+    setLoading(true);
+    try {
+      const params = buildDateParams(range);
 
-    const data = await res.json()
-    setKanbanItems(data)
-  }
+      const [countsRes, monthRes, kanbanRes] = await Promise.all([
+        fetch(`/api/botconversa/counts?${params}`, { cache: 'no-store' }),
+        fetch(`/api/botconversa/monthly?${params}`, { cache: 'no-store' }),
+        fetch(`/api/botconversa/get-kanban?${params}`, { cache: 'no-store' }),
+      ]);
 
-  fetchData()
-}, [])
-  useEffect(() => {
-    async function loadAll() {
-      try {
-        const [countsRes, monthRes] = await Promise.all([
-          fetch('/api/botconversa/counts', { cache: 'no-store' }),
-          fetch('/api/botconversa/monthly', { cache: 'no-store' }),
-        ]);
+      const [countsData, monthData, kanbanData] = await Promise.all([
+        countsRes.json(),
+        monthRes.json(),
+        kanbanRes.json(),
+      ]);
 
-        const countsData = await countsRes.json();
-        const monthData = await monthRes.json();
-
-        setCounts(countsData);
-        setMonthlyData(monthData);
-
-      } finally {
-        setLoading(false);
-      }
+      setCounts(countsData);
+      setMonthlyData(monthData);
+      setKanbanItems(kanbanData);
+    } finally {
+      setLoading(false);
     }
-
-    loadAll();
   }, []);
-  // Dados mockados para os gráficos
+
+  useEffect(() => {
+    fetchAllData(dateRange);
+  }, [dateRange, fetchAllData]);
+
+  const handleDateChange = useCallback((range: DateRange) => {
+    setDateRange(range);
+  }, []);
 
   const currentMonthIndex = new Date().getMonth();
   const contratadoMesAtual = monthlyData[currentMonthIndex]?.aprovados ?? 0;
@@ -233,16 +237,17 @@ useEffect(() => {
   };
 
   const totalProcessos = statusDistribution.reduce((acc, item) => acc + item.value, 0);
-  const taxaAprovacao = ((statusDistribution[0].value / totalProcessos) * 100).toFixed(1);
-  const taxaRejeicao = ((statusDistribution[1].value / totalProcessos) * 100).toFixed(1);
+  const taxaAprovacao = totalProcessos > 0 ? ((statusDistribution[0].value / totalProcessos) * 100).toFixed(1) : '0.0';
+  const taxaRejeicao = totalProcessos > 0 ? ((statusDistribution[1].value / totalProcessos) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl">Gestão Estratégica</h2>
           <p className="text-gray-500">Visão completa de processos, performance e integrações</p>
         </div>
+        <DateFilter value={dateRange} onChange={handleDateChange} />
       </div>
 
       {/* KPIs Principais */}
@@ -375,7 +380,7 @@ useEffect(() => {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          {/* <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-md">Contratado <span className='font-bold'>(Mês Atual)</span></CardTitle>
             <FaPersonCircleCheck className="text-green-600" size={32} />
           </CardHeader>
@@ -387,7 +392,7 @@ useEffect(() => {
                 {contratadoMesAtual}
               </div>
             )}
-          </CardContent>
+          </CardContent> */}
         </Card>
 
       </div>
@@ -480,7 +485,7 @@ useEffect(() => {
             </Card>
           </div>
 
-          <MiniKanban />
+          <MiniKanban data={kanbanItems} />
         </TabsContent>
 
         {/* <TabsContent value="performance" className="space-y-4">
@@ -542,9 +547,9 @@ useEffect(() => {
 
         <TabsContent value="form-leads" className="space-y-4">
             <LeadsTable />
-            
-        
-        </TabsContent> 
+
+
+        </TabsContent>
 
         <TabsContent value="integrations" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

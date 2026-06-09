@@ -15,20 +15,31 @@ const EVENT_MAP: Record<string, StatusKey> = {
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-export async function fetchEventsCount() {
+export interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+export async function fetchEventsCount(range?: DateRange) {
+  const where = range
+    ? { createdAt: { gte: range.from, lte: range.to } }
+    : undefined;
+
   const data = await db.botconversa.groupBy({
     by: ["evento"],
     _count: { evento: true },
+    ...(where ? { where } : {}),
   });
+
   return data.reduce<Record<string, number>>((acc, item) => {
     acc[item.evento] = item._count.evento;
     return acc;
   }, {});
 }
 
-export async function fetchEventsByMonth(year = new Date().getFullYear()) {
-  const start = new Date(year, 0, 1);
-  const end = new Date(year, 11, 31, 23, 59, 59);
+export async function fetchEventsByMonth(year = new Date().getFullYear(), range?: DateRange) {
+  const start = range?.from ?? new Date(year, 0, 1);
+  const end = range?.to ?? new Date(year, 11, 31, 23, 59, 59);
 
   const events = await db.botconversa.findMany({
     where: { createdAt: { gte: start, lte: end } },
@@ -51,6 +62,13 @@ export async function fetchEventsByMonth(year = new Date().getFullYear()) {
   return monthlyData;
 }
 
-export async function fetchBotconversaAll() {
-  return db.botconversa.findMany({ orderBy: { createdAt: "desc" } });
+export async function fetchBotconversaAll(range?: DateRange) {
+  const where = range
+    ? { createdAt: { gte: range.from, lte: range.to } }
+    : undefined;
+
+  return db.botconversa.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+  });
 }
