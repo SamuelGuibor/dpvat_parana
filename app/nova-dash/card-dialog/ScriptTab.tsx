@@ -233,8 +233,12 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        const errorMsg = errorData.error || 'Erro ao comunicar com a IA';
+        const errorText = await response.text();
+        let errorMsg = 'Erro ao comunicar com a IA';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMsg = errorData.error || errorMsg;
+        } catch { /* ignore */ }
 
         if (response.status === 503 || response.status === 429) {
           toast.error(errorMsg);
@@ -251,18 +255,38 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
         return;
       }
 
-      const data = await response.json();
       toast.dismiss();
+
+      const assistantId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: 'assistant', content: '', timestamp: new Date() },
+      ]);
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fullText += decoder.decode(value, { stream: true });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: fullText } : m))
+        );
+      }
+
+      if (!fullText) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: 'Desculpe, não consegui processar sua solicitação.' }
+              : m
+          )
+        );
+      }
+
       toast.success('Processado com sucesso!');
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.message || data.content || 'Desculpe, não consegui processar sua solicitação.',
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
       setSelectedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (error: any) {

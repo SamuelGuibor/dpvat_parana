@@ -161,13 +161,13 @@ function buildContextMessage(cardData: Record<string, any> | null): string {
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY = 2000;
 
-async function sendWithRetry(
+async function sendStreamWithRetry(
   chat: ReturnType<typeof model.startChat>,
   parts: any[],
   attempt = 1
 ): Promise<any> {
   try {
-    return await chat.sendMessage(parts);
+    return await chat.sendMessageStream(parts);
   } catch (error: any) {
     const status = error?.status;
     const isRetryable = status === 503 || status === 429;
@@ -182,9 +182,11 @@ async function sendWithRetry(
     );
 
     await new Promise((r) => setTimeout(r, delay));
-    return sendWithRetry(chat, parts, attempt + 1);
+    return sendStreamWithRetry(chat, parts, attempt + 1);
   }
 }
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -240,25 +242,36 @@ export async function POST(request: Request) {
       }
     }
 
-    const result = await sendWithRetry(chat, parts);
-    const response = result.response;
-    const text = response.text();
+    const result = await sendStreamWithRetry(chat, parts);
 
-    const usage = response.usageMetadata;
-    console.log(
-      `[ROTEIRO] Tokens — Prompt: ${usage?.promptTokenCount ?? "?"} | Resposta: ${usage?.candidatesTokenCount ?? "?"} | Total: ${usage?.totalTokenCount ?? "?"}`
-    );
-
-    return NextResponse.json({
-      message: text,
-      tokens: {
-        prompt: usage?.promptTokenCount,
-        response: usage?.candidatesTokenCount,
-        total: usage?.totalTokenCount,
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of result.stream) {
+            const text = chunk.text();
+            if (text) {
+              controller.enqueue(encoder.encode(text));
+            }
+          }
+          const finalResponse = await result.response;
+          const usage = finalResponse.usageMetadata;
+          console.log(
+            `[ROTEIRO] Tokens — Prompt: ${usage?.promptTokenCount ?? "?"} | Resposta: ${usage?.candidatesTokenCount ?? "?"} | Total: ${usage?.totalTokenCount ?? "?"}`
+          );
+        } catch (err) {
+          controller.error(err);
+        } finally {
+          controller.close();
+        }
       },
     });
+
+    return new Response(stream, {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   } catch (error: any) {
-    console.error("[ROTEIRO] Erro:", error);
+    console.log("[ROTEIRO] Erro:", error);
 
     const status = error?.status || 500;
     let message = "Erro ao processar mensagem com IA.";
