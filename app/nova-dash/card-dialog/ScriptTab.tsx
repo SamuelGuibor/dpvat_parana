@@ -326,7 +326,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
 
   const downloadDOCX = async (content: string, template: string) => {
     try {
-      toast.loading('Gerando DOCX...');
+      toast.loading('Gerando PDF...');
       const response = await fetch('/api/roteiro/download-docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -342,25 +342,25 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error || 'Erro ao gerar DOCX');
+        throw new Error(err.error || 'Erro ao gerar PDF');
       }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `roteiro_${Date.now()}.docx`;
+      link.download = `roteiro_${Date.now()}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
       toast.dismiss();
-      toast.success('DOCX baixado com sucesso!');
+      toast.success('PDF baixado com sucesso!');
       setShowDocxMenu(null);
     } catch (error: any) {
       toast.dismiss();
-      toast.error('Erro ao gerar DOCX: ' + error.message);
+      toast.error('Erro ao gerar PDF: ' + error.message);
     }
   };
 

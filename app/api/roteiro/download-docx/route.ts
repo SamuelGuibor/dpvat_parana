@@ -2,82 +2,9 @@
 import { NextResponse } from "next/server";
 import { gerarDocumento } from "@/app/_utils/gerarDocumento";
 import { db } from "@/app/_lib/prisma";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
-
-// All extractable fields from the roteiro template that aren't in the DB
-const EXTRACTABLE_FIELDS = [
-  "descricao_fatos",
-  "como_acidente",
-  "ficou_internado",
-  "fez_cirurgia",
-  "envolveu_veiculo",
-  "tem_bo",
-  "tem_sequelas",
-  "quais_sequelas",
-  "voltou_trabalhar",
-  "ficou_afastado",
-  "tempo_afastamento",
-  "tem_cat",
-  "pericia_adm",
-  "disponibilidade_pericia",
-  "service",
-  "profissao",
-  "profissao_epoca",
-  "forma_contato",
-  "redes_sociais",
-  "telefone_secundario",
-  "senha_inss",
-];
-
-async function extractFieldsFromContent(content: string): Promise<Record<string, string>> {
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-
-    const prompt = `A partir do texto abaixo (análise de documentos de um cliente), extraia os valores para os campos listados.
-Retorne APENAS um JSON válido com os campos como chaves e string como valor.
-Se um campo não puder ser determinado a partir do texto, use string vazia "".
-Responda SOMENTE o JSON puro, sem markdown, sem blocos de código, sem explicação.
-
-CAMPOS PARA EXTRAIR:
-${EXTRACTABLE_FIELDS.map((f) => `- ${f}`).join("\n")}
-
-Descrições dos campos:
-- descricao_fatos: resumo geral do caso/acidente em linguagem formal
-- como_acidente: como ocorreu o acidente (narrativa)
-- ficou_internado: sim/não — ficou internado no hospital
-- fez_cirurgia: sim/não — realizou cirurgia
-- envolveu_veiculo: sim/não e se era próprio ou de terceiros
-- tem_bo: sim/não — possui Boletim de Ocorrência
-- tem_sequelas: sim/não — possui sequelas
-- quais_sequelas: descrição das sequelas
-- voltou_trabalhar: sim/não — voltou a trabalhar
-- ficou_afastado: sim/não — ficou afastado pelo INSS
-- tempo_afastamento: quanto tempo ficou afastado
-- tem_cat: sim/não — possui CAT (Comunicação de Acidente de Trabalho)
-- pericia_adm: sim/não — necessário marcar perícia administrativa
-- disponibilidade_pericia: disponibilidade para perícia na capital
-- service: assunto/tipo de serviço (ex: DPVAT, INSS, Seguro Vida)
-- profissao: profissão atual do cliente
-- profissao_epoca: profissão na época do acidente
-- forma_contato: melhor forma de contato
-- redes_sociais: redes sociais do cliente
-- telefone_secundario: telefone secundário
-- senha_inss: senha de acesso ao INSS (se mencionado)
-
-TEXTO DA CONVERSA/ANÁLISE:
-${content}`;
-
-    const result = await model.generateContent(prompt);
-    const raw = result.response.text().trim();
-    const json = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "");
-    return JSON.parse(json);
-  } catch (e) {
-    console.error("[DOCX] Erro ao extrair campos via IA:", e);
-    return {};
-  }
-}
+const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
+const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
 export async function POST(request: Request) {
   try {
@@ -97,6 +24,7 @@ export async function POST(request: Request) {
       data: new Date().toLocaleDateString("pt-BR"),
     };
 
+    // Fetch DB data (fast)
     if (cardId) {
       let record: any = null;
 
@@ -134,30 +62,59 @@ export async function POST(request: Request) {
       }
     }
 
-    // Extract template fields from AI conversation content in parallel with nothing else
-    const extracted = await extractFieldsFromContent(content);
+    // Extract fields via microservice (no timeout limit)
+    try {
+      const extractRes = await fetch(`${CONVERTER_URL}/ai/extract-fields`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
+        },
+        body: JSON.stringify({ content }),
+      });
 
-    // Merge: DB data takes priority, AI fills the rest
-    for (const [key, value] of Object.entries(extracted)) {
-      if (value && !dados[key]) {
-        dados[key] = String(value);
+      if (extractRes.ok) {
+        const extracted = await extractRes.json();
+        // Merge: DB data takes priority, AI fills the rest
+        for (const [key, value] of Object.entries(extracted)) {
+          if (value && !dados[key]) {
+            dados[key] = String(value);
+          }
+        }
       }
+    } catch (extractErr) {
+      console.warn("[DOCX] AI extraction failed, continuing with DB data only:", extractErr);
     }
 
-    const buffer = await gerarDocumento({
+    const docxBuffer = await gerarDocumento({
       template,
       categoria: "roteiros",
       dados,
     });
 
-    const safeFilename = filename
-      ? filename.replace(/[^a-zA-Z0-9_-]/g, "_") + ".docx"
-      : `roteiro_${Date.now()}.docx`;
-
-    return new NextResponse(new Uint8Array(buffer), {
+    // Convert DOCX → PDF via microservice
+    const convertRes = await fetch(`${CONVERTER_URL}/convert`, {
+      method: "POST",
       headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Type": "application/octet-stream",
+        ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
+      },
+      body: Buffer.from(docxBuffer),
+    });
+
+    if (!convertRes.ok) {
+      throw new Error("Erro ao converter DOCX para PDF");
+    }
+
+    const pdfBuffer = await convertRes.arrayBuffer();
+
+    const safeFilename = filename
+      ? filename.replace(/[^a-zA-Z0-9_-]/g, "_") + ".pdf"
+      : `roteiro_${Date.now()}.pdf`;
+
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      headers: {
+        "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${safeFilename}"`,
         "Cache-Control": "no-cache, no-store, must-revalidate",
       },
