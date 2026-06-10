@@ -2,7 +2,6 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
-import { format } from "date-fns";
 import { fetchProcesses, fetchProcessById } from "@/app/_lib/db/processes";
 
 interface ProcessGet {
