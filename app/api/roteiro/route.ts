@@ -54,8 +54,8 @@ function buildContextMessage(cardData: Record<string, any> | null): string {
     ["Estado civil", cardData.estado_civil],
     ["Telefone", cardData.telefone],
     ["Email", cardData.email],
-    ["Endereço", [cardData.rua, cardData.numero, cardData.bairro, cardData.cidade, cardData.estado, cardData.cep].filter(Boolean).join(", ")],
     ["Data do acidente", cardData.data_acidente],
+    ["Endereço", [cardData.rua, cardData.numero, cardData.bairro, cardData.cidade, cardData.estado, cardData.cep].filter(Boolean).join(", ")],
     ["Lesões", cardData.lesoes],
     ["Hospital", cardData.hospital],
     ["Outro hospital", cardData.outro_hospital],
@@ -71,54 +71,138 @@ function buildContextMessage(cardData: Record<string, any> | null): string {
   return `[Dados do cliente/processo atual]\n${lines.join("\n")}`;
 }
 
+// export async function POST(request: Request) {
+//   try {
+//     const body = await request.json();
+//     const { messages, cardId, isProcess, attachments, attachment } = body;
+
+//     if (!messages || !Array.isArray(messages)) {
+//       return NextResponse.json(
+//         { error: "Mensagens não fornecidas" },
+//         { status: 400 }
+//       );
+//     }
+
+//     // Fetch card context from DB (fast)
+//     const cardData = cardId ? await getCardContext(cardId, !!isProcess) : null;
+//     const contextMessage = buildContextMessage(cardData);
+
+//     // Forward to microservice (no timeout limit)
+//     const aiResponse = await fetch(`${CONVERTER_URL}/ai/chat`, {
+//       method: "POST",
+//       headers: {
+//         "Content-Type": "application/json",
+//         ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
+//       },
+//       body: JSON.stringify({
+//         messages,
+//         contextMessage,
+//         attachments,
+//         attachment,
+//       }),
+//     });
+
+//     if (!aiResponse.ok) {
+//       const errorData = await aiResponse.json().catch(() => ({}));
+//       return NextResponse.json(
+//         { error: errorData.error || "Erro no serviço de IA" },
+//         { status: aiResponse.status }
+//       );
+//     }
+
+//     // Stream the response back to the client
+//     return new Response(aiResponse.body, {
+//       headers: { "Content-Type": "text/plain; charset=utf-8" },
+//     });
+//   } catch (error: any) {
+//     console.log("[ROTEIRO] Erro:", error);
+//     return NextResponse.json(
+//       { error: "Erro ao processar mensagem com IA." },
+//       { status: 500 }
+//     );
+//   }
+// }
+
+export const maxDuration = 120;
+
+const HEARTBEAT_CHAR = "​";
+const HEARTBEAT_INTERVAL_MS = 4000;
+
 export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { messages, cardId, isProcess, attachments, attachment } = body;
+  const body = await request.json();
+  const { messages, cardId, isProcess, attachments, attachment } = body;
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Mensagens não fornecidas" },
-        { status: 400 }
-      );
-    }
-
-    // Fetch card context from DB (fast)
-    const cardData = cardId ? await getCardContext(cardId, !!isProcess) : null;
-    const contextMessage = buildContextMessage(cardData);
-
-    // Forward to microservice (no timeout limit)
-    const aiResponse = await fetch(`${CONVERTER_URL}/ai/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
-      },
-      body: JSON.stringify({
-        messages,
-        contextMessage,
-        attachments,
-        attachment,
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      const errorData = await aiResponse.json().catch(() => ({}));
-      return NextResponse.json(
-        { error: errorData.error || "Erro no serviço de IA" },
-        { status: aiResponse.status }
-      );
-    }
-
-    // Stream the response back to the client
-    return new Response(aiResponse.body, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  } catch (error: any) {
-    console.log("[ROTEIRO] Erro:", error);
+  if (!messages || !Array.isArray(messages)) {
     return NextResponse.json(
-      { error: "Erro ao processar mensagem com IA." },
-      { status: 500 }
+      { error: "Mensagens não fornecidas" },
+      { status: 400 }
     );
   }
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+      try {
+        heartbeatTimer = setInterval(() => {
+          controller.enqueue(encoder.encode(HEARTBEAT_CHAR));
+        }, HEARTBEAT_INTERVAL_MS);
+
+        const cardData = cardId ? await getCardContext(cardId, !!isProcess) : null;
+        const contextMessage = buildContextMessage(cardData);
+
+        const aiResponse = await fetch(`${CONVERTER_URL}/ai/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
+          },
+          body: JSON.stringify({
+            messages,
+            contextMessage,
+            attachments,
+            attachment,
+          }),
+        });
+
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+
+        if (!aiResponse.ok) {
+          const errorData = await aiResponse.json().catch(() => ({}));
+          const errMsg = JSON.stringify({ error: errorData.error || "Erro no serviço de IA" });
+          controller.enqueue(encoder.encode(errMsg));
+          controller.close();
+          return;
+        }
+
+        const reader = aiResponse.body?.getReader();
+        if (!reader) {
+          controller.close();
+          return;
+        }
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+
+        controller.close();
+      } catch (error: any) {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        console.log("[ROTEIRO] Erro:", error);
+        try {
+          controller.enqueue(encoder.encode("Erro ao processar mensagem com IA."));
+          controller.close();
+        } catch { /* stream already closed */ }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
 }

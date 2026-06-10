@@ -270,7 +270,9 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ cardId, isProcess }) =
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        fullText += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true }).replace(/​/g, "");
+        if (!chunk) continue;
+        fullText += chunk;
         setMessages((prev) =>
           prev.map((m) => (m.id === assistantId ? { ...m, content: fullText } : m))
         );
