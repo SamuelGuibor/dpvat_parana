@@ -2,7 +2,6 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
-import { format } from "date-fns";
 import { unstable_noStore as noStore } from "next/cache";
 import { fetchUsers, fetchUserById } from "@/app/_lib/db/users";
 
