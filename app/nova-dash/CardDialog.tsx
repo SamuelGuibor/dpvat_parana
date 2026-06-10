@@ -199,7 +199,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
             <CommentsTab cardId={cardId} isProcess={isProcess} />
           </TabsContent>
           <TabsContent value="script">
-            <RoteirosTab cardId={cardId} isProcess={isProcess} />
+            <RoteirosTab name={editedCard.title} cardId={cardId} isProcess={isProcess} />
           </TabsContent>
           <TabsContent value="integrations">
             <IntegrationsTab editedCard={editedCard} isProcess={isProcess} />

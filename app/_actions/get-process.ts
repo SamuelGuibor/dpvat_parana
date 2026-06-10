@@ -59,7 +59,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
     statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
     ...(fields === "full" && {
       cpf: process.cpf || "",
-      data_nasc: process.data_nasc ? format(process.data_nasc, "yyyy-MM-dd") : "",
+      data_nasc: process.data_nasc || "",
       email: process.email || "",
       rua: process.rua || "",
       bairro: process.bairro || "",
@@ -73,7 +73,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
       estado_civil: process.estado_civil || "",
       profissao: process.profissao || "",
       nacionalidade: process.nacionalidade || "",
-      data_acidente: process.data_acidente ? format(process.data_acidente, "yyyy-MM-dd") : "",
+      data_acidente: process.data_acidente || "",
       atendimento_via: process.atendimento_via || "",
       hospital: process.hospital || "",
       outro_hospital: process.outro_hospital || "",

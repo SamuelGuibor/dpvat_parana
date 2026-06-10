@@ -58,7 +58,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
     statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null,
     ...(fields === "full" && {
       cpf: user.cpf || "",
-      data_nasc: user.data_nasc ? format(user.data_nasc, "yyyy-MM-dd") : "",
+      data_nasc: user.data_nasc || "",
       email: user.email || "",
       rua: user.rua || "",
       bairro: user.bairro || "",
@@ -72,7 +72,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
       estado_civil: user.estado_civil || "",
       profissao: user.profissao || "",
       nacionalidade: user.nacionalidade || "",
-      data_acidente: user.data_acidente ? format(user.data_acidente, "yyyy-MM-dd") : "",
+      data_acidente: user.data_acidente || "",
       atendimento_via: user.atendimento_via || "",
       hospital: user.hospital || "",
       outro_hospital: user.outro_hospital || "",

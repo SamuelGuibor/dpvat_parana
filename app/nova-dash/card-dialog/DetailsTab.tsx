@@ -43,6 +43,66 @@ function Field({ id, label, value, onChange, type = 'text' }: {
   );
 }
 
+function DateFlexField({ id, label, value, onChange }: {
+  id: string;
+  label: string;
+  value?: string;
+  onChange: (field: string, value: string) => void;
+}) {
+  function formatDateInput(raw: string): string {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 0) return '';
+    if (digits.length <= 2) return digits;
+
+    // 3-6 digits: check if digits after the first 2 form a year (>=1900)
+    // If yes → MM/AAAA format. If no → DD/MM/... (more digits expected)
+    if (digits.length <= 6) {
+      const rest = digits.slice(2);
+      const possibleYear = parseInt(rest.padEnd(4, '0'));
+      if (rest.length >= 3 && possibleYear >= 1900 && possibleYear <= 2200) {
+        // MM/AAAA format
+        return digits.slice(0, 2) + '/' + digits.slice(2);
+      }
+      // DD/MM format (still typing year)
+      if (digits.length <= 4) {
+        return digits.slice(0, 2) + '/' + digits.slice(2);
+      }
+      return digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+    }
+
+    // 7-8 digits: DD/MM/AAAA
+    return digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const formatted = formatDateInput(e.target.value);
+    onChange(id, formatted);
+  }
+
+  const clean = (value || '').replace(/\D/g, '');
+  const slashCount = (value || '').split('/').length - 1;
+  const hint = clean.length >= 5 && slashCount === 1 ? 'MM/AAAA' : 'DD/MM/AAAA';
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>
+        {label}
+        <span className="text-xs text-muted-foreground ml-2">({hint})</span>
+      </Label>
+      <Input
+        id={id}
+        name={id}
+        type="text"
+        value={value || ''}
+        onChange={handleChange}
+        placeholder="DD/MM/AAAA ou MM/AAAA"
+        maxLength={10}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
 function SelectField({ id, label, value, options, onChange, placeholder }: {
   id: string;
   label: string;
@@ -78,7 +138,7 @@ export function DetailsTab({ editedCard, onChange, labels }: Props) {
       <div className="grid grid-cols-2 gap-4 font-semibold text-lg">
         <Field id="title" label="Nome" value={editedCard.title} onChange={onChange} />
         <Field id="cpf" label="CPF" value={editedCard.cpf} onChange={onChange} />
-        <Field id="data_nasc" label="Data Nascimento" type="date" value={editedCard.data_nasc} onChange={onChange} />
+        <DateFlexField id="data_nasc" label="Data Nascimento" value={editedCard.data_nasc} onChange={onChange} />
         <Field id="email" label="Email" value={editedCard.email} onChange={onChange} />
         <Field id="cep" label="CEP" value={editedCard.cep} onChange={onChange} />
         <Field id="rua" label="Rua" value={editedCard.rua} onChange={onChange} />
@@ -130,7 +190,7 @@ export function DetailsTab({ editedCard, onChange, labels }: Props) {
       <div className="py-2 rounded-xl">
         <h1 className="font-bold">Dados do Acidente</h1>
         <div className="grid grid-cols-2 gap-4">
-          <Field id="data_acidente" label="Data do Acidente" type="date" value={editedCard.data_acidente} onChange={onChange} />
+          <DateFlexField id="data_acidente" label="Data do Acidente" value={editedCard.data_acidente} onChange={onChange} />
           <SelectField id="atendimento_via" label="Atendimento Via" value={editedCard.atendimento_via}
             options={ATENDIMENTO_VIA} onChange={onChange} placeholder="Selecione o atendimento via" />
           <Field id="hospital" label="Hospital" value={editedCard.hospital} onChange={onChange} />

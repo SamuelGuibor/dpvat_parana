@@ -104,9 +104,7 @@ export async function createProcess(data: {
       // processo
       type: validatedData.type,
 
-      data_acidente: validatedData.data_acidente
-        ? new Date(validatedData.data_acidente)
-        : null,
+      data_acidente: validatedData.data_acidente || null,
 
       atendimento_via: validatedData.atendimento_via,
       hospital: validatedData.hospital,

@@ -7,11 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model SavedPrompt {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model User {
   id               String         @id @default(cuid())
   name             String?
   cpf              String?
-  data_nasc        DateTime?
+  data_nasc        String?
   email            String         @unique
   password         String?
   rua              String?
@@ -33,7 +42,7 @@ model User {
   status           String?
   telefone         String?
   atendimento_via  String?
-  data_acidente    DateTime?
+  data_acidente    String?
   hospital         String?
   lesoes           String?
   outro_hospital   String?
@@ -67,7 +76,7 @@ model Process {
   userId            String
   role              String?
   statusStartedAt   DateTime?
-  data_acidente     DateTime?
+  data_acidente     String?
   atendimento_via   String?
   hospital          String?
   outro_hospital    String?
@@ -82,7 +91,7 @@ model Process {
   cidade            String?
   cpf               String?
   cpf_res           String?
-  data_nasc         DateTime?
+  data_nasc         String?
   email             String?
   emailVerified     DateTime?
   estado            String?

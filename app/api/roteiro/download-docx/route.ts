@@ -50,12 +50,8 @@ export async function POST(request: Request) {
         dados.cep = record.cep || "";
         dados.cidade = record.cidade || "";
         dados.estado = record.estado || "";
-        dados.data_nascimento = record.data_nasc
-          ? new Date(record.data_nasc).toLocaleDateString("pt-BR")
-          : "";
-        dados.data_acidente = record.data_acidente
-          ? new Date(record.data_acidente).toLocaleDateString("pt-BR")
-          : "";
+        dados.data_nascimento = record.data_nasc || "";
+        dados.data_acidente = record.data_acidente || "";
         dados.lesoes = record.lesoes || "";
         dados.hospital = record.hospital || "";
         dados.nome_mae = record.nome_mae || "";
