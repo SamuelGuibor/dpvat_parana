@@ -123,7 +123,7 @@ function buildContextMessage(cardData: Record<string, any> | null): string {
 //   }
 // }
 
-export const maxDuration = 120;
+export const maxDuration = 60; // 60 seconds
 
 const HEARTBEAT_CHAR = "​";
 const HEARTBEAT_INTERVAL_MS = 4000;
