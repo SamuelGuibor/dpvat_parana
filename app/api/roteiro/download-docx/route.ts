@@ -75,15 +75,40 @@ export async function POST(request: Request) {
 
       if (extractRes.ok) {
         const extracted = await extractRes.json();
-        // Merge: DB data takes priority, AI fills the rest
+        // Merge: AI fills anything the DB didn't provide or left empty
         for (const [key, value] of Object.entries(extracted)) {
-          if (value && !dados[key]) {
-            dados[key] = String(value);
+          const aiVal = String(value || "").trim();
+          const dbVal = (dados[key] || "").trim();
+          // AI preenche se: DB não tem o campo, ou DB tem mas está vazio
+          if (aiVal && !dbVal) {
+            dados[key] = aiVal;
           }
         }
       }
     } catch (extractErr) {
       console.warn("[DOCX] AI extraction failed, continuing with DB data only:", extractErr);
+    }
+
+    // Garantir que NENHUM campo do template fique undefined
+    const ALL_TEMPLATE_FIELDS = [
+      "name", "cpf", "rg", "email", "telefone", "telefone_secundario",
+      "estado_civil", "nome_mae", "data_nascimento", "nacionalidade",
+      "forma_contato", "redes_sociais", "senha_inss", "status",
+      "endereco", "rua", "bairro", "cidade", "estado", "numero", "cep",
+      "profissao", "profissao_epoca", "service",
+      "data_acidente", "como_acidente", "descricao_fatos",
+      "ficou_internado", "fez_cirurgia", "envolveu_veiculo", "tem_bo",
+      "lesoes", "hospital",
+      "tem_sequelas", "quais_sequelas",
+      "voltou_trabalhar", "ficou_afastado", "tempo_afastamento", "tem_cat",
+      "pericia_adm", "disponibilidade_pericia",
+      "outros_afastamentos",
+    ];
+
+    for (const field of ALL_TEMPLATE_FIELDS) {
+      if (!dados[field] || dados[field].trim() === "") {
+        dados[field] = "Não apurado";
+      }
     }
 
     const docxBuffer = await gerarDocumento({
