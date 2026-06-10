@@ -6,6 +6,69 @@ import { db } from "@/app/_lib/prisma";
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
+/**
+ * Parse the chat response directly using regex.
+ * Handles formats like:
+ *   1 - <<name>>: VALUE
+ *   1 - <<name>> VALUE
+ *   <<name>>: VALUE
+ *   <<name>> VALUE
+ * Also handles multi-line values (e.g. quais_sequelas, outros_afastamentos)
+ */
+function parseFieldsFromChat(content: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+
+  // Match all <<field>> patterns and capture their values
+  // Regex: optional number prefix, then <<field_name>>, then optional colon/space, then value
+  const lines = content.split("\n");
+  let currentField: string | null = null;
+  let currentValue: string[] = [];
+
+  for (const line of lines) {
+    // Check if this line starts a new field: "N - <<field>>: value" or "<<field>>: value"
+    const fieldMatch = line.match(/^[\d.]*\s*-?\s*<<(\w+)>>[\s:]*(.*)$/);
+
+    if (fieldMatch) {
+      // Save previous field if any
+      if (currentField) {
+        fields[currentField] = currentValue.join("\n").trim();
+      }
+      currentField = fieldMatch[1];
+      currentValue = [fieldMatch[2].trim()];
+    } else if (currentField) {
+      // Check if this is a continuation line (not a new numbered item)
+      const newItemMatch = line.match(/^\d+[\d.]*\s*-\s/);
+      if (newItemMatch && !line.includes("<<")) {
+        // This is a new numbered item without a field tag — probably just text
+        // Save current and reset
+        fields[currentField] = currentValue.join("\n").trim();
+        currentField = null;
+        currentValue = [];
+      } else if (line.trim()) {
+        // Continuation of multi-line value
+        currentValue.push(line.trim());
+      }
+    }
+  }
+
+  // Save last field
+  if (currentField) {
+    fields[currentField] = currentValue.join("\n").trim();
+  }
+
+  // Special: capture "28 - Outros afastamentos:" which has no <<>> tag
+  const outrosMatch = content.match(/28\s*-\s*(?:Outros afastamentos|<<outros_afastamentos>>)[\s:]*\n([\s\S]*?)(?=\n\d+\s*-\s|\n*$)/i);
+  if (outrosMatch && outrosMatch[1].trim()) {
+    const val = outrosMatch[1].trim();
+    // Only override if the regex parser didn't get a real value
+    if (!fields.outros_afastamentos || fields.outros_afastamentos === "Nao apurado" || fields.outros_afastamentos === "Não apurado") {
+      fields.outros_afastamentos = val;
+    }
+  }
+
+  return fields;
+}
+
 export async function POST(request: Request) {
   try {
     const { content, titulo, filename, template, cardId, isProcess } =
@@ -24,7 +87,18 @@ export async function POST(request: Request) {
       data: new Date().toLocaleDateString("pt-BR"),
     };
 
-    // Fetch DB data (fast)
+    // Step 1: Extract fields from chat response (regex, instant, no AI call)
+    const chatFields = parseFieldsFromChat(content);
+    console.log("[DOCX] Campos extraidos do chat:", Object.keys(chatFields).length, chatFields);
+
+    // Step 2: Apply all chat fields first (these are the most complete)
+    for (const [key, value] of Object.entries(chatFields)) {
+      if (value) {
+        dados[key] = value;
+      }
+    }
+
+    // Step 3: Fetch DB data and fill ONLY what's missing from chat
     if (cardId) {
       let record: any = null;
 
@@ -35,57 +109,41 @@ export async function POST(request: Request) {
       }
 
       if (record) {
-        dados.name = record.name || "";
-        dados.cpf = record.cpf || "";
-        dados.rg = record.rg || "";
-        dados.email = record.email || "";
-        dados.telefone = record.telefone || "";
-        dados.nacionalidade = record.nacionalidade || "";
-        dados.estado_civil = record.estado_civil || "";
-        dados.profissao = record.profissao || "";
-        dados.endereco = record.rua || "";
-        dados.rua = record.rua || "";
-        dados.bairro = record.bairro || "";
-        dados.numero = record.numero || "";
-        dados.cep = record.cep || "";
-        dados.cidade = record.cidade || "";
-        dados.estado = record.estado || "";
-        dados.data_nascimento = record.data_nasc || "";
-        dados.data_acidente = record.data_acidente || "";
-        dados.lesoes = record.lesoes || "";
-        dados.hospital = record.hospital || "";
-        dados.nome_mae = record.nome_mae || "";
-      }
-    }
+        // DB fields mapping — only fill if chat didn't provide them
+        const dbMap: Record<string, string> = {
+          name: record.name || "",
+          cpf: record.cpf || "",
+          rg: record.rg || "",
+          email: record.email || "",
+          telefone: record.telefone || "",
+          nacionalidade: record.nacionalidade || "",
+          estado_civil: record.estado_civil || "",
+          profissao: record.profissao || "",
+          endereco: record.rua || "",
+          rua: record.rua || "",
+          bairro: record.bairro || "",
+          numero: record.numero || "",
+          cep: record.cep || "",
+          cidade: record.cidade || "",
+          estado: record.estado || "",
+          data_nascimento: record.data_nasc || "",
+          data_acidente: record.data_acidente || "",
+          lesoes: record.lesoes || "",
+          hospital: record.hospital || "",
+          nome_mae: record.nome_mae || "",
+        };
 
-    // Extract fields via microservice (no timeout limit)
-    try {
-      const extractRes = await fetch(`${CONVERTER_URL}/ai/extract-fields`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
-        },
-        body: JSON.stringify({ content }),
-      });
-
-      if (extractRes.ok) {
-        const extracted = await extractRes.json();
-        // Merge: AI fills anything the DB didn't provide or left empty
-        for (const [key, value] of Object.entries(extracted)) {
-          const aiVal = String(value || "").trim();
-          const dbVal = (dados[key] || "").trim();
-          // AI preenche se: DB não tem o campo, ou DB tem mas está vazio
-          if (aiVal && !dbVal) {
-            dados[key] = aiVal;
+        for (const [key, dbVal] of Object.entries(dbMap)) {
+          const current = (dados[key] || "").trim();
+          // DB fills only if chat didn't provide this field
+          if (!current && dbVal.trim()) {
+            dados[key] = dbVal.trim();
           }
         }
       }
-    } catch (extractErr) {
-      console.warn("[DOCX] AI extraction failed, continuing with DB data only:", extractErr);
     }
 
-    // Garantir que NENHUM campo do template fique undefined
+    // Step 4: Guarantee NO field is undefined/empty in the template
     const ALL_TEMPLATE_FIELDS = [
       "name", "cpf", "rg", "email", "telefone", "telefone_secundario",
       "estado_civil", "nome_mae", "data_nascimento", "nacionalidade",
@@ -106,6 +164,8 @@ export async function POST(request: Request) {
         dados[field] = "Não apurado";
       }
     }
+
+    console.log("[DOCX] Dados finais para template:", JSON.stringify(dados, null, 2));
 
     const docxBuffer = await gerarDocumento({
       template,
