@@ -3,13 +3,13 @@
 /* eslint-disable no-unused-vars */
 export const dynamic = "force-dynamic";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
-  User,
+  User, GripVertical,
 } from 'lucide-react';
 import { Card, CardContent } from '@/app/_components/ui/card';
 import { Badge } from '@/app/_components/ui/badge';
@@ -140,6 +140,7 @@ interface Label {
   name: string
   color: string
   timeLimitDays: number | null
+  order?: number
 }
 
 interface LabelInput {
@@ -573,7 +574,9 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
 // =============================================
 interface DroppableColumnProps {
   column: Column;
+  index: number;
   onDrop: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
+  onColumnReorder: (dragIndex: number, hoverIndex: number) => void;
   onCardClick: (card: KanbanCard) => void;
   onQuickAction: (cardId: string, action: string) => void;
   onDelete: (cardId: string) => void;
@@ -584,7 +587,7 @@ interface DroppableColumnProps {
 }
 
 const DroppableColumn: React.FC<DroppableColumnProps> = ({
-  column, onDrop, onCardClick, onQuickAction, onDelete,
+  column, index, onDrop, onColumnReorder, onCardClick, onQuickAction, onDelete,
   onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -599,7 +602,27 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
     },
     collect: (monitor) => ({ isOver: !!monitor.isOver() }),
   }));
+
+  const [{ isOverColumn }, columnDrop] = useDrop(() => ({
+    accept: 'COLUMN',
+    hover: (item: { index: number }) => {
+      if (item.index !== index) {
+        onColumnReorder(item.index, index);
+        item.index = index;
+      }
+    },
+    collect: (monitor) => ({ isOverColumn: !!monitor.isOver() }),
+  }), [index, onColumnReorder]);
+
+  const [{ isDraggingColumn }, columnDrag, columnPreview] = useDrag(() => ({
+    type: 'COLUMN',
+    item: { index },
+    collect: (monitor) => ({ isDraggingColumn: !!monitor.isDragging() }),
+  }), [index]);
+
   drop(ref);
+  columnDrop(ref);
+  columnPreview(ref);
 
   // prefere a cor da label salva no banco; cai no services hardcoded só como fallback
   const fallbackColor = services.find(s => s.name === column.title)?.color;
@@ -619,9 +642,13 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
     return (
       <div ref={ref} className={cn(
         "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-[calc(100vh-200px)]",
+        isDraggingColumn && "opacity-40",
         isOver ? "bg-blue-50 border-blue-200" : "bg-white border-gray-100 shadow-sm"
       )}>
         <div className="flex flex-col items-center h-full">
+          <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 transition-colors mb-1">
+            <GripVertical className="w-4 h-4 text-gray-400" />
+          </div>
           <Button variant="ghost" size="icon" className="mb-4 h-10 w-10 rounded-xl hover:bg-gray-100" onClick={toggleCollapse}>
             <ChevronRight className="w-5 h-5 text-gray-400" />
           </Button>
@@ -676,10 +703,14 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
     <>
       <div ref={ref} className={cn(
         "flex-shrink-0 w-[450px] rounded-2xl flex flex-col h-[calc(100vh-200px)] transition-all duration-300 border shadow-sm",
+        isDraggingColumn && "opacity-40",
         isOver ? "bg-blue-50 border-blue-400 ring-2 ring-blue-100" : "bg-gray-50/50 border-gray-200"
       )}>
         <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
           <div className="flex items-center gap-2 overflow-hidden">
+            <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 transition-colors shrink-0">
+              <GripVertical className="w-4 h-4 text-gray-400" />
+            </div>
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: columnColor, boxShadow: `0 0 8px ${columnColor}66` }} />
             <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 truncate">{column.title}</h3>
           </div>
@@ -785,6 +816,19 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
       </Dialog>
     </>
   );
+};
+
+// =============================================
+// ColumnDropZone – persiste ordem ao soltar
+// =============================================
+const ColumnDropZone: React.FC<{ onDropEnd: () => void; children: React.ReactNode }> = ({ onDropEnd, children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [, drop] = useDrop(() => ({
+    accept: 'COLUMN',
+    drop: () => { onDropEnd(); },
+  }), [onDropEnd]);
+  drop(ref);
+  return <div ref={ref}>{children}</div>;
 };
 
 // =============================================
@@ -1013,6 +1057,29 @@ export const KanbanBoard: React.FC = () => {
     setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
   };
 
+  const handleColumnReorder = useCallback((dragIndex: number, hoverIndex: number) => {
+    setLabels((prev) => {
+      const updated = [...prev];
+      const [dragged] = updated.splice(dragIndex, 1);
+      updated.splice(hoverIndex, 0, dragged);
+      return updated;
+    });
+  }, []);
+
+  const persistColumnOrder = useCallback(async () => {
+    const orderedIds = labels.map(l => l.id);
+    try {
+      await fetch('/api/labels/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds }),
+      });
+    } catch (err) {
+      console.error('Erro ao salvar ordem:', err);
+      toast.error('Erro ao salvar ordem das colunas');
+    }
+  }, [labels]);
+
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="p-6 bg-[#f8fafc] min-h-screen">
@@ -1061,22 +1128,26 @@ export const KanbanBoard: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <div className="flex gap-6 pb-6 min-w-max">
-              {columns.map((column) => (
-                <DroppableColumn
-                  key={column.id}
-                  column={column}
-                  onDrop={handleDrop}
-                  onCardClick={setSelectedCard}
-                  onQuickAction={handleQuickAction}
-                  onDelete={handleDeleteCard}
-                  onLabelEdit={updateLabel}
-                  onLabelDelete={deleteLabel}
-                  isCollapsed={collapsedColumns[column.id] || false}
-                  toggleCollapse={() => toggleCollapse(column.id)}
-                />
-              ))}
-            </div>
+            <ColumnDropZone onDropEnd={persistColumnOrder}>
+              <div className="flex gap-6 pb-6 min-w-max">
+                {columns.map((column, idx) => (
+                  <DroppableColumn
+                    key={column.id}
+                    column={column}
+                    index={idx}
+                    onDrop={handleDrop}
+                    onColumnReorder={handleColumnReorder}
+                    onCardClick={setSelectedCard}
+                    onQuickAction={handleQuickAction}
+                    onDelete={handleDeleteCard}
+                    onLabelEdit={updateLabel}
+                    onLabelDelete={deleteLabel}
+                    isCollapsed={collapsedColumns[column.id] || false}
+                    toggleCollapse={() => toggleCollapse(column.id)}
+                  />
+                ))}
+              </div>
+            </ColumnDropZone>
           </div>
         )}
 
