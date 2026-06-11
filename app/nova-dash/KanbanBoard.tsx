@@ -101,6 +101,8 @@ export interface KanbanCard {
   label?: Label | null
   ownerId?: string
   cardId?: string
+  commentCount?: number;
+  attachmentCount?: number;
 }
 
 export interface Comment {
@@ -304,7 +306,7 @@ const LabelDialog: React.FC<LabelDialogProps> = ({ open, onOpenChange, initial, 
               onChange={(e) => setTimeLimit(e.target.value)}
               placeholder="Ex: 7"
             />
-            <p className="text-[11px] text-gray-500">Cards nessa etiqueta ficam destacados em vermelho após esse prazo.</p>
+            <p className="text-[11px] text-gray-500 dark:text-zinc-400">Cards nessa etiqueta ficam destacados em vermelho após esse prazo.</p>
           </div>
         </div>
         <DialogFooter className="flex flex-row gap-3">
@@ -490,13 +492,13 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
     <>
       <div ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }} className="cursor-move group">
         <Card className={cn(
-          "mb-3 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white",
+          "mb-3 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white dark:bg-zinc-900",
           card.isProcess ? "ring-1 ring-blue-100" : "ring-1 ring-gray-100"
         )}>
-          <div className={cn("absolute top-0 left-0 w-1.5 h-full", card.isProcess ? "bg-blue-600" : "bg-gray-400")} />
+          <div className={cn("absolute top-0 left-0 w-1.5 h-full", card.isProcess ? "bg-blue-600" : "bg-gray-400 dark:bg-zinc-600")} />
           <CardContent className="p-4 pl-6">
             <div className="flex items-start justify-between mb-2">
-              <h4 className="font-bold text-sm text-gray-900 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
+              <h4 className="font-bold text-sm text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
                 {card.title}
               </h4>
               <div className="shrink-0 ml-2">
@@ -505,19 +507,19 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
                     <Briefcase className="w-3 h-3 text-blue-600" />
                   </div>
                 ) : (
-                  <div className="bg-gray-50 p-1.5 rounded-lg border border-gray-100">
-                    <UserIcon className="w-3 h-3 text-gray-600" />
+                  <div className="bg-gray-50 dark:bg-zinc-950 p-1.5 rounded-lg border border-gray-100 dark:border-zinc-800">
+                    <UserIcon className="w-3 h-3 text-gray-600 dark:text-zinc-400" />
                   </div>
                 )}
               </div>
             </div>
             <div className="mb-3">
-              <div className="text-[11px] text-gray-500 bg-gray-50/50 p-2 rounded-lg border border-gray-100/50 line-clamp-2 italic">
+              <div className="text-[11px] text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-950/50 p-2 rounded-lg border border-gray-100 dark:border-zinc-800/50 line-clamp-2 italic">
                 {card.description || 'Nenhuma descrição detalhada.'}
               </div>
             </div>
             <div className="flex flex-wrap gap-2 mb-4">
-              <Badge variant="outline" className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
+              <Badge variant="outline" className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
                 {card.service}
               </Badge>
               <div className="relative flex items-center gap-1 ml-auto">
@@ -526,21 +528,21 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-gray-50 pt-3">
-              <div className="flex items-center gap-3 text-gray-400">
+              <div className="flex items-center gap-3 text-gray-400 dark:text-zinc-500">
                 <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
                   <MessageSquare className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-bold">{card.comments.length}</span>
+                  <span className="text-[11px] font-extrabold">{card.commentCount ?? card.comments.length}</span>
                 </div>
                 <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
                   <Paperclip className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-bold">{card.attachments.length}</span>
+                  <span className="text-[11px] font-extrabold">{card.attachmentCount ?? card.attachments.length}</span>
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-blue-50 hover:text-blue-600" onClick={() => onCardClick(card)}>
+                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600" onClick={() => onCardClick(card)}>
                   <Edit className="w-3.5 h-3.5" />
                 </Button>
-                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-red-50 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
+                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               </div>
@@ -643,20 +645,20 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
       <div ref={ref} className={cn(
         "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-[calc(100vh-200px)]",
         isDraggingColumn && "opacity-40",
-        isOver ? "bg-blue-50 border-blue-200" : "bg-white border-gray-100 shadow-sm"
+        isOver ? "bg-blue-50 border-blue-200" : "bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 shadow-sm"
       )}>
         <div className="flex flex-col items-center h-full">
-          <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 transition-colors mb-1">
-            <GripVertical className="w-4 h-4 text-gray-400" />
+          <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors mb-1">
+            <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
           </div>
-          <Button variant="ghost" size="icon" className="mb-4 h-10 w-10 rounded-xl hover:bg-gray-100" onClick={toggleCollapse}>
-            <ChevronRight className="w-5 h-5 text-gray-400" />
+          <Button variant="ghost" size="icon" className="mb-4 h-10 w-10 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800" onClick={toggleCollapse}>
+            <ChevronRight className="w-5 h-5 text-gray-400 dark:text-zinc-500" />
           </Button>
           <div className="flex-1 flex flex-col items-center gap-4 overflow-hidden">
-            <Badge className="bg-gray-100 text-gray-600 border-none font-black h-8 w-8 flex items-center justify-center rounded-xl hover:bg-gray-200">
+            <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-black h-8 w-8 flex items-center justify-center rounded-xl hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800">
               {column.cards.length}
             </Badge>
-            <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 [writing-mode:vertical-rl] whitespace-nowrap text-center">
+            <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 dark:text-zinc-500 [writing-mode:vertical-rl] whitespace-nowrap text-center">
               {column.title}
             </h3>
             <DropdownMenu modal={false}>
@@ -664,7 +666,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-gray-100"
+                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
@@ -704,18 +706,18 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
       <div ref={ref} className={cn(
         "flex-shrink-0 w-[450px] rounded-2xl flex flex-col h-[calc(100vh-200px)] transition-all duration-300 border shadow-sm",
         isDraggingColumn && "opacity-40",
-        isOver ? "bg-blue-50 border-blue-400 ring-2 ring-blue-100" : "bg-gray-50/50 border-gray-200"
+        isOver ? "bg-blue-50 border-blue-400 ring-2 ring-blue-100" : "bg-gray-50 dark:bg-zinc-950/50 border-gray-200 dark:border-zinc-800"
       )}>
-        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
+        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
           <div className="flex items-center gap-2 overflow-hidden">
-            <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 transition-colors shrink-0">
-              <GripVertical className="w-4 h-4 text-gray-400" />
+            <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors shrink-0">
+              <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
             </div>
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: columnColor, boxShadow: `0 0 8px ${columnColor}66` }} />
-            <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 truncate">{column.title}</h3>
+            <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 dark:text-zinc-300 truncate">{column.title}</h3>
           </div>
           <div className="flex items-center gap-2">
-            <Badge className="bg-gray-100 text-gray-600 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
+            <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
               {column.cards.length}
             </Badge>
             <DropdownMenu modal={false}>
@@ -723,7 +725,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="h-7 w-7 rounded-lg bg-gray-50 hover:bg-gray-100"
+                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
@@ -752,7 +754,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-gray-400 hover:text-gray-900" onClick={toggleCollapse}>
+            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 dark:text-zinc-100" onClick={toggleCollapse}>
               <ChevronLeft className="w-4 h-4" />
             </Button>
           </div>
@@ -771,10 +773,10 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           ))}
           {column.cards.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 opacity-30">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-2">
-                <Briefcase className="w-6 h-6 text-gray-400" />
+              <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-zinc-800 flex items-center justify-center mb-2">
+                <Briefcase className="w-6 h-6 text-gray-400 dark:text-zinc-500" />
               </div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Sem processos</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400">Sem processos</p>
             </div>
           )}
         </div>
@@ -845,6 +847,10 @@ export const KanbanBoard: React.FC = () => {
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [labels, setLabels] = useState<Label[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [counts, setCounts] = useState<{
+    users: Record<string, { comments: number; attachments: number }>;
+    processes: Record<string, { comments: number; attachments: number }>;
+  }>({ users: {}, processes: {} });
 
   useEffect(() => {
     async function fetchData() {
@@ -887,28 +893,63 @@ export const KanbanBoard: React.FC = () => {
     setFilteredItems(filtered);
   }, [searchQuery, serviceFilter, items]);
 
+  // Busca contagens reais (comentários + documentos) em lote sempre que
+  // os items são atualizados.
   useEffect(() => {
-    const kanbanCards: KanbanCard[] = filteredItems.map(item => ({
-      id: item.id,
-      title: item.name ?? '',
-      description: item.obs ?? '',
-      assignee: item.type ?? '',
-      labelId: item.labelId,
-      label: item.label ?? null,
-      status: item.label?.name ?? 'Filtro de Cartões',
-      timer: 0,
-      comments: [],
-      attachments: [],
-      observations: item.obs ?? '',
-      checklistItems: [],
-      createdAt: new Date(item.statusStartedAt ?? Date.now()),
-      updatedAt: new Date(),
-      statusStartedAt: item.statusStartedAt,
-      service: item.service,
-      type: item.type,
-      isProcess: !!item.isProcess,
-      ownerId: item.ownerId,
-    }));
+    if (items.length === 0) {
+      setCounts({ users: {}, processes: {} });
+      return;
+    }
+    const userIds = items.filter((i) => !i.isProcess).map((i) => i.id);
+    const processIds = items.filter((i) => i.isProcess).map((i) => i.id);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch('/api/card-counts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIds, processIds }),
+        });
+        if (!res.ok) throw new Error('Falha ao buscar contagens');
+        const data = await res.json();
+        if (!cancelled) setCounts(data);
+      } catch (err) {
+        console.error('[card-counts]', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [items]);
+
+  useEffect(() => {
+    const kanbanCards: KanbanCard[] = filteredItems.map(item => {
+      const bucket = item.isProcess ? counts.processes : counts.users;
+      const c = bucket?.[item.id];
+      return {
+        id: item.id,
+        title: item.name ?? '',
+        description: item.obs ?? '',
+        assignee: item.type ?? '',
+        labelId: item.labelId,
+        label: item.label ?? null,
+        status: item.label?.name ?? 'Filtro de Cartões',
+        timer: 0,
+        comments: [],
+        attachments: [],
+        observations: item.obs ?? '',
+        checklistItems: [],
+        createdAt: new Date(item.statusStartedAt ?? Date.now()),
+        updatedAt: new Date(),
+        statusStartedAt: item.statusStartedAt,
+        service: item.service,
+        type: item.type,
+        isProcess: !!item.isProcess,
+        ownerId: item.ownerId,
+        commentCount: c?.comments ?? 0,
+        attachmentCount: c?.attachments ?? 0,
+      };
+    });
 
     const displayedLabels = serviceFilter === 'Todos'
       ? labels
@@ -923,7 +964,7 @@ export const KanbanBoard: React.FC = () => {
     }));
 
     setColumns(newColumns);
-  }, [filteredItems, labels, serviceFilter]);
+  }, [filteredItems, labels, serviceFilter, counts]);
 
   // ============= LABEL CRUD =============
   async function createLabel(data: LabelInput) {
@@ -1083,20 +1124,20 @@ export const KanbanBoard: React.FC = () => {
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="p-6 bg-[#f8fafc] min-h-screen">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-8 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-8 bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
           <div className="flex flex-col md:flex-row flex-1 gap-4">
             <div className="relative flex items-center flex-1">
-              <Search className="absolute left-3 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4" />
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 type="text"
                 placeholder="Pesquisar por nome ou processo..."
-                className="pl-10 h-12 w-full rounded-2xl border-gray-200 focus:ring-blue-500 bg-gray-50/50"
+                className="pl-10 h-12 w-full rounded-2xl border-gray-200 dark:border-zinc-800 focus:ring-blue-500 bg-gray-50 dark:bg-zinc-950/50"
               />
             </div>
             <Select value={serviceFilter} onValueChange={setServiceFilter}>
-              <SelectTrigger className="w-full md:w-[280px] h-12 rounded-2xl border-gray-200 bg-gray-50/50">
+              <SelectTrigger className="w-full md:w-[280px] h-12 rounded-2xl border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50">
                 <SelectValue placeholder="Filtrar Etapa" />
               </SelectTrigger>
               <SelectContent className="rounded-2xl">
@@ -1109,7 +1150,7 @@ export const KanbanBoard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <div className="h-10 w-[1px] bg-gray-100 mx-2 hidden lg:block" />
+            <div className="h-10 w-[1px] bg-gray-100 dark:bg-zinc-800 mx-2 hidden lg:block" />
             <CreateLabelButton onCreate={createLabel} />
             <CreatePerson labels={labels} onCreated={() => setRefreshKey((k) => k + 1)} />
             <CreateNewCard />
@@ -1121,10 +1162,10 @@ export const KanbanBoard: React.FC = () => {
             <div className="relative">
               <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-4 h-4 bg-white rounded-full" />
+                <div className="w-4 h-4 bg-white dark:bg-zinc-900 rounded-full" />
               </div>
             </div>
-            <p className="font-black text-xs text-gray-400 uppercase tracking-widest animate-pulse">Sincronizando Workflow...</p>
+            <p className="font-black text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-widest animate-pulse">Sincronizando Workflow...</p>
           </div>
         ) : (
           <div className="overflow-x-auto w-full">

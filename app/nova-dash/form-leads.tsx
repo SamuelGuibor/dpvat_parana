@@ -91,7 +91,7 @@ export const LeadsTable: React.FC = () => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total</p>
+                <p className="text-sm text-gray-600 dark:text-zinc-400">Total</p>
                 <p className="text-2xl font-bold text-blue-600">{leads.length}</p>
               </div>
               <UserPlus className="w-8 h-8 text-blue-500 opacity-50" />
@@ -122,13 +122,13 @@ export const LeadsTable: React.FC = () => {
           {/* Busca */}
           <div className="flex gap-4 pt-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-zinc-500" />
               <input
                 type="text"
                 placeholder="Buscar por nome, telefone ou descrição..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -138,7 +138,7 @@ export const LeadsTable: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b-2 border-gray-200">
+                <tr className="border-b-2 border-gray-200 dark:border-zinc-800">
                   <th className="text-left py-4 px-4">Cliente</th>
                   <th className="text-left py-4 px-4">Telefone</th>
                   <th className="text-left py-4 px-4">Descrição</th>
@@ -152,8 +152,8 @@ export const LeadsTable: React.FC = () => {
                   {filteredLeads.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="text-center py-12">
-                        <FileText className="w-12 h-12 text-gray-300 mx-auto" />
-                        <p className="text-gray-500">Nenhum lead encontrado</p>
+                        <FileText className="w-12 h-12 text-gray-300 dark:text-zinc-600 mx-auto" />
+                        <p className="text-gray-500 dark:text-zinc-400">Nenhum lead encontrado</p>
                       </td>
                     </tr>
                   ) : (
@@ -177,7 +177,7 @@ export const LeadsTable: React.FC = () => {
 
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4 text-gray-400" />
+                            <Phone className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
                             {lead.telefone}
                           </div>
                         </td>

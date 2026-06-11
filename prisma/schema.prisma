@@ -292,6 +292,21 @@ model WorkSession {
   @@unique([discordId, date])
 }
 
+model AdminChecklistItem {
+  id        String   @id @default(cuid())
+  processId String?
+  userId    String?
+  text      String
+  checked   Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([processId])
+  @@index([userId])
+  @@map("admin_checklist_items")
+}
+
 model Instruction {
   id          String            @id @default(cuid())
   title       String

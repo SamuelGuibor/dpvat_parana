@@ -190,7 +190,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           </TabsList>
 
           <TabsContent value="details">
-            <DetailsTab editedCard={editedCard} onChange={updateField} labels={labels} />
+            <DetailsTab editedCard={editedCard} onChange={updateField} labels={labels} cardId={cardId} isProcess={isProcess} />
           </TabsContent>
           <TabsContent value="checklist">
             <ChecklistTab status={editedCard.status ?? ''} service={editedCard.service} onStatusChange={setStatus} />

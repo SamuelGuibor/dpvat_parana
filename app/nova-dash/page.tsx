@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
 import { Button } from '@/app/_components/ui/button';
@@ -19,27 +19,98 @@ import { NotificationDropdown } from './box';
 import { useSession } from 'next-auth/react';
 export const dynamic = "force-dynamic";
 
+type Theme = 'light' | 'dark';
+
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>('light');
+  const [mounted, setMounted] = useState(false);
   const { data: session } = useSession();
+
+  // Carrega tema persistido no primeiro mount
+  useEffect(() => {
+    const stored = (typeof window !== 'undefined'
+      ? localStorage.getItem('nova-dash-theme')
+      : null) as Theme | null;
+    const prefersDark = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const initial: Theme = stored ?? (prefersDark ? 'dark' : 'light');
+    setTheme(initial);
+    setMounted(true);
+  }, []);
+
+  // Aplica/remove a classe `dark` no <html> e persiste
+  useEffect(() => {
+    if (!mounted) return;
+    const root = document.documentElement;
+    if (theme === 'dark') root.classList.add('dark');
+    else root.classList.remove('dark');
+    localStorage.setItem('nova-dash-theme', theme);
+  }, [theme, mounted]);
+
+  function toggleTheme() {
+    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  }
 
   if (session?.user?.role !== 'ADMIN') return null;
 
+  const isDark = theme === 'dark';
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b sticky top-0 z-50">
+    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
+      <header className={`sticky top-0 z-50 border-b backdrop-blur-md transition-colors ${
+        isDark ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-gray-200'
+      }`}>
         <div className="px-6">
           <div className="flex items-center justify-between">
-            <Link href='/'>
-              <Image src="/paranaseguros.png" width={200} height={200} alt="Logo" />
+            <Link href='/' className="flex items-center">
+              <Image
+                src="/paranaseguros.png"
+                width={200}
+                height={200}
+                alt="Logo"
+                className={isDark ? 'invert brightness-90 contrast-125' : ''}
+              />
             </Link>
             <div className="flex items-center gap-3">
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+              <Badge
+                variant="outline"
+                className={isDark
+                  ? "bg-emerald-950/40 text-emerald-300 border-emerald-800"
+                  : "bg-green-50 text-green-700 border-green-200"}
+              >
                 🟢 Sistema Online
               </Badge>
 
-              <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+              {/* Toggle de tema */}
+              {/* <button
+                onClick={toggleTheme}
+                aria-label={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+                title={isDark ? 'Modo claro' : 'Modo escuro'}
+                className={`relative h-9 w-16 rounded-full border transition-colors ${
+                  isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-gray-100 border-gray-300'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 flex h-7 w-7 items-center justify-center rounded-full shadow transition-all duration-300 ${
+                    isDark
+                      ? 'left-8 bg-indigo-500 text-white'
+                      : 'left-1 bg-white text-amber-500'
+                  }`}
+                >
+                  {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                </span>
+              </button> */}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOpen(true)}
+                className={isDark
+                  ? 'bg-zinc-800 border-zinc-700 text-zinc-100 hover:bg-zinc-700 hover:text-white'
+                  : ''}
+              >
                 <Users className="w-4 h-4 mr-2" />
                 Equipe
               </Button>
@@ -51,12 +122,20 @@ export default function Page() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="dashboard">
+          <TabsList className={`grid w-full max-w-md grid-cols-2 ${
+            isDark ? 'bg-zinc-800 text-zinc-300' : ''
+          }`}>
+            <TabsTrigger
+              value="dashboard"
+              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+            >
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard Estratégico
             </TabsTrigger>
-            <TabsTrigger value="kanban">
+            <TabsTrigger
+              value="kanban"
+              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+            >
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
             </TabsTrigger>
@@ -64,7 +143,7 @@ export default function Page() {
         </Tabs>
       </header>
 
-      <main>
+      <main className={isDark ? 'bg-zinc-950' : ''}>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsContent value="dashboard">
             <StrategicDashboard />
@@ -75,8 +154,10 @@ export default function Page() {
         </Tabs>
       </main>
 
-      <footer className="bg-white border-t mt-12">
-        <div className="px-6 py-4 text-sm text-gray-500">
+      <footer className={`border-t mt-12 transition-colors ${
+        isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
+      }`}>
+        <div className="px-6 py-4 text-sm">
           © 2025 Sistema de Gestão Seguros Paraná.
         </div>
       </footer>

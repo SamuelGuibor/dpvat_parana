@@ -87,11 +87,11 @@ const BotIAControl: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">Ação</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-zinc-300">Ação</label>
             <select
               value={acao}
               onChange={e => setAcao(e.target.value as 'pausar' | 'reativar')}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 dark:border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="pausar">Pausar bot</option>
               <option value="reativar">Reativar bot</option>
@@ -99,13 +99,13 @@ const BotIAControl: React.FC = () => {
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">Número do cliente</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-zinc-300">Número do cliente</label>
             <input
               type="text"
               placeholder="Ex: 5541999999999"
               value={numero}
               onChange={e => setNumero(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 dark:border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -245,7 +245,7 @@ export const StrategicDashboard: React.FC = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl">Gestão Estratégica</h2>
-          <p className="text-gray-500">Visão completa de processos, performance e integrações</p>
+          <p className="text-gray-500 dark:text-zinc-400">Visão completa de processos, performance e integrações</p>
         </div>
         <DateFilter value={dateRange} onChange={handleDateChange} />
       </div>
@@ -259,7 +259,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold">{counts.iniciado ?? 0}</div>
             )}
@@ -274,7 +274,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-blue-600">
                 {counts.em_conversa ?? 0}
@@ -290,7 +290,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-blue-600">
                 {counts.em_honorario ?? 0}
@@ -306,7 +306,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-blue-600">
                 {counts.enviou_documentos ?? 0}
@@ -322,7 +322,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-orange-600">
                 {counts.aguardando ?? 0}
@@ -338,7 +338,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-red-600">
                 {counts.nao_contratado ?? 0}
@@ -354,7 +354,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-[#8a0303]">
                 {counts.nao_qualificado ?? 0}
@@ -370,7 +370,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-green-600">
                 {counts.contratado ?? 0}
@@ -386,7 +386,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="h-[60px] flex items-center justify-center">
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
             ) : (
               <div className="text-6xl font-bold text-green-600">
                 {contratadoMesAtual}
@@ -525,17 +525,17 @@ export const StrategicDashboard: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Processos</span>
+                    <span className="text-sm text-gray-500 dark:text-zinc-400">Processos</span>
                     <span className="font-semibold">{person.processos}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Taxa Aprovação</span>
+                    <span className="text-sm text-gray-500 dark:text-zinc-400">Taxa Aprovação</span>
                     <Badge variant="outline" className="bg-green-50 text-green-700">
                       {person.taxa}%
                     </Badge>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Tempo Médio</span>
+                    <span className="text-sm text-gray-500 dark:text-zinc-400">Tempo Médio</span>
                     <span className="font-semibold">{person.tempo} dias</span>
                   </div>
                 </CardContent>
@@ -573,7 +573,7 @@ export const StrategicDashboard: React.FC = () => {
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   📊 Ver Estatísticas
                 </Button>
-                {/* <div className="pt-2 text-sm text-gray-500">
+                {/* <div className="pt-2 text-sm text-gray-500 dark:text-zinc-400">
                   <p>153 emails enviados hoje</p>
                   <p className="text-green-600">Taxa de abertura: 68%</p>
                 </div> */}
@@ -600,7 +600,7 @@ export const StrategicDashboard: React.FC = () => {
                 {/* <Button variant="outline" className="w-full justify-start" size="sm">
                   🤖 Configurar Bot
                 </Button> */}
-                {/* <div className="pt-2 text-sm text-gray-500">
+                {/* <div className="pt-2 text-sm text-gray-500 dark:text-zinc-400">
                   <p>89 mensagens enviadas hoje</p>
                   <p className="text-green-600">Taxa de resposta: 92%</p>
                 </div> */}
@@ -630,7 +630,7 @@ export const StrategicDashboard: React.FC = () => {
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   📋 Zaps Ativos
                 </Button>
-                <div className="pt-2 text-sm text-gray-500">
+                <div className="pt-2 text-sm text-gray-500 dark:text-zinc-400">
                   <p>12 automações ativas</p>
                   <p className="text-green-600">342 execuções hoje</p>
                 </div>

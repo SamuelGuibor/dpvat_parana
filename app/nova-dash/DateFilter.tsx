@@ -192,7 +192,7 @@ export function DateFilter({ value, onChange }: Props) {
             variant="outline"
             className="h-9 min-w-[200px] justify-start gap-2 font-medium text-sm"
           >
-            <CalendarIcon className="h-4 w-4 text-gray-500" />
+            <CalendarIcon className="h-4 w-4 text-gray-500 dark:text-zinc-400" />
             <span>{label}</span>
           </Button>
         </PopoverTrigger>
@@ -201,7 +201,7 @@ export function DateFilter({ value, onChange }: Props) {
           <div className="flex">
             {/* Presets sidebar */}
             <div className="border-r p-2 space-y-0.5 min-w-[140px]">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 pb-1">
+              <p className="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider px-2 pb-1">
                 Periodo
               </p>
               {PRESETS.map(preset => (
@@ -211,7 +211,7 @@ export function DateFilter({ value, onChange }: Props) {
                   className={`w-full text-left text-sm px-3 py-1.5 rounded-md transition-colors
                     ${activePreset === preset.key
                       ? 'bg-indigo-600 text-white font-medium'
-                      : 'hover:bg-gray-100 text-gray-700'
+                      : 'hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-700 dark:text-zinc-300'
                     }`}
                 >
                   {preset.label}
@@ -221,7 +221,7 @@ export function DateFilter({ value, onChange }: Props) {
 
             {/* Calendar */}
             <div className="p-3">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 pb-2">
+              <p className="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider px-1 pb-2">
                 Personalizado
               </p>
               <Calendar
@@ -234,7 +234,7 @@ export function DateFilter({ value, onChange }: Props) {
                 className="rounded-md"
               />
               {activePreset === 'custom' && calendarRange?.from && calendarRange?.to && (
-                <p className="text-xs text-gray-500 text-center mt-2">
+                <p className="text-xs text-gray-500 dark:text-zinc-400 text-center mt-2">
                   {format(calendarRange.from, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                   {' '}&rarr;{' '}
                   {format(calendarRange.to, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -259,7 +259,7 @@ export function DateFilter({ value, onChange }: Props) {
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 text-xs text-gray-500 gap-1"
+          className="h-9 text-xs text-gray-500 dark:text-zinc-400 gap-1"
           onClick={handleReset}
         >
           <RotateCcw className="h-3 w-3" />

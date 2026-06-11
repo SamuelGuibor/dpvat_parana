@@ -182,7 +182,7 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h3 className="text-xl font-bold">Fluxo de Eventos Rápidos</h3>
-                    <p className="text-sm text-gray-500">Acompanhamento de 8 etapas</p>
+                    <p className="text-sm text-gray-500 dark:text-zinc-400">Acompanhamento de 8 etapas</p>
                 </div>
                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                     8 Colunas
@@ -194,7 +194,7 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
                     placeholder="Buscar por nome ou telefone..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="border border-gray-300 px-4 py-2.5 rounded-lg w-full max-w-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="border border-gray-300 dark:border-zinc-700 px-4 py-2.5 rounded-lg w-full max-w-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
             </div>
 
@@ -207,12 +207,12 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
 
                         return (
                             <div key={stageKey} className="w-80 flex-shrink-0 flex flex-col gap-3">
-                                <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border-b-2 border-gray-200 shadow-sm">
-                                    <h3 className="text-sm font-bold text-gray-700 uppercase tracking-tight flex items-center gap-2">
+                                <div className="flex items-center justify-between px-3 py-2 bg-white dark:bg-zinc-900 rounded-lg border-b-2 border-gray-200 dark:border-zinc-800 shadow-sm">
+                                    <h3 className="text-sm font-bold text-gray-700 dark:text-zinc-300 uppercase tracking-tight flex items-center gap-2">
                                         <div className={`w-2.5 h-2.5 rounded-full ${stageColor} shadow-[0_0_8px_rgba(0,0,0,0.3)]`}></div>
                                         {stageName}
                                     </h3>
-                                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-gray-100">
+                                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-gray-100 dark:bg-zinc-800">
                                         {stageItems.length}
                                     </Badge>
                                 </div>
@@ -295,7 +295,7 @@ const KanbanCard = React.memo(function KanbanCard({
     const stageColor = STAGE_COLORS[stageIndex];
 
     return (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-3 group transition-all hover:shadow-xl hover:border-blue-300 relative">
+        <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-zinc-800 flex flex-col gap-3 group transition-all hover:shadow-xl hover:border-blue-300 relative">
             <div className={`absolute top-0 left-0 w-1 h-full ${stageColor} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
 
             <div className="flex flex-col gap-1">
@@ -303,20 +303,20 @@ const KanbanCard = React.memo(function KanbanCard({
                     {item.evento}
                 </span>
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-600 shrink-0 shadow-sm">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-600 dark:text-zinc-400 shrink-0 shadow-sm">
                         <User className="w-4 h-4" />
                     </div>
-                    <span className="text-sm font-bold text-gray-900 truncate">{item.nome}</span>
+                    <span className="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">{item.nome}</span>
                 </div>
             </div>
 
-            <div className="space-y-2 border-t border-gray-100 pt-3">
+            <div className="space-y-2 border-t border-gray-100 dark:border-zinc-800 pt-3">
                 <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5 text-gray-400">
+                    <div className="flex items-center gap-1.5 text-gray-400 dark:text-zinc-500">
                         <Calendar className="w-3 h-3" />
                         <span>{formatDate(item.createdAt)}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-gray-400">
+                    <div className="flex items-center gap-1.5 text-gray-400 dark:text-zinc-500">
                         <Clock className="w-3 h-3" />
                         <span>{formatDate(item.updatedAt)}</span>
                     </div>
@@ -349,7 +349,7 @@ const KanbanCard = React.memo(function KanbanCard({
                 {stageIndex > 0 && (
                     <button
                         onClick={() => moveItem(item.id, STAGE_KEYS[stageIndex - 1])}
-                        className="flex-1 py-1.5 text-[10px] font-bold bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 active:scale-95 transition-all"
+                        className="flex-1 py-1.5 text-[10px] font-bold bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 active:scale-95 transition-all"
                     >
                         ← Recuar
                     </button>

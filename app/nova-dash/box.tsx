@@ -33,9 +33,9 @@ export function NotificationDropdown() {
     <div className="relative" ref={ref}>
       <button
         onClick={handleToggle}
-        className="relative p-2 rounded-full hover:bg-gray-100 transition-colors"
+        className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors"
       >
-        <Bell className="w-5 h-5 text-gray-600" />
+        <Bell className="w-5 h-5 text-gray-600 dark:text-zinc-400" />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-full">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -44,7 +44,7 @@ export function NotificationDropdown() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-96 bg-white border rounded-xl shadow-lg z-50">
+        <div className="absolute right-0 mt-2 w-96 bg-white dark:bg-zinc-900 border rounded-xl shadow-lg z-50">
           <div className="px-4 py-3 border-b flex items-center justify-between">
             <span className="font-semibold text-sm">Notificações</span>
             {unreadCount > 0 && (
@@ -59,21 +59,21 @@ export function NotificationDropdown() {
 
           <div className="max-h-80 overflow-y-auto">
             {notifications.length === 0 ? (
-              <p className="text-sm text-gray-500 px-4 py-8 text-center">
+              <p className="text-sm text-gray-500 dark:text-zinc-400 px-4 py-8 text-center">
                 Nenhuma notificação
               </p>
             ) : (
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  className={`flex gap-3 px-4 py-3 hover:bg-gray-50 transition border-b last:border-b-0 ${
+                  className={`flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-zinc-800 transition border-b last:border-b-0 ${
                     !n.read ? 'bg-blue-50/50' : ''
                   }`}
                 >
                   <div className="mt-0.5">
                     <Badge
                       variant="secondary"
-                      className={`${!n.read ? 'bg-blue-100 text-blue-700' : 'bg-gray-100'}`}
+                      className={`${!n.read ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 dark:bg-zinc-800'}`}
                     >
                       <Bell className="w-3 h-3" />
                     </Badge>
@@ -83,7 +83,7 @@ export function NotificationDropdown() {
                       <strong>{n.authorName}</strong> mencionou você no card{' '}
                       <strong>{n.targetName}</strong>
                     </p>
-                    <div className="flex items-center gap-1 mt-1 text-gray-400">
+                    <div className="flex items-center gap-1 mt-1 text-gray-400 dark:text-zinc-500">
                       <Clock className="w-3 h-3" />
                       <span className="text-[11px]">
                         {new Date(n.createdAt).toLocaleString('pt-BR')}

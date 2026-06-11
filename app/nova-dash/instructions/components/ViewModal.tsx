@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
 "use client";
 
@@ -13,8 +14,160 @@ import {
   Clock,
   Loader2,
   CheckCircle2,
+  ExternalLink,
+  Copy,
 } from "lucide-react";
 import type { LockerEntry, LockerFile } from "./LokerCard";
+
+// Email clicável que copia para o clipboard ao invés de abrir mailto:
+function EmailChip({ email }: { email: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.preventDefault();
+        try {
+          await navigator.clipboard.writeText(email);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* ignore */
+        }
+      }}
+      title={copied ? "E-mail copiado!" : "Clique para copiar o e-mail"}
+      className="text-sky-600 hover:text-sky-700 underline decoration-sky-600/40 hover:decoration-sky-700 inline items-baseline gap-0.5 break-all cursor-pointer bg-transparent p-0 m-0 border-0 font-inherit align-baseline"
+      style={{ font: "inherit" }}
+    >
+      <span>{email}</span>
+      {copied ? (
+        <CheckCircle2 size={11} className="inline -mb-0.5 ml-0.5 text-emerald-500" />
+      ) : (
+        <Copy size={11} className="inline -mb-0.5 ml-0.5 opacity-60" />
+      )}
+    </button>
+  );
+}
+
+// Detecta:
+//  - URLs com http:// ou https://
+//  - URLs começando com www.
+//  - domínios "soltos" terminando em .com, .com.br, .net, .org, .io, .gov, .edu, .app, .dev (com caminho opcional)
+const URL_REGEX =
+  /(https?:\/\/[^\s<>"')]+|www\.[^\s<>"')]+|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com\.br||net|org|io|gov|edu|app|dev|me|tv|info)(?:\/[^\s<>"')]*)?)/gi;
+
+function ensureHref(raw: string): string {
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
+// Regex que detecta email OU URL no mesmo passe. Email vem primeiro para que
+// "fulano@dominio.com.br" seja capturado inteiro e não confundido com "dominio.com.br".
+const RICH_REGEX =
+  /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:\.[A-Za-z]{2,})?)|(https?:\/\/[^\s<>"')]+|www\.[^\s<>"')]+|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com\.br|com|net|org|io|gov|edu|app|dev|me|tv|info|gov\.br|org\.br)(?:\/[^\s<>"')]*)?)/gi;
+
+function renderRich(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  RICH_REGEX.lastIndex = 0;
+  let key = 0;
+
+  while ((match = RICH_REGEX.exec(text)) !== null) {
+    const start = match.index;
+    const raw = match[0];
+    const isEmail = !!match[1];
+
+    // trim pontuação final que não pertence à URL/email
+    let end = start + raw.length;
+    let trimmed = raw;
+    while (/[.,;:!?)\]]$/.test(trimmed)) {
+      trimmed = trimmed.slice(0, -1);
+      end--;
+    }
+    if (trimmed.length === 0) continue;
+
+    if (start > lastIndex) {
+      nodes.push(text.slice(lastIndex, start));
+    }
+
+    if (isEmail) {
+      nodes.push(<EmailChip key={`em-${key++}`} email={trimmed} />);
+    } else {
+      nodes.push(
+        <a
+          key={`lnk-${key++}`}
+          href={ensureHref(trimmed)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-600 hover:text-sky-700 underline decoration-sky-600/40 hover:decoration-sky-700 inline-flex items-baseline gap-0.5 break-all"
+        >
+          {trimmed}
+          <ExternalLink size={11} className="inline -mb-0.5 opacity-70" />
+        </a>,
+      );
+    }
+
+    lastIndex = end;
+    if (RICH_REGEX.lastIndex <= start) RICH_REGEX.lastIndex = start + 1;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function renderWithLinks(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  // reset regex
+  URL_REGEX.lastIndex = 0;
+  let key = 0;
+
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    const start = match.index;
+    const raw = match[0];
+
+    // pontuação final que normalmente não pertence à URL (.,;:)
+    let end = start + raw.length;
+    let trimmed = raw;
+    while (/[.,;:!?)\]]$/.test(trimmed)) {
+      trimmed = trimmed.slice(0, -1);
+      end--;
+    }
+    if (trimmed.length === 0) continue;
+
+    if (start > lastIndex) {
+      nodes.push(text.slice(lastIndex, start));
+    }
+
+    nodes.push(
+      <a
+        key={`lnk-${key++}`}
+        href={ensureHref(trimmed)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-sky-600 hover:text-sky-700 underline decoration-sky-600/40 hover:decoration-sky-700 inline-flex items-baseline gap-0.5 break-all"
+      >
+        {trimmed}
+        <ExternalLink size={11} className="inline -mb-0.5 opacity-70" />
+      </a>,
+    );
+
+    lastIndex = end;
+    // garante avanço quando a regex casou string vazia
+    if (URL_REGEX.lastIndex <= start) URL_REGEX.lastIndex = start + 1;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
 
 type Props = {
   open: boolean;
@@ -200,10 +353,10 @@ export function ViewModal({ open, entry, onClose, onEdit, onDelete }: Props) {
                 </button>
               </div>
               <div
-                className={`rounded-xl p-4 border border-border ${colors.soft} text-foreground leading-relaxed text-sm whitespace-pre-wrap`}
+                className={`rounded-xl p-4 border border-border ${colors.soft} text-foreground leading-relaxed text-sm whitespace-pre-wrap break-words`}
                 style={{ fontFamily: "'DM Sans', sans-serif" }}
               >
-                {entry.text}
+                {renderRich(entry.text!)}
               </div>
             </div>
           )}
