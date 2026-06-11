@@ -695,7 +695,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
           </Button>
         </div>
 
-        <div className="h-full overflow-y-auto space-y-4">
+        <div ref={scrollRef} className="h-full overflow-y-auto space-y-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-12">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
