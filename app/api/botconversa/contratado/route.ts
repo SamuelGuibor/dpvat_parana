@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
       const [userExists, label] = await Promise.all([
         db.user.findFirst({ where: { telefone } }),
-        db.label.findFirst({ where: { order: 2 } }),
+        db.label.findFirst({ where: { order: 0 } }),
       ]);
 
       if (!userExists) {
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
             name: nome,
             email: `inserir_email-${telefone}@gmail.com`,
             telefone,
-            role: 'Gerar Procuração Automática',
+            role: 'Filtro de Cartões',
             password: 'segurosparana1',
             ...(label && { labelId: label.id }),
           },
