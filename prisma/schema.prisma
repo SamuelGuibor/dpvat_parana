@@ -292,3 +292,32 @@ model WorkSession {
   @@unique([discordId, date])
 }
 
+model Instruction {
+  id          String            @id @default(cuid())
+  title       String
+  description String?
+  text        String?
+  color       String            @default("amber")
+  tags        String[]          @default([])
+  folderName  String            @unique
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  files       InstructionFile[]
+
+  @@map("instructions")
+}
+
+model InstructionFile {
+  id            String      @id @default(cuid())
+  instructionId String
+  name          String
+  key           String
+  size          String?
+  type          String?
+  uploadedAt    DateTime    @default(now())
+  instruction   Instruction @relation(fields: [instructionId], references: [id], onDelete: Cascade)
+
+  @@index([instructionId])
+  @@map("instruction_files")
+}
+

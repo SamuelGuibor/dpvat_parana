@@ -8,7 +8,7 @@ import {
 } from '@/app/_components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
 import { Button } from '@/app/_components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Link, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { getUsers } from '@/app/_actions/get-user';
@@ -173,6 +173,9 @@ export const CardDialog: React.FC<CardDialogProps> = ({
       <DialogContent className="max-w-7xl h-[90%] overflow-y-auto flex flex-col" autoFocus={false}>
         <DialogHeader>
           <DialogTitle>{editedCard.title}</DialogTitle>
+          <a href="/nova-dash/instructions" className="absolute text-blue-600 hover:text-blue-500 right-12 font-semibold" target="_blank" rel="noopener noreferrer">
+            Manual de Instruções <Link className="w-4 h-4 inline-block" />
+          </a>
           <DialogDescription>Edição detalhada do processo</DialogDescription>
         </DialogHeader>
 
