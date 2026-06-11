@@ -35,7 +35,7 @@ export default function Page() {
       : null) as Theme | null;
     const prefersDark = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    const initial: Theme = stored ?? (prefersDark ? 'light' : 'dark');
+    const initial: Theme = stored ?? 'light';
     setTheme(initial);
     setMounted(true);
   }, []);
