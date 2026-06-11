@@ -192,7 +192,7 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       <div className="space-y-2">
         <Label>Arquivos Anexados ({docs.length})</Label>
         {docs.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 border-2 border-dashed rounded-lg">
+          <div className="text-center py-8 text-gray-500 dark:text-zinc-400 border-2 border-dashed rounded-lg">
             Nenhum documento encontrado
           </div>
         ) : (
@@ -206,7 +206,7 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
               </thead>
               <tbody className="divide-y">
                 {docs.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-gray-50">
+                  <tr key={doc.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800">
                     <td className="p-3">
                       {editingId === doc.id ? (
                         <div className="flex items-center gap-2">

@@ -20,9 +20,9 @@ interface Props {
 }
 
 const inputClass =
-  'focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 bg-gray-50';
+  'focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:border-zinc-800 dark:placeholder:text-zinc-500';
 const selectClass =
-  'w-full h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
+  'w-full h-10 px-3 py-2 text-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
 function Field({ id, label, value, onChange, type = 'text' }: {
   id: string;
@@ -181,7 +181,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-sm text-gray-500">
+      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-zinc-400">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4" />
           <span>Criado: {new Date(editedCard.createdAt).toLocaleDateString()}</span>

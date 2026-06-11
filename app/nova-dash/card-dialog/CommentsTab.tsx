@@ -86,11 +86,11 @@ export function CommentsTab({ cardId, isProcess }: Props) {
     <div className="space-y-6 px-10 pt-6">
       <div className="space-y-4">
         <div className="space-y-2 relative">
-          <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+          <Label className="text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-widest flex items-center gap-2">
             <MessageSquare className="w-3 h-3" />
             Novo Comentário / Discussão
           </Label>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-visible focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 overflow-visible focus-within:ring-2 focus-within:ring-blue-500 transition-all">
             <MentionsInput
               value={newComment}
               onChange={(e: any) => setNewComment(e.target.value)}
@@ -113,7 +113,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
                 appendSpaceOnAdd
               />
             </MentionsInput>
-            <div className="bg-gray-50 px-3 py-2 border-t flex items-center justify-between">
+            <div className="bg-gray-50 dark:bg-zinc-950 px-3 py-2 border-t flex items-center justify-between">
               <Button onClick={send} size="sm" className="bg-blue-600 hover:bg-blue-700 h-8 px-4">
                 <Send className="w-3 h-3 mr-2" /> Publicar
               </Button>
@@ -121,7 +121,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
           </div>
         </div>
 
-        <Separator className="bg-gray-100" />
+        <Separator className="bg-gray-100 dark:bg-zinc-800" />
 
         <div className="space-y-6 max-h-[400px]">
           {comments.length === 0 ? (
@@ -140,21 +140,21 @@ export function CommentsTab({ cardId, isProcess }: Props) {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
-                    <h5 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <h5 className="text-sm font-black text-gray-900 dark:text-zinc-100 flex items-center gap-2">
                       {typeof c.author === 'string' ? c.author : c.author?.name}
-                      <Badge variant="secondary" className="text-[9px] h-4 bg-gray-100 font-bold uppercase tracking-widest border-none">
+                      <Badge variant="secondary" className="text-[9px] h-4 bg-gray-100 dark:bg-zinc-800 font-bold uppercase tracking-widest border-none">
                         MEMBRO
                       </Badge>
                     </h5>
-                    <div className="flex items-center gap-2 text-gray-400">
+                    <div className="flex items-center gap-2 text-gray-400 dark:text-zinc-500">
                       <Clock className="w-3 h-3" />
                       <span className="text-[11px] font-medium">
                         {new Date(c.createdAt).toLocaleString('pt-BR')}
                       </span>
                     </div>
                   </div>
-                  <div className="bg-gray-50/80 p-4 rounded-2xl rounded-tl-none border border-gray-100 shadow-sm">
-                    <p className="text-sm text-gray-700 leading-relaxed">{renderText(c.text)}</p>
+                  <div className="bg-gray-50 dark:bg-zinc-950/80 p-4 rounded-2xl rounded-tl-none border border-gray-100 dark:border-zinc-800 shadow-sm">
+                    <p className="text-sm text-gray-700 dark:text-zinc-300 leading-relaxed">{renderText(c.text)}</p>
                   </div>
                 </div>
               </div>

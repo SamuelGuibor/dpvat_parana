@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/_lib/prisma";
 
-const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
+const CONVERTER_URL = process.env.DOCX_CONVERTER_URL; // production
+// const CONVERTER_URL = "http://localhost:3001"; // local
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
 async function getCardContext(cardId: string, isProcess: boolean) {

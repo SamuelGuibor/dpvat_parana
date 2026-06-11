@@ -145,14 +145,14 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
   const checkedCount = items.filter((i) => i.checked).length;
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 bg-white">
+    <div className="border border-gray-200 dark:border-zinc-800 rounded-xl p-4 bg-white dark:bg-zinc-900">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-base">{title}</h3>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setHideChecked((v) => !v)}
-            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition"
+            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-800 dark:bg-zinc-950 transition"
           >
             {hideChecked ? "Mostrar marcados" : "Ocultar itens marcados"}
           </button>
@@ -160,7 +160,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
             type="button"
             onClick={deleteAll}
             disabled={items.length === 0}
-            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 dark:bg-zinc-950 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Excluir
           </button> */}
@@ -168,19 +168,19 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
       </div>
 
       {items.length > 0 && (
-        <p className="text-xs text-gray-500 mb-3">
+        <p className="text-xs text-gray-500 dark:text-zinc-400 mb-3">
           {checkedCount} de {items.length} concluído{items.length !== 1 ? "s" : ""}
         </p>
       )}
 
       {loading ? (
         <div className="flex items-center justify-center py-6">
-          <Loader2 size={18} className="animate-spin text-gray-400" />
+          <Loader2 size={18} className="animate-spin text-gray-400 dark:text-zinc-500" />
         </div>
       ) : (
         <div className="space-y-2">
           {visible.length === 0 && (
-            <p className="text-sm text-gray-400 py-2">
+            <p className="text-sm text-gray-400 dark:text-zinc-500 py-2">
               {hideChecked && items.length > 0
                 ? "Todos os itens estão marcados."
                 : "Nenhum item ainda. Adicione abaixo."}
@@ -196,7 +196,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
               <label
                 htmlFor={`adm-chk-${item.id}`}
                 className={`flex-1 text-sm cursor-pointer select-none ${
-                  item.checked ? "line-through text-gray-400" : "text-gray-700"
+                  item.checked ? "line-through text-gray-400 dark:text-zinc-500" : "text-gray-700 dark:text-zinc-300"
                 }`}
               >
                 {item.text}
@@ -204,7 +204,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
               <button
                 type="button"
                 onClick={() => deleteItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity p-1"
+                className="opacity-0 group-hover:opacity-100 text-gray-400 dark:text-zinc-500 hover:text-red-500 transition-opacity p-1"
                 title="Excluir item"
               >
                 <Trash2 size={14} />
@@ -233,7 +233,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
                 }
               }}
               placeholder="Digite o item e pressione Enter"
-              className="flex-1 h-9 text-sm bg-gray-50 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+              className="flex-1 h-9 text-sm bg-gray-50 dark:bg-zinc-950 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
             />
             <button
               type="button"
@@ -250,7 +250,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
                 setShowAddInput(false);
                 setNewText("");
               }}
-              className="px-3 h-9 rounded-md text-sm border border-gray-300 hover:bg-gray-50"
+              className="px-3 h-9 rounded-md text-sm border border-gray-300 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-800 dark:bg-zinc-950"
             >
               Cancelar
             </button>
@@ -259,7 +259,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
           <button
             type="button"
             onClick={() => setShowAddInput(true)}
-            className="text-sm px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50 transition inline-flex items-center gap-1.5 text-gray-700"
+            className="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-800 dark:bg-zinc-950 transition inline-flex items-center gap-1.5 text-gray-700 dark:text-zinc-300"
           >
             <Plus size={14} /> Adicionar um item
           </button>

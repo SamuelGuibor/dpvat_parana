@@ -317,22 +317,29 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const uploadFileToGoogle = async (file: File): Promise<{ name: string; fileUri: string; mimeType: string }> => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const res = await fetch("/api/upload-file", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Falha ao fazer upload de "${file.name}"`);
+  // Converte um File em base64 inline para enviar ao Claude.
+  // Claude aceita imagens (jpeg/png/gif/webp) e PDFs como base64
+  // e arquivos de texto serão decodificados no backend.
+  const fileToInlineAttachment = async (
+    file: File,
+  ): Promise<{ name: string; type: string; content: string }> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    // Conversão em chunks para evitar stack overflow com arquivos grandes.
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(
+        null,
+        Array.from(bytes.subarray(i, i + chunkSize)),
+      );
     }
-
-    const { fileUri, mimeType } = await res.json();
-    return { name: file.name, fileUri, mimeType };
+    const base64 = btoa(binary);
+    return {
+      name: file.name,
+      type: file.type || "application/octet-stream",
+      content: base64,
+    };
   };
 
   const sendMessage = async () => {
@@ -365,11 +372,11 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
         prompt = `${prompt}\n\n[Documentos anexados: ${names}]`;
       }
 
-      let attachmentsData: { name: string; fileUri: string; mimeType: string }[] | undefined;
+      let attachmentsData: { name: string; type: string; content: string }[] | undefined;
 
       if (selectedFiles.length > 0) {
         setLoadingPhase('uploading');
-        attachmentsData = await Promise.all(selectedFiles.map(f => uploadFileToGoogle(f)));
+        attachmentsData = await Promise.all(selectedFiles.map(f => fileToInlineAttachment(f)));
       }
 
       setLoadingPhase('sending');
@@ -548,8 +555,8 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
     <div className="flex h-[600px] gap-0">
       {/* Prompt Library Panel */}
       {showPromptLib && (
-        <div className="w-[340px] border-r flex flex-col bg-gray-50/50 shrink-0">
-          <div className="flex items-center justify-between p-3 border-b bg-white">
+        <div className="w-[340px] border-r flex flex-col bg-gray-50 dark:bg-zinc-950/50 shrink-0">
+          <div className="flex items-center justify-between p-3 border-b bg-white dark:bg-zinc-900">
             <div className="flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-primary" />
               <h4 className="font-semibold text-sm">Prompts Salvos</h4>
@@ -577,7 +584,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
           <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {/* Add / Edit Form */}
             {(showAddForm || editingPromptId) && (
-              <div className="bg-white border rounded-lg p-3 space-y-2">
+              <div className="bg-white dark:bg-zinc-900 border rounded-lg p-3 space-y-2">
                 <input
                   type="text"
                   value={newPromptTitle}
@@ -628,7 +635,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
             )}
 
             {savedPrompts.map((p) => (
-              <div key={p.id} className="bg-white border rounded-lg p-3 group hover:border-primary/30 transition-colors">
+              <div key={p.id} className="bg-white dark:bg-zinc-900 border rounded-lg p-3 group hover:border-primary/30 transition-colors">
                 <div className="flex items-start justify-between gap-2">
                   <h5 className="text-sm font-medium truncate flex-1">{p.title}</h5>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
@@ -641,7 +648,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
                     </button>
                     <button
                       onClick={() => startEditPrompt(p)}
-                      className="p-1 rounded hover:bg-gray-100 text-gray-600"
+                      className="p-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-600 dark:text-zinc-400"
                       title="Editar"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -761,8 +768,8 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
                               <ChevronDown className="w-2 h-2" />
                             </button>
                             {showDocxMenu === message.id && (
-                              <div className="absolute bottom-6 right-0 bg-white border rounded-lg shadow-lg p-2 z-50 min-w-[200px]">
-                                <p className="text-[10px] text-gray-400 font-semibold px-2 pb-1 uppercase">
+                              <div className="absolute bottom-6 right-0 bg-white dark:bg-zinc-900 border rounded-lg shadow-lg p-2 z-50 min-w-[200px]">
+                                <p className="text-[10px] text-gray-400 dark:text-zinc-500 font-semibold px-2 pb-1 uppercase">
                                   Selecione o template
                                 </p>
                                 {docxTemplates.map((t) => (
@@ -771,7 +778,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
                                     onClick={() =>
                                       downloadDOCX(message.content, t.filename)
                                     }
-                                    className="block w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 rounded truncate"
+                                    className="block w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded truncate"
                                   >
                                     {t.label}
                                   </button>

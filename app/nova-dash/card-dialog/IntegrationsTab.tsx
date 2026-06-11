@@ -34,17 +34,17 @@ function IntegrationCard({
   disabled?: boolean;
 }) {
   return (
-    <div className={`bg-white border border-gray-100 rounded-2xl p-5 transition-all shadow-sm ${hoverBorder}`}>
+    <div className={`bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl p-5 transition-all shadow-sm ${hoverBorder}`}>
       <div className="flex items-center gap-3 mb-4">
         <div className={`w-10 h-10 ${iconBg} rounded-xl flex items-center justify-center`}>{icon}</div>
         <div>
-          <h5 className="font-bold text-gray-900 text-sm">{title}</h5>
-          <p className="text-[10px] text-gray-400 font-bold uppercase">{subtitle}</p>
+          <h5 className="font-bold text-gray-900 dark:text-zinc-100 text-sm">{title}</h5>
+          <p className="text-[10px] text-gray-400 dark:text-zinc-500 font-bold uppercase">{subtitle}</p>
         </div>
       </div>
       <div className="space-y-3">
-        <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-          <p className="text-[11px] text-gray-500 leading-tight">{description}</p>
+        <div className="bg-gray-50 dark:bg-zinc-950 p-3 rounded-lg border border-gray-100 dark:border-zinc-800">
+          <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-tight">{description}</p>
         </div>
         <Button onClick={onClick} disabled={disabled} className={`w-full text-white font-bold rounded-lg ${buttonClass}`} size="sm">
           {buttonIcon} {buttonLabel}
@@ -104,7 +104,7 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
           </div>
           <div className="space-y-3 relative z-10">
             <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-              <SelectTrigger className="w-full bg-white">
+              <SelectTrigger className="w-full bg-white dark:bg-zinc-900">
                 <SelectValue placeholder="Selecione o modelo" />
               </SelectTrigger>
               <SelectContent>

@@ -27,7 +27,7 @@ const EVENT_TYPES: { value: EventType; label: string; color: string; bg: string 
   { value: 'prazo',     label: 'Prazo / Vencimento', color: 'text-red-700',    bg: 'bg-red-100 border-red-300' },
   { value: 'contato',   label: 'Contato c/ Cliente', color: 'text-green-700',  bg: 'bg-green-100 border-green-300' },
   { value: 'tarefa',    label: 'Tarefa',            color: 'text-orange-700', bg: 'bg-orange-100 border-orange-300' },
-  { value: 'outro',     label: 'Outro',             color: 'text-gray-700',   bg: 'bg-gray-100 border-gray-300' },
+  { value: 'outro',     label: 'Outro',             color: 'text-gray-700 dark:text-zinc-300',   bg: 'bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700' },
 ]
 
 const STORAGE_KEY = 'dpvat_calendar_events'
@@ -167,7 +167,7 @@ export const CalendarTab: React.FC = () => {
           {/* grid header */}
           <div className="grid grid-cols-7 mb-1">
             {DAYS_OF_WEEK.map(d => (
-              <div key={d} className="text-center text-xs font-semibold text-gray-500 py-1">{d}</div>
+              <div key={d} className="text-center text-xs font-semibold text-gray-500 dark:text-zinc-400 py-1">{d}</div>
             ))}
           </div>
 
@@ -190,13 +190,13 @@ export const CalendarTab: React.FC = () => {
                     isToday
                       ? 'border-blue-500 bg-blue-50'
                       : hasEvents
-                      ? 'border-gray-200 bg-white hover:bg-gray-50'
-                      : 'border-transparent hover:border-gray-200 hover:bg-gray-50',
+                      ? 'border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-gray-50 dark:hover:bg-zinc-800'
+                      : 'border-transparent hover:border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800',
                   ].join(' ')}
                 >
                   <span className={[
                     'text-xs font-bold mb-1 w-5 h-5 flex items-center justify-center rounded-full',
-                    isToday ? 'bg-blue-500 text-white' : 'text-gray-700',
+                    isToday ? 'bg-blue-500 text-white' : 'text-gray-700 dark:text-zinc-300',
                   ].join(' ')}>
                     {day}
                   </span>
@@ -215,11 +215,11 @@ export const CalendarTab: React.FC = () => {
                       )
                     })}
                     {dayEvs.length > 2 && (
-                      <div className="text-[10px] text-gray-400 pl-1">+{dayEvs.length - 2} mais</div>
+                      <div className="text-[10px] text-gray-400 dark:text-zinc-500 pl-1">+{dayEvs.length - 2} mais</div>
                     )}
                     {dayEvs.length === 0 && (
                       <div className="flex items-center justify-center w-full mt-1 opacity-0 group-hover:opacity-100">
-                        <Plus className="w-3 h-3 text-gray-300" />
+                        <Plus className="w-3 h-3 text-gray-300 dark:text-zinc-600" />
                       </div>
                     )}
                   </div>
@@ -243,7 +243,7 @@ export const CalendarTab: React.FC = () => {
               <select
                 value={form.type}
                 onChange={e => setForm(f => ({ ...f, type: e.target.value as EventType }))}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 dark:border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {EVENT_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -261,7 +261,7 @@ export const CalendarTab: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1 block">Observação <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <label className="text-sm font-medium mb-1 block">Observação <span className="text-gray-400 dark:text-zinc-500 font-normal">(opcional)</span></label>
               <Textarea
                 placeholder="Detalhes adicionais..."
                 rows={3}
@@ -296,7 +296,7 @@ export const CalendarTab: React.FC = () => {
 
           <div className="space-y-2 py-2 max-h-72 overflow-y-auto">
             {dayEvents.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">Nenhum evento neste dia.</p>
+              <p className="text-sm text-gray-400 dark:text-zinc-500 text-center py-4">Nenhum evento neste dia.</p>
             )}
             {dayEvents.map(ev => {
               const s = getTypeStyle(ev.type)
@@ -310,12 +310,12 @@ export const CalendarTab: React.FC = () => {
                     </div>
                     <p className={`text-sm font-medium mt-1 ${s.color}`}>{ev.title}</p>
                     {ev.description && (
-                      <p className="text-xs text-gray-500 mt-0.5">{ev.description}</p>
+                      <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">{ev.description}</p>
                     )}
                   </div>
                   <button
                     onClick={() => handleDelete(ev.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+                    className="text-gray-400 dark:text-zinc-500 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
                     title="Remover evento"
                   >
                     <Trash2 className="w-4 h-4" />

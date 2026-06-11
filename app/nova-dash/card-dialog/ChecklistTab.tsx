@@ -41,7 +41,7 @@ export function ChecklistTab({ status, service, onStatusChange }: Props) {
           <Label>Progressão de Status</Label>
           <Badge variant="outline">{Math.max(0, totalActive)}</Badge>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
+        <div className="w-full bg-gray-200 dark:bg-zinc-800 rounded-full h-2">
           <div
             className="bg-blue-600 h-2 rounded-full transition-all"
             style={{ width: `${(Math.max(0, totalActive) / statusOrder.length) * 100}%` }}
@@ -58,7 +58,7 @@ export function ChecklistTab({ status, service, onStatusChange }: Props) {
               onCheckedChange={() => toggle(s)}
               disabled={!isEnabled(s)}
             />
-            <Label htmlFor={s} className="text-sm text-gray-700 whitespace-nowrap">
+            <Label htmlFor={s} className="text-sm text-gray-700 dark:text-zinc-300 whitespace-nowrap">
               {statusLabels[s] ?? s}
             </Label>
           </div>
