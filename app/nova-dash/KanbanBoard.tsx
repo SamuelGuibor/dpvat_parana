@@ -9,8 +9,10 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
-  User, GripVertical,
+  User, GripVertical, Zap, CheckSquare,
 } from 'lucide-react';
+import { AutomationsPanel } from './AutomationsPanel';
+import { getStatusOrderByService } from './card-dialog/constants';
 import { Card, CardContent } from '@/app/_components/ui/card';
 import { Badge } from '@/app/_components/ui/badge';
 import { Button } from '@/app/_components/ui/button';
@@ -537,6 +539,19 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
                   <Paperclip className="w-3.5 h-3.5" />
                   <span className="text-[11px] font-extrabold">{card.attachmentCount ?? card.attachments.length}</span>
                 </div>
+                {(() => {
+                  const order = getStatusOrderByService(card.service);
+                  const idx = card.status ? order.indexOf(card.status) : -1;
+                  const done = Math.max(0, idx + 1);
+                  const total = order.length;
+                  const allDone = done === total && done > 0;
+                  return (
+                    <div className={`flex items-center gap-1 transition-colors ${allDone ? 'text-green-500' : 'hover:text-blue-500'}`}>
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span className="text-[11px] font-extrabold">{done}/{total}</span>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
                 <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600" onClick={() => onCardClick(card)}>
@@ -843,6 +858,7 @@ export const KanbanBoard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('Todos');
   const [isLoading, setIsLoading] = useState(true);
+  const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
   const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>({});
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -1151,6 +1167,14 @@ export const KanbanBoard: React.FC = () => {
 
           <div className="flex items-center gap-3 shrink-0">
             <div className="h-10 w-[1px] bg-gray-100 dark:bg-zinc-800 mx-2 hidden lg:block" />
+            <button
+              onClick={() => setAutomationsPanelOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition-colors"
+              title="Automações"
+            >
+              <Zap className="w-4 h-4" />
+              <span className="hidden sm:inline">Automações</span>
+            </button>
             <CreateLabelButton onCreate={createLabel} />
             <CreatePerson labels={labels} onCreated={() => setRefreshKey((k) => k + 1)} />
             <CreateNewCard />
@@ -1204,6 +1228,12 @@ export const KanbanBoard: React.FC = () => {
             isProcess={selectedCard.isProcess}
           />
         )}
+
+        <AutomationsPanel
+          open={automationsPanelOpen}
+          onClose={() => setAutomationsPanelOpen(false)}
+          labels={labels}
+        />
       </div>
     </DndProvider>
   );

@@ -21,7 +21,12 @@ interface Props {
   ownerId?: string;
 }
 
-interface Doc { id: string; key: string; name: string }
+interface Doc { id: string; key: string; name: string; }
+
+function getExt(key: string) {
+  const dot = key.lastIndexOf('.');
+  return dot !== -1 ? key.slice(dot) : '';
+}
 
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -146,8 +151,10 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   async function saveName(id: string) {
     try {
       setSavingId(id);
-      await updateDocumentName({ id, newName: editedName });
-      setDocs((p) => p.map((d) => (d.id === id ? { ...d, name: editedName } : d)));
+      const updated = await updateDocumentName({ id, newName: editedName });
+      // Atualiza key e name para refletir o rename no S3
+      setDocs((p) => p.map((d) => (d.id === id ? { ...d, name: updated.name, key: updated.key } : d)));
+      toast.success('Arquivo renomeado.');
     } catch (err) {
       console.error(err);
       toast.error('Erro ao renomear');
@@ -210,7 +217,18 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                     <td className="p-3">
                       {editingId === doc.id ? (
                         <div className="flex items-center gap-2">
-                          <Input value={editedName} onChange={(e) => setEditedName(e.target.value)} className="h-8 text-sm" autoFocus />
+                          <div className="flex items-center flex-1 gap-0">
+                            <Input
+                              value={editedName}
+                              onChange={(e) => setEditedName(e.target.value)}
+                              className="h-8 text-sm rounded-r-none border-r-0 flex-1"
+                              autoFocus
+                              placeholder="Nome do arquivo"
+                            />
+                            <span className="h-8 px-2 flex items-center text-xs text-gray-500 bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-600 rounded-r-md border-l-0 whitespace-nowrap">
+                              {getExt(doc.key) || '.docx'}
+                            </span>
+                          </div>
                           <Button size="sm" onClick={() => saveName(doc.id)} disabled={savingId === doc.id}>
                             {savingId === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
                           </Button>
@@ -224,7 +242,12 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                       {editingId !== doc.id && (
                         <div className="flex items-center justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8"
-                            onClick={() => { setEditingId(doc.id); setEditedName(doc.name); }}>
+                            onClick={() => {
+                              setEditingId(doc.id);
+                              const ext = getExt(doc.key);
+                              // Remove a extensão do campo para o usuário editar apenas o nome
+                              setEditedName(ext && doc.name.toLowerCase().endsWith(ext.toLowerCase()) ? doc.name.slice(0, -ext.length) : doc.name);
+                            }}>
                             <CiEdit className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8"

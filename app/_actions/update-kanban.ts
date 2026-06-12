@@ -4,6 +4,7 @@ import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
 import { revalidatePath } from "next/cache";
+import { runAutomations } from "../_lib/automation-executor";
 
 interface UpdateKanbanStatusProps {
   id: string;
@@ -37,6 +38,15 @@ export async function updateKanbanStatus({
   } else {
     await db.user.update({ where: { id }, data });
   }
+
+  // Dispara automações de forma assíncrona (sem bloquear o retorno)
+  runAutomations({
+    cardId: id,
+    isProcess,
+    newLabelId: label.id,
+    authorId: session.user.id,
+    authorName: session.user.name ?? "Usuário",
+  }).catch((err) => console.error("[AUTOMATION] Erro ao disparar:", err));
 
   revalidatePath('/nova-dash');
   return { success: true };

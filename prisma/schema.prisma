@@ -122,17 +122,34 @@ model Process {
 }
 
 model Label {
-  id            String    @id @default(cuid())
-  name          String    @unique
+  id            String       @id @default(cuid())
+  name          String       @unique
   color         String
-  order         Int       @default(0)
-  timeLimitDays Int?      // substitui o roleTimeLimits hardcoded
+  order         Int          @default(0)
+  timeLimitDays Int?
 
-  users         User[]    @relation("UserLabel")
-  processes     Process[] @relation("ProcessLabel")
+  users         User[]       @relation("UserLabel")
+  processes     Process[]    @relation("ProcessLabel")
+  automations   Automation[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Automation {
+  id             String   @id @default(cuid())
+  name           String
+  isActive       Boolean  @default(true)
+  triggerLabelId String
+  triggerLabel   Label    @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
+  cardType       String   @default("both")
+  conditionLogic String   @default("AND")
+  conditions     Json     @default("[]")
+  actions        Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("automations")
 }
 
 model Comment {
