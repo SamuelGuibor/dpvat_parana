@@ -132,7 +132,8 @@ const OPERATORS = [
 const VARIABLE_CHIPS = [
   "name", "cpf", "rg", "data_nasc", "telefone", "email",
   "cidade", "estado", "cep", "hospital", "data_acidente",
-  "lesoes", "service", "nome_res", "cpf_res",
+  "lesoes", "service", "nome_mae", "estado_civil", "profissao",
+  "nacionalidade", "rua", "bairro", "numero", "cep"
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
