@@ -36,6 +36,7 @@ interface UpdateProcessData {
   role?: string;
   service?: string;
   obs?: string;
+  senha_inss?: string;
 }
 
 export async function updateProcess(data: UpdateProcessData) {
@@ -91,7 +92,8 @@ export async function updateProcess(data: UpdateProcessData) {
         role: data.role,
         statusStartedAt: shouldUpdateTimer ? new Date() : currentProcess.statusStartedAt,
         observacao: data.obs,
-        service: data.service
+        service: data.service,
+        senha_inss: data.senha_inss,
       },
     });
 
@@ -128,7 +130,9 @@ export async function updateProcess(data: UpdateProcessData) {
       outro_hospital: updatedProcess.outro_hospital || "",
       lesoes: updatedProcess.lesoes || "",
       obs: updatedProcess.observacao || "",
-      service: updatedProcess.service || ""
+      service: updatedProcess.service || "",
+      senha_inss: updatedProcess.senha_inss || "",
+      cardNumber: updatedProcess.cardNumber ?? null,
     };
   } catch (error) {
     console.error("Erro ao atualizar processo:", error);

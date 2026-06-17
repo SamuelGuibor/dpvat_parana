@@ -32,6 +32,8 @@ export interface ExtendedKanbanCard extends KanbanCard {
   profissao_res?: string;
   status?: string | undefined;
   statusStartedAt?: string | null;
+  senha_inss?: string;
+  cardNumber?: number | null;
   attachments: { id?: string; key: string; name: string; size?: number; uploadedAt: Date }[];
 }
 

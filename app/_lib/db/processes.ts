@@ -14,6 +14,7 @@ const processBasicSelect = {
   observacao: true,
   fixed: true,
   status: true,
+  cardNumber: true,
 };
 
 const processFullSelect = {
@@ -50,6 +51,8 @@ const processFullSelect = {
   observacao: true,
   service: true,
   fixed: true,
+  senha_inss: true,
+  cardNumber: true,
 };
 
 export async function fetchProcesses() {

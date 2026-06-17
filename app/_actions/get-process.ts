@@ -38,6 +38,8 @@ interface ProcessGet {
   userId?: string;
   labelId?: string | null;
   label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
+  senha_inss?: string;
+  cardNumber?: number | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,6 +58,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
     roleFixed: process.roleFixed || "",
     service: process.service || "",
     statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
+    cardNumber: process.cardNumber ?? null,
     ...(fields === "full" && {
       cpf: process.cpf || "",
       data_nasc: process.data_nasc || "",
@@ -79,6 +82,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
       lesoes: process.lesoes || "",
       observacao: process.observacao || "",
       service: process.service || "",
+      senha_inss: process.senha_inss || "",
     }),
   };
 }

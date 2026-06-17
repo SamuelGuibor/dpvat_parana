@@ -38,6 +38,8 @@ interface UserData {
   roleFixed?: string;
   labelId?: string | null;
   label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
+  senha_inss?: string;
+  cardNumber?: number | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,6 +57,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
     fixed: user.fixed ?? false,
     roleFixed: user.roleFixed || "",
     statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null,
+    cardNumber: user.cardNumber ?? null,
     ...(fields === "full" && {
       cpf: user.cpf || "",
       data_nasc: user.data_nasc || "",
@@ -78,6 +81,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
       lesoes: user.lesoes || "",
       obs: user.obs || "",
       service: user.service || "",
+      senha_inss: user.senha_inss || "",
     }),
   };
 }

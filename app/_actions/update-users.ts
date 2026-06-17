@@ -36,6 +36,7 @@ interface UpdateUserData {
   role?: string;
   service?: string;
   obs?: string;
+  senha_inss?: string;
 }
 
 export async function updateUser(data: UpdateUserData) {
@@ -92,6 +93,7 @@ export async function updateUser(data: UpdateUserData) {
         statusStartedAt: shouldUpdateTimer ? new Date() : currentUser.statusStartedAt,
         service: data.service,
         obs: data.obs,
+        senha_inss: data.senha_inss,
       },
     });
 
@@ -129,6 +131,8 @@ export async function updateUser(data: UpdateUserData) {
       lesoes: updatedUser.lesoes || "",
       service: updatedUser.service || "",
       obs: updatedUser.obs || "",
+      senha_inss: updatedUser.senha_inss || "",
+      cardNumber: updatedUser.cardNumber ?? null,
     };
   } catch (error) {
     console.error("Erro ao atualizar usuário:", error);

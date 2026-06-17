@@ -45,7 +45,7 @@ const EDITABLE_FIELDS = [
   'rg', 'nome_mae', 'telefone', 'cidade', 'estado', 'estado_civil',
   'profissao', 'nacionalidade', 'data_acidente', 'atendimento_via',
   'hospital', 'outro_hospital', 'lesoes', 'status', 'role', 'obs', 'service',
-  'labelId',
+  'labelId', 'senha_inss',
 ] as const;
 
 export const CardDialog: React.FC<CardDialogProps> = ({

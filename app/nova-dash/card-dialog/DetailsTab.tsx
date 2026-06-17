@@ -126,6 +126,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
           options={toOptions(ESTADO_CIVIL)} onChange={onChange} placeholder="Selecione o estado civil" />
 
         <Field id="profissao" label="Profissão" value={editedCard.profissao} onChange={onChange} />
+        <Field id="senha_inss" label="Senha INSS" value={editedCard.senha_inss} onChange={onChange} />
 
         <SelectField id="nacionalidade" label="Nacionalidade" value={editedCard.nacionalidade}
           options={toOptions(NACIONALIDADES)} onChange={onChange} placeholder="Selecione a nacionalidade" />
@@ -178,6 +179,10 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
         <div className="space-y-2">
           <Label htmlFor="status">Status Atual</Label>
           <Input id="status" value={editedCard.status || ''} disabled />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="cardNumber">Nº do Card</Label>
+          <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled />
         </div>
       </div>
 

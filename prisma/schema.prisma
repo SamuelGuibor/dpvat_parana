@@ -60,6 +60,8 @@ model User {
   labelId          String?
   label            Label?  @relation("UserLabel", fields: [labelId], references: [id])
   apto             Boolean        @default(false)
+  senha_inss       String?
+  cardNumber       Int?           @unique
 
 
   accounts         Account[]
@@ -115,6 +117,8 @@ model Process {
   roleFixed         String?    @default("Acompanhamento de fluxo 1")
   labelId           String?
   label             Label?     @relation("ProcessLabel", fields: [labelId], references: [id])
+  senha_inss        String?
+  cardNumber        Int?       @unique
 
   commentsOnProcess Comment[]  @relation("ProcessComments")
   documents         Document[]

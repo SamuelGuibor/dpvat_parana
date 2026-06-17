@@ -105,6 +105,7 @@ export interface KanbanCard {
   cardId?: string
   commentCount?: number;
   attachmentCount?: number;
+  cardNumber?: number | null;
 }
 
 export interface Comment {
@@ -219,6 +220,7 @@ interface Item {
   userId?: string
   status?: string
   ownerId?: string
+  cardNumber?: number | null
 }
 
 const renderTimerBadge = (card: KanbanCard) => {
@@ -462,7 +464,7 @@ interface DraggableCardProps {
   onDelete: (cardId: string) => void;
 }
 
-const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete }) => {
+const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
     item: { cardId: card.id, sourceColumnId: columnId },
@@ -501,6 +503,11 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
           <CardContent className="p-4 pl-6">
             <div className="flex items-start justify-between mb-2">
               <h4 className="font-bold text-sm text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
+                {card.cardNumber != null && (
+                  <span className="mr-1.5 inline-block px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[10px] font-mono font-bold align-middle">
+                    #{card.cardNumber}
+                  </span>
+                )}
                 {card.title}
               </h4>
               <div className="shrink-0 ml-2">
@@ -585,6 +592,28 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, columnId, onCardCli
     </>
   );
 };
+
+const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
+  const a = prev.card;
+  const b = next.card;
+  return (
+    prev.columnId === next.columnId &&
+    prev.onCardClick === next.onCardClick &&
+    prev.onQuickAction === next.onQuickAction &&
+    prev.onDelete === next.onDelete &&
+    a.id === b.id &&
+    a.title === b.title &&
+    a.description === b.description &&
+    a.labelId === b.labelId &&
+    a.statusStartedAt === b.statusStartedAt &&
+    a.service === b.service &&
+    a.cardNumber === b.cardNumber &&
+    a.commentCount === b.commentCount &&
+    a.attachmentCount === b.attachmentCount &&
+    a.status === b.status &&
+    a.isProcess === b.isProcess
+  );
+});
 
 // =============================================
 // DroppableColumn
@@ -856,6 +885,7 @@ export const KanbanBoard: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [filteredItems, setFilteredItems] = useState<Item[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('Todos');
   const [isLoading, setIsLoading] = useState(true);
   const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
@@ -867,6 +897,55 @@ export const KanbanBoard: React.FC = () => {
     users: Record<string, { comments: number; attachments: number }>;
     processes: Record<string, { comments: number; attachments: number }>;
   }>({ users: {}, processes: {} });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const searchMatches = React.useMemo(() => {
+    const q = debouncedQuery.trim();
+    if (!q) return [];
+    return filteredItems.slice(0, 8);
+  }, [filteredItems, debouncedQuery]);
+
+  function openCardFromItem(item: Item) {
+    const bucket = item.isProcess ? counts.processes : counts.users;
+    const c = bucket?.[item.id];
+    const card: KanbanCard = {
+      id: item.id,
+      title: item.name ?? '',
+      description: item.obs ?? '',
+      assignee: item.type ?? '',
+      labelId: item.labelId,
+      label: item.label ?? null,
+      status: item.label?.name ?? 'Filtro de Cartões',
+      timer: 0,
+      comments: [],
+      attachments: [],
+      observations: item.obs ?? '',
+      checklistItems: [],
+      createdAt: new Date(item.statusStartedAt ?? Date.now()),
+      updatedAt: new Date(),
+      statusStartedAt: item.statusStartedAt,
+      service: item.service,
+      type: item.type,
+      isProcess: !!item.isProcess,
+      ownerId: item.ownerId,
+      commentCount: c?.comments ?? 0,
+      attachmentCount: c?.attachments ?? 0,
+      cardNumber: item.cardNumber ?? null,
+    };
+    setSelectedCard(card);
+    setSearchOpen(false);
+  }
 
   useEffect(() => {
     async function fetchData() {
@@ -897,17 +976,26 @@ export const KanbanBoard: React.FC = () => {
   }, [refreshKey]);
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 180);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => {
     let filtered = items;
-    if (searchQuery) {
-      filtered = filtered.filter((item) =>
-        item.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+    if (debouncedQuery) {
+      const q = debouncedQuery.toLowerCase().trim();
+      const qDigits = q.replace(/\D/g, '');
+      filtered = filtered.filter((item) => {
+        const nameHit = item.name.toLowerCase().includes(q);
+        const numberHit = qDigits.length > 0 && item.cardNumber != null && String(item.cardNumber).includes(qDigits);
+        return nameHit || numberHit;
+      });
     }
     if (serviceFilter !== 'Todos') {
       filtered = filtered.filter((item) => item.label?.name === serviceFilter);
     }
     setFilteredItems(filtered);
-  }, [searchQuery, serviceFilter, items]);
+  }, [debouncedQuery, serviceFilter, items]);
 
   // Busca contagens reais (comentários + documentos) em lote sempre que
   // os items são atualizados.
@@ -964,6 +1052,7 @@ export const KanbanBoard: React.FC = () => {
         ownerId: item.ownerId,
         commentCount: c?.comments ?? 0,
         attachmentCount: c?.attachments ?? 0,
+        cardNumber: item.cardNumber ?? null,
       };
     });
 
@@ -971,7 +1060,7 @@ export const KanbanBoard: React.FC = () => {
       ? labels
       : labels.filter(l => l.name === serviceFilter);
 
-    const newColumns = displayedLabels.map(label => ({
+    let newColumns = displayedLabels.map(label => ({
       id: label.id,
       title: label.name,
       color: label.color,
@@ -979,8 +1068,13 @@ export const KanbanBoard: React.FC = () => {
       cards: kanbanCards.filter(c => c.labelId === label.id),
     }));
 
+    // Durante busca, esconde colunas vazias
+    if (debouncedQuery.trim()) {
+      newColumns = newColumns.filter(col => col.cards.length > 0);
+    }
+
     setColumns(newColumns);
-  }, [filteredItems, labels, serviceFilter, counts]);
+  }, [filteredItems, labels, serviceFilter, counts, debouncedQuery]);
 
   // ============= LABEL CRUD =============
   async function createLabel(data: LabelInput) {
@@ -1081,12 +1175,15 @@ export const KanbanBoard: React.FC = () => {
     }
   };
 
-  const handleQuickAction = (cardId: string, action: string) => {
-    const card = columns.flatMap(col => col.cards).find(c => c.id === cardId);
+  const columnsRef = useRef(columns);
+  useEffect(() => { columnsRef.current = columns; }, [columns]);
+
+  const handleQuickAction = useCallback((cardId: string, action: string) => {
+    const card = columnsRef.current.flatMap(col => col.cards).find(c => c.id === cardId);
     if (!card) return;
     if (action === 'email') alert(`📧 Enviando email para ${card.assignee} sobre: ${card.title}`);
     else if (action === 'whatsapp') alert(`💬 Enviando WhatsApp para ${card.assignee} sobre: ${card.title}`);
-  };
+  }, []);
 
   const handleCardUpdate = (updatedCard: KanbanCard) => {
     const safeStatus = updatedCard.status ?? 'Filtro de Cartões';
@@ -1101,14 +1198,17 @@ export const KanbanBoard: React.FC = () => {
     );
   };
 
-  const handleDeleteCard = (cardId: string) => {
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedIdRef.current = selectedCard?.id ?? null; }, [selectedCard]);
+
+  const handleDeleteCard = useCallback((cardId: string) => {
     setColumns((prev) =>
       prev.map((col) => ({ ...col, cards: col.cards.filter((c) => c.id !== cardId) }))
     );
     setItems((prev) => prev.filter((i) => i.id !== cardId));
     setFilteredItems((prev) => prev.filter((i) => i.id !== cardId));
-    if (selectedCard?.id === cardId) setSelectedCard(null);
-  };
+    if (selectedIdRef.current === cardId) setSelectedCard(null);
+  }, []);
 
   const toggleCollapse = (colId: string) => {
     setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
@@ -1142,15 +1242,76 @@ export const KanbanBoard: React.FC = () => {
       <div className="p-6 bg-[#f8fafc] min-h-screen">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-8 bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
           <div className="flex flex-col md:flex-row flex-1 gap-4">
-            <div className="relative flex items-center flex-1">
-              <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4" />
+            <div ref={searchBoxRef} className="relative flex items-center flex-1">
+              <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4 z-10" />
               <Input
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+                onFocus={() => { if (searchQuery.trim()) setSearchOpen(true); }}
                 type="text"
-                placeholder="Pesquisar por nome ou processo..."
+                placeholder="Pesquisar por nome ou nº do card (ex: 4001)..."
                 className="pl-10 h-12 w-full rounded-2xl border-gray-200 dark:border-zinc-800 focus:ring-blue-500 bg-gray-50 dark:bg-zinc-950/50"
               />
+              {searchOpen && searchQuery.trim() && (
+                <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+                  {searchMatches.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-zinc-400">
+                      Nenhum card encontrado
+                    </div>
+                  ) : (
+                    <ul className="max-h-[400px] overflow-y-auto divide-y divide-gray-100 dark:divide-zinc-800">
+                      {searchMatches.map((item) => {
+                        const labelColor = item.label?.color ?? '#9ca3af';
+                        const labelName = item.label?.name ?? 'Sem etiqueta';
+                        const style = item.service && serviceStyles[item.service]
+                          ? serviceStyles[item.service]
+                          : defaultServiceStyle;
+                        return (
+                          <li
+                            key={item.id}
+                            onClick={() => openCardFromItem(item)}
+                            className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-zinc-800 transition-colors"
+                          >
+                            <div className="shrink-0 px-2 py-1 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 text-xs font-mono font-bold">
+                              {item.cardNumber != null ? `#${item.cardNumber}` : '—'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate">
+                                  {item.name || 'Sem nome'}
+                                </span>
+                                {item.isProcess && (
+                                  <Briefcase className="w-3 h-3 text-blue-600 shrink-0" />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: labelColor }}
+                                  />
+                                  <span className="text-[11px] text-gray-600 dark:text-zinc-400 font-medium truncate">
+                                    {labelName}
+                                  </span>
+                                </div>
+                                {item.service && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider"
+                                    style={{ backgroundColor: style.bgColor, color: style.textColor }}
+                                  >
+                                    {item.service}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
             <Select value={serviceFilter} onValueChange={setServiceFilter}>
               <SelectTrigger className="w-full md:w-[280px] h-12 rounded-2xl border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50">

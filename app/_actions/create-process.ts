@@ -73,6 +73,9 @@ export async function createProcess(data: {
     },
   });
 
+  const cardNumberRows = await db.$queryRawUnsafe<{ nextval: bigint }[]>(`SELECT nextval('card_number_seq') AS nextval`);
+  const cardNumber = Number(cardNumberRows[0].nextval);
+
   const process = await db.process.create({
     data: {
       userId: validatedData.userId,
@@ -118,6 +121,7 @@ export async function createProcess(data: {
 
       // NOVO SISTEMA
       labelId: defaultLabel?.id || null,
+      cardNumber,
     },
 
     include: {
