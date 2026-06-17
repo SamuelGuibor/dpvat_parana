@@ -1272,7 +1272,7 @@ export const KanbanBoard: React.FC = () => {
                             onClick={() => openCardFromItem(item)}
                             className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-zinc-800 transition-colors"
                           >
-                            <div className="shrink-0 px-2 py-1 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 text-xs font-mono font-bold">
+                            <div className="shrink-0 px-2 py-1 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 text-lg font-mono font-bold">
                               {item.cardNumber != null ? `#${item.cardNumber}` : '—'}
                             </div>
                             <div className="flex-1 min-w-0">
