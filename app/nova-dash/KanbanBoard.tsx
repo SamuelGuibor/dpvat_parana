@@ -504,7 +504,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
             <div className="flex items-start justify-between mb-2">
               <h4 className="font-bold text-sm text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
                 {card.cardNumber != null && (
-                  <span className="mr-1.5 inline-block px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[10px] font-mono font-bold align-middle">
+                  <span className="mr-1.5 inline-block px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[12px] font-mono font-bold align-middle">
                     #{card.cardNumber}
                   </span>
                 )}
