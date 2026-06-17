@@ -18,6 +18,11 @@ async function notifyBot(record: unknown) {
   }
 }
 
+async function nextCardNumber(): Promise<number> {
+  const rows = await db.$queryRawUnsafe<{ nextval: bigint }[]>(`SELECT nextval('card_number_seq') AS nextval`);
+  return Number(rows[0].nextval);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -72,6 +77,8 @@ export async function POST(req: NextRequest) {
         db.label.findFirst({ where: { order: 0 } }),
       ]);
 
+      const cardNumber = await nextCardNumber();
+
       if (!userExists) {
         await db.user.create({
           data: {
@@ -80,6 +87,7 @@ export async function POST(req: NextRequest) {
             telefone,
             role: 'Filtro de Cartões',
             password: 'segurosparana1',
+            cardNumber,
             ...(label && { labelId: label.id }),
           },
         });
