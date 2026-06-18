@@ -58,9 +58,9 @@ export default function Page() {
   const isDark = theme === 'dark';
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
-      <header className={`sticky top-0 z-50 border-b backdrop-blur-md transition-colors ${
-        isDark ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-gray-200'
+    <div className={`min-h-screen ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
+      <header className={`sticky top-0 z-50 border-b ${
+        isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'
       }`}>
         <div className="px-6">
           <div className="flex items-center justify-between">

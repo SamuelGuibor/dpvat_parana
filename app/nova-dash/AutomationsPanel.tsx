@@ -43,6 +43,12 @@ import {
   Bot,
 } from "lucide-react";
 import { toast } from "sonner";
+import { MentionsInput, Mention } from "react-mentions";
+import useSWR from "swr";
+import { mentionsStyles } from "./card-dialog/constants";
+
+type MentionableUser = { id: string; display: string };
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -239,11 +245,13 @@ function ActionRow({
   index,
   onChange,
   onRemove,
+  mentionUsers,
 }: {
   action: Action;
   index: number;
   onChange: (a: Action) => void;
   onRemove: () => void;
+  mentionUsers: MentionableUser[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -311,13 +319,30 @@ function ActionRow({
       <div className="p-3 space-y-3">
         {action.type === "comment" && (
           <>
-            <textarea
-              value={action.templateText ?? ""}
-              onChange={(e) => onChange({ ...action, templateText: e.target.value })}
-              placeholder="Escreva o texto do comentário... Use [[name]], [[cpf]], etc."
-              rows={4}
-              className="w-full text-sm rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-visible focus-within:ring-2 focus-within:ring-blue-500">
+              <MentionsInput
+                value={action.templateText ?? ""}
+                onChange={(e: any) => onChange({ ...action, templateText: e.target.value })}
+                placeholder="Escreva o texto... Use @ para mencionar e [[name]], [[cpf]] para variáveis"
+                style={mentionsStyles}
+              >
+                <Mention
+                  trigger="@"
+                  data={mentionUsers}
+                  markup="@[__display__](__id__)"
+                  displayTransform={(_id: string, display: string) => `@${display}`}
+                  renderSuggestion={(s: any) => (
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] text-blue-600 font-bold">
+                        {s.display.charAt(0)}
+                      </div>
+                      <span className="font-semibold text-sm">{s.display}</span>
+                    </div>
+                  )}
+                  appendSpaceOnAdd
+                />
+              </MentionsInput>
+            </div>
             <div>
               <p className="text-xs text-gray-400 dark:text-zinc-500 mb-1.5">Variáveis disponíveis (clique para inserir):</p>
               <div className="flex flex-wrap gap-1.5">
@@ -411,6 +436,8 @@ function AutomationEditor({
   const [conditions, setConditions] = useState<Condition[]>(initial?.conditions ?? []);
   const [actions, setActions] = useState<Action[]>(initial?.actions ?? [emptyAction()]);
   const [saving, setSaving] = useState(false);
+
+  const { data: mentionUsers = [] } = useSWR<MentionableUser[]>("/api/admins", fetcher);
 
   useEffect(() => {
     if (open) {
@@ -572,6 +599,7 @@ function AutomationEditor({
                   key={i}
                   action={a}
                   index={i}
+                  mentionUsers={mentionUsers}
                   onChange={(updated) =>
                     setActions((p) => p.map((x, xi) => (xi === i ? updated : x)))
                   }

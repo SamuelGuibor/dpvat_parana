@@ -8,7 +8,7 @@ export default async function Labels() {
     <div className="p-4">
       <div className="flex flex-col gap-2 max-w-sm">
         <label htmlFor="label-select" className="font-medium">
-          Selecione uma etiqueta
+          Selecione uma Coluna
         </label>
 
         <select
@@ -17,7 +17,7 @@ export default async function Labels() {
           defaultValue=""
         >
           <option value="" disabled>
-            Escolha uma etiqueta
+            Escolha uma Coluna
           </option>
 
           {labels.map((label: any) => (

@@ -81,19 +81,6 @@ export function getStatusLabelsByService(service?: string | null): Record<string
   }
 }
 
-export const MENTIONABLE_USERS = [
-  { id: 'cmazuwrcj0000iav499hqf5ij', display: 'Thomaz Martinez' },
-  { id: 'cmaztbktw0000ld04ivltlu5g', display: 'Nikolas Fellipe Kosien' },
-  { id: 'cmb07q4i40000jr04pze42w3r', display: 'Eduardo Camargo Martinez' },
-  { id: 'cmc0t0os30000iaigoxy03waw', display: 'Andre Martinez' },
-  { id: 'cmc9hwnuc0000js04zpjdyfeb', display: 'Kauan Fernandes' },
-  { id: 'cmg18v4ni0000jp04lw9fqdi1', display: 'Lincoln Marcondes' },
-  { id: 'cmiz5zzdv0000l404208mum30', display: 'Vittor Ferraz' },
-  { id: 'cmazo6j870000ia0gw5ppb486', display: 'Samuel' },
-  { id: 'cmpwucq210001jv041oc9twsr', display: 'Daniel Meira' },
-  { id: 'cmmxqposd0000jx04jrkittsl', display: 'Taynara Magalhaes' },
-];
-
 export const ROLE_OPTIONS = [
   'Filtro de Cartões',
   'Gerar Procuração Automática',
@@ -191,6 +178,7 @@ export const mentionsStyles = {
     list: {
       backgroundColor: 'white', border: '1px solid rgba(0,0,0,0.15)',
       fontSize: 14, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+      maxHeight: 200, overflowY: 'auto' as const,
     },
     item: {
       padding: '8px 12px', borderBottom: '1px solid rgba(0,0,0,0.05)',

@@ -335,12 +335,12 @@ const CreateLabelButton: React.FC<{ onCreate: (data: LabelInput) => Promise<void
     <>
       <Button variant="outline" onClick={() => setOpen(true)} className="h-12 rounded-2xl">
         <Tag className="w-4 h-4 mr-2" />
-        Criar Etiqueta
+        Criar Coluna
       </Button>
       <LabelDialog
         open={open}
         onOpenChange={setOpen}
-        title="Criar Etiqueta"
+        title="Criar Coluna"
         submitLabel="Criar"
         onSubmit={onCreate}
       />
@@ -422,10 +422,10 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
               <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="inserir-email@gmail.com" />
             </div>
             <div className="space-y-2">
-              <UILabel>Etiqueta</UILabel>
+              <UILabel>Coluna</UILabel>
               <Select value={labelId} onValueChange={setLabelId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Primeira etiqueta (padrão)" />
+                  <SelectValue placeholder="Primeira Coluna (padrão)" />
                 </SelectTrigger>
                 <SelectContent>
                   {labels.map((l) => (
@@ -504,7 +504,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
             <div className="flex items-start justify-between mb-2">
               <h4 className="font-bold text-sm text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
                 {card.cardNumber != null && (
-                  <span className="mr-1.5 inline-block px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[12px] font-mono font-bold align-middle">
+                  <span className="mr-1.5 inline-block px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[14px] font-mono font-bold align-middle">
                     #{card.cardNumber}
                   </span>
                 )}
@@ -725,7 +725,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   className="cursor-pointer"
                 >
                   <Edit className="w-4 h-4 mr-2" />
-                  Editar etiqueta
+                  Editar Coluna
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(e) => {
@@ -735,7 +735,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Excluir etiqueta
+                  Excluir Coluna
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -784,7 +784,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   className="cursor-pointer"
                 >
                   <Edit className="w-4 h-4 mr-2" />
-                  Editar etiqueta
+                  Editar Coluna
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(e) => {
@@ -794,7 +794,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Excluir etiqueta
+                  Excluir Coluna
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -834,7 +834,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           color: column.color || '#3b82f6',
           timeLimitDays: column.timeLimitDays ?? null,
         }}
-        title="Editar Etiqueta"
+        title="Editar Coluna"
         submitLabel="Salvar"
         onSubmit={(data) => onLabelEdit(column.id, data)}
       />
@@ -842,7 +842,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
       <Dialog open={confirmDeleteLabel} onOpenChange={setConfirmDeleteLabel}>
         <DialogContent className="max-w-md rounded-xl">
           <DialogHeader>
-            <DialogTitle>Excluir etiqueta</DialogTitle>
+            <DialogTitle>Excluir Coluna</DialogTitle>
             <DialogDescription>
               Tem certeza que deseja excluir <strong>{column.title}</strong>?
               {column.cards.length > 0 && (
@@ -1084,10 +1084,10 @@ export const KanbanBoard: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error('Erro ao criar etiqueta');
+      if (!res.ok) throw new Error('Erro ao criar Coluna');
       const newLabel: Label = await res.json();
       setLabels((prev) => [...prev, newLabel]);
-      toast.success('Etiqueta criada!');
+      toast.success('Coluna criada!');
     } catch (err: any) {
       console.error(err);
       toast.error(err.message);
@@ -1102,10 +1102,10 @@ export const KanbanBoard: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error('Erro ao atualizar etiqueta');
+      if (!res.ok) throw new Error('Erro ao atualizar Coluna');
       const updated: Label = await res.json();
       setLabels((prev) => prev.map((l) => (l.id === id ? updated : l)));
-      toast.success('Etiqueta atualizada!');
+      toast.success('Coluna atualizada!');
     } catch (err: any) {
       console.error(err);
       toast.error(err.message);
@@ -1116,13 +1116,13 @@ export const KanbanBoard: React.FC = () => {
   async function deleteLabel(id: string) {
     try {
       const res = await fetch(`/api/labels/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Erro ao excluir etiqueta');
+      if (!res.ok) throw new Error('Erro ao excluir Coluna');
       setLabels((prev) => prev.filter((l) => l.id !== id));
       // tira a etiqueta dos cards que estavam nela (no client; backend deve fazer o mesmo)
       setItems((prev) => prev.map((it) =>
         it.labelId === id ? { ...it, labelId: null, label: null } : it
       ));
-      toast.success('Etiqueta excluída!');
+      toast.success('Coluna excluída!');
     } catch (err: any) {
       console.error(err);
       toast.error(err.message);
@@ -1262,7 +1262,7 @@ export const KanbanBoard: React.FC = () => {
                     <ul className="max-h-[400px] overflow-y-auto divide-y divide-gray-100 dark:divide-zinc-800">
                       {searchMatches.map((item) => {
                         const labelColor = item.label?.color ?? '#9ca3af';
-                        const labelName = item.label?.name ?? 'Sem etiqueta';
+                        const labelName = item.label?.name ?? 'Sem Coluna';
                         const style = item.service && serviceStyles[item.service]
                           ? serviceStyles[item.service]
                           : defaultServiceStyle;

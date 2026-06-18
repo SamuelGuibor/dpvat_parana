@@ -10,6 +10,7 @@ import {
   NACIONALIDADES, ATENDIMENTO_VIA,
 } from './constants';
 import { AdminChecklist } from './AdminChecklist';
+import { HospitalCombobox } from './HospitalCombobox';
 
 interface Props {
   editedCard: ExtendedKanbanCard;
@@ -131,7 +132,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
         <SelectField id="nacionalidade" label="Nacionalidade" value={editedCard.nacionalidade}
           options={toOptions(NACIONALIDADES)} onChange={onChange} placeholder="Selecione a nacionalidade" />
         <div className="space-y-2">
-          <Label htmlFor="labelId">Etiqueta</Label>
+          <Label htmlFor="labelId">Coluna</Label>
           <select
             id="labelId"
             value={editedCard.labelId || ''}
@@ -142,7 +143,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
             }}
             className={selectClass}
           >
-            <option value="">Selecione uma etiqueta</option>
+            <option value="">Selecione uma Coluna</option>
             {labels.map((l: any) => (
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}
@@ -166,7 +167,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
           <DateFlexField id="data_acidente" label="Data do Acidente" value={editedCard.data_acidente} onChange={onChange} />
           <SelectField id="atendimento_via" label="Atendimento Via" value={editedCard.atendimento_via}
             options={ATENDIMENTO_VIA} onChange={onChange} placeholder="Selecione o atendimento via" />
-          <Field id="hospital" label="Hospital" value={editedCard.hospital} onChange={onChange} />
+          <HospitalCombobox id="hospital" label="Hospital" value={editedCard.hospital} onChange={onChange} />
           <Field id="outro_hospital" label="Outro Hospital" value={editedCard.outro_hospital} onChange={onChange} />
           <div className="col-span-2">
             <Field id="lesoes" label="Lesões" value={editedCard.lesoes} onChange={onChange} />

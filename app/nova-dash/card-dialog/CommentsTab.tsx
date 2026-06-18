@@ -15,7 +15,9 @@ import { useSession } from 'next-auth/react';
 import { createComment } from '@/app/_actions/comment-actions';
 import { deleteComment } from '@/app/_actions/delete-comment';
 import { updateComment } from '@/app/_actions/update-comment';
-import { MENTIONABLE_USERS, mentionsStyles } from './constants';
+import { mentionsStyles } from './constants';
+
+type MentionableUser = { id: string; display: string };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -105,6 +107,8 @@ export function CommentsTab({ cardId, isProcess }: Props) {
     refreshInterval: 8_000,
   });
 
+  const { data: mentionUsers = [] } = useSWR<MentionableUser[]>('/api/admins', fetcher);
+
   const [newComment, setNewComment] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -176,7 +180,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
             >
               <Mention
                 trigger="@"
-                data={MENTIONABLE_USERS}
+                data={mentionUsers}
                 markup="@[__display__](__id__)"
                 displayTransform={(_id: string, display: string) => `@${display}`}
                 renderSuggestion={(s: any) => (
