@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
 import { Button } from '@/app/_components/ui/button';
@@ -13,6 +13,7 @@ import { Badge } from '@/app/_components/ui/badge';
 import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
 import Team from '../_components/team_dash';
+import { WorkSessionPanel } from '../_components/WorkSession';
 
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
@@ -122,7 +123,7 @@ export default function Page() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
-          <TabsList className={`grid w-full max-w-md grid-cols-2 ${
+          <TabsList className={`grid w-full max-w-xl grid-cols-3 ${
             isDark ? 'bg-zinc-800 text-zinc-300' : ''
           }`}>
             <TabsTrigger
@@ -139,6 +140,13 @@ export default function Page() {
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
             </TabsTrigger>
+            <TabsTrigger
+              value="ponto"
+              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              Controle de Ponto
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
@@ -150,6 +158,9 @@ export default function Page() {
           </TabsContent>
           <TabsContent value="kanban">
             <KanbanBoard />
+          </TabsContent>
+          <TabsContent value="ponto">
+            <WorkSessionPanel isDark={isDark} role={session?.user?.role} userId={session?.user?.id} />
           </TabsContent>
         </Tabs>
       </main>

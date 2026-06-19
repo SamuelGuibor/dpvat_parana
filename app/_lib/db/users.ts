@@ -54,9 +54,9 @@ const userFullSelect = {
 export async function fetchUsers(options?: { role?: string }) {
   return db.user.findMany({
     orderBy: { createdAt: "asc" },
-    where: {
-      ...(options?.role && { role: options.role }),
-    },
+    where: options?.role
+      ? { role: options.role }
+      : { role: { not: 'GHOST' } },
     select: userBasicSelect,
   });
 }

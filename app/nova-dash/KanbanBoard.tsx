@@ -958,7 +958,9 @@ export const KanbanBoard: React.FC = () => {
         ]);
         setLabels(labelsData);
         const users = Array.isArray(usersData)
-          ? usersData.map(u => ({ ...u, isProcess: false, ownerId: u.id }))
+          ? usersData
+              .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST')
+              .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
           : [];
         const processes = Array.isArray(processesData)
           ? processesData.map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))

@@ -20,9 +20,12 @@ async function nextCardNumber(): Promise<number> {
 export const createUser = async ({ name, cpf, password, email, labelId, role, senha_inss }: CreateUserProps) => {
   const finalEmail = email?.trim() || `${cpf}@inserir-email.com`;
 
-  const finalLabelId = labelId || (
-    await db.label.findFirst({ orderBy: { order: "asc" }, select: { id: true } })
-  )?.id;
+  const isAdmin = role === 'ADMIN' || role === 'ADMIN+' || role === 'ADMIN++';
+  const finalLabelId = isAdmin ? null : (
+    labelId || (
+      await db.label.findFirst({ orderBy: { order: "asc" }, select: { id: true } })
+    )?.id
+  );
 
   const cardNumber = await nextCardNumber();
 
