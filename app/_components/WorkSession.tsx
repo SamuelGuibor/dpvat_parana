@@ -26,9 +26,8 @@ interface WorkSession {
 }
 
 function endOfSessionDay(ws: WorkSession): number {
-  const eod = new Date(ws.date);
-  eod.setHours(23, 59, 59, 999);
-  return eod.getTime();
+  const [year, month, day] = ws.date.split('-').map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
 }
 
 function calcWorkedMinutes(ws: WorkSession): number {
