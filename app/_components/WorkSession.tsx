@@ -25,14 +25,22 @@ interface WorkSession {
   user?: { id: string; name: string; role: string } | null;
 }
 
+function endOfSessionDay(ws: WorkSession): number {
+  const eod = new Date(ws.date);
+  eod.setHours(23, 59, 59, 999);
+  return eod.getTime();
+}
+
 function calcWorkedMinutes(ws: WorkSession): number {
   if (!ws.startedAt) return 0;
   const start = new Date(ws.startedAt).getTime();
-  const end = ws.finishedAt ? new Date(ws.finishedAt).getTime() : Date.now();
-  let total = end - start;
+  const cap = ws.finishedAt ? new Date(ws.finishedAt).getTime() : Math.min(Date.now(), endOfSessionDay(ws));
+  let total = cap - start;
 
   if (ws.pausedAt) {
-    const pauseEnd = ws.resumedAt ? new Date(ws.resumedAt).getTime() : (ws.finishedAt ? new Date(ws.finishedAt).getTime() : Date.now());
+    const pauseEnd = ws.resumedAt
+      ? new Date(ws.resumedAt).getTime()
+      : (ws.finishedAt ? new Date(ws.finishedAt).getTime() : Math.min(Date.now(), endOfSessionDay(ws)));
     total -= pauseEnd - new Date(ws.pausedAt).getTime();
   }
 
@@ -65,7 +73,11 @@ function PersonalPonto({ isDark }: { isDark: boolean }) {
 
   useEffect(() => {
     if (!session) { setElapsed(0); return; }
-    if (!session.isActive || session.isPaused) { setElapsed(calcWorkedMinutes(session)); return; }
+    const isToday = session.date === new Date().toISOString().slice(0, 10);
+    if (!session.isActive || session.isPaused || !isToday) {
+      setElapsed(calcWorkedMinutes(session));
+      return;
+    }
     const interval = setInterval(() => setElapsed(calcWorkedMinutes(session)), 30000);
     setElapsed(calcWorkedMinutes(session));
     return () => clearInterval(interval);
