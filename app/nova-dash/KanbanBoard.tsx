@@ -910,6 +910,16 @@ export const KanbanBoard: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    function handleOpenCard(e: Event) {
+      const { id, isProcess } = (e as CustomEvent<{ id: string; isProcess: boolean }>).detail;
+      const item = items.find((i) => i.id === id && !!i.isProcess === isProcess);
+      if (item) openCardFromItem(item);
+    }
+    window.addEventListener('open-kanban-card', handleOpenCard);
+    return () => window.removeEventListener('open-kanban-card', handleOpenCard);
+  }, [items]);
+
   const searchMatches = React.useMemo(() => {
     const q = debouncedQuery.trim();
     if (!q) return [];

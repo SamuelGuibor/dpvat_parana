@@ -50,6 +50,14 @@ export default function Page() {
     localStorage.setItem('nova-dash-theme', theme);
   }, [theme, mounted]);
 
+  useEffect(() => {
+    function handleOpenCard() {
+      setActiveTab('kanban');
+    }
+    window.addEventListener('open-kanban-card', handleOpenCard);
+    return () => window.removeEventListener('open-kanban-card', handleOpenCard);
+  }, []);
+
   function toggleTheme() {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
   }

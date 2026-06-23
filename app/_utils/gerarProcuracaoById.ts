@@ -48,6 +48,11 @@ export async function gerarProcuracaoById(
         cep: data.cep || "",
         cidade: data.cidade || "",
         estado: data.estado || "",
+        data_nascimento: formatarData(data.data_nascimento),
+        hospital: data.hospital || "",
+        outro_hospital: data.outro_hospital || "",
+        nome_mae: data.nome_mae || "",
+        data_acidente: formatarData(data.data_acidente),
         data: formatarData(new Date()),
     };
 

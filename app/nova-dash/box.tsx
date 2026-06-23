@@ -66,7 +66,17 @@ export function NotificationDropdown() {
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  className={`flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-zinc-800 transition border-b last:border-b-0 ${
+                  onClick={() => {
+                    const cardId = n.processId ?? n.userId;
+                    if (!cardId) return;
+                    setOpen(false);
+                    window.dispatchEvent(
+                      new CustomEvent('open-kanban-card', {
+                        detail: { id: cardId, isProcess: !!n.processId },
+                      }),
+                    );
+                  }}
+                  className={`flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-zinc-800 transition border-b last:border-b-0 cursor-pointer ${
                     !n.read ? 'bg-blue-50/50' : ''
                   }`}
                 >
