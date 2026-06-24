@@ -50,7 +50,6 @@ export async function gerarProcuracaoById(
         estado: data.estado || "",
         data_nascimento: data.data_nasc || "",
         hospital: data.hospital || "",
-        outro_hospital: data.outro_hospital || "",
         nome_mae: data.nome_mae || "",
         data_acidente: data.data_acidente || "",
         data: formatarData(new Date()),
