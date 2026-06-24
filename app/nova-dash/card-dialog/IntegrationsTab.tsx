@@ -79,6 +79,13 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
         template: selectedTemplate,
       }),
     });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Erro ${res.status}` }));
+      alert(`Erro ao gerar PDF: ${err.error || res.statusText}`);
+      return;
+    }
+
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
