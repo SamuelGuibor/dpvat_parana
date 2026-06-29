@@ -341,7 +341,8 @@ const TEAM_LOG_ACCESS = [
   // Adicione aqui os IDs dos usuários que podem ver os logs da equipe
   "cmazuwrcj0000iav499hqf5ij",
   "cmazo6j870000ia0gw5ppb486",
-  "cmqp55x1b0007l404d00r4gy8"
+  "cmqp55x1b0007l404d00r4gy8",
+  "cmqp5w7hd000dl404atfj5mrd"
 ];
 
 export function WorkSessionPanel({ isDark, role, userId }: { isDark: boolean; role?: string; userId?: string }) {
