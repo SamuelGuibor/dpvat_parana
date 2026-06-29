@@ -162,6 +162,9 @@ function labelForOp(val: string) {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
+// Campos cujo valor deve ser escolhido a partir da lista de hospitais.
+const HOSPITAL_FIELDS = new Set(["hospital", "outro_hospital"]);
+
 function ConditionRow({
   cond,
   index,
@@ -169,6 +172,7 @@ function ConditionRow({
   total,
   onChange,
   onRemove,
+  hospitals,
 }: {
   cond: Condition;
   index: number;
@@ -176,8 +180,15 @@ function ConditionRow({
   total: number;
   onChange: (c: Condition) => void;
   onRemove: () => void;
+  hospitals: string[];
 }) {
   const needsValue = !["isEmpty", "isNotEmpty"].includes(cond.operator);
+  const isHospitalField = HOSPITAL_FIELDS.has(cond.field);
+  // Garante que um valor já salvo apareça mesmo se sumir da lista (hospital removido).
+  const hospitalOptions =
+    cond.value && !hospitals.includes(cond.value)
+      ? [cond.value, ...hospitals]
+      : hospitals;
   return (
     <div className="flex items-start gap-2">
       {index > 0 && (
@@ -220,7 +231,29 @@ function ConditionRow({
           </SelectContent>
         </Select>
 
-        {needsValue && (
+        {needsValue && isHospitalField && (
+          <Select
+            value={cond.value}
+            onValueChange={(v) => onChange({ ...cond, value: v })}
+          >
+            <SelectTrigger className="h-8 text-xs flex-1 min-w-[100px]">
+              <SelectValue placeholder="Selecionar hospital..." />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {hospitalOptions.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-gray-400">Nenhum hospital cadastrado</div>
+              ) : (
+                hospitalOptions.map((h) => (
+                  <SelectItem key={h} value={h} className="text-xs">
+                    {h}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        )}
+
+        {needsValue && !isHospitalField && (
           <Input
             value={cond.value}
             onChange={(e) => onChange({ ...cond, value: e.target.value })}
@@ -438,6 +471,7 @@ function AutomationEditor({
   const [saving, setSaving] = useState(false);
 
   const { data: mentionUsers = [] } = useSWR<MentionableUser[]>("/api/admins", fetcher);
+  const { data: hospitals = [] } = useSWR<string[]>("/api/hospitals", fetcher);
 
   useEffect(() => {
     if (open) {
@@ -572,6 +606,7 @@ function AutomationEditor({
                   index={i}
                   logic={conditionLogic}
                   total={conditions.length}
+                  hospitals={hospitals}
                   onChange={(updated) =>
                     setConditions((p) => p.map((x, xi) => (xi === i ? updated : x)))
                   }

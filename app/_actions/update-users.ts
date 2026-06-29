@@ -36,7 +36,9 @@ interface UpdateUserData {
   role?: string;
   service?: string;
   obs?: string;
+  otherObs?: string;
   senha_inss?: string;
+  afastadoAte?: string | null;
 }
 
 export async function updateUser(data: UpdateUserData) {
@@ -93,7 +95,11 @@ export async function updateUser(data: UpdateUserData) {
         statusStartedAt: shouldUpdateTimer ? new Date() : currentUser.statusStartedAt,
         service: data.service,
         obs: data.obs,
+        otherObs: data.otherObs,
         senha_inss: data.senha_inss,
+        // Só atualiza quando o campo é enviado; ao mudar a data, libera nova notificação.
+        afastadoAte: data.afastadoAte !== undefined ? (data.afastadoAte ? new Date(data.afastadoAte) : null) : undefined,
+        afastadoNotificado: data.afastadoAte !== undefined ? false : undefined,
       },
     });
 
@@ -131,6 +137,8 @@ export async function updateUser(data: UpdateUserData) {
       lesoes: updatedUser.lesoes || "",
       service: updatedUser.service || "",
       obs: updatedUser.obs || "",
+      otherObs: updatedUser.otherObs || "",
+      afastadoAte: updatedUser.afastadoAte ? updatedUser.afastadoAte.toISOString() : null,
       senha_inss: updatedUser.senha_inss || "",
       cardNumber: updatedUser.cardNumber ?? null,
     };

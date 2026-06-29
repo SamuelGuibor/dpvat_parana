@@ -15,6 +15,7 @@ const processBasicSelect = {
   fixed: true,
   status: true,
   cardNumber: true,
+  afastadoAte: true,
 };
 
 const processFullSelect = {
@@ -49,10 +50,12 @@ const processFullSelect = {
   outro_hospital: true,
   lesoes: true,
   observacao: true,
+  otherObs: true,
   service: true,
   fixed: true,
   senha_inss: true,
   cardNumber: true,
+  afastadoAte: true,
 };
 
 export async function fetchProcesses() {

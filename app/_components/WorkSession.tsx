@@ -57,6 +57,17 @@ function fmtTime(dt: string | null): string {
   return new Date(dt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// `date` é um rótulo de dia "YYYY-MM-DD". Fazer `new Date("2026-06-29")` o
+// interpreta como UTC meia-noite e, no fuso local (UTC-3), recua para o dia
+// anterior. Parseamos os componentes e montamos a data em horário local para
+// exibir exatamente o dia gravado, sem deslocamento de fuso.
+function fmtDateLabel(dateStr: string, opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit' }): string {
+  if (!dateStr) return '--';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return dateStr;
+  return new Date(year, month - 1, day).toLocaleDateString('pt-BR', opts);
+}
+
 function PersonalPonto({ isDark }: { isDark: boolean }) {
   const [session, setSession] = useState<WorkSession | null>(null);
   const [loading, setLoading] = useState(false);
@@ -306,7 +317,7 @@ function TeamPonto({ isDark }: { isDark: boolean }) {
                       {[...uSessions].sort((a, b) => b.date.localeCompare(a.date)).map(s => (
                         <div key={s.id} className={`flex items-center gap-2 text-xs p-1.5 rounded ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
                           <span className={`font-mono w-20 ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
-                            {new Date(s.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                            {fmtDateLabel(s.date)}
                           </span>
                           <span className="text-green-600">{fmtTime(s.startedAt)}</span>
                           {s.pausedAt && <><span className="text-yellow-500">☕{fmtTime(s.pausedAt)}</span><span className="text-blue-500">↩{fmtTime(s.resumedAt)}</span></>}

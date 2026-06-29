@@ -5,7 +5,7 @@ import { Button } from '@/app/_components/ui/button';
 import { Input } from '@/app/_components/ui/input';
 import { Label } from '@/app/_components/ui/label';
 import { Separator } from '@/app/_components/ui/separator';
-import { Download, Loader2, Trash } from 'lucide-react';
+import { Download, Loader2, Trash, FileArchive } from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
 import { toast } from 'sonner';
 import { getPresignedUrls } from '@/app/_actions/uploadS3';
@@ -49,6 +49,7 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   useEffect(() => { loadDocs(); }, [cardId, isProcess]);
 
@@ -148,6 +149,45 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     }
   }
 
+  async function handleDownloadAll() {
+    try {
+      setDownloadingAll(true);
+      const params = new URLSearchParams();
+      if (isProcess) params.set('processId', cardId);
+      else params.set('userId', cardId);
+
+      const res = await fetch(`/api/documents/download-all?${params.toString()}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao gerar o zip');
+      }
+
+      const blob = await res.blob();
+      const failed = Number(res.headers.get('X-Failed-Count') || '0');
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      // Tenta usar o filename do header; senão um nome padrão.
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      link.download = match?.[1] || 'documentos.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      if (failed > 0) {
+        toast.warning(`Zip gerado, mas ${failed} arquivo(s) não puderam ser baixados.`);
+      } else {
+        toast.success('Download iniciado.');
+      }
+    } catch (err: any) {
+      toast.error('Erro ao baixar todos: ' + err.message);
+    } finally {
+      setDownloadingAll(false);
+    }
+  }
+
   async function saveName(id: string) {
     try {
       setSavingId(id);
@@ -197,7 +237,25 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       <Separator />
 
       <div className="space-y-2">
-        <Label>Arquivos Anexados ({docs.length})</Label>
+        <div className="flex items-center justify-between">
+          <Label>Arquivos Anexados ({docs.length})</Label>
+          {docs.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadAll}
+              disabled={downloadingAll}
+              className="h-8"
+            >
+              {downloadingAll ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <FileArchive className="w-4 h-4 mr-2" />
+              )}
+              Baixar todos (.zip)
+            </Button>
+          )}
+        </div>
         {docs.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-zinc-400 border-2 border-dashed rounded-lg">
             Nenhum documento encontrado

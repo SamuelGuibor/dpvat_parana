@@ -25,6 +25,7 @@ export interface ExtendedKanbanCard extends KanbanCard {
   role?: string;
   service?: string;
   obs?: string;
+  otherObs?: string;
   nome_res?: string;
   rg_res?: string;
   cpf_res?: string;
@@ -32,6 +33,7 @@ export interface ExtendedKanbanCard extends KanbanCard {
   profissao_res?: string;
   status?: string | undefined;
   statusStartedAt?: string | null;
+  afastadoAte?: string | null;
   senha_inss?: string;
   cardNumber?: number | null;
   attachments: { id?: string; key: string; name: string; size?: number; uploadedAt: Date }[];

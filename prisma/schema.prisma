@@ -62,6 +62,8 @@ model User {
   apto             Boolean        @default(false)
   senha_inss       String?
   cardNumber       Int?           @unique
+  afastadoAte         DateTime?
+  afastadoNotificado  Boolean      @default(false)
 
 
   accounts         Account[]
@@ -119,6 +121,8 @@ model Process {
   label             Label?     @relation("ProcessLabel", fields: [labelId], references: [id])
   senha_inss        String?
   cardNumber        Int?       @unique
+  afastadoAte         DateTime?
+  afastadoNotificado  Boolean    @default(false)
 
   commentsOnProcess Comment[]  @relation("ProcessComments")
   documents         Document[]

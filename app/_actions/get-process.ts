@@ -32,6 +32,7 @@ interface ProcessGet {
   outro_hospital?: string;
   lesoes?: string;
   observacao?: string;
+  otherObs?: string;
   service?: string;
   fixed?: boolean;
   roleFixed?: string;
@@ -40,6 +41,7 @@ interface ProcessGet {
   label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
   senha_inss?: string;
   cardNumber?: number | null;
+  afastadoAte?: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +61,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
     service: process.service || "",
     statusStartedAt: process.statusStartedAt ? process.statusStartedAt.toISOString() : null,
     cardNumber: process.cardNumber ?? null,
+    afastadoAte: process.afastadoAte ? process.afastadoAte.toISOString() : null,
     ...(fields === "full" && {
       cpf: process.cpf || "",
       data_nasc: process.data_nasc || "",
@@ -81,6 +84,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
       outro_hospital: process.outro_hospital || "",
       lesoes: process.lesoes || "",
       observacao: process.observacao || "",
+      otherObs: process.otherObs || "",
       service: process.service || "",
       senha_inss: process.senha_inss || "",
     }),

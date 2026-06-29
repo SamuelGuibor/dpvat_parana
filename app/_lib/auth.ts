@@ -71,5 +71,15 @@ export const authOptions: AuthOptions = {
   secret: process.env.NEXT_AUTH_SECRET,
   session: {
     strategy: "jwt",
+    // maxAge explícito: a sessão dura 30 dias e é renovada a cada 24h de uso.
+    // Sem isso, depende do default e fica difícil diagnosticar expiração.
+    maxAge: 30 * 24 * 60 * 60, // 30 dias
+    updateAge: 24 * 60 * 60, // renova a cada 24h
+  },
+  jwt: {
+    maxAge: 30 * 24 * 60 * 60, // 30 dias — alinhado com a sessão
+  },
+  pages: {
+    signIn: "/login",
   },
 };

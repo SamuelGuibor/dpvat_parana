@@ -36,7 +36,9 @@ interface UpdateProcessData {
   role?: string;
   service?: string;
   obs?: string;
+  otherObs?: string;
   senha_inss?: string;
+  afastadoAte?: string | null;
 }
 
 export async function updateProcess(data: UpdateProcessData) {
@@ -92,8 +94,12 @@ export async function updateProcess(data: UpdateProcessData) {
         role: data.role,
         statusStartedAt: shouldUpdateTimer ? new Date() : currentProcess.statusStartedAt,
         observacao: data.obs,
+        otherObs: data.otherObs,
         service: data.service,
         senha_inss: data.senha_inss,
+        // Só atualiza quando o campo é enviado; ao mudar a data, libera nova notificação.
+        afastadoAte: data.afastadoAte !== undefined ? (data.afastadoAte ? new Date(data.afastadoAte) : null) : undefined,
+        afastadoNotificado: data.afastadoAte !== undefined ? false : undefined,
       },
     });
 
@@ -130,6 +136,8 @@ export async function updateProcess(data: UpdateProcessData) {
       outro_hospital: updatedProcess.outro_hospital || "",
       lesoes: updatedProcess.lesoes || "",
       obs: updatedProcess.observacao || "",
+      otherObs: updatedProcess.otherObs || "",
+      afastadoAte: updatedProcess.afastadoAte ? updatedProcess.afastadoAte.toISOString() : null,
       service: updatedProcess.service || "",
       senha_inss: updatedProcess.senha_inss || "",
       cardNumber: updatedProcess.cardNumber ?? null,

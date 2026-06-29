@@ -69,6 +69,44 @@ function parseFieldsFromChat(content: string): Record<string, string> {
   return fields;
 }
 
+function isEmptyValue(v: string | undefined | null): boolean {
+  const t = (v || "").trim();
+  return !t || t === "Nao apurado" || t === "Não apurado";
+}
+
+/**
+ * Safety net: ask the AI microservice to extract fields as structured JSON.
+ * The regex parser (parseFieldsFromChat) is fast but literal — it misses
+ * fields when the chat response drifts from the expected format. This fills
+ * those gaps. Returns {} on any failure so the regex result is never lost.
+ */
+async function extractFieldsViaAI(content: string): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(`${CONVERTER_URL}/ai/extract-fields`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
+      },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data && typeof data === "object" ? data : {};
+  } catch (err) {
+    console.warn("[DOCX] extract-fields (rede de seguranca) falhou:", err);
+    return {};
+  }
+}
+
+// Campos onde a extração estruturada da IA costuma ser mais confiável que o
+// regex (endereço dividido em partes e valores multi-linha). Nesses, a IA
+// sobrescreve o regex mesmo quando o regex já trouxe algo.
+const AI_PREFERRED_FIELDS = new Set([
+  "rua", "numero", "bairro", "cidade", "estado", "cep",
+  "quais_sequelas", "outros_afastamentos", "tempo_afastamento", "descricao_fatos",
+]);
+
 export async function POST(request: Request) {
   try {
     const { content, titulo, filename, template, cardId, isProcess } =
@@ -95,6 +133,21 @@ export async function POST(request: Request) {
     for (const [key, value] of Object.entries(chatFields)) {
       if (value) {
         dados[key] = value;
+      }
+    }
+
+    // Step 2.5: Safety net — structured extraction via AI. Fills fields the
+    // regex missed, and overrides the regex on fields where the AI is more
+    // reliable (address parts, multi-line values).
+    const aiFields = await extractFieldsViaAI(content);
+    console.log("[DOCX] Campos extraidos pela IA (rede de seguranca):", Object.keys(aiFields).length);
+    for (const [key, aiValue] of Object.entries(aiFields)) {
+      if (isEmptyValue(aiValue)) continue;
+      const v = aiValue.trim();
+      if (isEmptyValue(dados[key])) {
+        dados[key] = v; // fills a gap the regex left
+      } else if (AI_PREFERRED_FIELDS.has(key)) {
+        dados[key] = v; // AI wins on the fields the regex tends to get wrong
       }
     }
 

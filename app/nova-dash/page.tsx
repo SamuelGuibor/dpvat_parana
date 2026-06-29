@@ -18,6 +18,7 @@ import { WorkSessionPanel } from '../_components/WorkSession';
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 export const dynamic = "force-dynamic";
 
 type Theme = 'light' | 'dark';
@@ -27,7 +28,8 @@ export default function Page() {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
   const [mounted, setMounted] = useState(false);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
 
   // Carrega tema persistido no primeiro mount
   useEffect(() => {
@@ -58,13 +60,44 @@ export default function Page() {
     return () => window.removeEventListener('open-kanban-card', handleOpenCard);
   }, []);
 
+  // Só redireciona quando o next-auth confirma que NÃO há sessão. Durante o
+  // estado "loading" (carga inicial e revalidações ao focar a janela) o
+  // `session` fica temporariamente indefinido — tratar isso como deslogado é o
+  // que causava o "pisca" de login (tela some e volta).
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.replace('/login');
+    }
+  }, [status, router]);
+
   function toggleTheme() {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
   }
 
-  if (session?.user?.role !== 'ADMIN') return null;
-
   const isDark = theme === 'dark';
+
+  // Enquanto a sessão é resolvida, mantém a tela estável (sem flash de "deslogado").
+  if (status === 'loading') {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60" />
+          <p className="text-sm opacity-70">Carregando sessão...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Sessão resolvida: bloqueia apenas quem está logado mas não é ADMIN.
+  // (Quem não tem sessão já foi redirecionado pelo efeito acima.)
+  if (status === 'unauthenticated') return null;
+  if (session?.user?.role !== 'ADMIN') {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
+        <p className="text-sm opacity-70">Acesso restrito a administradores.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>

@@ -33,6 +33,7 @@ interface UserData {
   outro_hospital?: string;
   lesoes?: string;
   obs?: string;
+  otherObs?: string;
   service?: string;
   fixed?: boolean;
   roleFixed?: string;
@@ -40,6 +41,7 @@ interface UserData {
   label?: { id: string; name: string; color: string; timeLimitDays: number | null } | null;
   senha_inss?: string;
   cardNumber?: number | null;
+  afastadoAte?: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +60,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
     roleFixed: user.roleFixed || "",
     statusStartedAt: user.statusStartedAt ? user.statusStartedAt.toISOString() : null,
     cardNumber: user.cardNumber ?? null,
+    afastadoAte: user.afastadoAte ? user.afastadoAte.toISOString() : null,
     ...(fields === "full" && {
       cpf: user.cpf || "",
       data_nasc: user.data_nasc || "",
@@ -80,6 +83,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
       outro_hospital: user.outro_hospital || "",
       lesoes: user.lesoes || "",
       obs: user.obs || "",
+      otherObs: user.otherObs || "",
       service: user.service || "",
       senha_inss: user.senha_inss || "",
     }),

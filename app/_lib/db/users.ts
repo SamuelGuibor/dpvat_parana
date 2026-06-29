@@ -13,6 +13,7 @@ const userBasicSelect = {
   fixed: true,
   status: true,
   cardNumber: true,
+  afastadoAte: true,
 };
 
 const userFullSelect = {
@@ -45,10 +46,12 @@ const userFullSelect = {
   outro_hospital: true,
   lesoes: true,
   obs: true,
+  otherObs: true,
   service: true,
   fixed: true,
   senha_inss: true,
   cardNumber: true,
+  afastadoAte: true,
 };
 
 export async function fetchUsers(options?: { role?: string }) {

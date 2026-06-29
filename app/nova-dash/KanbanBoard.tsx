@@ -43,6 +43,9 @@ import { toast } from "sonner";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
+// Intervalo de sincronização do board (tempo real "near real-time" via polling).
+const KANBAN_POLL_MS = 7000;
+
 export function useComments({ userId, processId }: { userId?: string; processId?: string }) {
   const params = new URLSearchParams();
   if (userId) params.append('userId', userId);
@@ -68,6 +71,7 @@ export interface KanbanCard {
   createdAt: Date;
   updatedAt: Date;
   statusStartedAt?: string | null;
+  afastadoAte?: string | null;
   service?: string;
   type?: string;
   isProcess: boolean;
@@ -212,6 +216,7 @@ interface Item {
   labelId?: string | null
   label?: Label | null
   statusStartedAt?: string | null
+  afastadoAte?: string | null
   service?: string
   obs?: string
   observacao?: string
@@ -237,6 +242,41 @@ const renderTimerBadge = (card: KanbanCard) => {
     </Badge>
   )
 }
+
+// Dias de calendário entre hoje e a data (ISO). Compara só a porção de data
+// para evitar deslocamento de fuso (afastadoAte é gravado como meia-noite UTC).
+const calendarDaysUntil = (iso: string): number | null => {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const target = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+};
+
+const renderAfastamentoBadge = (card: KanbanCard) => {
+  if (!card.afastadoAte) return null;
+  const days = calendarDaysUntil(card.afastadoAte);
+  if (days === null) return null;
+
+  let cls: string;
+  let text: string;
+  if (days > 0) {
+    text = `Afast.: ${days}d`;
+    cls = days <= 3 ? 'text-amber-600 border-amber-300 font-semibold' : 'text-emerald-700 border-emerald-300 font-semibold';
+  } else if (days === 0) {
+    text = 'Afast. vence hoje';
+    cls = 'text-orange-600 border-orange-400 font-bold';
+  } else {
+    text = `Afast. vencido (${-days}d)`;
+    cls = 'text-red-600 border-red-400 font-bold';
+  }
+  return (
+    <Badge variant="outline" className={`px-2 text-xs ${cls}`} title={`Afastamento até ${card.afastadoAte.slice(0, 10).split('-').reverse().join('/')}`}>
+      {text}
+    </Badge>
+  );
+};
 
 // =============================================
 // Modal genérico de Etiqueta (criar OU editar)
@@ -535,6 +575,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 <Clock className="w-4 h-4" />
                 {renderTimerBadge(card)}
               </div>
+              {renderAfastamentoBadge(card)}
             </div>
             <div className="flex items-center justify-between border-t border-gray-50 pt-3">
               <div className="flex items-center gap-3 text-gray-400 dark:text-zinc-500">
@@ -606,6 +647,7 @@ const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
     a.description === b.description &&
     a.labelId === b.labelId &&
     a.statusStartedAt === b.statusStartedAt &&
+    a.afastadoAte === b.afastadoAte &&
     a.service === b.service &&
     a.cardNumber === b.cardNumber &&
     a.commentCount === b.commentCount &&
@@ -945,6 +987,7 @@ export const KanbanBoard: React.FC = () => {
       createdAt: new Date(item.statusStartedAt ?? Date.now()),
       updatedAt: new Date(),
       statusStartedAt: item.statusStartedAt,
+      afastadoAte: item.afastadoAte ?? null,
       service: item.service,
       type: item.type,
       isProcess: !!item.isProcess,
@@ -957,35 +1000,61 @@ export const KanbanBoard: React.FC = () => {
     setSearchOpen(false);
   }
 
-  useEffect(() => {
-    async function fetchData() {
-      setIsLoading(true);
-      try {
-        const [labelsData, usersData, processesData] = await Promise.all([
-          getLabels(),
-          getUsers('basic'),
-          getProcess('basic'),
-        ]);
-        setLabels(labelsData);
-        const users = Array.isArray(usersData)
-          ? usersData
-              .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST')
-              .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
-          : [];
-        const processes = Array.isArray(processesData)
-          ? processesData.map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
-          : [];
-        const combined = [...users, ...processes];
-        setItems(combined);
-        setFilteredItems(combined);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
+  // Pausa o polling enquanto há uma mutação local em voo (drag/drop) ou o
+  // diálogo de um card está aberto — evita reverter o estado otimista ou
+  // recarregar dados embaixo de uma edição em andamento.
+  const isMutatingRef = useRef(false);
+  const isDialogOpenRef = useRef(false);
+  useEffect(() => { isDialogOpenRef.current = !!selectedCard; }, [selectedCard]);
+
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    try {
+      const [labelsData, usersData, processesData] = await Promise.all([
+        getLabels(),
+        getUsers('basic'),
+        getProcess('basic'),
+      ]);
+      setLabels(labelsData);
+      const users = Array.isArray(usersData)
+        ? usersData
+            .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST')
+            .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
+        : [];
+      const processes = Array.isArray(processesData)
+        ? processesData.map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
+        : [];
+      const combined = [...users, ...processes];
+      setItems(combined);
+      if (!silent) setFilteredItems(combined);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (!silent) setIsLoading(false);
     }
-    fetchData();
-  }, [refreshKey]);
+  }, []);
+
+  useEffect(() => { fetchData(); }, [refreshKey, fetchData]);
+
+  // Verifica afastamentos vencidos e gera notificações (idempotente no servidor).
+  useEffect(() => {
+    const check = () => {
+      fetch('/api/afastamentos/check', { method: 'POST' }).catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Polling: mantém o board sincronizado entre múltiplas sessões sem F5.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isMutatingRef.current || isDialogOpenRef.current) return;
+      if (typeof document !== 'undefined' && document.hidden) return; // aba em background
+      fetchData(true);
+    }, KANBAN_POLL_MS);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 180);
@@ -1058,6 +1127,7 @@ export const KanbanBoard: React.FC = () => {
         createdAt: new Date(item.statusStartedAt ?? Date.now()),
         updatedAt: new Date(),
         statusStartedAt: item.statusStartedAt,
+        afastadoAte: item.afastadoAte ?? null,
         service: item.service,
         type: item.type,
         isProcess: !!item.isProcess,
@@ -1145,45 +1215,52 @@ export const KanbanBoard: React.FC = () => {
   const handleDrop = async (cardId: string, sourceColumnId: string, targetColumnId: string) => {
     if (sourceColumnId === targetColumnId) return;
 
-    const targetLabel = labels.find(l => l.id === targetColumnId) ?? null;
-    let droppedCard: KanbanCard | null = null;
+    // Segura o polling até a persistência terminar, senão um tick poderia
+    // recarregar o card na coluna antiga antes do servidor confirmar a troca.
+    isMutatingRef.current = true;
+    try {
+      const targetLabel = labels.find(l => l.id === targetColumnId) ?? null;
+      let droppedCard: KanbanCard | null = null;
 
-    setColumns((prev) => {
-      const newCols = structuredClone(prev);
-      const source = newCols.find(c => c.id === sourceColumnId);
-      const target = newCols.find(c => c.id === targetColumnId);
-      if (!source || !target) return prev;
-      const index = source.cards.findIndex(c => c.id === cardId);
-      if (index === -1) return prev;
-      const [card] = source.cards.splice(index, 1);
-      card.labelId = targetColumnId;
-      card.label = targetLabel;
-      card.status = target.title;
-      card.statusStartedAt = new Date().toISOString();
-      target.cards.push(card);
-      droppedCard = card;
-      return newCols;
-    });
+      setColumns((prev) => {
+        const newCols = structuredClone(prev);
+        const source = newCols.find(c => c.id === sourceColumnId);
+        const target = newCols.find(c => c.id === targetColumnId);
+        if (!source || !target) return prev;
+        const index = source.cards.findIndex(c => c.id === cardId);
+        if (index === -1) return prev;
+        const [card] = source.cards.splice(index, 1);
+        card.labelId = targetColumnId;
+        card.label = targetLabel;
+        card.status = target.title;
+        card.statusStartedAt = new Date().toISOString();
+        target.cards.push(card);
+        droppedCard = card;
+        return newCols;
+      });
 
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === cardId
-          ? { ...it, labelId: targetColumnId, label: targetLabel }
-          : it
-      )
-    );
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === cardId
+            ? { ...it, labelId: targetColumnId, label: targetLabel }
+            : it
+        )
+      );
 
-    if (droppedCard) {
-      try {
-        await updateKanbanStatus({
-          id: (droppedCard as KanbanCard).id,
-          labelId: targetColumnId,
-          isProcess: (droppedCard as KanbanCard).isProcess,
-        });
-      } catch (err) {
-        console.error("Erro ao salvar:", err);
-        toast.error("Erro ao mover card");
+      if (droppedCard) {
+        try {
+          await updateKanbanStatus({
+            id: (droppedCard as KanbanCard).id,
+            labelId: targetColumnId,
+            isProcess: (droppedCard as KanbanCard).isProcess,
+          });
+        } catch (err) {
+          console.error("Erro ao salvar:", err);
+          toast.error("Erro ao mover card");
+        }
       }
+    } finally {
+      isMutatingRef.current = false;
     }
   };
 

@@ -76,6 +76,30 @@ function DateFlexField({ id, label, value, onChange }: {
   );
 }
 
+function TextAreaField({ id, label, value, onChange, placeholder, rows = 4 }: {
+  id: string;
+  label: string;
+  value?: string;
+  onChange: (field: string, value: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <textarea
+        id={id}
+        name={id}
+        value={value || ''}
+        onChange={(e) => onChange(id, e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className={`w-full rounded-md border border-gray-300 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 px-3 py-2 text-sm leading-relaxed resize-y shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+      />
+    </div>
+  );
+}
+
 function SelectField({ id, label, value, options, onChange, placeholder }: {
   id: string;
   label: string;
@@ -172,6 +196,16 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
           <div className="col-span-2">
             <Field id="lesoes" label="Lesões" value={editedCard.lesoes} onChange={onChange} />
           </div>
+          <div className="col-span-2">
+            <TextAreaField
+              id="otherObs"
+              label="Descrição do Acidente"
+              value={editedCard.otherObs}
+              onChange={onChange}
+              placeholder="Descreva como o acidente ocorreu, circunstâncias, detalhes relevantes..."
+              rows={5}
+            />
+          </div>
         </div>
       </div>
 
@@ -184,6 +218,19 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
         <div className="space-y-2">
           <Label htmlFor="cardNumber">Nº do Card</Label>
           <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="afastadoAte">Vencimento do Afastamento</Label>
+          <Input
+            id="afastadoAte"
+            type="date"
+            value={editedCard.afastadoAte ? editedCard.afastadoAte.slice(0, 10) : ''}
+            onChange={(e) => onChange('afastadoAte', e.target.value)}
+            className={inputClass}
+          />
+          <p className="text-[11px] text-gray-500 dark:text-zinc-400">
+            Data em que o afastamento termina. O card avisa quando se aproxima/vence.
+          </p>
         </div>
       </div>
 
