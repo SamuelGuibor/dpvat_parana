@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "../../../_lib/prisma";
 import { getDownloadUrl, getViewUrl } from "../_s3";
 
+// Rota depende de request.url (params da query), então é sempre dinâmica.
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);

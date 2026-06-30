@@ -73,6 +73,8 @@ export async function generatePDFFromTemplate(
     { label: "Senha INSS", value: data.senha_inss },
   ];
 
+  console.log(fields)
+
   // Desenhar campos
   for (const field of fields) {
     if (!field.value) continue;

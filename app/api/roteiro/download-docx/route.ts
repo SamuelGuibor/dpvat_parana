@@ -184,6 +184,8 @@ export async function POST(request: Request) {
           lesoes: record.lesoes || "",
           hospital: record.hospital || "",
           nome_mae: record.nome_mae || "",
+          status: record.service || "",
+          senha_inss: record.senha_inss || "",
         };
 
         for (const [key, dbVal] of Object.entries(dbMap)) {

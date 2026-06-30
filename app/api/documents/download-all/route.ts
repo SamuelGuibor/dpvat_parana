@@ -4,6 +4,9 @@ import JSZip from "jszip";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "@/app/_lib/prisma";
 
+// Rota depende de request.url (params da query), então é sempre dinâmica.
+export const dynamic = "force-dynamic";
+
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
