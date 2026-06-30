@@ -262,17 +262,17 @@ const renderAfastamentoBadge = (card: KanbanCard) => {
   let cls: string;
   let text: string;
   if (days > 0) {
-    text = `Afast.: ${days}d`;
+    text = `Venc.: ${days}d`;
     cls = days <= 3 ? 'text-amber-600 border-amber-300 font-semibold' : 'text-emerald-700 border-emerald-300 font-semibold';
   } else if (days === 0) {
-    text = 'Afast. vence hoje';
+    text = 'Venc. vence hoje';
     cls = 'text-orange-600 border-orange-400 font-bold';
   } else {
-    text = `Afast. vencido (${-days}d)`;
+    text = `Vencido (${-days}d)`;
     cls = 'text-red-600 border-red-400 font-bold';
   }
   return (
-    <Badge variant="outline" className={`px-2 text-xs ${cls}`} title={`Afastamento até ${card.afastadoAte.slice(0, 10).split('-').reverse().join('/')}`}>
+    <Badge variant="outline" className={`px-2 text-xs ${cls}`} title={`Vencimento até ${card.afastadoAte.slice(0, 10).split('-').reverse().join('/')}`}>
       {text}
     </Badge>
   );

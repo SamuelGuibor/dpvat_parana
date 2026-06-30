@@ -10,6 +10,7 @@ import { ScrollArea } from '@/app/_components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
 import { Upload, Send, File, X, Loader2, Download, FileText, ChevronDown, Wrench, Plus, Copy, Pencil, Trash2, Check, BookOpen, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { getRoteiroUploadUrls } from '@/app/_actions/uploadS3';
 
 type LoadingPhase =
   | null
@@ -317,29 +318,38 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Converte um File em base64 inline para enviar ao Claude.
-  // Claude aceita imagens (jpeg/png/gif/webp) e PDFs como base64
-  // e arquivos de texto serão decodificados no backend.
-  const fileToInlineAttachment = async (
-    file: File,
-  ): Promise<{ name: string; type: string; content: string }> => {
-    const arrayBuffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    // Conversão em chunks para evitar stack overflow com arquivos grandes.
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode.apply(
-        null,
-        Array.from(bytes.subarray(i, i + chunkSize)),
-      );
+  // Envia os arquivos DIRETO para o S3 (presigned PUT) e devolve as chaves.
+  // Isso contorna o limite de 4.5 MB de body das serverless functions da
+  // Vercel: o /api/roteiro recebe só as chaves, baixa os arquivos do S3 e
+  // os repassa ao converter.
+  const uploadFilesToS3 = async (
+    files: File[],
+  ): Promise<{ key: string; name: string; type: string }[]> => {
+    const fileInfos = files.map((f) => ({
+      name: f.name,
+      type: f.type || 'application/octet-stream',
+    }));
+
+    const response = await getRoteiroUploadUrls(fileInfos, cardId);
+    if (!response.success || !response.presignedUrls) {
+      throw new Error(response.error || 'Erro ao obter URLs de upload');
     }
-    const base64 = btoa(binary);
-    return {
-      name: file.name,
-      type: file.type || "application/octet-stream",
-      content: base64,
-    };
+
+    const uploaded = await Promise.all(
+      response.presignedUrls.map(async ({ fileName, url, key }) => {
+        const file = files.find((f) => f.name === fileName);
+        if (!file) return null;
+        const res = await fetch(url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        });
+        if (!res.ok) throw new Error(`Erro ao enviar ${fileName} para o S3`);
+        return { key, name: fileName, type: file.type || 'application/octet-stream' };
+      }),
+    );
+
+    return uploaded.filter(Boolean) as { key: string; name: string; type: string }[];
   };
 
   const sendMessage = async () => {
@@ -372,11 +382,11 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
         prompt = `${prompt}\n\n[Documentos anexados: ${names}]`;
       }
 
-      let attachmentsData: { name: string; type: string; content: string }[] | undefined;
+      let s3Keys: { key: string; name: string; type: string }[] | undefined;
 
       if (selectedFiles.length > 0) {
         setLoadingPhase('uploading');
-        attachmentsData = await Promise.all(selectedFiles.map(f => fileToInlineAttachment(f)));
+        s3Keys = await uploadFilesToS3(selectedFiles);
       }
 
       setLoadingPhase('sending');
@@ -399,7 +409,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
           ],
           cardId,
           isProcess,
-          attachments: attachmentsData,
+          s3Keys,
         }),
       });
 

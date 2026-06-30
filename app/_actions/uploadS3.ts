@@ -57,3 +57,37 @@ export async function getPresignedUrls(fileInfos: FileInfo[], itemId: string, is
     return { success: false, error: `Falha ao gerar URLs pré-assinadas` };
   }
 }
+
+/**
+ * Gera presigned PUTs para os anexos do chat de Roteiros.
+ *
+ * Esses arquivos são TEMPORÁRIOS (vão para o prefixo `roteiro-temp/`): o
+ * navegador os envia direto ao S3 — contornando o limite de 4.5 MB de body
+ * das serverless functions da Vercel — e o backend (/api/roteiro) os baixa,
+ * repassa ao converter e os apaga. Não criam registro de Document no banco.
+ */
+export async function getRoteiroUploadUrls(fileInfos: FileInfo[], cardId: string): Promise<PresignedUrlResponse> {
+  try {
+    const batch = Date.now();
+    const presignedUrls = await Promise.all(
+      fileInfos.map(async (file, idx) => {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const key = `roteiro-temp/${cardId || "no-card"}/${batch}-${idx}-${safeName}`;
+
+        const command = new PutObjectCommand({
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: key,
+          ContentType: file.type || "application/octet-stream",
+        });
+
+        const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+        return { fileName: file.name, url, key };
+      })
+    );
+
+    return { success: true, presignedUrls };
+  } catch (error) {
+    console.error("Erro ao gerar URLs pré-assinadas (roteiro):", error);
+    return { success: false, error: `Falha ao gerar URLs pré-assinadas` };
+  }
+}

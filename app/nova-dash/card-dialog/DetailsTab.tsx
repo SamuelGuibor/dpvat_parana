@@ -220,7 +220,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
           <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="afastadoAte">Vencimento do Afastamento</Label>
+          <Label htmlFor="afastadoAte">Vencimento do Card</Label>
           <Input
             id="afastadoAte"
             type="date"
@@ -229,7 +229,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
             className={inputClass}
           />
           <p className="text-[11px] text-gray-500 dark:text-zinc-400">
-            Data em que o afastamento termina. O card avisa quando se aproxima/vence.
+            Data em que o card termina. A notificação avisa quando se aproxima/vence.
           </p>
         </div>
       </div>

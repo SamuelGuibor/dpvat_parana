@@ -54,7 +54,7 @@ export async function POST() {
           recipientId: admin.id,
           authorId: "system",
           authorName: "Sistema",
-          message: `Afastamento de ${card.name ?? "card"} venceu${card.afastadoAte ? ` em ${fmt(card.afastadoAte)}` : ""}.`,
+          message: `${card.name ?? "card"} venceu${card.afastadoAte ? ` em ${fmt(card.afastadoAte)}` : ""}.`,
           targetName: card.name ?? "",
           userId: card.isProcess ? null : card.id,
           processId: card.isProcess ? card.id : null,

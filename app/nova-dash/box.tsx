@@ -5,6 +5,33 @@ import { Badge } from '@/app/_components/ui/badge';
 import { useNotifications } from '@/app/_hooks/use-notifications';
 import { Bell, Clock } from 'lucide-react';
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Renderiza a mensagem deixando em negrito apenas os nomes de pessoas
+// (autor da ação e nome do card/alvo), e não o texto inteiro.
+function HighlightedMessage({ message, names }: { message: string; names: string[] }) {
+  const valid = names
+    .map((n) => n?.trim())
+    .filter((n): n is string => !!n && n.length > 1 && message.includes(n))
+    .filter((n, i, arr) => arr.indexOf(n) === i)
+    .sort((a, b) => b.length - a.length); // casa o nome mais longo primeiro
+
+  if (valid.length === 0) return <>{message}</>;
+
+  const pattern = new RegExp(`(${valid.map(escapeRegExp).join('|')})`, 'g');
+  const parts = message.split(pattern);
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        valid.includes(part) ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
 export function NotificationDropdown() {
   const { notifications, unreadCount, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
@@ -90,8 +117,7 @@ export function NotificationDropdown() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm leading-snug">
-                      <strong>{n.authorName}</strong> mencionou você no card{' '}
-                      <strong>{n.targetName}</strong>
+                      <HighlightedMessage message={n.message} names={[n.authorName, n.targetName]} />
                     </p>
                     <div className="flex items-center gap-1 mt-1 text-gray-400 dark:text-zinc-500">
                       <Clock className="w-3 h-3" />
