@@ -17,6 +17,8 @@ interface PDFData {
   estado_civil?: string;
   rg?: string;
   nome_mae?: string;
+  status?: string;
+  senha_inss?: string;
   [key: string]: string | undefined;
 }
 
@@ -67,6 +69,8 @@ export async function generatePDFFromTemplate(
     { label: "Data do Acidente", value: data.data_acidente },
     { label: "Lesões", value: data.lesoes },
     { label: "Hospital", value: data.hospital },
+    { label: "Status", value: data.status },
+    { label: "Senha INSS", value: data.senha_inss },
   ];
 
   // Desenhar campos
