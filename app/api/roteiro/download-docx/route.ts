@@ -192,7 +192,7 @@ export async function POST(request: Request) {
           "name", "cpf", "rg", "email", "telefone",
           "endereco", "rua", "numero", "bairro", "cidade", "estado", "cep",
           "estado_civil", "nome_mae", "data_nascimento", "nacionalidade",
-          "senha_inss", "profissao", "status", "data_acidente", "lesoes", "hospital",
+          "senha_inss", "profissao", "status", "data_acidente", "hospital",
         ]);
 
         for (const [key, dbVal] of Object.entries(dbMap)) {
