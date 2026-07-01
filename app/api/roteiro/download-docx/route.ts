@@ -184,7 +184,7 @@ export async function POST(request: Request) {
           hospital: record.hospital || "",
           nome_mae: record.nome_mae || "",
           status: record.service || "",
-          senha_inss: record.senha_inss || "",
+          senha_inss: "Não apurado",
         };
 
         // Campos que o escritório tem com certeza no card → banco manda.
