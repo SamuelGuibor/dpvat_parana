@@ -64,7 +64,7 @@ async function getCardContext(cardId: string, isProcess: boolean) {
           data_acidente: true, lesoes: true, hospital: true, outro_hospital: true,
           status: true, observacao: true, rua: true, bairro: true,
           cidade: true, estado: true, cep: true, estado_civil: true,
-          rg: true, nome_mae: true, data_nasc: true,
+          rg: true, nome_mae: true, data_nasc: true, profissao: true,
         },
       });
     }
@@ -76,7 +76,7 @@ async function getCardContext(cardId: string, isProcess: boolean) {
         data_acidente: true, lesoes: true, hospital: true, outro_hospital: true,
         status: true, obs: true, rua: true, bairro: true,
         cidade: true, estado: true, cep: true, estado_civil: true,
-        rg: true, nome_mae: true, data_nasc: true,
+        rg: true, nome_mae: true, data_nasc: true, profissao: true,
       },
     });
   } catch {
@@ -101,6 +101,7 @@ function buildContextMessage(cardData: Record<string, any> | null): string {
     ["Nome da mãe", cardData.nome_mae],
     ["Data de nascimento", cardData.data_nasc],
     ["Estado civil", cardData.estado_civil],
+    ["Profissão", cardData.profissao],
     ["Telefone", cardData.telefone],
     ["Email", cardData.email],
     ["Data do acidente", cardData.data_acidente],

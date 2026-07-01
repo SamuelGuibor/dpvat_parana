@@ -151,7 +151,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Step 3: Fetch DB data and fill ONLY what's missing from chat
+
     if (cardId) {
       let record: any = null;
 
@@ -162,7 +162,6 @@ export async function POST(request: Request) {
       }
 
       if (record) {
-        // DB fields mapping — only fill if chat didn't provide them
         const dbMap: Record<string, string> = {
           name: record.name || "",
           cpf: record.cpf || "",
@@ -188,11 +187,21 @@ export async function POST(request: Request) {
           senha_inss: record.senha_inss || "",
         };
 
+        // Campos que o escritório tem com certeza no card → banco manda.
+        const DB_AUTHORITATIVE = new Set([
+          "name", "cpf", "rg", "email", "telefone",
+          "endereco", "rua", "numero", "bairro", "cidade", "estado", "cep",
+          "estado_civil", "nome_mae", "data_nascimento", "nacionalidade",
+          "senha_inss", "profissao", "status", "data_acidente", "lesoes", "hospital",
+        ]);
+
         for (const [key, dbVal] of Object.entries(dbMap)) {
-          const current = (dados[key] || "").trim();
-          // DB fills only if chat didn't provide this field
-          if (!current && dbVal.trim()) {
-            dados[key] = dbVal.trim();
+          const v = dbVal.trim();
+          if (!v) continue; // banco vazio → não afirma nada; mantém a extração
+          if (DB_AUTHORITATIVE.has(key)) {
+            dados[key] = v; // certeza do banco: sobrescreve a IA
+          } else if (!(dados[key] || "").trim()) {
+            dados[key] = v; // demais: banco só preenche lacuna
           }
         }
       }
