@@ -181,13 +181,13 @@ export default function Page() {
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
             </TabsTrigger>
-            <TabsTrigger
+            {/* <TabsTrigger
               value="ponto"
               className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
             >
               <Clock className="w-4 h-4 mr-2" />
               Controle de Ponto
-            </TabsTrigger>
+            </TabsTrigger> */}
           </TabsList>
         </Tabs>
       </header>
