@@ -64,6 +64,7 @@ model User {
   cardNumber       Int?           @unique
   afastadoAte         DateTime?
   afastadoNotificado  Boolean      @default(false)
+  lastSeenAt       DateTime?
 
 
   accounts         Account[]

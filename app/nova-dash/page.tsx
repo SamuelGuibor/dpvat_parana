@@ -17,6 +17,8 @@ import { WorkSessionPanel } from '../_components/WorkSession';
 
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
+import { UserMenu } from './UserMenu';
+import { TeamPresence } from './TeamPresence';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 export const dynamic = "force-dynamic";
@@ -60,10 +62,6 @@ export default function Page() {
     return () => window.removeEventListener('open-kanban-card', handleOpenCard);
   }, []);
 
-  // Só redireciona quando o next-auth confirma que NÃO há sessão. Durante o
-  // estado "loading" (carga inicial e revalidações ao focar a janela) o
-  // `session` fica temporariamente indefinido — tratar isso como deslogado é o
-  // que causava o "pisca" de login (tela some e volta).
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.replace('/login');
@@ -116,14 +114,6 @@ export default function Page() {
               />
             </Link>
             <div className="flex items-center gap-3">
-              <Badge
-                variant="outline"
-                className={isDark
-                  ? "bg-emerald-950/40 text-emerald-300 border-emerald-800"
-                  : "bg-green-50 text-green-700 border-green-200"}
-              >
-                🟢 Sistema Online
-              </Badge>
 
               {/* Toggle de tema */}
               {/* <button
@@ -145,20 +135,15 @@ export default function Page() {
                 </span>
               </button> */}
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setOpen(true)}
-                className={isDark
-                  ? 'bg-zinc-800 border-zinc-700 text-zinc-100 hover:bg-zinc-700 hover:text-white'
-                  : ''}
-              >
-                <Users className="w-4 h-4 mr-2" />
-                Equipe
-              </Button>
+              <TeamPresence isDark={isDark} onOpenTeam={() => setOpen(true)} />
 
               <Team open={open} onClose={() => setOpen(false)} />
-              <NotificationDropdown />
+
+              <div className="flex items-center gap-2 pl-1 ml-1 border-l border-gray-200 dark:border-zinc-700">
+                <NotificationDropdown />
+                <UserMenu />
+              </div>
+
             </div>
           </div>
         </div>

@@ -47,7 +47,7 @@ export const authOptions: AuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -55,6 +55,13 @@ export const authOptions: AuthOptions = {
       }
       if (account) {
         token.accessToken = account.access_token;
+      }
+      // Quando o usuário edita o próprio perfil, o client chama update({...})
+      // e propagamos os novos dados para o token (e, assim, para a sessão).
+      if (trigger === "update" && session) {
+        if (session.name) token.name = session.name;
+        if (session.email) token.email = session.email;
+        if (session.picture !== undefined) token.picture = session.picture;
       }
       return token;
     },

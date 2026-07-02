@@ -100,3 +100,16 @@
     @apply bg-background text-foreground; /* Usa as variáveis definidas */
   }
 }
+
+/*
+  Correção do bug do Radix UI (Dialog / DropdownMenu / Select / Popover):
+  ao fechar um overlay, às vezes fica um `pointer-events: none` preso inline
+  no <body>, travando TODOS os cliques da página até dar refresh (o famoso
+  "só consigo clicar uma vez"). Forçar `auto` destrava.
+
+  Isso não enfraquece o bloqueio de fundo do modal: o overlay (fixed inset-0)
+  continua por cima e intercepta os cliques enquanto o dialog está aberto.
+*/
+body {
+  pointer-events: auto !important;
+}
