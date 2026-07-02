@@ -1,6 +1,9 @@
 "use server";
 
 import { db } from "../_lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "../_lib/auth";
+import { createLog } from "../_lib/log";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 const s3Client = new S3Client({
@@ -13,10 +16,10 @@ const s3Client = new S3Client({
 
 export const deletDoc = async (docId: string) => {
   try {
-    // Buscar o documento para obter a key do S3
+    // Buscar o documento para obter a key do S3 e os dados para o histórico.
     const document = await db.document.findUnique({
       where: { id: docId },
-      select: { key: true },
+      select: { key: true, name: true, userId: true, processId: true },
     });
 
     if (!document) {
@@ -34,6 +37,20 @@ export const deletDoc = async (docId: string) => {
     await db.document.delete({
       where: { id: docId },
     });
+
+    // Registra no histórico do card quem removeu o documento.
+    const session = await getServerSession(authOptions);
+    if (session?.user?.id) {
+      await createLog({
+        action: "document_remove",
+        message: `removeu o documento "${document.name}"`,
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+        userId: document.processId ? null : document.userId,
+        processId: document.processId ?? null,
+        metadata: { name: document.name },
+      });
+    }
   } catch (error) {
     console.error("Erro ao deletar documento:", error);
     throw error; // Re-lançar o erro para ser capturado no client-side

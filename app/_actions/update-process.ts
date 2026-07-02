@@ -3,6 +3,7 @@
 import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
+import { createLog, diffFields, CARD_FIELD_LABELS, buildUpdateMessage } from "../_lib/log";
 
 interface UpdateProcessData {
   id: string;
@@ -49,10 +50,10 @@ export async function updateProcess(data: UpdateProcessData) {
   }
 
   try {
-    // Fetch the current process to compare the role
+    // Busca o processo atual: usado tanto para comparar o role quanto para
+    // registrar no histórico (Log) exatamente quais campos mudaram.
     const currentProcess = await db.process.findUnique({
       where: { id: data.id },
-      select: { role: true, statusStartedAt: true },
     });
 
     if (!currentProcess) {
@@ -102,6 +103,25 @@ export async function updateProcess(data: UpdateProcessData) {
         afastadoNotificado: data.afastadoAte !== undefined ? false : undefined,
       },
     });
+
+    // Registra no histórico quais campos foram alterados.
+    // `obs` no client é gravado na coluna `observacao` do Process.
+    const changed = diffFields(
+      data as unknown as Record<string, unknown>,
+      currentProcess,
+      CARD_FIELD_LABELS,
+      { obs: "observacao" },
+    );
+    if (changed.length) {
+      await createLog({
+        action: "update",
+        message: buildUpdateMessage(changed),
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+        processId: data.id,
+        metadata: { fields: changed },
+      });
+    }
 
     return {
       id: updatedProcess.id,

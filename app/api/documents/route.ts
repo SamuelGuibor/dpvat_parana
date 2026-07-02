@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
 import { db } from '../../_lib/prisma'
+import { authOptions } from '../../_lib/auth'
+import { createLog } from '../../_lib/log'
 
 export async function POST(request: Request) {
   try {
     const { userId, processId, documents } = await request.json()
-    console.log(userId, processId, documents)
 
     if (!userId && !processId) {
       return NextResponse.json(
@@ -29,6 +31,24 @@ export async function POST(request: Request) {
         return db.document.create({ data })
       })
     )
+
+    // Registra no histórico do card quem anexou os documentos.
+    const session = await getServerSession(authOptions)
+    if (session?.user?.id && Array.isArray(documents) && documents.length) {
+      const names: string[] = documents.map((d: { name: string }) => d.name)
+      await createLog({
+        action: 'document_add',
+        message:
+          names.length === 1
+            ? `adicionou o documento "${names[0]}"`
+            : `adicionou ${names.length} documentos`,
+        authorId: session.user.id,
+        authorName: session.user.name ?? 'Usuário',
+        userId: processId ? null : userId,
+        processId: processId ?? null,
+        metadata: { documents: names },
+      })
+    }
 
     return NextResponse.json(createdDocuments, { status: 201 })
   } catch (error) {

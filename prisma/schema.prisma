@@ -73,6 +73,7 @@ model User {
   notifications    Notification[] @relation("UserNotifications")
   processes        Process[]
   sessions         Session[]
+  logs             Log[]          @relation("UserLogs")
 }
 
 model Process {
@@ -126,6 +127,7 @@ model Process {
 
   commentsOnProcess Comment[]  @relation("ProcessComments")
   documents         Document[]
+  logs              Log[]      @relation("ProcessLogs")
   user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -272,6 +274,29 @@ model Notification {
   recipient   User     @relation("UserNotifications", fields: [recipientId], references: [id])
 
   @@index([recipientId])
+}
+
+model Log {
+  id         String   @id @default(cuid())
+  // Tipo do evento: 'update' | 'move' | 'document_add' | 'document_remove' | 'comment_add' | 'create'
+  action     String
+  // Frase descritiva já pronta para exibir (ex.: "alterou o campo Telefone")
+  message    String
+  authorId   String
+  authorName String
+  // Card ao qual o log pertence — apenas um dos dois é preenchido.
+  userId     String?
+  processId  String?
+  // Dados extras opcionais (campos alterados, de/para, nomes de documentos, etc.)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation("UserLogs", fields: [userId], references: [id], onDelete: Cascade)
+  process    Process? @relation("ProcessLogs", fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([processId])
+  @@map("logs")
 }
 
 model Botconversa {

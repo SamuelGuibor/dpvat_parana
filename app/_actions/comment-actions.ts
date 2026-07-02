@@ -4,6 +4,7 @@ import { db } from "../_lib/prisma";
 import { authOptions } from "../_lib/auth";
 import { getServerSession } from "next-auth";
 import { extractMentions } from "@/app/_utils/mentions";
+import { createLog } from "../_lib/log";
 
 interface CreateCommentProps {
   text: string;
@@ -63,6 +64,17 @@ export async function createComment({
       processId: processId ?? null,
       targetName,
     },
+  });
+
+  // Registra no histórico do card que um comentário foi adicionado.
+  await createLog({
+    action: "comment_add",
+    message: "adicionou um comentário",
+    authorId: session.user.id,
+    authorName: session.user.name ?? "Usuário",
+    userId: userId ?? null,
+    processId: processId ?? null,
+    metadata: { preview: text.slice(0, 140) },
   });
 
   // 🔥 3️⃣ Extrai menções

@@ -3,6 +3,7 @@
 import { db } from "../_lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../_lib/auth";
+import { createLog, diffFields, CARD_FIELD_LABELS, buildUpdateMessage } from "../_lib/log";
 
 interface UpdateUserData {
   id: string;
@@ -49,10 +50,10 @@ export async function updateUser(data: UpdateUserData) {
   }
 
   try {
-    // Fetch the current user to compare the role
+    // Busca o usuário atual: usado tanto para comparar o role quanto para
+    // registrar no histórico (Log) exatamente quais campos mudaram.
     const currentUser = await db.user.findUnique({
       where: { id: data.id },
-      select: { role: true, statusStartedAt: true },
     });
 
     if (!currentUser) {
@@ -102,6 +103,19 @@ export async function updateUser(data: UpdateUserData) {
         afastadoNotificado: data.afastadoAte !== undefined ? false : undefined,
       },
     });
+
+    // Registra no histórico quais campos foram alterados.
+    const changed = diffFields(data as unknown as Record<string, unknown>, currentUser, CARD_FIELD_LABELS);
+    if (changed.length) {
+      await createLog({
+        action: "update",
+        message: buildUpdateMessage(changed),
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+        userId: data.id,
+        metadata: { fields: changed },
+      });
+    }
 
     return {
       id: updatedUser.id,

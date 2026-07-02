@@ -28,6 +28,7 @@ import { DeleteConfirmDialog } from './card-dialog/DeleteConfirmDialog';
 
 import { getLabels } from "@/app/_actions/get-labels";
 import { RoteirosTab } from './card-dialog/ScriptTab';
+import { LogsTab } from './card-dialog/LogsTab';
 
 interface CardDialogProps {
   card: ExtendedKanbanCard;
@@ -180,13 +181,14 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         </DialogHeader>
 
         <Tabs defaultValue="details" className="flex-1 overflow-y-auto flex flex-col">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="details">Detalhes</TabsTrigger>
             <TabsTrigger value="checklist">Progresso</TabsTrigger>
             <TabsTrigger value="files">Arquivos</TabsTrigger>
             <TabsTrigger value="comments">Comentários</TabsTrigger>
             <TabsTrigger value="script">Roteiro</TabsTrigger>
             <TabsTrigger value="integrations">Integrações</TabsTrigger>
+            <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details">
@@ -206,6 +208,9 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           </TabsContent>
           <TabsContent value="integrations">
             <IntegrationsTab editedCard={editedCard} isProcess={isProcess} />
+          </TabsContent>
+          <TabsContent value="logs">
+            <LogsTab cardId={cardId} isProcess={isProcess} />
           </TabsContent>
         </Tabs>
 
