@@ -94,6 +94,28 @@ function dayLabel(date: Date) {
   return format(date, "d 'de' MMMM 'de' yyyy", { locale: ptBR });
 }
 
+// Comentários guardam as menções no formato bruto "@[Nome](id)". Aqui trocamos
+// isso por só o nome destacado (com @), escondendo o id que poluía o log.
+const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
+function renderMentions(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = MENTION_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <span key={key++} className="not-italic font-semibold text-amber-700 dark:text-amber-400">
+        @{match[1]}
+      </span>,
+    );
+    lastIndex = MENTION_RE.lastIndex;
+  }
+  MENTION_RE.lastIndex = 0;
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
 // Detalhes extras renderizados abaixo da mensagem, conforme o tipo de evento.
 function LogDetails({ log }: { log: LogItem }) {
   const meta = log.metadata ?? {};
@@ -129,7 +151,7 @@ function LogDetails({ log }: { log: LogItem }) {
   if (log.action === 'comment_add' && meta.preview) {
     return (
       <p className="mt-2 text-xs italic text-gray-500 dark:text-zinc-400 border-l-2 border-amber-300 dark:border-amber-700 pl-2 line-clamp-2">
-        “{meta.preview}”
+        “{renderMentions(meta.preview)}”
       </p>
     );
   }
