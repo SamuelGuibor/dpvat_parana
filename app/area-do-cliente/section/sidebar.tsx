@@ -8,70 +8,74 @@ import { IoDocumentsOutline } from "react-icons/io5";
 import { PiHouseBold } from "react-icons/pi";
 import { RxAvatar } from "react-icons/rx";
 import { FaRegQuestionCircle } from "react-icons/fa";
-import { HiMenu, HiX } from "react-icons/hi"; 
+import { HiMenu, HiX } from "react-icons/hi";
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleSidebar = () => setIsOpen(!isOpen);
+  const close = () => setIsOpen(false);
 
   return (
     <>
-      {/* Mobile Menu Button */}
-      <div>
+      {/* Botão do menu no mobile */}
       <button
-        className="md:hidden fixed top-4 right-4 z-50 p-2 bg-gray-100 rounded-md"
+        className="md:hidden fixed top-4 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-md ring-1 ring-slate-200 active:scale-95"
         onClick={toggleSidebar}
+        aria-label={isOpen ? "Fechar menu" : "Abrir menu"}
       >
-        {isOpen ? <HiX size={24} /> : <HiMenu size={24} />}
+        {isOpen ? <HiX size={22} /> : <HiMenu size={22} />}
       </button>
-      </div>
+
       {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 w-64 bg-gray-100 transform ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        } md:relative md:translate-x-0 transition-transform duration-300 ease-in-out z-40 h-screen flex flex-col`}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-72 max-w-[80%] transform flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out md:relative md:w-64 md:max-w-none md:translate-x-0 ${
+          isOpen ? "translate-x-0 shadow-xl" : "-translate-x-full"
+        }`}
       >
         {/* Logo */}
-        <div className="px-8 py-6">
+        <div className="px-6 py-7">
           <Link
             href="/"
             aria-label="home"
-            className="flex items-center space-x-2"
-            onClick={() => setIsOpen(false)}
+            className="flex items-center"
+            onClick={close}
           >
-            <Image src="/paranaseguros.png" height={20} width={140} alt="DPVAT Paraná" />
+            <Image src="/paranaseguros.png" height={22} width={150} alt="DPVAT Paraná" />
           </Link>
         </div>
 
-        {/* Navigation Buttons */}
-        <div className="flex flex-col flex-1 px-2 space-y-2">
-          <SidebarButton href="/" onClick={() => setIsOpen(false)}>
-            <PiHouseBold className="w-5 h-5" /> Inicio
+        {/* Navegação */}
+        <nav className="flex flex-1 flex-col gap-1 px-3">
+          <p className="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Menu
+          </p>
+
+          <SidebarButton href="/" onClick={close}>
+            <PiHouseBold className="h-5 w-5" /> Início
           </SidebarButton>
 
-          <SidebarButton href="/area-do-cliente" onClick={() => setIsOpen(false)}>
-            <RxAvatar className="w-5 h-5" /> Area do cliente
+          <SidebarButton href="/area-do-cliente" onClick={close}>
+            <RxAvatar className="h-5 w-5" /> Área do cliente
           </SidebarButton>
 
+          <SidebarButton href="/documents" onClick={close}>
+            <IoDocumentsOutline className="h-5 w-5" /> Documentos
+          </SidebarButton>
+        </nav>
 
-          <SidebarButton href="/documents" onClick={() => setIsOpen(false)}>
-            <IoDocumentsOutline className="w-5 h-5" /> Documentos
+        {/* Rodapé */}
+        <div className="border-t border-slate-200 p-3">
+          <SidebarButton href="/faq" onClick={close}>
+            <FaRegQuestionCircle className="h-5 w-5" /> Ajuda &amp; FAQ
           </SidebarButton>
         </div>
+      </aside>
 
-        {/* Bottom Section */}
-        <div className="p-4 border-t border-gray-400 space-y-2">
-          <SidebarButton href="/faq" onClick={() => setIsOpen(false)}>
-            <FaRegQuestionCircle className="w-5 h-5" /> FAQ
-          </SidebarButton>
-        </div>
-      </div>
-
-      {/* Overlay for mobile when sidebar is open */}
+      {/* Overlay no mobile */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30"
+          className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm md:hidden"
           onClick={toggleSidebar}
         />
       )}

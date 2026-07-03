@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Check, Flag } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface Step {
@@ -93,16 +93,7 @@ const inssSteps: Step[] = [
     title: "Documentos INSS",
     description: (
       <>
-        Solicitamos junto ao INSS o seu dossiê contendo todas as suas informações do histórico previdenciário. Em caso de dúvidas, entre em contato conosco pelo{" "}
-        <a
-          href="https://wa.me/5541999999999"
-          className="text-blue-600 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          WhatsApp
-        </a>
-        .
+        Solicitamos junto ao INSS o seu dossiê contendo todas as suas informações do histórico previdenciário.
       </>
     ),
   },
@@ -129,16 +120,7 @@ const inssSteps: Step[] = [
     title: "Acompanhamento judicial",
     description: (
       <>
-        Agora você pode acompanhar o seu processo através das plataformas oficiais do governo.{" "}
-        <a
-          href="#"
-          className="text-blue-600 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Ver processo
-        </a>
-        . Nossa equipe continua acompanhando cada movimentação.
+        Agora você pode acompanhar o seu processo através das plataformas oficiais do governo. Nossa equipe continua acompanhando cada movimentação.
       </>
     ),
   },
@@ -213,70 +195,138 @@ export default function ProgressTimeline() {
     return () => clearInterval(interval);
   }, []);
 
-  if (isLoading) return <div><Loader2 className="h-4 w-4 animate-spin" /></div>;
+  if (isLoading)
+    return (
+      <div className="flex items-center justify-center py-10 text-gray-400">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
 
   const { steps: selectedSteps, order } = getStepsByService(service);
   const completedSteps = getCompletedSteps(serverStatus, order);
   const currentStepId = completedSteps.length > 0 ? Math.max(...completedSteps) + 1 : 1;
-  const isStepVisible = (stepId: number) => stepId <= currentStepId;
+
+  const realSteps = selectedSteps.filter((s) => !s.final).length;
+  const progressPct = Math.min(100, Math.round((completedSteps.length / realSteps) * 100));
 
   return (
-    <div className="relative lg:pl-10">
-      {selectedSteps.map((step, index) => {
-        const isLastStep = index === selectedSteps.length - 1;
-        const isVisible = isStepVisible(step.id);
-        const isCurrentStep = step.id === currentStepId && !completedSteps.includes(step.id);
-
-        return (
+    <div className="mx-auto max-w-3xl">
+      {/* Barra de progresso geral */}
+      <div className="mb-8">
+        <div className="mb-2 flex items-center justify-between text-sm font-medium text-gray-500">
+          <span>Progresso do processo</span>
+          <span className="text-blue-600">{progressPct}%</span>
+        </div>
+        <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-200">
           <div
-            key={step.id}
-            className={`relative min-h-[150px] sm:h-[220px] lg:h-[200px] flex flex-col ${!isVisible ? "filter " : ""}`}
-          >
-            {!isLastStep && (
-              <div className="absolute left-4 top-0 w-0.5 h-full bg-gray-200">
-                <div
-                  className={`w-full bg-blue-500 transition-all duration-500 ease-in-out ${
-                    completedSteps.includes(step.id) ? "h-full" : "h-0"
-                  }`}
-                ></div>
-              </div>
-            )}
+            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-700 ease-in-out"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      </div>
 
-            {step.final ? (
+      {/* Timeline */}
+      <div className="relative">
+        {selectedSteps.map((step, index) => {
+          const isLastStep = index === selectedSteps.length - 1;
+          const isCompleted = completedSteps.includes(step.id);
+          const isCurrentStep = step.id === currentStepId && !isCompleted;
+          const isFuture = !isCompleted && !isCurrentStep;
+
+          return (
+            <div key={step.id} className="relative flex gap-4 pb-6 last:pb-0 sm:gap-5">
+              {/* Linha conectora */}
+              {!isLastStep && (
+                <div className="absolute left-[18px] top-10 h-[calc(100%-2.5rem)] w-0.5 sm:left-[22px]">
+                  <div className="h-full w-full bg-gray-200" />
+                  <div
+                    className={`absolute inset-0 w-full origin-top bg-blue-500 transition-all duration-500 ease-in-out ${
+                      isCompleted ? "scale-y-100" : "scale-y-0"
+                    }`}
+                  />
+                </div>
+              )}
+
+              {/* Marcador */}
+              <div className="relative z-10 flex-shrink-0">
+                <div
+                  className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all duration-300 sm:h-11 sm:w-11 ${
+                    step.final
+                      ? isCompleted
+                        ? "border-green-500 bg-green-500 text-white shadow-md shadow-green-500/30"
+                        : "border-gray-300 bg-white text-gray-300"
+                      : isCompleted
+                      ? "border-blue-500 bg-blue-500 text-white shadow-md shadow-blue-500/30"
+                      : isCurrentStep
+                      ? "animate-pulse border-blue-500 bg-white text-blue-600 ring-4 ring-blue-100"
+                      : "border-gray-300 bg-white text-gray-400"
+                  }`}
+                >
+                  {step.final ? (
+                    <Flag className="h-4 w-4 sm:h-5 sm:w-5" />
+                  ) : isCompleted ? (
+                    <Check className="h-4 w-4 sm:h-5 sm:w-5" />
+                  ) : (
+                    step.id
+                  )}
+                </div>
+              </div>
+
+              {/* Card */}
               <div
-                className={`absolute left-0 top-0 px-4 py-2 rounded-full text-white font-semibold transition-all duration-300 ease-in-out ${
-                  completedSteps.includes(selectedSteps[selectedSteps.length - 1].id)
-                    ? "bg-green-500"
-                    : "bg-gray-300"
+                className={`min-w-0 flex-1 rounded-xl border p-4 transition-all duration-300 sm:p-5 ${
+                  step.final
+                    ? isCompleted
+                      ? "border-green-200 bg-green-50"
+                      : "border-gray-200 bg-white"
+                    : isCurrentStep
+                    ? "border-blue-200 bg-white shadow-md shadow-blue-500/5 ring-1 ring-blue-100"
+                    : isFuture
+                    ? "border-gray-200 bg-white opacity-60"
+                    : "border-gray-200 bg-white"
                 }`}
               >
-                {step.final}
+                {step.final ? (
+                  <div className="flex items-center gap-2">
+                    <h2
+                      className={`text-base font-semibold sm:text-lg ${
+                        isCompleted ? "text-green-700" : "text-gray-400"
+                      }`}
+                    >
+                      {step.final}
+                    </h2>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <div className="flex items-center gap-2">
+                      {step.title && (
+                        <h2 className="text-base font-semibold text-gray-800 sm:text-lg">
+                          {step.title}
+                        </h2>
+                      )}
+                      {isCurrentStep && (
+                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          Em andamento
+                        </span>
+                      )}
+                      {isCompleted && (
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                          Concluído
+                        </span>
+                      )}
+                    </div>
+                    {step.description && (
+                      <p className="text-sm leading-relaxed text-gray-600 sm:text-[15px]">
+                        {step.description}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div
-                className={`absolute left-2 top-0 w-5 h-5 rounded-full border-2 transition-all duration-300 ease-in-out ${
-                  completedSteps.includes(step.id)
-                    ? "bg-blue-500 border-blue-500"
-                    : isCurrentStep
-                    ? "bg-white border-red-500 animate-pulse"
-                    : "bg-white border-blue-500"
-                }`}
-              ></div>
-            )}
-
-            <div className="ml-12 p-4 sm:p-6 bg-gray-100 rounded-lg space-y-3 sm:space-y-4">
-              {step.title && (
-                <h2 className="text-lg font-semibold">{step.title}</h2>
-              )}
-              {step.description && (
-                <p className="text-gray-600 text-sm sm:text-base leading-relaxed">
-                  {step.description}
-                </p>
-              )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

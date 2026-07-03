@@ -1,40 +1,25 @@
 "use client"
-// import { Button } from "../_components/ui/button";
-import { useRouter } from "next/navigation";
-import { Button } from "../_components/ui/button";
 import Sidebar from "../area-do-cliente/section/sidebar";
+import BackButton from "../_components/back-button";
 import ProgressIndicator from "./status-progress";
-import { FaChevronLeft } from "react-icons/fa";
-
+import Image from "next/image";
 const StatusPage = () => {
-  const router = useRouter();
-
-  const handleBack = () => {
-    router.back(); // Navigates to the previous page
-  };
   return (
-    <div className="flex flex-row h-screen">
+    <div className="flex h-screen flex-row bg-slate-50">
+      <Image src="/paranaseguros.png" alt="Logo" width={150} height={40} className="absolute left-4 top-4" />
       <Sidebar />
-      <div className="m-8 mt-20 w-full overflow-auto rounded-lg bg-gray-100 p-8 md:mt-8 relative">
-        {/* <div className="lg:absolute lg:left-1/2 transform lg:-translate-x-1/2 flex flex-col md:flex-row gap-2">
-          <Button className="bg-blue-950 hover:bg-blue-900">Visualizar INSS</Button>
-          <Button className="bg-blue-950 hover:bg-blue-900">Visualizar Seguro de Vida</Button>
-          <Button className="bg-blue-950 hover:bg-blue-900">Visualizar RCF</Button>
-          1 a 5 
-        </div> */}
-        <Button
-          onClick={handleBack}
-          className="flex items-center gap-2 bg-gray-100 text-black hover:bg-gray-200 rounded-md px-4 py-2"
-        >
-          <FaChevronLeft className="w-4 h-4" />
-          Voltar para a Pagina anterior
-        </Button>        
-        <h2 className="text-2xl font-semibold pt-4 lg:pt-0">Status</h2>
-        <p className="text-sm font-semibold text-slate-500">
-          Verifique o status do seu processo.
-        </p>
+      
+      <div className="m-4 mt-20 w-full overflow-auto rounded-2xl bg-white p-5 shadow-sm md:m-6 md:mt-6 md:p-8">
+        <BackButton label="Voltar" />
 
-        <div className="mx-auto pt-10">
+        <div className="mt-3">
+          <h2 className="text-xl font-semibold text-slate-900 sm:text-2xl">Status</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Acompanhe o andamento do seu processo.
+          </p>
+        </div>
+
+        <div className="pt-8">
           <ProgressIndicator />
         </div>
       </div>

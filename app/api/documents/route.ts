@@ -74,7 +74,17 @@ export async function GET(request: Request) {
 
     const documents = await db.document.findMany({
       where,
-      select: { id: true, key: true, name: true },
+      select: {
+        id: true,
+        key: true,
+        name: true,
+        processId: true,
+        // Info do processo para permitir agrupar os documentos por processo
+        // na área do cliente (documentos vindos de processos separados).
+        process: {
+          select: { id: true, service: true, type: true, cardNumber: true },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
 
