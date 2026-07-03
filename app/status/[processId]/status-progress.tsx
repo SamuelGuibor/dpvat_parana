@@ -233,7 +233,7 @@ export default function ProgressTimeline() {
         return (
           <div
             key={step.id}
-            className={`relative min-h-[150px] sm:h-[220px] lg:h-[200px] flex flex-col ${!isVisible ? "filter blur-sm" : ""}`}
+            className={`relative min-h-[150px] sm:h-[220px] lg:h-[200px] flex flex-col `}
           >
             {!isLastStep && (
               <div className="absolute left-4 top-0 w-0.5 h-full bg-gray-200">

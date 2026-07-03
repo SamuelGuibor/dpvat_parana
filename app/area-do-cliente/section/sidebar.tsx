@@ -19,9 +19,6 @@ const Sidebar = () => {
     <>
       {/* Mobile Menu Button */}
       <div>
-      <span className="md:hidden fixed top-5 left-1/2 transform -translate-x-1/2 p-2 rounded-md text-[20px]">
-        Paraná Seguros
-      </span>
       <button
         className="md:hidden fixed top-4 right-4 z-50 p-2 bg-gray-100 rounded-md"
         onClick={toggleSidebar}

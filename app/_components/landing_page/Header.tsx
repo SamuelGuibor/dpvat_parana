@@ -1,38 +1,45 @@
 "use client";
 
-import { Phone, LogOutIcon } from "lucide-react";
+import { Phone, LogOutIcon, X } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Button } from "@/app/_components/ui/button";
+import { usePathname } from "next/navigation";
 import { Avatar, AvatarImage } from "@/app/_components/ui/avatar";
 import { AiOutlineCar } from "react-icons/ai";
 import { RxAvatar } from "react-icons/rx";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { MdInsertChartOutlined } from "react-icons/md";
 import { useSession, signOut } from "next-auth/react";
+import { cn } from "@/app/_utils/utils";
 
 export function Header() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const { data: session } = useSession();
+  const pathname = usePathname();
   const toggleSheet = () => {
     setSheetOpen((prev) => !prev);
   };
-const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "ADMIN+" || session?.user?.role === "ADMIN++";
+  const isAdmin =
+    session?.user?.role === "ADMIN" ||
+    session?.user?.role === "ADMIN+" ||
+    session?.user?.role === "ADMIN++";
 
-const menuOptions = isAdmin
-  ? [
-      { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
-      { href: "/nova-dash", label: "Dashboard", icon: <MdInsertChartOutlined style={{ width: 22, height: 22 }} /> },
-      { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
-      { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
-    ]
-  : [
-      { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
-      { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
-      { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
-    ];
+  const userName = session?.user?.name?.trim() || "Usuário";
+
+  const menuOptions = isAdmin
+    ? [
+        { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
+        { href: "/nova-dash", label: "Dashboard", icon: <MdInsertChartOutlined style={{ width: 22, height: 22 }} /> },
+        { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
+        { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
+      ]
+    : [
+        { href: "/area-do-cliente", label: "Aréa dos Clientes", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
+        { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
+        { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
+      ];
 
   return (
     <>
@@ -67,19 +74,20 @@ const menuOptions = isAdmin
                 <span className="hidden sm:inline">Ligue Agora</span>
               </a>
 
-              {!session?.user ? (
-                <div>
-
-                </div>
-              ) : (
-                <>
-                  <Avatar onClick={toggleSheet} className="cursor-pointer">
-                    <AvatarImage
-                      src={"/homem.png"}
-                      alt="Avatar"
-                    />
+              {session?.user && (
+                <button
+                  type="button"
+                  onClick={toggleSheet}
+                  className="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-gray-100 transition-colors"
+                  aria-label="Abrir menu do usuário"
+                >
+                  <Avatar className="cursor-pointer ring-2 ring-blue-100">
+                    <AvatarImage src={"/homem.png"} alt="Avatar" />
                   </Avatar>
-                </>
+                  <span className="hidden sm:block text-sm font-semibold text-gray-700 max-w-[120px] truncate">
+                    {userName.split(" ")[0]}
+                  </span>
+                </button>
               )}
             </div>
 
@@ -97,38 +105,77 @@ const menuOptions = isAdmin
       <motion.aside
         initial={{ x: "100%" }}
         animate={{ x: sheetOpen ? "0%" : "100%" }}
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="fixed right-0 top-0 h-screen w-80 bg-white z-50 shadow-xl flex flex-col justify-between"
+        transition={{ type: "tween", duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+        style={{ willChange: "transform" }}
+        className="fixed right-0 top-0 h-screen w-[320px] bg-white z-50 shadow-xl flex flex-col"
       >
-        <div className="p-6">
-          <h2 className="text-lg font-bold mb-4">Menu</h2>
+        {/* Cabeçalho com o usuário logado */}
+        <div className="relative bg-gradient-to-br from-blue-600 to-blue-700 px-6 pt-8 pb-6 text-white">
+          <button
+            type="button"
+            onClick={() => setSheetOpen(false)}
+            className="absolute right-4 top-4 rounded-full p-1.5 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
+            aria-label="Fechar menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
 
-          <div className="flex flex-col gap-2">
-            {menuOptions.map((item) => (
-              <Button
-                key={item.href}
-                variant="ghost"
-                className="justify-start gap-3"
-                onClick={() => setSheetOpen(false)}
-              >
-                <Link href={item.href} className="flex items-center gap-3">
-                  {item.icon}
-                  {item.label}
-                </Link>
-              </Button>
-            ))}
+          <div className="flex items-center gap-3">
+            <Avatar className="h-14 w-14 ring-2 ring-white/40">
+              <AvatarImage src={"/homem.png"} alt="Avatar" />
+            </Avatar>
+            <div className="min-w-0">
+              <p className="text-xs text-blue-100">Olá,</p>
+              <p className="font-bold text-lg leading-tight truncate">{userName}</p>
+              <span className="mt-1 inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                {isAdmin ? "Administrador" : "Cliente"}
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="p-4 border-t">
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-2"
+        {/* Menu */}
+        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+          {menuOptions.map((item, i) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={i}
+                href={item.href}
+                onClick={() => setSheetOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg shrink-0 transition-colors",
+                    active ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500",
+                  )}
+                >
+                  {item.icon}
+                </span>
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Sair */}
+        <div className="border-t p-4">
+          <button
+            type="button"
             onClick={() => signOut()}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
           >
-            <LogOutIcon size={18} />
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600 shrink-0">
+              <LogOutIcon size={18} />
+            </span>
             Sair da Conta
-          </Button>
+          </button>
         </div>
       </motion.aside>
     </>
