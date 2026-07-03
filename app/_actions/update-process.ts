@@ -23,6 +23,8 @@ interface UpdateProcessData {
   rg?: string;
   nome_mae?: string;
   telefone?: string;
+  telefone_secundario?: string;
+  rede_social?: string;
   cidade?: string;
   estado?: string;
   estado_civil?: string;
@@ -81,6 +83,8 @@ export async function updateProcess(data: UpdateProcessData) {
         rg: data.rg,
         nome_mae: data.nome_mae,
         telefone: data.telefone,
+        telefone_secundario: data.telefone_secundario,
+        rede_social: data.rede_social,
         cidade: data.cidade,
         estado: data.estado,
         estado_civil: data.estado_civil,
@@ -145,6 +149,8 @@ export async function updateProcess(data: UpdateProcessData) {
       rg: updatedProcess.rg || "",
       nome_mae: updatedProcess.nome_mae || "",
       telefone: updatedProcess.telefone || "",
+      telefone_secundario: updatedProcess.telefone_secundario || "",
+      rede_social: updatedProcess.rede_social || "",
       cidade: updatedProcess.cidade || "",
       estado: updatedProcess.estado || "",
       estado_civil: updatedProcess.estado_civil || "",

@@ -23,6 +23,8 @@ interface UpdateUserData {
   rg?: string;
   nome_mae?: string;
   telefone?: string;
+  telefone_secundario?: string;
+  rede_social?: string;
   cidade?: string;
   estado?: string;
   estado_civil?: string;
@@ -81,6 +83,8 @@ export async function updateUser(data: UpdateUserData) {
         rg: data.rg,
         nome_mae: data.nome_mae,
         telefone: data.telefone,
+        telefone_secundario: data.telefone_secundario,
+        rede_social: data.rede_social,
         cidade: data.cidade,
         estado: data.estado,
         estado_civil: data.estado_civil,
@@ -139,6 +143,8 @@ export async function updateUser(data: UpdateUserData) {
       rg: updatedUser.rg || "",
       nome_mae: updatedUser.nome_mae || "",
       telefone: updatedUser.telefone || "",
+      telefone_secundario: updatedUser.telefone_secundario || "",
+      rede_social: updatedUser.rede_social || "",
       cidade: updatedUser.cidade || "",
       estado: updatedUser.estado || "",
       estado_civil: updatedUser.estado_civil || "",

@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/app/_components/ui/dialog';
@@ -43,7 +43,7 @@ interface CardDialogProps {
 
 const EDITABLE_FIELDS = [
   'title', 'cpf', 'data_nasc', 'email', 'rua', 'bairro', 'numero', 'cep',
-  'rg', 'nome_mae', 'telefone', 'cidade', 'estado', 'estado_civil',
+  'rg', 'nome_mae', 'telefone', 'telefone_secundario', 'rede_social', 'cidade', 'estado', 'estado_civil',
   'profissao', 'nacionalidade', 'data_acidente', 'atendimento_via',
   'hospital', 'outro_hospital', 'lesoes', 'status', 'role', 'obs', 'otherObs', 'service',
   'labelId', 'senha_inss', 'afastadoAte',
@@ -56,6 +56,30 @@ export const CardDialog: React.FC<CardDialogProps> = ({
   const [editedCard, setEditedCard] = useState<ExtendedKanbanCard>(card);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [labels, setLabels] = useState<any[]>([]);
+
+  // ===== Rascunho automático (recupera preenchimento em caso de fechamento
+  // acidental ou travamento). O rascunho fica só no navegador (localStorage). =====
+  const [pendingDraft, setPendingDraft] = useState<ExtendedKanbanCard | null>(null);
+  const serverLoadedRef = useRef(false);
+  const baselineRef = useRef<string>('');
+  const draftKey = `dpvat-card-draft:${isProcess ? 'p' : 'u'}:${cardId}`;
+
+  function safeStringify(c: ExtendedKanbanCard): string {
+    try { return JSON.stringify(c); } catch { return ''; }
+  }
+
+  // Ao (re)abrir o card, reseta o "carregado" e verifica se há rascunho salvo
+  // para oferecer recuperação.
+  useEffect(() => {
+    if (!open) return;
+    serverLoadedRef.current = false;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      setPendingDraft(raw ? (JSON.parse(raw) as ExtendedKanbanCard) : null);
+    } catch {
+      setPendingDraft(null);
+    }
+  }, [open, draftKey]);
 
   useEffect(() => {
   async function loadLabels() {
@@ -92,6 +116,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
   // Carrega dados completos ao abrir
   useEffect(() => {
     if (!open || !cardId) return;
+    let cancelled = false;
     (async () => {
       try {
         const fetchFn = isProcess ? getProcess : getUsers;
@@ -99,13 +124,66 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         if (!data || Array.isArray(data)) {
           throw new Error(isProcess ? 'Processo não encontrado.' : 'Usuário não encontrado.');
         }
-        setEditedCard((prev) => ({ ...prev, ...data, attachments: prev.attachments }));
+        if (cancelled) return;
+        setEditedCard((prev) => {
+          const merged = { ...prev, ...data, attachments: prev.attachments } as ExtendedKanbanCard;
+          // Guarda o "estado salvo" para comparar e só manter rascunho quando houver mudança real.
+          baselineRef.current = safeStringify(merged);
+          serverLoadedRef.current = true;
+          return merged;
+        });
       } catch (err: any) {
         console.error(err);
         toast.error(err.message);
       }
     })();
+    return () => { cancelled = true; };
   }, [open, cardId, isProcess]);
+
+  // Grava o rascunho local (debounce) enquanto o usuário edita. Só grava quando
+  // difere do que veio do servidor e enquanto não há recuperação pendente.
+  useEffect(() => {
+    if (!open || !serverLoadedRef.current || pendingDraft) return;
+    const t = setTimeout(() => {
+      const current = safeStringify(editedCard);
+      try {
+        if (!current || current === baselineRef.current) localStorage.removeItem(draftKey);
+        else localStorage.setItem(draftKey, current);
+      } catch { /* localStorage indisponível */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [editedCard, open, pendingDraft, draftKey]);
+
+  // Persiste imediatamente o rascunho ao fechar sem salvar (fechamento acidental).
+  function flushDraft() {
+    if (!serverLoadedRef.current) return;
+    const current = safeStringify(editedCard);
+    try {
+      if (current && current !== baselineRef.current) localStorage.setItem(draftKey, current);
+    } catch { /* ignore */ }
+  }
+
+  // Fechamento acidental (Esc / clique fora / botão X): mantém o rascunho.
+  function handleDismiss() {
+    flushDraft();
+    onClose();
+  }
+
+  // Cancelar explícito: descarta o rascunho local (não recupera depois).
+  function handleCancel() {
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    onClose();
+  }
+
+  function restoreDraft() {
+    if (pendingDraft) setEditedCard(pendingDraft);
+    setPendingDraft(null);
+  }
+
+  function discardDraft() {
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    setPendingDraft(null);
+  }
 
   function updateField(field: string, value: string) {
     setEditedCard((p) => ({ ...p, [field]: value }));
@@ -149,6 +227,9 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         label: newLabel,
         status: newLabel?.name ?? editedCard.status,
       });
+      // Salvo com sucesso: atualiza a base e descarta o rascunho local.
+      baselineRef.current = safeStringify(editedCard);
+      try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
       toast.success('Dados salvos com sucesso!');
     } catch (err: any) {
       console.error(err);
@@ -170,7 +251,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleDismiss(); }}>
       <DialogContent className="max-w-7xl h-[90%] overflow-y-auto flex flex-col" autoFocus={false}>
         <DialogHeader>
           <DialogTitle>{editedCard.title}</DialogTitle>
@@ -179,6 +260,18 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           </a>
           <DialogDescription>Edição detalhada do processo</DialogDescription>
         </DialogHeader>
+
+        {pendingDraft && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 px-4 py-2.5">
+            <span className="text-sm text-amber-800 dark:text-amber-300">
+              Há alterações não salvas deste card (de um fechamento anterior). Deseja recuperar?
+            </span>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" variant="ghost" onClick={discardDraft}>Descartar</Button>
+              <Button size="sm" onClick={restoreDraft}>Recuperar</Button>
+            </div>
+          </div>
+        )}
 
         <Tabs defaultValue="details" className="flex-1 overflow-y-auto flex flex-col">
           <TabsList className="grid w-full grid-cols-7">
@@ -220,7 +313,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
             Excluir
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button variant="outline" onClick={handleCancel}>Cancelar</Button>
             <Button onClick={handleSave}>Salvar Alterações</Button>
           </div>
         </div>

@@ -21,6 +21,8 @@ interface ProcessGet {
   rg?: string;
   nome_mae?: string;
   telefone?: string;
+  telefone_secundario?: string;
+  rede_social?: string;
   cidade?: string;
   estado?: string;
   estado_civil?: string;
@@ -73,6 +75,8 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
       rg: process.rg || "",
       nome_mae: process.nome_mae || "",
       telefone: process.telefone || "",
+      telefone_secundario: process.telefone_secundario || "",
+      rede_social: process.rede_social || "",
       cidade: process.cidade || "",
       estado: process.estado || "",
       estado_civil: process.estado_civil || "",

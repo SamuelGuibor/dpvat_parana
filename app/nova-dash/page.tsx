@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { NotificationDropdown } from './box';
 import { UserMenu } from './UserMenu';
 import { TeamPresence } from './TeamPresence';
+import { DarkModeToggle, useDarkMode } from '@/app/_components/DarkModeToggle';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ type Theme = 'light' | 'dark';
 export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [open, setOpen] = useState(false);
+  const { isDark: darkReaderOn } = useDarkMode();
   const [theme, setTheme] = useState<Theme>('light');
   const [mounted, setMounted] = useState(false);
   const { data: session, status } = useSession();
@@ -106,34 +108,16 @@ export default function Page() {
           <div className="flex items-center justify-between">
             <Link href='/' className="flex items-center">
               <Image
-                src="/paranaseguros.png"
+                src={darkReaderOn ? '/logo_text_white.png' : '/paranaseguros.png'}
                 width={200}
                 height={200}
                 alt="Logo"
-                className={isDark ? 'invert brightness-90 contrast-125' : ''}
               />
             </Link>
             <div className="flex items-center gap-3">
 
-              {/* Toggle de tema */}
-              {/* <button
-                onClick={toggleTheme}
-                aria-label={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
-                title={isDark ? 'Modo claro' : 'Modo escuro'}
-                className={`relative h-9 w-16 rounded-full border transition-colors ${
-                  isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-gray-100 border-gray-300'
-                }`}
-              >
-                <span
-                  className={`absolute top-1 flex h-7 w-7 items-center justify-center rounded-full shadow transition-all duration-300 ${
-                    isDark
-                      ? 'left-8 bg-indigo-500 text-white'
-                      : 'left-1 bg-white text-amber-500'
-                  }`}
-                >
-                  {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-                </span>
-              </button> */}
+              {/* Modo escuro via Dark Reader (darkreader.org) */}
+              <DarkModeToggle />
 
               <TeamPresence isDark={isDark} onOpenTeam={() => setOpen(true)} />
 

@@ -12,6 +12,8 @@ export interface ExtendedKanbanCard extends KanbanCard {
   rg?: string;
   nome_mae?: string;
   telefone?: string;
+  telefone_secundario?: string;
+  rede_social?: string;
   cidade?: string;
   estado?: string;
   estado_civil?: string;

@@ -19,9 +19,9 @@ interface KanbanItem {
 const STAGES = [
     'iniciado',
     'Em Conversa',
-    'Em Honorário',
+    // 'Em Honorário',
     'Enviou Documentos',
-    'Aguardando',
+    // 'Aguardando',
     'Não Contratado',
     'Não Qualificado',
     'Contratado'
@@ -30,9 +30,9 @@ const STAGES = [
 const STAGE_KEYS = [
     'iniciado',
     'em_conversa',
-    'em_honorario',
+    // 'em_honorario',
     'enviou_documentos',
-    'aguardando',
+    // 'aguardando',
     'nao_contratado',
     'nao_qualificado',
     'contratado'

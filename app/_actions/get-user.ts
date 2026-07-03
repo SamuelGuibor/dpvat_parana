@@ -22,6 +22,8 @@ interface UserData {
   rg?: string;
   nome_mae?: string;
   telefone?: string;
+  telefone_secundario?: string;
+  rede_social?: string;
   cidade?: string;
   estado?: string;
   estado_civil?: string;
@@ -72,6 +74,8 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
       rg: user.rg || "",
       nome_mae: user.nome_mae || "",
       telefone: user.telefone || "",
+      telefone_secundario: user.telefone_secundario || "",
+      rede_social: user.rede_social || "",
       cidade: user.cidade || "",
       estado: user.estado || "",
       estado_civil: user.estado_civil || "",

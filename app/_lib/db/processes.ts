@@ -39,6 +39,8 @@ const processFullSelect = {
   rg: true,
   nome_mae: true,
   telefone: true,
+  telefone_secundario: true,
+  rede_social: true,
   cidade: true,
   estado: true,
   estado_civil: true,

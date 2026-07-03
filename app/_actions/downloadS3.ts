@@ -19,7 +19,11 @@ interface DownloadFileResponse {
   error?: string;
 }
 
-export async function downloadFileFromS3(key: string, fileName: string): Promise<DownloadFileResponse> {
+export async function downloadFileFromS3(
+  key: string,
+  fileName: string,
+  inline = false,
+): Promise<DownloadFileResponse> {
   try {
     if (!key) {
       throw new Error('Chave do arquivo não fornecida');
@@ -30,7 +34,8 @@ export async function downloadFileFromS3(key: string, fileName: string): Promise
     const command = new GetObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET_NAME,
       Key: key,
-      ResponseContentDisposition: `attachment; filename="${fileName}"`,
+      // inline: abre no navegador (pré-visualização); attachment: força o download.
+      ResponseContentDisposition: `${inline ? 'inline' : 'attachment'}; filename="${fileName}"`,
     });
 
     // Gerar URL pré-assinada com validade de 1 hora (3600 segundos)

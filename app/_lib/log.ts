@@ -89,6 +89,8 @@ export const CARD_FIELD_LABELS: Record<string, string> = {
   rg: "RG",
   nome_mae: "Nome da mãe",
   telefone: "Telefone",
+  telefone_secundario: "Telefone secundário",
+  rede_social: "Rede social",
   cidade: "Cidade",
   estado: "Estado",
   estado_civil: "Estado civil",

@@ -3,13 +3,13 @@
 /* eslint-disable no-unused-vars */
 export const dynamic = "force-dynamic";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
-  User, GripVertical, Zap, CheckSquare,
+  User, GripVertical, Zap, CheckSquare, Minimize2, Maximize2,
 } from 'lucide-react';
 import { AutomationsPanel } from './AutomationsPanel';
 import { getStatusOrderByService } from './card-dialog/constants';
@@ -45,6 +45,20 @@ const fetcher = (url: string) => fetch(url).then(res => res.json())
 
 // Intervalo de sincronização do board (tempo real "near real-time" via polling).
 const KANBAN_POLL_MS = 7000;
+
+// Persistência local de quais colunas estão minimizadas (por usuário/navegador),
+// para que a seleção continue ao reabrir o site.
+const COLLAPSED_STORAGE_KEY = 'dpvat-kanban-collapsed';
+
+// Converte cor hex (#rgb ou #rrggbb) em rgba com alpha — usado para tingir o
+// fundo das colunas com a cor da etiqueta (estilo Trello).
+function hexToRgba(hex: string, alpha: number): string {
+  let h = (hex || '').replace('#', '').trim();
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return `rgba(59, 130, 246, ${alpha})`;
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 
 export function useComments({ userId, processId }: { userId?: string; processId?: string }) {
   const params = new URLSearchParams();
@@ -683,6 +697,23 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   const [confirmDeleteLabel, setConfirmDeleteLabel] = useState(false);
   const [deletingLabel, setDeletingLabel] = useState(false);
 
+  // Auto-scroll da lista de cards ao arrastar perto da borda superior/inferior
+  // — evita ter que soltar o card, rolar a página na mão e pegar de novo.
+  const cardListRef = useRef<HTMLDivElement>(null);
+  const handleDragOverAutoScroll = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    const el = cardListRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const edge = 56;
+    const distTop = e.clientY - rect.top;
+    const distBottom = rect.bottom - e.clientY;
+    if (distTop < edge) {
+      el.scrollTop -= Math.ceil((edge - distTop) / 4);
+    } else if (distBottom < edge) {
+      el.scrollTop += Math.ceil((edge - distBottom) / 4);
+    }
+  }, []);
+
   const [{ isOver }, drop] = useDrop(() => ({
     accept: 'CARD',
     drop: (item: { cardId: string; sourceColumnId: string }) => {
@@ -729,10 +760,14 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   if (isCollapsed) {
     return (
       <div ref={ref} className={cn(
-        "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-[calc(100vh-200px)]",
+        "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-full shadow-sm",
         isDraggingColumn && "opacity-40",
-        isOver ? "bg-blue-50 border-blue-200" : "bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 shadow-sm"
-      )}>
+        isOver && "ring-2 ring-blue-200"
+      )}
+      style={isOver
+        ? { backgroundColor: 'rgb(239 246 255)', borderColor: 'rgb(147 197 253)' }
+        : { backgroundColor: hexToRgba(columnColor, 0.12), borderColor: hexToRgba(columnColor, 0.30) }}
+      >
         <div className="flex flex-col items-center h-full">
           <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors mb-1">
             <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
@@ -790,11 +825,15 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   return (
     <>
       <div ref={ref} className={cn(
-        "flex-shrink-0 w-[450px] rounded-2xl flex flex-col h-[calc(100vh-200px)] transition-all duration-300 border shadow-sm",
+        "flex-shrink-0 w-[450px] rounded-2xl flex flex-col h-full transition-all duration-300 border shadow-sm",
         isDraggingColumn && "opacity-40",
-        isOver ? "bg-blue-50 border-blue-400 ring-2 ring-blue-100" : "bg-gray-50 dark:bg-zinc-950/50 border-gray-200 dark:border-zinc-800"
-      )}>
-        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
+        isOver && "border-blue-400 ring-2 ring-blue-100"
+      )}
+      style={isOver
+        ? { backgroundColor: 'rgb(239 246 255)' }
+        : { backgroundColor: hexToRgba(columnColor, 0.10), borderColor: hexToRgba(columnColor, 0.28) }}
+      >
+        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white/70 dark:bg-zinc-900/70 backdrop-blur-sm shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
           <div className="flex items-center gap-2 overflow-hidden">
             <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors shrink-0">
               <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
@@ -846,7 +885,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 p-4">
+        <div ref={cardListRef} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-2 p-4">
           {column.cards.map((card) => (
             <DraggableCard
               key={card.id}
@@ -916,7 +955,7 @@ const ColumnDropZone: React.FC<{ onDropEnd: () => void; children: React.ReactNod
     drop: () => { onDropEnd(); },
   }), [onDropEnd]);
   drop(ref);
-  return <div ref={ref}>{children}</div>;
+  return <div ref={ref} className="h-full">{children}</div>;
 };
 
 // =============================================
@@ -931,7 +970,10 @@ export const KanbanBoard: React.FC = () => {
   const [serviceFilter, setServiceFilter] = useState('Todos');
   const [isLoading, setIsLoading] = useState(true);
   const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
-  const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>({});
+  const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY) || '{}'); } catch { return {}; }
+  });
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [labels, setLabels] = useState<Label[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -941,6 +983,56 @@ export const KanbanBoard: React.FC = () => {
   }>({ users: {}, processes: {} });
   const [searchOpen, setSearchOpen] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
+
+  // Mede o espaço já ocupado acima das colunas (cabeçalho fixo da página +
+  // barra de busca/filtros do board) para que as colunas preencham exatamente
+  // o restante da tela — sem isso a página precisa rolar inteira pra ver o
+  // fim de uma coluna, e o título dela some atrás do cabeçalho fixo.
+  const boardTopRef = useRef<HTMLDivElement>(null);
+  const [columnsHeight, setColumnsHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    function measure() {
+      if (!boardTopRef.current) return;
+      const bottom = boardTopRef.current.getBoundingClientRect().bottom;
+      setColumnsHeight(Math.max(320, window.innerHeight - bottom - 24));
+    }
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = new ResizeObserver(measure);
+    if (boardTopRef.current) ro.observe(boardTopRef.current);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro.disconnect();
+    };
+  }, []);
+
+  // Navegação horizontal do board: setas nas bordas levam pra próxima/anterior
+  // coluna e a barra de rolagem nativa continua disponível. A rolagem do mouse
+  // fica livre pra rolar os cards de cada coluna (overflow-y-auto) — antes ela
+  // era sequestrada pra mover o board na horizontal e brigava com isso.
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollButtons = useCallback(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => { updateScrollButtons(); }, [columns, updateScrollButtons]);
+
+  useEffect(() => {
+    function onResize() { updateScrollButtons(); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [updateScrollButtons]);
+
+  const scrollBoardBy = (dir: 1 | -1) => {
+    boardScrollRef.current?.scrollBy({ left: dir * 480, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -1303,6 +1395,26 @@ export const KanbanBoard: React.FC = () => {
     setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
   };
 
+  // Persiste a seleção de colunas minimizadas para continuar ao reabrir o site.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
+  }, [collapsedColumns]);
+
+  const allColumnsCollapsed = columns.length > 0 && columns.every((c) => collapsedColumns[c.id]);
+
+  // Botão "minimizar/expandir todas": recolhe todas as colunas de uma vez
+  // (economiza espaço) ou expande todas novamente.
+  const toggleAllColumns = () => {
+    if (allColumnsCollapsed) {
+      setCollapsedColumns({});
+    } else {
+      const next: { [key: string]: boolean } = {};
+      columns.forEach((c) => { next[c.id] = true; });
+      setCollapsedColumns(next);
+    }
+  };
+
   const handleColumnReorder = useCallback((dragIndex: number, hoverIndex: number) => {
     setLabels((prev) => {
       const updated = [...prev];
@@ -1328,8 +1440,8 @@ export const KanbanBoard: React.FC = () => {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="p-6 bg-[#f8fafc] min-h-screen">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-8 bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
+      <div className="px-6 bg-[#f8fafc] min-h-screen">
+        <div ref={boardTopRef} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-3 bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
           <div className="flex flex-col md:flex-row flex-1 gap-4">
             <div ref={searchBoxRef} className="relative flex items-center flex-1">
               <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4 z-10" />
@@ -1418,6 +1530,14 @@ export const KanbanBoard: React.FC = () => {
           <div className="flex items-center gap-3 shrink-0">
             <div className="h-10 w-[1px] bg-gray-100 dark:bg-zinc-800 mx-2 hidden lg:block" />
             <button
+              onClick={toggleAllColumns}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-zinc-300 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors"
+              title={allColumnsCollapsed ? 'Expandir todas as colunas' : 'Minimizar todas as colunas'}
+            >
+              {allColumnsCollapsed ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+              <span className="hidden sm:inline">{allColumnsCollapsed ? 'Expandir todas' : 'Minimizar todas'}</span>
+            </button>
+            <button
               onClick={() => setAutomationsPanelOpen(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition-colors"
               title="Automações"
@@ -1442,9 +1562,35 @@ export const KanbanBoard: React.FC = () => {
             <p className="font-black text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-widest animate-pulse">Sincronizando Workflow...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto w-full">
+          <div className="relative">
+            {canScrollLeft && (
+              <button
+                type="button"
+                onClick={() => scrollBoardBy(-1)}
+                aria-label="Rolar colunas para a esquerda"
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 border border-gray-200 dark:border-zinc-700 shadow-md flex items-center justify-center text-gray-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+            {canScrollRight && (
+              <button
+                type="button"
+                onClick={() => scrollBoardBy(1)}
+                aria-label="Rolar colunas para a direita"
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 border border-gray-200 dark:border-zinc-700 shadow-md flex items-center justify-center text-gray-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
+            <div
+              ref={boardScrollRef}
+              onScroll={updateScrollButtons}
+              className="overflow-x-auto overflow-y-hidden w-full"
+              style={{ height: columnsHeight ? `${columnsHeight}px` : undefined }}
+            >
             <ColumnDropZone onDropEnd={persistColumnOrder}>
-              <div className="flex gap-6 pb-6 min-w-max">
+              <div className="flex gap-6 pb-6 min-w-max h-full">
                 {columns.map((column, idx) => (
                   <DroppableColumn
                     key={column.id}
@@ -1463,6 +1609,7 @@ export const KanbanBoard: React.FC = () => {
                 ))}
               </div>
             </ColumnDropZone>
+            </div>
           </div>
         )}
 

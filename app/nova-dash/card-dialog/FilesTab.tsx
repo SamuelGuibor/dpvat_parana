@@ -5,7 +5,10 @@ import { Button } from '@/app/_components/ui/button';
 import { Input } from '@/app/_components/ui/input';
 import { Label } from '@/app/_components/ui/label';
 import { Separator } from '@/app/_components/ui/separator';
-import { Download, Loader2, Trash, FileArchive } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/app/_components/ui/dialog';
+import { Download, Loader2, Trash, FileArchive, Eye, FileText } from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
 import { toast } from 'sonner';
 import { getPresignedUrls } from '@/app/_actions/uploadS3';
@@ -26,6 +29,17 @@ interface Doc { id: string; key: string; name: string; }
 function getExt(key: string) {
   const dot = key.lastIndexOf('.');
   return dot !== -1 ? key.slice(dot) : '';
+}
+
+const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
+
+// Só imagens e PDF podem ser exibidos direto no navegador; os demais tipos
+// (docx, xlsx, zip...) não têm pré-visualização nativa.
+function previewKind(key: string): 'image' | 'pdf' | null {
+  const ext = getExt(key).toLowerCase();
+  if (IMAGE_EXTS.includes(ext)) return 'image';
+  if (ext === '.pdf') return 'pdf';
+  return null;
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -50,6 +64,11 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
 
   const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
+
+  // Pré-visualização de anexos (evita baixar cada arquivo só para conferir).
+  const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => { loadDocs(); }, [cardId, isProcess]);
 
@@ -146,6 +165,22 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       toast.error('Erro ao baixar: ' + err.message);
     } finally {
       setDownloading(null);
+    }
+  }
+
+  async function openPreview(doc: Doc) {
+    setPreviewDoc(doc);
+    setPreviewUrl(null);
+    setPreviewLoading(true);
+    try {
+      const res = await downloadFileFromS3(doc.key, doc.name, true);
+      if (!res.success || !res.presignedUrl) throw new Error(res.error);
+      setPreviewUrl(res.presignedUrl);
+    } catch (err: any) {
+      toast.error('Erro ao pré-visualizar: ' + err.message);
+      setPreviewDoc(null);
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -308,7 +343,15 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                             }}>
                             <CiEdit className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8"
+                          {previewKind(doc.key) && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" title="Pré-visualizar"
+                              onClick={() => openPreview(doc)} disabled={previewLoading && previewDoc?.id === doc.id}>
+                              {previewLoading && previewDoc?.id === doc.id
+                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                : <Eye className="h-4 w-4" />}
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Baixar"
                             onClick={() => handleDownload(doc.key, doc.name)} disabled={downloading === doc.key}>
                             {downloading === doc.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                           </Button>
@@ -334,6 +377,37 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
         description="Tem certeza que deseja deletar? Essa ação é irreversível."
         onConfirm={confirmDeleteDoc}
       />
+
+      <Dialog open={!!previewDoc} onOpenChange={(o) => { if (!o) { setPreviewDoc(null); setPreviewUrl(null); } }}>
+        <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b">
+            <DialogTitle className="flex items-center gap-2 pr-8 truncate">
+              <FileText className="w-4 h-4 shrink-0 text-gray-500" />
+              <span className="truncate">{previewDoc?.name}</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 bg-gray-100 dark:bg-zinc-950 flex items-center justify-center overflow-auto">
+            {previewLoading || !previewUrl ? (
+              <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+            ) : previewDoc && previewKind(previewDoc.key) === 'image' ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={previewUrl} alt={previewDoc.name} className="max-w-full max-h-full object-contain" />
+            ) : (
+              <iframe src={previewUrl} title={previewDoc?.name} className="w-full h-full border-0" />
+            )}
+          </div>
+
+          {previewDoc && (
+            <div className="flex justify-end gap-2 px-5 py-3 border-t">
+              <Button variant="outline" size="sm" onClick={() => handleDownload(previewDoc.key, previewDoc.name)}>
+                <Download className="w-4 h-4 mr-2" />
+                Baixar
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

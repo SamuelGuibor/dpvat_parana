@@ -41,6 +41,8 @@ model User {
   rg               String?
   status           String?
   telefone         String?
+  telefone_secundario String?
+  rede_social         String?
   atendimento_via  String?
   data_acidente    String?
   hospital         String?
@@ -115,6 +117,8 @@ model Process {
   rg_res            String?
   rua               String?
   telefone          String?
+  telefone_secundario String?
+  rede_social         String?
   otherObs          String?
   service           String?
   fixed             Boolean?   @default(true)
