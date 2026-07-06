@@ -170,16 +170,16 @@ model Automation {
 model Comment {
   id         String   @id @default(cuid())
   text       String
-  authorId   String
+  authorId   String?
   authorName String
   userId     String?
   processId  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   targetName String
-  author     User     @relation("CommentAuthor", fields: [authorId], references: [id])
+  author     User?    @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   process    Process? @relation("ProcessComments", fields: [processId], references: [id])
-  user       User?    @relation("UserComments", fields: [userId], references: [id])
+  user       User?    @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([processId])
@@ -276,7 +276,7 @@ model Notification {
   read        Boolean  @default(false)
   createdAt   DateTime @default(now())
   targetName  String
-  recipient   User     @relation("UserNotifications", fields: [recipientId], references: [id])
+  recipient   User     @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([recipientId])
 }
