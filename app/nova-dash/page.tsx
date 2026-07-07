@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
@@ -13,6 +13,7 @@ import { Badge } from '@/app/_shared/ui/badge';
 import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
 import { ArchivedCards } from '@/app/nova-dash/ArchivedCards';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
+import { MySpace } from '@/app/nova-dash/MySpace';
 import Team from '@/app/nova-dash/_components/team_dash';
 import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
 
@@ -134,7 +135,7 @@ export default function Page() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
-          <TabsList className={`grid w-full max-w-2xl grid-cols-3 ${
+          <TabsList className={`grid w-full max-w-3xl grid-cols-4 ${
             isDark ? 'bg-zinc-800 text-zinc-300' : ''
           }`}>
             <TabsTrigger
@@ -159,6 +160,13 @@ export default function Page() {
               Arquivados
             </TabsTrigger>
             {/* <TabsTrigger
+              value="meu-espaco"
+              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+            >
+              <UserCircle className="w-4 h-4 mr-2" />
+              Espaço de Trabalho
+            </TabsTrigger> */}
+            {/* <TabsTrigger
               value="ponto"
               className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
             >
@@ -179,6 +187,9 @@ export default function Page() {
           </TabsContent>
           <TabsContent value="arquivados">
             <ArchivedCards />
+          </TabsContent>
+          <TabsContent value="meu-espaco">
+            <MySpace />
           </TabsContent>
           <TabsContent value="ponto">
             <WorkSessionPanel isDark={isDark} role={session?.user?.role} userId={session?.user?.id} />
