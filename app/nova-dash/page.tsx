@@ -135,7 +135,7 @@ export default function Page() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
-          <TabsList className={`grid w-full max-w-3xl grid-cols-4 ${
+          <TabsList className={`grid w-full max-w-3xl grid-cols-3 ${
             isDark ? 'bg-zinc-800 text-zinc-300' : ''
           }`}>
             <TabsTrigger
