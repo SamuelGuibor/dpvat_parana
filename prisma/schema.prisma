@@ -17,129 +17,179 @@ model SavedPrompt {
 }
 
 model User {
-  id               String         @id @default(cuid())
-  name             String?
-  cpf              String?
-  data_nasc        String?
-  email            String         @unique
-  password         String?
-  rua              String?
-  bairro           String?
-  numero           String?
-  cep              String?
-  image            String?
-  role             String         @default("Filtro de Cartões")
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  emailVerified    DateTime?
-  cidade           String?
-  estado           String?
-  estado_civil     String?
-  nacionalidade    String?
-  nome_mae         String?
-  profissao        String?
-  rg               String?
-  status           String?
-  telefone         String?
+  id                  String         @id @default(cuid())
+  name                String?
+  cpf                 String?
+  email               String         @unique
+  password            String?
+  rua                 String?
+  bairro              String?
+  numero              String?
+  cep                 String?
+  image               String?
+  role                String         @default("Filtro de Cartões")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  emailVerified       DateTime?
+  cidade              String?
+  estado              String?
+  estado_civil        String?
+  nacionalidade       String?
+  nome_mae            String?
+  profissao           String?
+  rg                  String?
+  status              String?
+  telefone            String?
+  atendimento_via     String?
+  hospital            String?
+  lesoes              String?
+  outro_hospital      String?
+  cpf_res             String?
+  estado_civil_res    String?
+  nome_res            String?
+  profissao_res       String?
+  rg_res              String?
+  statusStartedAt     DateTime?
+  obs                 String?
+  service             String?
+  otherObs            String?
+  fixed               Boolean?       @default(true)
+  roleFixed           String?        @default("Acompanhamento de fluxo 1")
+  labelId             String?
+  apto                Boolean        @default(false)
+  data_nasc           String?
+  data_acidente       String?
+  senha_inss          String?
+  cardNumber          Int?           @unique
+  afastadoAte         DateTime?
+  afastadoNotificado  Boolean        @default(false)
+  lastSeenAt          DateTime?
   telefone_secundario String?
   rede_social         String?
-  atendimento_via  String?
-  data_acidente    String?
-  hospital         String?
-  lesoes           String?
-  outro_hospital   String?
-  cpf_res          String?
-  estado_civil_res String?
-  nome_res         String?
-  profissao_res    String?
-  rg_res           String?
-  statusStartedAt  DateTime?
-  obs              String?
-  service          String?
-  otherObs         String?
-  fixed            Boolean?       @default(true)
-  roleFixed        String?        @default("Acompanhamento de fluxo 1")
-  labelId          String?
-  label            Label?  @relation("UserLabel", fields: [labelId], references: [id])
-  apto             Boolean        @default(false)
-  senha_inss       String?
-  cardNumber       Int?           @unique
-  afastadoAte         DateTime?
-  afastadoNotificado  Boolean      @default(false)
-  lastSeenAt       DateTime?
-  // Arquivamento: null = ativo no board. Valores: "archived" | "paid" | "not_qualified"
-  archiveStatus    String?
-  archivedAt       DateTime?
+  archiveStatus       String?
+  archivedAt          DateTime?
+  accounts            Account[]
+  commentsAsAuthor    Comment[]      @relation("CommentAuthor")
+  commentsOnCard      Comment[]      @relation("UserComments")
+  document            Document[]
+  notifications       Notification[] @relation("UserNotifications")
+  processes           Process[]
+  sessions            Session[]
+  label               Label?         @relation("UserLabel", fields: [labelId], references: [id])
+  chatMessages        ChatMessage[]  @relation("ChatAuthor")
+  logs                Log[]          @relation("UserLogs")
+}
 
+model ChatMessage {
+  id         String    @id @default(cuid())
+  body       String
+  authorId   String
+  authorName String
+  channelId  String
+  createdAt  DateTime  @default(now())
+  editedAt   DateTime?
+  // Soft-delete estilo WhatsApp: quando preenchido, renderiza "mensagem apagada".
+  deletedAt  DateTime?
+  // Resposta a outra mensagem (reply). Guarda também um snapshot do original
+  // (autor + trecho) para render estável mesmo se o pai for alterado/apagado.
+  replyToId       String?
+  replyToAuthor   String?
+  replyToBody     String?
+  author     User      @relation("ChatAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  replyTo    ChatMessage?  @relation("ChatReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies    ChatMessage[] @relation("ChatReply")
 
-  accounts         Account[]
-  commentsAsAuthor Comment[]      @relation("CommentAuthor")
-  commentsOnCard   Comment[]      @relation("UserComments")
-  document         Document[]
-  notifications    Notification[] @relation("UserNotifications")
-  processes        Process[]
-  sessions         Session[]
-  logs             Log[]          @relation("UserLogs")
+  @@index([channelId, createdAt])
+  @@map("chat_messages")
+}
+
+model ChatRead {
+  userId     String
+  channelId  String
+  lastReadAt DateTime @default(now())
+
+  @@id([userId, channelId])
+  @@map("chat_reads")
+}
+
+// Canal customizado (privado por natureza): só os membros veem/escrevem.
+// Os canais "general" e "dm:*" NÃO têm linha aqui — são tratados por convenção.
+model ChatChannel {
+  id          String              @id @default(cuid())
+  name        String
+  createdById String
+  createdAt   DateTime            @default(now())
+  members     ChatChannelMember[]
+
+  @@map("chat_channels")
+}
+
+model ChatChannelMember {
+  channelId String
+  userId    String
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@index([userId])
+  @@map("chat_channel_members")
 }
 
 model Process {
-  id                String     @id @default(cuid())
-  userId            String
-  role              String?
-  statusStartedAt   DateTime?
-  data_acidente     String?
-  atendimento_via   String?
-  hospital          String?
-  outro_hospital    String?
-  lesoes            String?
-  type              String?
-  observacao        String?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  status            String?
-  bairro            String?
-  cep               String?
-  cidade            String?
-  cpf               String?
-  cpf_res           String?
-  data_nasc         String?
-  email             String?
-  emailVerified     DateTime?
-  estado            String?
-  estado_civil      String?
-  estado_civil_res  String?
-  image             String?
-  nacionalidade     String?
-  name              String?
-  nome_mae          String?
-  nome_res          String?
-  numero            String?
-  profissao         String?
-  profissao_res     String?
-  rg                String?
-  rg_res            String?
-  rua               String?
-  telefone          String?
-  telefone_secundario String?
-  rede_social         String?
-  otherObs          String?
-  service           String?
-  fixed             Boolean?   @default(true)
-  roleFixed         String?    @default("Acompanhamento de fluxo 1")
-  labelId           String?
-  label             Label?     @relation("ProcessLabel", fields: [labelId], references: [id])
-  senha_inss        String?
-  cardNumber        Int?       @unique
+  id                  String     @id @default(cuid())
+  userId              String
+  role                String?
+  statusStartedAt     DateTime?
+  atendimento_via     String?
+  hospital            String?
+  outro_hospital      String?
+  lesoes              String?
+  type                String?
+  observacao          String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  status              String?
+  bairro              String?
+  cep                 String?
+  cidade              String?
+  cpf                 String?
+  cpf_res             String?
+  email               String?
+  emailVerified       DateTime?
+  estado              String?
+  estado_civil        String?
+  estado_civil_res    String?
+  image               String?
+  nacionalidade       String?
+  name                String?
+  nome_mae            String?
+  nome_res            String?
+  numero              String?
+  profissao           String?
+  profissao_res       String?
+  rg                  String?
+  rg_res              String?
+  rua                 String?
+  telefone            String?
+  otherObs            String?
+  service             String?
+  fixed               Boolean?   @default(true)
+  roleFixed           String?    @default("Acompanhamento de fluxo 1")
+  labelId             String?
+  data_nasc           String?
+  data_acidente       String?
+  senha_inss          String?
+  cardNumber          Int?       @unique
   afastadoAte         DateTime?
   afastadoNotificado  Boolean    @default(false)
-  // Arquivamento: null = ativo no board. Valores: "archived" | "paid" | "not_qualified"
-  archiveStatus     String?
-  archivedAt        DateTime?
-
-  commentsOnProcess Comment[]  @relation("ProcessComments")
-  documents         Document[]
-  logs              Log[]      @relation("ProcessLogs")
-  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telefone_secundario String?
+  rede_social         String?
+  archiveStatus       String?
+  archivedAt          DateTime?
+  commentsOnProcess   Comment[]  @relation("ProcessComments")
+  documents           Document[]
+  label               Label?     @relation("ProcessLabel", fields: [labelId], references: [id])
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs                Log[]      @relation("ProcessLogs")
 }
 
 model Label {
@@ -148,13 +198,11 @@ model Label {
   color         String
   order         Int          @default(0)
   timeLimitDays Int?
-
-  users         User[]       @relation("UserLabel")
-  processes     Process[]    @relation("ProcessLabel")
-  automations   Automation[]
-
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+  processes     Process[]    @relation("ProcessLabel")
+  users         User[]       @relation("UserLabel")
+  automations   Automation[]
 }
 
 model Automation {
@@ -162,13 +210,13 @@ model Automation {
   name           String
   isActive       Boolean  @default(true)
   triggerLabelId String
-  triggerLabel   Label    @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
   cardType       String   @default("both")
   conditionLogic String   @default("AND")
   conditions     Json     @default("[]")
   actions        Json     @default("[]")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  triggerLabel   Label    @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
 
   @@map("automations")
 }
@@ -183,7 +231,7 @@ model Comment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   targetName String
-  author     User?    @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  author     User?    @relation("CommentAuthor", fields: [authorId], references: [id])
   process    Process? @relation("ProcessComments", fields: [processId], references: [id])
   user       User?    @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
 
@@ -289,21 +337,16 @@ model Notification {
 
 model Log {
   id         String   @id @default(cuid())
-  // Tipo do evento: 'update' | 'move' | 'document_add' | 'document_remove' | 'comment_add' | 'create'
   action     String
-  // Frase descritiva já pronta para exibir (ex.: "alterou o campo Telefone")
   message    String
   authorId   String
   authorName String
-  // Card ao qual o log pertence — apenas um dos dois é preenchido.
   userId     String?
   processId  String?
-  // Dados extras opcionais (campos alterados, de/para, nomes de documentos, etc.)
   metadata   Json?
   createdAt  DateTime @default(now())
-
-  user       User?    @relation("UserLogs", fields: [userId], references: [id], onDelete: Cascade)
   process    Process? @relation("ProcessLogs", fields: [processId], references: [id], onDelete: Cascade)
+  user       User?    @relation("UserLogs", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([processId])
@@ -396,4 +439,3 @@ model InstructionFile {
   @@index([instructionId])
   @@map("instruction_files")
 }
-

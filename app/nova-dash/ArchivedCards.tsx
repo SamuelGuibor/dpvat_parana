@@ -28,8 +28,8 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   activeBg: string;
   iconBg: string;
 }> = {
-  paid: {
-    label: 'Pagos',
+  pagos_ccs: {
+    label: 'Pagos CCS',
     icon: DollarSign,
     bar: 'bg-emerald-500',
     chipBg: 'bg-emerald-50 dark:bg-emerald-950/40',
@@ -38,8 +38,53 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
     activeBg: 'bg-emerald-600 text-white border-emerald-600',
     iconBg: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-300',
   },
-  not_qualified: {
-    label: 'Não Qualificados',
+
+  pagos_uni: {
+    label: 'Pagos UNI',
+    icon: DollarSign,
+    bar: 'bg-green-500',
+    chipBg: 'bg-green-50 dark:bg-green-950/40',
+    chipText: 'text-green-700 dark:text-green-300',
+    ring: 'ring-green-200 dark:ring-green-900',
+    activeBg: 'bg-green-600 text-white border-green-600',
+    iconBg: 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-300',
+  },
+
+  enviados_taynara: {
+    label: 'Enviados Taynára',
+    icon: Archive,
+    bar: 'bg-blue-500',
+    chipBg: 'bg-blue-50 dark:bg-blue-950/40',
+    chipText: 'text-blue-700 dark:text-blue-300',
+    ring: 'ring-blue-200 dark:ring-blue-900',
+    activeBg: 'bg-blue-600 text-white border-blue-600',
+    iconBg: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300',
+  },
+
+  enviados_evelyn: {
+    label: 'Enviados Evelyn',
+    icon: Archive,
+    bar: 'bg-sky-500',
+    chipBg: 'bg-sky-50 dark:bg-sky-950/40',
+    chipText: 'text-sky-700 dark:text-sky-300',
+    ring: 'ring-sky-200 dark:ring-sky-900',
+    activeBg: 'bg-sky-600 text-white border-sky-600',
+    iconBg: 'bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-300',
+  },
+
+  enviados_joinville: {
+    label: 'Enviados Joinville',
+    icon: Archive,
+    bar: 'bg-cyan-500',
+    chipBg: 'bg-cyan-50 dark:bg-cyan-950/40',
+    chipText: 'text-cyan-700 dark:text-cyan-300',
+    ring: 'ring-cyan-200 dark:ring-cyan-900',
+    activeBg: 'bg-cyan-600 text-white border-cyan-600',
+    iconBg: 'bg-cyan-100 dark:bg-cyan-900/50 text-cyan-600 dark:text-cyan-300',
+  },
+
+  pastas_negadas_ccs: {
+    label: 'Pastas Negadas CCS',
     icon: XCircle,
     bar: 'bg-amber-500',
     chipBg: 'bg-amber-50 dark:bg-amber-950/40',
@@ -48,15 +93,60 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
     activeBg: 'bg-amber-500 text-white border-amber-500',
     iconBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-300',
   },
-  archived: {
-    label: 'Arquivados',
+
+  pastas_negadas_uni: {
+    label: 'Pastas Negadas UNI',
+    icon: XCircle,
+    bar: 'bg-orange-500',
+    chipBg: 'bg-orange-50 dark:bg-orange-950/40',
+    chipText: 'text-orange-700 dark:text-orange-300',
+    ring: 'ring-orange-200 dark:ring-orange-900',
+    activeBg: 'bg-orange-500 text-white border-orange-500',
+    iconBg: 'bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-300',
+  },
+
+  perdeu_contato_definitivo: {
+    label: 'Perdeu Contato',
+    icon: XCircle,
+    bar: 'bg-red-500',
+    chipBg: 'bg-red-50 dark:bg-red-950/40',
+    chipText: 'text-red-700 dark:text-red-300',
+    ring: 'ring-red-200 dark:ring-red-900',
+    activeBg: 'bg-red-600 text-white border-red-600',
+    iconBg: 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300',
+  },
+
+  nao_assinaram_procuracao: {
+    label: 'Não Assinaram Procuração',
+    icon: XCircle,
+    bar: 'bg-rose-500',
+    chipBg: 'bg-rose-50 dark:bg-rose-950/40',
+    chipText: 'text-rose-700 dark:text-rose-300',
+    ring: 'ring-rose-200 dark:ring-rose-900',
+    activeBg: 'bg-rose-600 text-white border-rose-600',
+    iconBg: 'bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-300',
+  },
+
+  descartados_analise_interna: {
+    label: 'Descartados',
     icon: Archive,
-    bar: 'bg-slate-400',
+    bar: 'bg-slate-500',
     chipBg: 'bg-slate-100 dark:bg-zinc-800',
-    chipText: 'text-slate-600 dark:text-zinc-300',
+    chipText: 'text-slate-700 dark:text-zinc-300',
     ring: 'ring-slate-200 dark:ring-zinc-700',
     activeBg: 'bg-slate-700 text-white border-slate-700',
-    iconBg: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-300',
+    iconBg: 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300',
+  },
+
+  desistiram_expressamente: {
+    label: 'Desistiram',
+    icon: XCircle,
+    bar: 'bg-purple-500',
+    chipBg: 'bg-purple-50 dark:bg-purple-950/40',
+    chipText: 'text-purple-700 dark:text-purple-300',
+    ring: 'ring-purple-200 dark:ring-purple-900',
+    activeBg: 'bg-purple-600 text-white border-purple-600',
+    iconBg: 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300',
   },
 };
 
@@ -132,8 +222,20 @@ export const ArchivedCards: React.FC = () => {
   useEffect(() => { load(); }, [load]);
 
   const counts = useMemo(() => {
-    const c = { all: cards.length, paid: 0, not_qualified: 0, archived: 0 } as Record<Filter, number>;
-    for (const card of cards) c[card.archiveStatus] += 1;
+    const c = {
+      all: cards.length,
+      pagos_ccs: 0,
+      pagos_uni: 0,
+      enviados_taynara: 0,
+      enviados_evelyn: 0,
+      enviados_joinville: 0,
+      pastas_negadas_ccs: 0,
+      pastas_negadas_uni: 0,
+      perdeu_contato_definitivo: 0,
+      nao_assinaram_procuracao: 0,
+      descartados_analise_interna: 0,
+      desistiram_expressamente: 0,
+    } as Record<Filter, number>; for (const card of cards) c[card.archiveStatus] += 1;
     return c;
   }, [cards]);
 
@@ -166,12 +268,30 @@ export const ArchivedCards: React.FC = () => {
     }
   }
 
-  const filterTabs: { key: Filter; label: string; icon: React.ElementType | null }[] = [
-    { key: 'all', label: 'Todos', icon: Inbox },
-    { key: 'paid', label: STATUS_CONFIG.paid.label, icon: DollarSign },
-    { key: 'not_qualified', label: STATUS_CONFIG.not_qualified.label, icon: XCircle },
-    { key: 'archived', label: STATUS_CONFIG.archived.label, icon: Archive },
-  ];
+  const filterTabs: {
+    key: Filter;
+    label: string;
+    icon: React.ElementType | null;
+  }[] = [
+      { key: "all", label: "Todos", icon: Inbox },
+
+      { key: "pagos_ccs", label: STATUS_CONFIG.pagos_ccs.label, icon: DollarSign },
+      { key: "pagos_uni", label: STATUS_CONFIG.pagos_uni.label, icon: DollarSign },
+
+      { key: "enviados_taynara", label: STATUS_CONFIG.enviados_taynara.label, icon: Archive },
+      { key: "enviados_evelyn", label: STATUS_CONFIG.enviados_evelyn.label, icon: Archive },
+      { key: "enviados_joinville", label: STATUS_CONFIG.enviados_joinville.label, icon: Archive },
+
+      { key: "pastas_negadas_ccs", label: STATUS_CONFIG.pastas_negadas_ccs.label, icon: XCircle },
+      { key: "pastas_negadas_uni", label: STATUS_CONFIG.pastas_negadas_uni.label, icon: XCircle },
+
+      { key: "perdeu_contato_definitivo", label: STATUS_CONFIG.perdeu_contato_definitivo.label, icon: XCircle },
+      { key: "nao_assinaram_procuracao", label: STATUS_CONFIG.nao_assinaram_procuracao.label, icon: XCircle },
+
+      { key: "descartados_analise_interna", label: STATUS_CONFIG.descartados_analise_interna.label, icon: Archive },
+
+      { key: "desistiram_expressamente", label: STATUS_CONFIG.desistiram_expressamente.label, icon: XCircle },
+    ];
 
   return (
     <div className="px-6 py-4 min-h-screen bg-[#f8fafc] dark:bg-zinc-950">
@@ -183,7 +303,6 @@ export const ArchivedCards: React.FC = () => {
           </div>
           <div>
             <h2 className="font-black text-lg text-gray-900 dark:text-zinc-100 leading-tight">Arquivados</h2>
-            <p className="text-xs text-gray-500 dark:text-zinc-400">Cards pagos, não qualificados ou arquivados</p>
           </div>
         </div>
         <div className="relative flex items-center w-full lg:w-96">

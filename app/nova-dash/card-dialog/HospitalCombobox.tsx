@@ -1,6 +1,5 @@
 /* eslint-disable no-unused-vars */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import { Check, ChevronsUpDown, Plus, Search, X } from 'lucide-react';
 import { Label } from '@/app/_shared/ui/label';
@@ -22,37 +21,17 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  // Coordenadas fixas do dropdown. Ele é renderizado num portal (document.body)
-  // para poder "sair" do diálogo — assim a lista de hospitais aparece por cima
-  // e o usuário rola só a barra interna dela, sem rolar o diálogo inteiro.
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  function updateCoords() {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setCoords({ top: r.bottom + 4, left: r.left, width: r.width });
-  }
 
   useEffect(() => {
     if (!open) return;
-    updateCoords();
     function handleDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (containerRef.current?.contains(t) || dropdownRef.current?.contains(t)) return;
-      setOpen(false);
-      setConfirmDelete(null);
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setConfirmDelete(null);
+      }
     }
-    function reposition() { updateCoords(); }
     document.addEventListener('mousedown', handleDown);
-    // capture:true para reposicionar quando qualquer container rolar (ex.: o corpo do diálogo).
-    window.addEventListener('scroll', reposition, true);
-    window.addEventListener('resize', reposition);
-    return () => {
-      document.removeEventListener('mousedown', handleDown);
-      window.removeEventListener('scroll', reposition, true);
-      window.removeEventListener('resize', reposition);
-    };
+    return () => document.removeEventListener('mousedown', handleDown);
   }, [open]);
 
   useEffect(() => {
@@ -99,9 +78,8 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
 
       <button
         id={id}
-        ref={btnRef}
         type="button"
-        onClick={() => { if (!open) updateCoords(); setOpen((v) => !v); }}
+        onClick={() => setOpen((v) => !v)}
         className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-md flex items-center justify-between gap-2 hover:border-gray-400 dark:hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
       >
         <span className={cn('truncate flex-1 text-left', !value && 'text-gray-400 dark:text-zinc-500')}>
@@ -117,11 +95,9 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
         )}
       </button>
 
-      {open && coords && typeof document !== 'undefined' && createPortal(
+      {open && (
         <div
-          ref={dropdownRef}
-          style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width, zIndex: 9999 }}
-          className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-lg"
+          className="absolute z-[9999] top-full left-0 w-full mt-1 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-lg"
           onMouseDown={(e) => e.preventDefault()}
         >
           {/* busca */}
@@ -212,8 +188,7 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
               </button>
             )}
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );

@@ -27,7 +27,7 @@ import {
   DialogDescription, DialogFooter,
 } from '@/app/_shared/ui/dialog';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/app/_shared/ui/dropdown-menu';
 import { CardDialog } from './CardDialog';
 import { cn } from '@/app/_shared/lib/utils';
@@ -42,6 +42,15 @@ import { deleteCard } from '../_actions/cards/delete-card';
 import { createUser } from '../_actions/users/create-user';
 import { setArchiveStatus, type ArchiveStatus } from '../_actions/cards/archive-card';
 import { toast } from "sonner";
+import {
+  ArchiveX,
+  FileX,
+  FolderX,
+  PhoneOff,
+  Send,
+  UserX,
+} from "lucide-react";
+import { useSession } from 'next-auth/react';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
@@ -589,6 +598,15 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const ALLOWED_ARCHIVE_USERS = [
+    "cmazo6j870000ia0gw5ppb486",
+    "cmqp5w7hd000dl404atfj5mrd",
+    "cmazuwrcj0000iav499hqf5ij",
+  ];
+
+  const session = useSession().data;
+
+  const canArchive = ALLOWED_ARCHIVE_USERS.includes(session?.user?.id ?? "");
 
   async function handleDelete() {
     setDeleting(true);
@@ -676,40 +694,146 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 })()}
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600" onClick={() => onCardClick(card)}>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600"
+                  onClick={() => onCardClick(card)}
+                >
                   <Edit className="w-3.5 h-3.5" />
                 </Button>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800" onClick={(e) => e.stopPropagation()}>
-                      <MoreVertical className="w-3.5 h-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuItem
-                      onSelect={(e) => { e.preventDefault(); onArchive(card.id, 'paid'); }}
-                      className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 dark:focus:bg-emerald-950/40"
-                    >
-                      <DollarSign className="w-4 h-4 mr-2" />
-                      Marcar como Pago
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(e) => { e.preventDefault(); onArchive(card.id, 'not_qualified'); }}
-                      className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950/40"
-                    >
-                      <XCircle className="w-4 h-4 mr-2" />
-                      Não Qualificado
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(e) => { e.preventDefault(); onArchive(card.id, 'archived'); }}
-                      className="cursor-pointer"
-                    >
-                      <Archive className="w-4 h-4 mr-2" />
-                      Arquivar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
+
+                {canArchive && (
+                  <DropdownMenu modal={true}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="secondary"
+                        className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent align="end" className="w-72">
+
+                      <DropdownMenuLabel>Pagamentos</DropdownMenuLabel>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "pagos_ccs"); }}
+                        className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 dark:focus:bg-emerald-950/40"
+                      >
+                        <DollarSign className="w-4 h-4 mr-2" />
+                        Pagos CCS
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "pagos_uni"); }}
+                        className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 dark:focus:bg-emerald-950/40"
+                      >
+                        <DollarSign className="w-4 h-4 mr-2" />
+                        Pagos UNI
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuLabel>Envios</DropdownMenuLabel>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "enviados_taynara"); }}
+                        className="cursor-pointer text-blue-600 focus:text-blue-600 focus:bg-blue-50 dark:focus:bg-blue-950/40"
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        Enviados Taynára
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "enviados_evelyn"); }}
+                        className="cursor-pointer text-blue-600 focus:text-blue-600 focus:bg-blue-50 dark:focus:bg-blue-950/40"
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        Enviados Evelyn
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "enviados_joinville"); }}
+                        className="cursor-pointer text-blue-600 focus:text-blue-600 focus:bg-blue-50 dark:focus:bg-blue-950/40"
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        Enviados Joinville
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuLabel>Pastas Negadas</DropdownMenuLabel>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "pastas_negadas_ccs"); }}
+                        className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950/40"
+                      >
+                        <FolderX className="w-4 h-4 mr-2" />
+                        Pastas Negadas CCS
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "pastas_negadas_uni"); }}
+                        className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950/40"
+                      >
+                        <FolderX className="w-4 h-4 mr-2" />
+                        Pastas Negadas UNI
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuLabel>Outros</DropdownMenuLabel>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "perdeu_contato_definitivo"); }}
+                        className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40"
+                      >
+                        <PhoneOff className="w-4 h-4 mr-2" />
+                        Perdeu Contato - Definitivo
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "nao_assinaram_procuracao"); }}
+                        className="cursor-pointer text-orange-600 focus:text-orange-600 focus:bg-orange-50 dark:focus:bg-orange-950/40"
+                      >
+                        <FileX className="w-4 h-4 mr-2" />
+                        Não Assinaram Procuração
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "descartados_analise_interna"); }}
+                        className="cursor-pointer text-zinc-600 focus:text-zinc-700 focus:bg-zinc-100 dark:focus:bg-zinc-800"
+                      >
+                        <ArchiveX className="w-4 h-4 mr-2" />
+                        Descartados Análise Interna
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "desistiram_expressamente"); }}
+                        className="cursor-pointer text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:focus:bg-rose-950/40"
+                      >
+                        <UserX className="w-4 h-4 mr-2" />
+                        Desistiram Expressamente
+                      </DropdownMenuItem>
+
+                    </DropdownMenuContent>
+
+                  </DropdownMenu>
+                )}
+
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete(true);
+                  }}
+                >
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               </div>
@@ -863,9 +987,9 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
         isDraggingColumn && "opacity-40",
         isOver && "ring-2 ring-blue-200"
       )}
-      style={isOver
-        ? { backgroundColor: 'rgb(239 246 255)', borderColor: 'rgb(147 197 253)' }
-        : { backgroundColor: hexToRgba(columnColor, 0.12), borderColor: hexToRgba(columnColor, 0.30) }}
+        style={isOver
+          ? { backgroundColor: 'rgb(239 246 255)', borderColor: 'rgb(147 197 253)' }
+          : { backgroundColor: hexToRgba(columnColor, 0.12), borderColor: hexToRgba(columnColor, 0.30) }}
       >
         <div className="flex flex-col items-center h-full">
           <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors mb-1">
@@ -928,9 +1052,9 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
         isDraggingColumn && "opacity-40",
         isOver && "border-blue-400 ring-2 ring-blue-100"
       )}
-      style={isOver
-        ? { backgroundColor: 'rgb(239 246 255)' }
-        : { backgroundColor: hexToRgba(columnColor, 0.10), borderColor: hexToRgba(columnColor, 0.28) }}
+        style={isOver
+          ? { backgroundColor: 'rgb(239 246 255)' }
+          : { backgroundColor: hexToRgba(columnColor, 0.10), borderColor: hexToRgba(columnColor, 0.28) }}
       >
         <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
           <div className="flex items-center gap-2 overflow-hidden">
@@ -1230,13 +1354,13 @@ export const KanbanBoard: React.FC = () => {
       setLabels(labelsData);
       const users = Array.isArray(usersData)
         ? usersData
-            .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST' && !u.archiveStatus)
-            .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
+          .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST' && !u.archiveStatus)
+          .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
         : [];
       const processes = Array.isArray(processesData)
         ? processesData
-            .filter(p => !p.archiveStatus)
-            .map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
+          .filter(p => !p.archiveStatus)
+          .map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
         : [];
       const combined = [...users, ...processes];
       setItems(combined);
@@ -1252,7 +1376,7 @@ export const KanbanBoard: React.FC = () => {
   // Verifica afastamentos vencidos e gera notificações (idempotente no servidor).
   useEffect(() => {
     const check = () => {
-      fetch('/api/afastamentos/check', { method: 'POST' }).catch(() => {});
+      fetch('/api/afastamentos/check', { method: 'POST' }).catch(() => { });
     };
     check();
     const interval = setInterval(check, 60_000);
@@ -1509,9 +1633,17 @@ export const KanbanBoard: React.FC = () => {
     if (selectedIdRef.current === cardId) setSelectedCard(null);
 
     const labels: Record<ArchiveStatus, string> = {
-      archived: 'Card arquivado',
-      paid: 'Card marcado como pago',
-      not_qualified: 'Card marcado como não qualificado',
+      pagos_ccs: "PAGOS CCS",
+      pagos_uni: "PAGOS UNI",
+      enviados_taynara: "ENVIADOS TAYNARA",
+      enviados_evelyn: "ENVIADOS EVELYN",
+      enviados_joinville: "ENVIADOS JOINVILLE",
+      pastas_negadas_ccs: "PASTAS NEGADAS CCS",
+      pastas_negadas_uni: "PASTAS NEGADAS UNI",
+      perdeu_contato_definitivo: "PERDEU CONTATO - DEFINITIVO",
+      nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
+      descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
+      desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
     };
 
     setArchiveStatus({ id: cardId, isProcess, status })
@@ -1722,27 +1854,27 @@ export const KanbanBoard: React.FC = () => {
               className="overflow-x-auto overflow-y-hidden w-full"
               style={{ height: columnsHeight ? `${columnsHeight}px` : undefined }}
             >
-            <ColumnDropZone onDropEnd={persistColumnOrder}>
-              <div className="flex gap-6 pb-6 min-w-max h-full">
-                {columns.map((column, idx) => (
-                  <DroppableColumn
-                    key={column.id}
-                    column={column}
-                    index={idx}
-                    onDrop={handleDrop}
-                    onColumnReorder={handleColumnReorder}
-                    onCardClick={setSelectedCard}
-                    onQuickAction={handleQuickAction}
-                    onDelete={handleDeleteCard}
-                    onArchive={handleArchiveCard}
-                    onLabelEdit={updateLabel}
-                    onLabelDelete={deleteLabel}
-                    isCollapsed={collapsedColumns[column.id] || false}
-                    toggleCollapse={() => toggleCollapse(column.id)}
-                  />
-                ))}
-              </div>
-            </ColumnDropZone>
+              <ColumnDropZone onDropEnd={persistColumnOrder}>
+                <div className="flex gap-6 pb-6 min-w-max h-full">
+                  {columns.map((column, idx) => (
+                    <DroppableColumn
+                      key={column.id}
+                      column={column}
+                      index={idx}
+                      onDrop={handleDrop}
+                      onColumnReorder={handleColumnReorder}
+                      onCardClick={setSelectedCard}
+                      onQuickAction={handleQuickAction}
+                      onDelete={handleDeleteCard}
+                      onArchive={handleArchiveCard}
+                      onLabelEdit={updateLabel}
+                      onLabelDelete={deleteLabel}
+                      isCollapsed={collapsedColumns[column.id] || false}
+                      toggleCollapse={() => toggleCollapse(column.id)}
+                    />
+                  ))}
+                </div>
+              </ColumnDropZone>
             </div>
           </div>
         )}

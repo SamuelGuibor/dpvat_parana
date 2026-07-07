@@ -8,12 +8,31 @@ import { unstable_noStore as noStore } from "next/cache";
 import { createLog } from "../../_shared/lib/log";
 
 // Estados possíveis de arquivamento. null = card ativo no board.
-export type ArchiveStatus = "archived" | "paid" | "not_qualified";
+export type ArchiveStatus =
+  | "pagos_ccs"
+  | "pagos_uni"
+  | "enviados_taynara"
+  | "enviados_evelyn"
+  | "enviados_joinville"
+  | "pastas_negadas_ccs"
+  | "pastas_negadas_uni"
+  | "perdeu_contato_definitivo"
+  | "nao_assinaram_procuracao"
+  | "descartados_analise_interna"
+  | "desistiram_expressamente";
 
 const ARCHIVE_LABELS: Record<ArchiveStatus, string> = {
-  archived: "Arquivado",
-  paid: "Pago",
-  not_qualified: "Não Qualificado",
+  pagos_ccs: "PAGOS CCS",
+  pagos_uni: "PAGOS UNI",
+  enviados_taynara: "ENVIADOS TAYNARA",
+  enviados_evelyn: "ENVIADOS EVELYN",
+  enviados_joinville: "ENVIADOS JOINVILLE",
+  pastas_negadas_ccs: "PASTAS NEGADAS CCS",
+  pastas_negadas_uni: "PASTAS NEGADAS UNI",
+  perdeu_contato_definitivo: "PERDEU CONTATO - DEFINITIVO",
+  nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
+  descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
+  desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
 };
 
 interface SetArchiveStatusProps {

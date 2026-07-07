@@ -13,12 +13,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { Badge } from '@/app/_shared/ui/badge';
 import { Button } from '@/app/_shared/ui/button';
 import {
-  Activity, ArrowRightLeft, Pencil, Plus, MessageSquare, FileUp, FileX,
-  Sparkles, Flame, CalendarDays, Mail, Phone, ShieldCheck, IdCard,
-  Loader2, Settings, TrendingUp, Trophy,
+  Activity, Sparkles, Flame, CalendarDays, Mail, Phone, ShieldCheck, IdCard,
+  Settings, TrendingUp, Trophy,
 } from 'lucide-react';
 import { getMyActivity, type MyActivity } from '@/app/_actions/users/get-my-activity';
 import { getMyProfile } from '@/app/_actions/users/update-profile';
+import { ACTION_META, metaFor } from '@/app/_shared/utils/action-meta';
 import { ProfileDialog } from './ProfileDialog';
 
 interface Profile {
@@ -38,20 +38,6 @@ function initials(name?: string | null) {
 
 function firstName(name?: string | null) {
   return (name ?? '').trim().split(/\s+/)[0] || 'você';
-}
-
-/** Metadados visuais por tipo de ação de log. */
-const ACTION_META: Record<string, { label: string; icon: React.ElementType; tint: string; ring: string }> = {
-  create:          { label: 'Criações',   icon: Plus,           tint: 'text-emerald-600 bg-emerald-50', ring: 'ring-emerald-100' },
-  move:            { label: 'Movimentos', icon: ArrowRightLeft, tint: 'text-blue-600 bg-blue-50',       ring: 'ring-blue-100' },
-  update:          { label: 'Edições',    icon: Pencil,         tint: 'text-amber-600 bg-amber-50',     ring: 'ring-amber-100' },
-  comment_add:     { label: 'Comentários',icon: MessageSquare,  tint: 'text-violet-600 bg-violet-50',   ring: 'ring-violet-100' },
-  document_add:    { label: 'Documentos', icon: FileUp,         tint: 'text-cyan-600 bg-cyan-50',       ring: 'ring-cyan-100' },
-  document_remove: { label: 'Remoções',   icon: FileX,          tint: 'text-rose-600 bg-rose-50',       ring: 'ring-rose-100' },
-};
-
-function metaFor(action: string) {
-  return ACTION_META[action] ?? { label: action, icon: Activity, tint: 'text-gray-600 bg-gray-100', ring: 'ring-gray-100' };
 }
 
 /* ---------- subcomponentes ---------- */
@@ -121,7 +107,7 @@ export function MySpace() {
     : '';
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-8xl px-6 py-8">
       {/* Saudação */}
       <div className="mb-6 flex items-center gap-4">
         <Avatar className="h-14 w-14 border-2 border-white shadow-md dark:border-zinc-800">

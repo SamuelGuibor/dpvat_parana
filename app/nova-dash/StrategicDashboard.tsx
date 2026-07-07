@@ -438,7 +438,7 @@ export const StrategicDashboard: React.FC = () => {
                 <CardTitle>Distribuição de Status</CardTitle>
                 <CardDescription>Visão geral do pipeline atual</CardDescription>
               </CardHeader>
-              <div className="absolute space-y-1 text-sm right-10">
+              <div className="relative space-y-1 text-sm left-5">
                 <div className="flex items-center gap-2">
                   <FaSquare className="w-3 h-3 text-[#f59e0b]" />
                   <span>Iniciado | Não Responde</span>

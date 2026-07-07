@@ -13,7 +13,7 @@ import { Badge } from '@/app/_shared/ui/badge';
 import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
 import { ArchivedCards } from '@/app/nova-dash/ArchivedCards';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
-import { MySpace } from '@/app/nova-dash/MySpace';
+import { Workspace } from '@/app/nova-dash/workspace/Workspace';
 import Team from '@/app/nova-dash/_components/team_dash';
 import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
 
@@ -24,18 +24,21 @@ import { TeamPresence } from './TeamPresence';
 import { DarkModeToggle, useDarkMode } from '@/app/nova-dash/_components/DarkModeToggle';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useUnread } from '@/app/_shared/hooks/use-chat';
 export const dynamic = "force-dynamic";
 
 type Theme = 'light' | 'dark';
 
 export default function Page() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('kanban');
   const [open, setOpen] = useState(false);
   const { isDark: darkReaderOn } = useDarkMode();
   const [theme, setTheme] = useState<Theme>('light');
   const [mounted, setMounted] = useState(false);
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { unread } = useUnread();
+  const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
 
   // Carrega tema persistido no primeiro mount
   useEffect(() => {
@@ -101,9 +104,19 @@ export default function Page() {
     );
   }
 
+  const isWorkspace = activeTab === 'meu-espaco';
+
+  const ALLOWED_ARCHIVE_USERS = [
+    "cmazo6j870000ia0gw5ppb486",
+    "cmqp5w7hd000dl404atfj5mrd",
+    "cmazuwrcj0000iav499hqf5ij",
+  ];
+
+  const canViewArchived = ALLOWED_ARCHIVE_USERS.includes(session?.user?.id ?? "");
+
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
-      <header className={`sticky top-0 z-50 border-b ${
+    <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
+      <header className={`shrink-0 z-50 border-b ${
         isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'
       }`}>
         <div className="px-6">
@@ -135,16 +148,18 @@ export default function Page() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
-          <TabsList className={`grid w-full max-w-3xl grid-cols-3 ${
-            isDark ? 'bg-zinc-800 text-zinc-300' : ''
-          }`}>
-            <TabsTrigger
+          <TabsList
+              className={`grid w-full max-w-3xl ${
+                canViewArchived ? "grid-cols-3" : "grid-cols-2"
+              } ${isDark ? "bg-zinc-800 text-zinc-300" : ""}`}
+            >
+            {/* <TabsTrigger
               value="dashboard"
               className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
             >
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard Estratégico
-            </TabsTrigger>
+            </TabsTrigger> */}
             <TabsTrigger
               value="kanban"
               className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
@@ -152,20 +167,27 @@ export default function Page() {
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
             </TabsTrigger>
+            {canViewArchived && (
+              <TabsTrigger
+                value="arquivados"
+                className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                Arquivados
+              </TabsTrigger>
+            )}
             <TabsTrigger
-              value="arquivados"
-              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
-            >
-              <Archive className="w-4 h-4 mr-2" />
-              Arquivados
-            </TabsTrigger>
-            {/* <TabsTrigger
               value="meu-espaco"
-              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+              className={`relative ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
             >
               <UserCircle className="w-4 h-4 mr-2" />
               Espaço de Trabalho
-            </TabsTrigger> */}
+              {chatUnread > 0 && (
+                <span className="ml-2 grid h-5 min-w-[20px] place-items-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">
+                  {chatUnread > 99 ? '99+' : chatUnread}
+                </span>
+              )}
+            </TabsTrigger>
             {/* <TabsTrigger
               value="ponto"
               className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
@@ -177,19 +199,19 @@ export default function Page() {
         </Tabs>
       </header>
 
-      <main className={isDark ? 'bg-zinc-950' : ''}>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsContent value="dashboard">
+      <main className={`flex min-h-0 flex-1 flex-col ${isWorkspace ? 'overflow-hidden' : 'overflow-y-auto'} ${isDark ? 'bg-zinc-950' : ''}`}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1">
+          {/* <TabsContent value="dashboard">
             <StrategicDashboard />
-          </TabsContent>
+          </TabsContent> */}
           <TabsContent value="kanban">
             <KanbanBoard />
           </TabsContent>
           <TabsContent value="arquivados">
             <ArchivedCards />
           </TabsContent>
-          <TabsContent value="meu-espaco">
-            <MySpace />
+          <TabsContent value="meu-espaco" className="min-h-0">
+            <Workspace />
           </TabsContent>
           <TabsContent value="ponto">
             <WorkSessionPanel isDark={isDark} role={session?.user?.role} userId={session?.user?.id} />
@@ -197,13 +219,15 @@ export default function Page() {
         </Tabs>
       </main>
 
-      <footer className={`border-t mt-12 transition-colors ${
-        isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
-      }`}>
-        <div className="px-6 py-4 text-sm">
-          © 2025 Sistema de Gestão Seguros Paraná.
-        </div>
-      </footer>
+      {!isWorkspace && (
+        <footer className={`shrink-0 border-t transition-colors ${
+          isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
+        }`}>
+          <div className="px-6 py-4 text-sm">
+            © 2025 Sistema de Gestão Seguros Paraná.
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
