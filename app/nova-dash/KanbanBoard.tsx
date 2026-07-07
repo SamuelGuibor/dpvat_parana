@@ -10,35 +10,37 @@ import {
   Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
   User, GripVertical, Zap, CheckSquare, Minimize2, Maximize2,
+  Archive, DollarSign, XCircle,
 } from 'lucide-react';
 import { AutomationsPanel } from './AutomationsPanel';
 import { getStatusOrderByService } from './card-dialog/constants';
-import { Card, CardContent } from '@/app/_components/ui/card';
-import { Badge } from '@/app/_components/ui/badge';
-import { Button } from '@/app/_components/ui/button';
-import { Input } from '@/app/_components/ui/input';
-import { Label as UILabel } from '@/app/_components/ui/label';
+import { Card, CardContent } from '@/app/_shared/ui/card';
+import { Badge } from '@/app/_shared/ui/badge';
+import { Button } from '@/app/_shared/ui/button';
+import { Input } from '@/app/_shared/ui/input';
+import { Label as UILabel } from '@/app/_shared/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/app/_components/ui/select';
+} from '@/app/_shared/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
-} from '@/app/_components/ui/dialog';
+} from '@/app/_shared/ui/dialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '@/app/_components/ui/dropdown-menu';
+} from '@/app/_shared/ui/dropdown-menu';
 import { CardDialog } from './CardDialog';
-import { cn } from '@/app/_utils/utils';
-import { getUsers } from '@/app/_actions/get-user';
-import { getProcess } from '@/app/_actions/get-process';
-import { CreateNewCard } from '@/app/_components/create-newcard';
+import { cn } from '@/app/_shared/lib/utils';
+import { getUsers } from '@/app/_actions/users/get-user';
+import { getProcess } from '@/app/_actions/process/get-process';
+import { CreateNewCard } from '@/app/nova-dash/_components/create-newcard';
 import { differenceInDays } from 'date-fns';
-import { updateKanbanStatus } from '@/app/_actions/update-kanban';
+import { updateKanbanStatus } from '@/app/_actions/cards/update-kanban';
 import useSWR from 'swr';
-import { getLabels } from '../_actions/get-labels';
-import { deleteCard } from '../_actions/delete-card';
-import { createUser } from '../_actions/create-user';
+import { getLabels } from '../_actions/labels/get-labels';
+import { deleteCard } from '../_actions/cards/delete-card';
+import { createUser } from '../_actions/users/create-user';
+import { setArchiveStatus, type ArchiveStatus } from '../_actions/cards/archive-card';
 import { toast } from "sonner";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
@@ -240,6 +242,7 @@ interface Item {
   status?: string
   ownerId?: string
   cardNumber?: number | null
+  archiveStatus?: string | null
 }
 
 const renderTimerBadge = (card: KanbanCard) => {
@@ -336,42 +339,79 @@ const LabelDialog: React.FC<LabelDialogProps> = ({ open, onOpenChange, initial, 
     }
   }
 
+  const swatches = ['#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#14b8a6', '#0ea5e9', '#64748b', '#111827'];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md rounded-xl">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>Configure os dados da etiqueta.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <UILabel>Nome</UILabel>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Aguardando perícia" />
-          </div>
-          <div className="space-y-2">
-            <UILabel>Cor</UILabel>
-            <div className="flex items-center gap-3">
-              <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-20 p-1" />
-              <Input value={color} onChange={(e) => setColor(e.target.value)} className="flex-1" />
+      <DialogContent className="max-w-md rounded-3xl p-0 gap-0 overflow-hidden border-none">
+        <DialogHeader className="space-y-0 p-6 text-left" style={{ background: `linear-gradient(135deg, ${color}, ${hexToRgba(color, 0.75)})` }}>
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+              <Tag className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <DialogTitle className="text-white text-lg font-black leading-tight">{title}</DialogTitle>
+              <DialogDescription className="text-white/80 text-xs">Configure o nome, a cor e o prazo da coluna.</DialogDescription>
             </div>
           </div>
+        </DialogHeader>
+
+        <div className="p-6 space-y-5">
+          {/* Preview ao vivo */}
+          <div className="flex items-center gap-2 p-3 rounded-2xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50">
+            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 8px ${hexToRgba(color, 0.5)}` }} />
+            <span className="font-black text-xs uppercase tracking-tight text-gray-700 dark:text-zinc-300 truncate">
+              {name.trim() || 'Prévia da coluna'}
+            </span>
+          </div>
+
           <div className="space-y-2">
-            <UILabel>Dias limite (opcional)</UILabel>
+            <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Nome</UILabel>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Aguardando perícia" className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50" />
+          </div>
+
+          <div className="space-y-2">
+            <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Cor</UILabel>
+            <div className="flex flex-wrap gap-1.5">
+              {swatches.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setColor(s)}
+                  className={cn(
+                    'w-7 h-7 rounded-lg transition-transform hover:scale-110',
+                    color.toLowerCase() === s.toLowerCase() ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-offset-zinc-900' : ''
+                  )}
+                  style={{ backgroundColor: s }}
+                  aria-label={`Cor ${s}`}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-14 p-1 rounded-xl cursor-pointer" />
+              <Input value={color} onChange={(e) => setColor(e.target.value)} className="flex-1 h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50 font-mono uppercase" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Dias limite (opcional)</UILabel>
             <Input
               type="number"
               min={0}
               value={timeLimit}
               onChange={(e) => setTimeLimit(e.target.value)}
               placeholder="Ex: 7"
+              className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50"
             />
-            <p className="text-[11px] text-gray-500 dark:text-zinc-400">Cards nessa etiqueta ficam destacados em vermelho após esse prazo.</p>
+            <p className="text-[11px] text-gray-500 dark:text-zinc-400">Cards nessa coluna ficam destacados em vermelho após esse prazo.</p>
           </div>
         </div>
-        <DialogFooter className="flex flex-row gap-3">
-          <Button variant="secondary" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving}>
+
+        <DialogFooter className="flex flex-row gap-3 p-6 pt-0">
+          <Button variant="secondary" className="flex-1 h-11 rounded-xl" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancelar
           </Button>
-          <Button className="flex-1" onClick={handle} disabled={saving || !name.trim()}>
+          <Button className="flex-1 h-11 rounded-xl" onClick={handle} disabled={saving || !name.trim()}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : submitLabel}
           </Button>
         </DialogFooter>
@@ -387,7 +427,11 @@ const CreateLabelButton: React.FC<{ onCreate: (data: LabelInput) => Promise<void
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)} className="h-12 rounded-2xl">
+      <Button
+        variant="outline"
+        onClick={() => setOpen(true)}
+        className="h-12 rounded-2xl text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40"
+      >
         <Tag className="w-4 h-4 mr-2" />
         Criar Coluna
       </Button>
@@ -448,37 +492,51 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)} className="h-12 rounded-2xl">
+      <Button
+        variant="outline"
+        onClick={() => setOpen(true)}
+        className="h-12 rounded-2xl text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40"
+      >
         <User className="w-4 h-4 mr-2" />
         Criar Card Cliente
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md rounded-xl">
-          <DialogHeader>
-            <DialogTitle>Criar Card Cliente</DialogTitle>
-            <DialogDescription>Preencha os dados do novo cliente.</DialogDescription>
+        <DialogContent className="max-w-md rounded-3xl p-0 gap-0 overflow-hidden border-none">
+          <DialogHeader className="space-y-0 p-6 text-left bg-gradient-to-r from-emerald-600 to-teal-600">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                <User className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-white text-lg font-black leading-tight">Criar Card Cliente</DialogTitle>
+                <DialogDescription className="text-emerald-100 text-xs">Preencha os dados do novo cliente.</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <UILabel>Nome *</UILabel>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome completo" />
+
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Nome *</UILabel>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome completo" className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50" />
+              </div>
+              <div className="space-y-1.5">
+                <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">CPF *</UILabel>
+                <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50" />
+              </div>
             </div>
-            <div className="space-y-2">
-              <UILabel>CPF *</UILabel>
-              <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" />
+            <div className="space-y-1.5">
+              <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Senha *</UILabel>
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha de acesso" className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50" />
             </div>
-            <div className="space-y-2">
-              <UILabel>Senha *</UILabel>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha de acesso" />
+            <div className="space-y-1.5">
+              <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Email (opcional)</UILabel>
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="inserir-email@gmail.com" className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50" />
             </div>
-            <div className="space-y-2">
-              <UILabel>Email (opcional)</UILabel>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="inserir-email@gmail.com" />
-            </div>
-            <div className="space-y-2">
-              <UILabel>Coluna</UILabel>
+            <div className="space-y-1.5">
+              <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Coluna</UILabel>
               <Select value={labelId} onValueChange={setLabelId}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50">
                   <SelectValue placeholder="Primeira Coluna (padrão)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -494,10 +552,11 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={handle} disabled={saving}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+
+          <DialogFooter className="flex flex-row gap-3 p-6 pt-0">
+            <Button variant="secondary" className="flex-1 h-11 rounded-xl" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
+            <Button onClick={handle} disabled={saving} className="flex-1 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <User className="w-4 h-4 mr-2" />}
               Criar
             </Button>
           </DialogFooter>
@@ -516,9 +575,10 @@ interface DraggableCardProps {
   onCardClick: (card: KanbanCard) => void;
   onQuickAction: (cardId: string, action: string) => void;
   onDelete: (cardId: string) => void;
+  onArchive: (cardId: string, status: ArchiveStatus) => void;
 }
 
-const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete }) => {
+const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete, onArchive }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
     item: { cardId: card.id, sourceColumnId: columnId },
@@ -619,6 +679,36 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600" onClick={() => onCardClick(card)}>
                   <Edit className="w-3.5 h-3.5" />
                 </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800" onClick={(e) => e.stopPropagation()}>
+                      <MoreVertical className="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); onArchive(card.id, 'paid'); }}
+                      className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 dark:focus:bg-emerald-950/40"
+                    >
+                      <DollarSign className="w-4 h-4 mr-2" />
+                      Marcar como Pago
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); onArchive(card.id, 'not_qualified'); }}
+                      className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950/40"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Não Qualificado
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); onArchive(card.id, 'archived'); }}
+                      className="cursor-pointer"
+                    >
+                      <Archive className="w-4 h-4 mr-2" />
+                      Arquivar
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button size="icon" variant="secondary" className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
@@ -656,6 +746,7 @@ const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
     prev.onCardClick === next.onCardClick &&
     prev.onQuickAction === next.onQuickAction &&
     prev.onDelete === next.onDelete &&
+    prev.onArchive === next.onArchive &&
     a.id === b.id &&
     a.title === b.title &&
     a.description === b.description &&
@@ -682,6 +773,7 @@ interface DroppableColumnProps {
   onCardClick: (card: KanbanCard) => void;
   onQuickAction: (cardId: string, action: string) => void;
   onDelete: (cardId: string) => void;
+  onArchive: (cardId: string, status: ArchiveStatus) => void;
   onLabelEdit: (id: string, data: LabelInput) => Promise<void>;
   onLabelDelete: (id: string) => Promise<void>;
   isCollapsed: boolean;
@@ -689,7 +781,7 @@ interface DroppableColumnProps {
 }
 
 const DroppableColumn: React.FC<DroppableColumnProps> = ({
-  column, index, onDrop, onColumnReorder, onCardClick, onQuickAction, onDelete,
+  column, index, onDrop, onColumnReorder, onCardClick, onQuickAction, onDelete, onArchive,
   onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -700,10 +792,17 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   // Auto-scroll da lista de cards ao arrastar perto da borda superior/inferior
   // — evita ter que soltar o card, rolar a página na mão e pegar de novo.
   const cardListRef = useRef<HTMLDivElement>(null);
+  // O rect do container não muda durante o auto-scroll (só o scrollTop muda),
+  // então medimos uma vez ao entrar no drag e reusamos — evita forçar reflow
+  // a cada evento onDragOver (dezenas por segundo).
+  const dragRectRef = useRef<DOMRect | null>(null);
+  const cacheDragRect = useCallback(() => {
+    dragRectRef.current = cardListRef.current?.getBoundingClientRect() ?? null;
+  }, []);
   const handleDragOverAutoScroll = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     const el = cardListRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
+    const rect = dragRectRef.current ?? el.getBoundingClientRect();
     const edge = 56;
     const distTop = e.clientY - rect.top;
     const distBottom = rect.bottom - e.clientY;
@@ -833,7 +932,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
         ? { backgroundColor: 'rgb(239 246 255)' }
         : { backgroundColor: hexToRgba(columnColor, 0.10), borderColor: hexToRgba(columnColor, 0.28) }}
       >
-        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white/70 dark:bg-zinc-900/70 backdrop-blur-sm shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
+        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
           <div className="flex items-center gap-2 overflow-hidden">
             <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors shrink-0">
               <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
@@ -885,7 +984,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           </div>
         </div>
 
-        <div ref={cardListRef} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-2 p-4">
+        <div ref={cardListRef} onDragEnter={cacheDragRect} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-2 p-4">
           {column.cards.map((card) => (
             <DraggableCard
               key={card.id}
@@ -894,6 +993,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
               onCardClick={onCardClick}
               onQuickAction={onQuickAction}
               onDelete={onDelete}
+              onArchive={onArchive}
             />
           ))}
           {column.cards.length === 0 && (
@@ -964,10 +1064,30 @@ const ColumnDropZone: React.FC<{ onDropEnd: () => void; children: React.ReactNod
 export const KanbanBoard: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [filteredItems, setFilteredItems] = useState<Item[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('Todos');
+
+  // filteredItems é DERIVADO de items + busca + filtro de serviço. Calculado com
+  // useMemo em vez de guardado em estado e sincronizado por effect — isso evitava
+  // o ciclo render → effect → setState → render que dobrava os re-renders a cada
+  // digitação/clique de filtro.
+  const filteredItems = React.useMemo(() => {
+    let filtered = items;
+    if (debouncedQuery) {
+      const q = debouncedQuery.toLowerCase().trim();
+      const qDigits = q.replace(/\D/g, '');
+      filtered = filtered.filter((item) => {
+        const nameHit = item.name.toLowerCase().includes(q);
+        const numberHit = qDigits.length > 0 && item.cardNumber != null && String(item.cardNumber).includes(qDigits);
+        return nameHit || numberHit;
+      });
+    }
+    if (serviceFilter !== 'Todos') {
+      filtered = filtered.filter((item) => item.label?.name === serviceFilter);
+    }
+    return filtered;
+  }, [items, debouncedQuery, serviceFilter]);
   const [isLoading, setIsLoading] = useState(true);
   const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
   const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>(() => {
@@ -1110,15 +1230,16 @@ export const KanbanBoard: React.FC = () => {
       setLabels(labelsData);
       const users = Array.isArray(usersData)
         ? usersData
-            .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST')
+            .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST' && !u.archiveStatus)
             .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
         : [];
       const processes = Array.isArray(processesData)
-        ? processesData.map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
+        ? processesData
+            .filter(p => !p.archiveStatus)
+            .map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
         : [];
       const combined = [...users, ...processes];
       setItems(combined);
-      if (!silent) setFilteredItems(combined);
     } catch (err) {
       console.error(err);
     } finally {
@@ -1152,23 +1273,6 @@ export const KanbanBoard: React.FC = () => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 180);
     return () => clearTimeout(t);
   }, [searchQuery]);
-
-  useEffect(() => {
-    let filtered = items;
-    if (debouncedQuery) {
-      const q = debouncedQuery.toLowerCase().trim();
-      const qDigits = q.replace(/\D/g, '');
-      filtered = filtered.filter((item) => {
-        const nameHit = item.name.toLowerCase().includes(q);
-        const numberHit = qDigits.length > 0 && item.cardNumber != null && String(item.cardNumber).includes(qDigits);
-        return nameHit || numberHit;
-      });
-    }
-    if (serviceFilter !== 'Todos') {
-      filtered = filtered.filter((item) => item.label?.name === serviceFilter);
-    }
-    setFilteredItems(filtered);
-  }, [debouncedQuery, serviceFilter, items]);
 
   // Busca contagens reais (comentários + documentos) em lote sempre que
   // os items são atualizados.
@@ -1387,9 +1491,38 @@ export const KanbanBoard: React.FC = () => {
       prev.map((col) => ({ ...col, cards: col.cards.filter((c) => c.id !== cardId) }))
     );
     setItems((prev) => prev.filter((i) => i.id !== cardId));
-    setFilteredItems((prev) => prev.filter((i) => i.id !== cardId));
     if (selectedIdRef.current === cardId) setSelectedCard(null);
   }, []);
+
+  // Arquiva um card (pago / não qualificado / arquivado): remove do board de forma
+  // otimista e persiste. Se falhar, recarrega para o card reaparecer.
+  const handleArchiveCard = useCallback((cardId: string, status: ArchiveStatus) => {
+    const item = items.find((i) => i.id === cardId);
+    if (!item) return;
+    const isProcess = !!item.isProcess;
+
+    isMutatingRef.current = true;
+    setColumns((prev) =>
+      prev.map((col) => ({ ...col, cards: col.cards.filter((c) => c.id !== cardId) }))
+    );
+    setItems((prev) => prev.filter((i) => i.id !== cardId));
+    if (selectedIdRef.current === cardId) setSelectedCard(null);
+
+    const labels: Record<ArchiveStatus, string> = {
+      archived: 'Card arquivado',
+      paid: 'Card marcado como pago',
+      not_qualified: 'Card marcado como não qualificado',
+    };
+
+    setArchiveStatus({ id: cardId, isProcess, status })
+      .then(() => toast.success(labels[status]))
+      .catch((err) => {
+        console.error('Erro ao arquivar:', err);
+        toast.error('Erro ao arquivar card');
+        setRefreshKey((k) => k + 1);
+      })
+      .finally(() => { isMutatingRef.current = false; });
+  }, [items]);
 
   const toggleCollapse = (colId: string) => {
     setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
@@ -1601,6 +1734,7 @@ export const KanbanBoard: React.FC = () => {
                     onCardClick={setSelectedCard}
                     onQuickAction={handleQuickAction}
                     onDelete={handleDeleteCard}
+                    onArchive={handleArchiveCard}
                     onLabelEdit={updateLabel}
                     onLabelDelete={deleteLabel}
                     isCollapsed={collapsedColumns[column.id] || false}

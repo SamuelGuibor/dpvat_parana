@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/app/_components/ui/dialog';
-import { Button } from '@/app/_components/ui/button';
+} from '@/app/_shared/ui/dialog';
+import { Button } from '@/app/_shared/ui/button';
 import { Loader2 } from 'lucide-react';
 
 interface Props {

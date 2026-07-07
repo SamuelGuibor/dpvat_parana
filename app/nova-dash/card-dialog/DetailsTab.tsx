@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-unused-vars */
 import type { ReactNode } from 'react';
-import { Input } from '@/app/_components/ui/input';
-import { Label } from '@/app/_components/ui/label';
+import { Input } from '@/app/_shared/ui/input';
+import { Label } from '@/app/_shared/ui/label';
 import { Calendar } from 'lucide-react';
 import type { ExtendedKanbanCard } from './types';
 import {

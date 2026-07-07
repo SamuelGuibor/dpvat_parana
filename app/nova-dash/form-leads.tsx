@@ -5,11 +5,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import React, { useState, useEffect, useTransition } from 'react';
-import { getContacts } from "@/app/_actions/getContact";
-import { DeleteContact } from "@/app/_actions/deletContact";
+import { getContacts } from "@/app/_actions/contacts/get-contact";
+import { DeleteContact } from "@/app/_actions/contacts/delete-contact";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/_components/ui/card';
-import { Badge } from '@/app/_components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/_shared/ui/card';
+import { Badge } from '@/app/_shared/ui/badge';
 import { Trash2, Phone, User, FileText, Search, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';

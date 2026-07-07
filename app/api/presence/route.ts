@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { db } from '@/app/_lib/prisma';
-import { authOptions } from '@/app/_lib/auth';
+import { db } from '@/app/_shared/lib/prisma';
+import { authOptions } from '@/app/_shared/lib/auth';
 
 // Considera "online" quem enviou heartbeat nos últimos 90s.
 // O client bate a cada 30s, então há folga para 2 batidas perdidas.

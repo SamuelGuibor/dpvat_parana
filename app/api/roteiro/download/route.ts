@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { generatePDFFromText } from "@/app/_actions/generatePDFFromTemplate";
+import { generatePDFFromText } from "@/app/_actions/documents/generate-pdf-from-template";
 
 export async function POST(request: Request) {
   try {

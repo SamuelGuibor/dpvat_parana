@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserStatus, updateUserStatus } from "../../_actions/user-status";
+import { getUserStatus, updateUserStatus } from "../../_actions/users/user-status";
 
 export async function GET() {
   try {

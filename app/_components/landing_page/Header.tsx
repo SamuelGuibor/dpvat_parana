@@ -6,13 +6,13 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Avatar, AvatarImage } from "@/app/_components/ui/avatar";
+import { Avatar, AvatarImage } from "@/app/_shared/ui/avatar";
 import { AiOutlineCar } from "react-icons/ai";
 import { RxAvatar } from "react-icons/rx";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { MdInsertChartOutlined } from "react-icons/md";
 import { useSession, signOut } from "next-auth/react";
-import { cn } from "@/app/_utils/utils";
+import { cn } from "@/app/_shared/lib/utils";
 
 export function Header() {
   const [sheetOpen, setSheetOpen] = useState(false);

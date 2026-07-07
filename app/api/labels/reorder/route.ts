@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '../../../_lib/prisma';
+import { db } from '../../../_shared/lib/prisma';
 
 export async function PUT(req: Request) {
   try {

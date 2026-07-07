@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "../../_lib/prisma";
+import { db } from "../../_shared/lib/prisma";
 import { slugifyFolder } from "./_s3";
 
 export async function GET() {

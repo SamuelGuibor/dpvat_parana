@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProcessStatus, updateProcessStatus } from "../../_actions/user-stats";
+import { getProcessStatus, updateProcessStatus } from "../../_actions/users/user-stats";
 
 export async function GET(req: NextRequest) {
   const processId = req.nextUrl.searchParams.get("processId");

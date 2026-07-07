@@ -1,7 +1,7 @@
-import { Checkbox } from '@/app/_components/ui/checkbox';
-import { Label } from '@/app/_components/ui/label';
-import { Badge } from '@/app/_components/ui/badge';
-import { Separator } from '@/app/_components/ui/separator';
+import { Checkbox } from '@/app/_shared/ui/checkbox';
+import { Label } from '@/app/_shared/ui/label';
+import { Badge } from '@/app/_shared/ui/badge';
+import { Separator } from '@/app/_shared/ui/separator';
 import { getStatusOrderByService, getStatusLabelsByService } from './constants';
 
 interface Props {

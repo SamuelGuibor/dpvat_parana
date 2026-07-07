@@ -67,6 +67,9 @@ model User {
   afastadoAte         DateTime?
   afastadoNotificado  Boolean      @default(false)
   lastSeenAt       DateTime?
+  // Arquivamento: null = ativo no board. Valores: "archived" | "paid" | "not_qualified"
+  archiveStatus    String?
+  archivedAt       DateTime?
 
 
   accounts         Account[]
@@ -129,6 +132,9 @@ model Process {
   cardNumber        Int?       @unique
   afastadoAte         DateTime?
   afastadoNotificado  Boolean    @default(false)
+  // Arquivamento: null = ativo no board. Valores: "archived" | "paid" | "not_qualified"
+  archiveStatus     String?
+  archivedAt        DateTime?
 
   commentsOnProcess Comment[]  @relation("ProcessComments")
   documents         Document[]

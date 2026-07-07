@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "app/**/page.tsx",
+    "app/**/layout.tsx",
+    "app/**/route.ts",
+    "app/**/template.tsx",
+    "app/**/loading.tsx",
+    "app/**/error.tsx",
+    "app/**/not-found.tsx",
+    "app/**/opengraph-image.tsx",
+    "app/api/**/route.ts",
+    "middleware.ts"
+  ],
+  "project": ["app/**/*.{ts,tsx}"],
+  "ignore": [
+    "app/_bot/**"
+  ],
+  "next": {
+    "entry": [
+      "app/**/page.tsx",
+      "app/**/layout.tsx",
+      "app/**/route.ts"
+    ]
+  },
+  "ignoreDependencies": [],
+  "ignoreBinaries": [],
+  "includeEntryExports": true
+}

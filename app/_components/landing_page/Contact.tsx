@@ -10,9 +10,9 @@ import { LuLinkedin } from "react-icons/lu";
 import { FaGoogle } from "react-icons/fa";
 import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { ContactUsers } from "@/app/_actions/createContact";
+import { ContactUsers } from "@/app/_actions/contacts/create-contact";
 import { toast } from 'sonner'
-import { Button } from '../ui/button';
+import { Button } from '@/app/_shared/ui/button';
 import { FaWhatsapp } from "react-icons/fa";
 import Image from 'next/image';
 import Link from 'next/link';

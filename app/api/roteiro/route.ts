@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { db } from "@/app/_lib/prisma";
+import { db } from "@/app/_shared/lib/prisma";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, S3_BUCKET } from "@/app/api/instructions/_s3";
 

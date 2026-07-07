@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Button } from '@/app/_components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
+import { Button } from '@/app/_shared/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_shared/ui/select';
 import { Mail, MessageCircle } from 'lucide-react';
 import { IoIosDocument } from 'react-icons/io';
 import type { ExtendedKanbanCard } from './types';

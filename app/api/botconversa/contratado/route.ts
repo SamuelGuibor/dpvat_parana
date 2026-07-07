@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/app/_lib/prisma';
+import { db } from '@/app/_shared/lib/prisma';
 
 async function notifyBot(record: unknown) {
   const url = process.env.BOT_WEBHOOK_URL;

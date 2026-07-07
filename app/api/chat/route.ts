@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/_lib/auth";
+import { authOptions } from "@/app/_shared/lib/auth";
 import { handleChat } from "./modules/chat.service";
 
 export async function POST(req: NextRequest) {

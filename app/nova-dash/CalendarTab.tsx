@@ -3,12 +3,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/card'
-import { Button } from '@/app/_components/ui/button'
-import { Badge } from '@/app/_components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/app/_components/ui/dialog'
-import { Input } from '@/app/_components/ui/input'
-import { Textarea } from '@/app/_components/ui/textarea'
+import { Card, CardContent, CardHeader, CardTitle } from '@/app/_shared/ui/card'
+import { Button } from '@/app/_shared/ui/button'
+import { Badge } from '@/app/_shared/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/app/_shared/ui/dialog'
+import { Input } from '@/app/_shared/ui/input'
+import { Textarea } from '@/app/_shared/ui/textarea'
 import { ChevronLeft, ChevronRight, Plus, Trash2, CalendarDays } from 'lucide-react'
 
 type EventType = 'audiencia' | 'reuniao' | 'prazo' | 'contato' | 'tarefa' | 'outro'

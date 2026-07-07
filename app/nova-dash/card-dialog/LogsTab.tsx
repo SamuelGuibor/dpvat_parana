@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Label } from '@/app/_components/ui/label';
-import { Badge } from '@/app/_components/ui/badge';
-import { Separator } from '@/app/_components/ui/separator';
-import { Button } from '@/app/_components/ui/button';
+import { Label } from '@/app/_shared/ui/label';
+import { Badge } from '@/app/_shared/ui/badge';
+import { Separator } from '@/app/_shared/ui/separator';
+import { Button } from '@/app/_shared/ui/button';
 import {
   History, Pencil, ArrowRightLeft, FilePlus, FileMinus,
   MessageSquare, Sparkles, Clock, RefreshCw, ArrowRight,

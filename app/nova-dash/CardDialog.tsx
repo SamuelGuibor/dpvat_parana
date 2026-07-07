@@ -5,18 +5,18 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from '@/app/_components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
-import { Button } from '@/app/_components/ui/button';
+} from '@/app/_shared/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
+import { Button } from '@/app/_shared/ui/button';
 import { Link, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { getUsers } from '@/app/_actions/get-user';
-import { getProcess } from '@/app/_actions/get-process';
-import { updateUser } from '@/app/_actions/update-users';
-import { updateProcess } from '@/app/_actions/update-process';
-import { deleteCard } from '@/app/_actions/delete-card';
-import { updateKanbanStatus } from '@/app/_actions/update-kanban';
+import { getUsers } from '@/app/_actions/users/get-user';
+import { getProcess } from '@/app/_actions/process/get-process';
+import { updateUser } from '@/app/_actions/users/update-users';
+import { updateProcess } from '@/app/_actions/process/update-process';
+import { deleteCard } from '@/app/_actions/cards/delete-card';
+import { updateKanbanStatus } from '@/app/_actions/cards/update-kanban';
 
 import type { ExtendedKanbanCard } from './card-dialog/types';
 import { DetailsTab } from './card-dialog/DetailsTab';
@@ -26,7 +26,7 @@ import { CommentsTab } from './card-dialog/CommentsTab';
 import { IntegrationsTab } from './card-dialog/IntegrationsTab';
 import { DeleteConfirmDialog } from './card-dialog/DeleteConfirmDialog';
 
-import { getLabels } from "@/app/_actions/get-labels";
+import { getLabels } from "@/app/_actions/labels/get-labels";
 import { RoteirosTab } from './card-dialog/ScriptTab';
 import { LogsTab } from './card-dialog/LogsTab';
 

@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/app/_components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/app/_components/ui/avatar';
+import { Button } from '@/app/_shared/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { Users } from 'lucide-react';
-import { usePresence, type PresenceMember } from '@/app/_hooks/use-presence';
+import { usePresence, type PresenceMember } from '@/app/_shared/hooks/use-presence';
 
 interface Props {
   isDark: boolean;

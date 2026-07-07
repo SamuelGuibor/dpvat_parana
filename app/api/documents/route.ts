@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { db } from '../../_lib/prisma'
-import { authOptions } from '../../_lib/auth'
-import { createLog } from '../../_lib/log'
+import { db } from '../../_shared/lib/prisma'
+import { authOptions } from '../../_shared/lib/auth'
+import { createLog } from '../../_shared/lib/log'
 
 export async function POST(request: Request) {
   try {

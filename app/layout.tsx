@@ -3,10 +3,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Mulish } from "next/font/google";
-import AuthProvider from "./_providers/auth";
-import { Toaster } from "./_components/ui/sonner";
+import AuthProvider from "./_shared/providers/auth";
+import { Toaster } from "./_shared/ui/sonner";
 import Script from "next/script";
-// import { MixpanelProvider } from "./_providers/mixpanel-provider";
+// import { MixpanelProvider } from "./_shared/providers/mixpanel-provider";
 import { NotificationsProvider } from "./store/provider";
 // import { ChatBot } from "./_components/chatbot";
 

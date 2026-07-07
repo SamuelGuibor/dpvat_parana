@@ -1,4 +1,4 @@
-import { gerarProcuracaoById } from "@/app/_utils/gerarProcuracaoById";
+import { gerarProcuracaoById } from "@/app/_shared/utils/gerarProcuracaoById";
 
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";

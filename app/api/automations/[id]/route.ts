@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateAutomation, deleteAutomation } from "@/app/_lib/db/automations";
+import { updateAutomation, deleteAutomation } from "@/app/_shared/lib/db/automations";
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/app/_lib/prisma";
+import { db } from "@/app/_shared/lib/prisma";
 
 // GET — list all prompts
 export async function GET() {

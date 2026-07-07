@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { gerarDocumento } from "@/app/_utils/gerarDocumento";
-import { db } from "@/app/_lib/prisma";
+import { gerarDocumento } from "@/app/_shared/utils/gerarDocumento";
+import { db } from "@/app/_shared/lib/prisma";
 
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";

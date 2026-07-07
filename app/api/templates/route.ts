@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listarTemplates } from "@/app/_utils/gerarDocumento";
+import { listarTemplates } from "@/app/_shared/utils/gerarDocumento";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

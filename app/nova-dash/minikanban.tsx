@@ -1,9 +1,9 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useMemo, useDeferredValue, useCallback, useEffect } from 'react';
-import { Badge } from '@/app/_components/ui/badge';
+import { Badge } from '@/app/_shared/ui/badge';
 import { Calendar, Phone, User, Clock, Trash2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { ScrollArea, ScrollBar } from '@/app/_components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/app/_shared/ui/scroll-area';
 import { FixedSizeList as List } from 'react-window';
 
 interface KanbanItem {

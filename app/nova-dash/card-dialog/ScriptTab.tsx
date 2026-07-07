@@ -4,13 +4,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/app/_components/ui/button';
-import { Textarea } from '@/app/_components/ui/textarea';
-import { ScrollArea } from '@/app/_components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
+import { Button } from '@/app/_shared/ui/button';
+import { Textarea } from '@/app/_shared/ui/textarea';
+import { ScrollArea } from '@/app/_shared/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_shared/ui/select';
 import { Upload, Send, File, X, Loader2, Download, FileText, ChevronDown, Wrench, Plus, Copy, Pencil, Trash2, Check, BookOpen, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { getRoteiroUploadUrls } from '@/app/_actions/uploadS3';
+import { getRoteiroUploadUrls } from '@/app/_actions/documents/upload-s3';
 
 type LoadingPhase =
   | null

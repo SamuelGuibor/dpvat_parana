@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "../../../_lib/prisma";
+import { db } from "../../../_shared/lib/prisma";
 import { getDownloadUrl, getViewUrl } from "../_s3";
 
 // Rota depende de request.url (params da query), então é sempre dinâmica.

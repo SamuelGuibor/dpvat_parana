@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "../../_lib/prisma";
+import { db } from "../../_shared/lib/prisma";
 
 const DEFAULT_ITEMS: string[] = [
   "ASSINOU A PROCURAÇÃO",

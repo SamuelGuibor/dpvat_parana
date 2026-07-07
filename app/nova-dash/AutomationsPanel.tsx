@@ -9,24 +9,24 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@/app/_components/ui/sheet";
+} from "@/app/_shared/ui/sheet";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/app/_components/ui/dialog";
-import { Button } from "@/app/_components/ui/button";
-import { Input } from "@/app/_components/ui/input";
-import { Badge } from "@/app/_components/ui/badge";
+} from "@/app/_shared/ui/dialog";
+import { Button } from "@/app/_shared/ui/button";
+import { Input } from "@/app/_shared/ui/input";
+import { Badge } from "@/app/_shared/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/app/_components/ui/select";
+} from "@/app/_shared/ui/select";
 import {
   Plus,
   Trash2,

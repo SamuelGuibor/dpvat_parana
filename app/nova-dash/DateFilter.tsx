@@ -3,9 +3,9 @@
 'use client'
 
 import React, { useState, useMemo, useCallback } from 'react'
-import { Button } from '@/app/_components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/app/_components/ui/popover'
-import { Calendar } from '@/app/_components/ui/calendar'
+import { Button } from '@/app/_shared/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/_shared/ui/popover'
+import { Calendar } from '@/app/_shared/ui/calendar'
 import { CalendarIcon, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subDays, subMonths, subYears, addMonths, addYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'

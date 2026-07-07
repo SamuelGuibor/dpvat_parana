@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Badge } from '@/app/_components/ui/badge';
-import { useNotifications } from '@/app/_hooks/use-notifications';
+import { Badge } from '@/app/_shared/ui/badge';
+import { useNotifications } from '@/app/_shared/hooks/use-notifications';
 import { Bell, Clock } from 'lucide-react';
 
 function escapeRegExp(s: string) {

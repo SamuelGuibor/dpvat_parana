@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchBotconversaAll } from '@/app/_lib/db/botconversa';
+import { fetchBotconversaAll } from '@/app/_shared/lib/db/botconversa';
 
 export const dynamic = 'force-dynamic';
 

@@ -4,22 +4,23 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive } from 'lucide-react';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
-import { Button } from '@/app/_components/ui/button';
-import { Badge } from '@/app/_components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
+import { Button } from '@/app/_shared/ui/button';
+import { Badge } from '@/app/_shared/ui/badge';
 
 import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
+import { ArchivedCards } from '@/app/nova-dash/ArchivedCards';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
-import Team from '../_components/team_dash';
-import { WorkSessionPanel } from '../_components/WorkSession';
+import Team from '@/app/nova-dash/_components/team_dash';
+import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
 
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
 import { UserMenu } from './UserMenu';
 import { TeamPresence } from './TeamPresence';
-import { DarkModeToggle, useDarkMode } from '@/app/_components/DarkModeToggle';
+import { DarkModeToggle, useDarkMode } from '@/app/nova-dash/_components/DarkModeToggle';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 export const dynamic = "force-dynamic";
@@ -133,7 +134,7 @@ export default function Page() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
-          <TabsList className={`grid w-full max-w-xl grid-cols-2 ${
+          <TabsList className={`grid w-full max-w-2xl grid-cols-3 ${
             isDark ? 'bg-zinc-800 text-zinc-300' : ''
           }`}>
             <TabsTrigger
@@ -149,6 +150,13 @@ export default function Page() {
             >
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
+            </TabsTrigger>
+            <TabsTrigger
+              value="arquivados"
+              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+            >
+              <Archive className="w-4 h-4 mr-2" />
+              Arquivados
             </TabsTrigger>
             {/* <TabsTrigger
               value="ponto"
@@ -168,6 +176,9 @@ export default function Page() {
           </TabsContent>
           <TabsContent value="kanban">
             <KanbanBoard />
+          </TabsContent>
+          <TabsContent value="arquivados">
+            <ArchivedCards />
           </TabsContent>
           <TabsContent value="ponto">
             <WorkSessionPanel isDark={isDark} role={session?.user?.role} userId={session?.user?.id} />

@@ -2,19 +2,19 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
-import { Label } from '@/app/_components/ui/label';
-import { Button } from '@/app/_components/ui/button';
-import { Badge } from '@/app/_components/ui/badge';
-import { Separator } from '@/app/_components/ui/separator';
-import { Avatar, AvatarFallback } from '@/app/_components/ui/avatar';
+import { Label } from '@/app/_shared/ui/label';
+import { Button } from '@/app/_shared/ui/button';
+import { Badge } from '@/app/_shared/ui/badge';
+import { Separator } from '@/app/_shared/ui/separator';
+import { Avatar, AvatarFallback } from '@/app/_shared/ui/avatar';
 import { MessageSquare, Send, Clock, Trash2, Pencil, Check, X, Bot, ExternalLink, CheckCircle2, Copy } from 'lucide-react';
 import { MentionsInput, Mention } from 'react-mentions';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { createComment } from '@/app/_actions/comment-actions';
-import { deleteComment } from '@/app/_actions/delete-comment';
-import { updateComment } from '@/app/_actions/update-comment';
+import { createComment } from '@/app/_actions/comments/comment-actions';
+import { deleteComment } from '@/app/_actions/comments/delete-comment';
+import { updateComment } from '@/app/_actions/comments/update-comment';
 import { mentionsStyles } from './constants';
 
 type MentionableUser = { id: string; display: string };

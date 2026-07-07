@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "../../../_lib/prisma";
+import { db } from "../../../_shared/lib/prisma";
 import { deleteS3Folder } from "../_s3";
 
 type Ctx = { params: { id: string } };

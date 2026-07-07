@@ -5,9 +5,9 @@ import { useSession, signOut } from 'next-auth/react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
-} from '@/app/_components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/app/_components/ui/avatar';
-import { Badge } from '@/app/_components/ui/badge';
+} from '@/app/_shared/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
+import { Badge } from '@/app/_shared/ui/badge';
 import {
   ChevronDown, User as UserIcon, Settings, LogOut, ShieldCheck, Mail,
 } from 'lucide-react';

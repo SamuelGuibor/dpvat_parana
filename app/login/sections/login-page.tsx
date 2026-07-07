@@ -2,9 +2,9 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/app/_components/ui/button";
-import { Input } from "@/app/_components/ui/input";
-import { Label } from "@/app/_components/ui/label";
+import { Button } from "@/app/_shared/ui/button";
+import { Input } from "@/app/_shared/ui/input";
+import { Label } from "@/app/_shared/ui/label";
 import Image from "next/image";
 import Link from "next/link";
 import { useForm } from "react-hook-form";

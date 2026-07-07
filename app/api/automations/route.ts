@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchAutomations, createAutomation } from "@/app/_lib/db/automations";
+import { fetchAutomations, createAutomation } from "@/app/_shared/lib/db/automations";
 
 export async function GET() {
   try {

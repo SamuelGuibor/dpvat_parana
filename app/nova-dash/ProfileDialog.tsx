@@ -5,19 +5,19 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/app/_components/ui/dialog';
-import { Button } from '@/app/_components/ui/button';
-import { Input } from '@/app/_components/ui/input';
-import { Label } from '@/app/_components/ui/label';
-import { Separator } from '@/app/_components/ui/separator';
-import { Badge } from '@/app/_components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/app/_components/ui/avatar';
+} from '@/app/_shared/ui/dialog';
+import { Button } from '@/app/_shared/ui/button';
+import { Input } from '@/app/_shared/ui/input';
+import { Label } from '@/app/_shared/ui/label';
+import { Separator } from '@/app/_shared/ui/separator';
+import { Badge } from '@/app/_shared/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import {
   User as UserIcon, Mail, Phone, IdCard, Lock, Loader2, ShieldCheck,
   Eye, EyeOff, CalendarDays, Save,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getMyProfile, updateMyProfile } from '@/app/_actions/update-profile';
+import { getMyProfile, updateMyProfile } from '@/app/_actions/users/update-profile';
 
 interface Props {
   open: boolean;

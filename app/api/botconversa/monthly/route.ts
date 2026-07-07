@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchEventsByMonth } from '@/app/_lib/db/botconversa';
+import { fetchEventsByMonth } from '@/app/_shared/lib/db/botconversa';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {

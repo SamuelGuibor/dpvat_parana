@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/app/_lib/prisma';
+import { db } from '@/app/_shared/lib/prisma';
 import { revalidatePath } from 'next/cache'
 
 export async function POST(req: Request) {

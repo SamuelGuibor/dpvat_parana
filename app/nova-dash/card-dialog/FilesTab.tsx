@@ -1,20 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
-import { Dropzone, DropzoneContent, DropzoneEmptyState } from '@/app/_components/dropzone';
-import { Button } from '@/app/_components/ui/button';
-import { Input } from '@/app/_components/ui/input';
-import { Label } from '@/app/_components/ui/label';
-import { Separator } from '@/app/_components/ui/separator';
+import { Dropzone, DropzoneContent, DropzoneEmptyState } from '@/app/nova-dash/_components/dropzone';
+import { Button } from '@/app/_shared/ui/button';
+import { Input } from '@/app/_shared/ui/input';
+import { Label } from '@/app/_shared/ui/label';
+import { Separator } from '@/app/_shared/ui/separator';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '@/app/_components/ui/dialog';
+} from '@/app/_shared/ui/dialog';
 import { Download, Loader2, Trash, FileArchive, Eye, FileText } from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
 import { toast } from 'sonner';
-import { getPresignedUrls } from '@/app/_actions/uploadS3';
-import { downloadFileFromS3 } from '@/app/_actions/downloadS3';
-import { updateDocumentName } from '@/app/_actions/updateNameDoc';
-import { deletDoc } from '@/app/_actions/delet_document';
+import { getPresignedUrls } from '@/app/_actions/documents/upload-s3';
+import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
+import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
+import { deletDoc } from '@/app/_actions/documents/delete-document';
 import { DeleteConfirmDialog } from '@/app/nova-dash/card-dialog/DeleteConfirmDialog';
 import type { FileWithBase64 } from './types';
 

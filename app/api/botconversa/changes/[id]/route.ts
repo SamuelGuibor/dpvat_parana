@@ -1,4 +1,4 @@
-import { db } from '@/app/_lib/prisma';
+import { db } from '@/app/_shared/lib/prisma';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';

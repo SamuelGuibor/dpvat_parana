@@ -8,17 +8,17 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/_components/ui/card';
-import { Badge } from '@/app/_components/ui/badge';
-import { Button } from '@/app/_components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/_shared/ui/card';
+import { Badge } from '@/app/_shared/ui/badge';
+import { Button } from '@/app/_shared/ui/button';
 import {
   TrendingUp, TrendingDown, Users, CheckCircle, XCircle,
   Clock, AlertTriangle, Target, Activity, Mail, MessageSquare,
   Zap, Bell,
   Loader2
 } from 'lucide-react';
-import { ScrollArea } from '@/app/_components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_components/ui/tabs';
+import { ScrollArea } from '@/app/_shared/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { TbXboxX } from "react-icons/tb";
 import { CiPause1 } from "react-icons/ci";
 import { FaPersonCircleQuestion } from "react-icons/fa6";

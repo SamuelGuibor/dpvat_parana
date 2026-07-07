@@ -2,7 +2,7 @@
 import { ArrowRight } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Image from "next/image";
-// import mixpanel from "@/app/_lib/mixpanel";
+// import mixpanel from "@/app/_shared/lib/mixpanel";
 // import { useEffect } from 'react';
 
 export function Hero() {

@@ -2,8 +2,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Checkbox } from "@/app/_components/ui/checkbox";
-import { Input } from "@/app/_components/ui/input";
+import { Checkbox } from "@/app/_shared/ui/checkbox";
+import { Input } from "@/app/_shared/ui/input";
 import { Plus, Trash2, Loader2 } from "lucide-react";
 
 type Item = {
