@@ -6,6 +6,8 @@
 
 const HARDCODED_CHATBOT_DASHBOARD_EMAILS = [
   "mucaguibor@gmail.com",
+  "martinez.thomaz@segurosparana.com.br",
+  "nikolas.paranaseguros@gmail.com"
 ];
 
 function normalize(email?: string | null): string {
