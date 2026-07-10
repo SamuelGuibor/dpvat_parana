@@ -327,6 +327,8 @@ model Notification {
   commentId   String?
   userId      String?
   processId   String?
+  // Notificações de WhatsApp (bot/handoff): clicar abre direto a conversa.
+  contactId   String?
   read        Boolean  @default(false)
   createdAt   DateTime @default(now())
   targetName  String
@@ -351,6 +353,135 @@ model Log {
   @@index([userId])
   @@index([processId])
   @@map("logs")
+}
+
+// ============ WhatsApp Cloud API (Meta oficial) ============
+// Contato = número de telefone único. Pode ser vinculado manualmente a um
+// User/Process já cadastrado (userId/processId são referências soltas, sem FK,
+// para não criar cascade com dados de clientes).
+model WhatsAppContact {
+  id           String                @id @default(cuid())
+  phone        String                @unique // E.164, ex: 5541999999999
+  name         String?
+  userId       String?
+  processId    String?
+  optedOut     Boolean               @default(false)
+  // Rascunho da ficha do cliente preenchida no atendimento, quando o contato
+  // ainda não tem User vinculado. Vira User no "Adicionar cliente".
+  clientDraft  Json?
+  // Documentos pessoais anexados na ficha antes do contato virar cliente:
+  // [{ key, name, uploadedAt }]. Migram para Document real no "Adicionar cliente".
+  draftDocuments Json?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  conversation WhatsAppConversation?
+  messages     WhatsAppMessage[]
+
+  @@map("whatsapp_contacts")
+}
+
+model WhatsAppConversation {
+  id            String          @id @default(cuid())
+  contactId     String          @unique
+  status        String          @default("bot") // bot | queued | human | closed
+  assignedToId  String?
+  // Só relevante quando status="closed": null/false = não qualificada
+  // (default), true = qualificada. Decidido no botão de encerrar ou pela IA.
+  qualified     Boolean?
+  // Desfecho do atendimento (categoria de encerramento decidida pela IA ou
+  // pelo atendente): qualificado | nao_qualificado | perguntas | novo_acidente
+  // | transferido. Null enquanto em andamento.
+  closeCategory String?
+  // Cérebro da IA (persistido por conversa; o microserviço é stateless):
+  botMemory     String?   // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
+  botState      String?   // etapa da conversa (triagem_seguro, coleta_cpf...)
+  botFailCount  Int       @default(0) // "não entendi" seguidos; 2 → escala pra humano
+  botNudge30At  DateTime? // "ainda está aí?" enviado (silêncio de 30min)
+  botNudge24At  DateTime? // follow-up de ~24h enviado
+  lastMessageAt DateTime        @default(now())
+  lastReadAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  contact       WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tags          WhatsAppConversationTag[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@map("whatsapp_conversations")
+}
+
+// Tags livres pra organizar conversas (ex.: "Urgente", "VIP", "Recontato").
+model WhatsAppTag {
+  id            String                     @id @default(cuid())
+  name          String                     @unique
+  color         String                     @default("#10b981")
+  createdAt     DateTime                   @default(now())
+  conversations WhatsAppConversationTag[]
+
+  @@map("whatsapp_tags")
+}
+
+model WhatsAppConversationTag {
+  conversationId String
+  tagId          String
+  conversation   WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag            WhatsAppTag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, tagId])
+  @@map("whatsapp_conversation_tags")
+}
+
+model WhatsAppMessage {
+  id          String          @id @default(cuid())
+  contactId   String
+  waMessageId String?         @unique // id da Meta; evita duplicar em retry de webhook
+  direction   String // in | out
+  body        String?
+  mediaKey    String? // chave no S3 (mesmo bucket dos documentos)
+  mediaType   String?
+  status      String          @default("sent") // sent | delivered | read | failed
+  sentByBot   Boolean         @default(false)
+  authorId    String? // funcionário que enviou (se humano)
+  internal    Boolean         @default(false) // nota interna, não vai pro cliente
+  // Edição/exclusão LOCAIS (a Cloud API não propaga pro celular do cliente).
+  editedAt    DateTime?
+  deletedAt   DateTime?
+  // Resposta (quote): id da mensagem respondida + snapshot pro render estável.
+  replyToId        String?
+  replyToBody      String?
+  replyToDirection String?
+  createdAt   DateTime        @default(now())
+  contact     WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+  @@map("whatsapp_messages")
+}
+
+// Fluxo de mensagens pré-setadas do atendimento (sequência de textos com
+// delay entre os envios). steps = [{ body: string, delayMs: number }].
+model WhatsAppFlow {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  // Descrição do fluxo em linguagem natural — a IA lê isto para decidir QUANDO
+  // este fluxo se encaixa na situação do cliente e dispará-lo automaticamente.
+  description String?
+  steps     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("whatsapp_flows")
+}
+
+model WhatsAppTemplate {
+  id           String @id @default(cuid())
+  name         String @unique // nome aprovado na Meta
+  language     String @default("pt_BR")
+  bodyVars     Int    @default(0)
+  // Texto de referência com {{1}} {{2}}... só pra equipe saber o que digitar
+  // em cada variável — não é enviado à Meta (ela já tem o template aprovado).
+  bodyPreview  String?
+
+  @@map("whatsapp_templates")
 }
 
 model Botconversa {

@@ -8,6 +8,8 @@ export interface DbNotification {
   commentId: string | null;
   userId: string | null;
   processId: string | null;
+  // Notificações de WhatsApp: contato da conversa (clique abre o inbox).
+  contactId: string | null;
   read: boolean;
   createdAt: Date;
 }

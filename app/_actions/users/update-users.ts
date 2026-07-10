@@ -4,6 +4,7 @@ import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { createLog, diffFields, CARD_FIELD_LABELS, buildUpdateMessage } from "../../_shared/lib/log";
+import { notifyStatusProgress } from "../../_shared/lib/whatsapp/status-notify";
 
 interface UpdateUserData {
   id: string;
@@ -107,6 +108,19 @@ export async function updateUser(data: UpdateUserData) {
         afastadoNotificado: data.afastadoAte !== undefined ? false : undefined,
       },
     });
+
+    // Checklist de progresso avançou → informa o cliente no WhatsApp
+    // (assíncrono; nunca bloqueia nem quebra a atualização do card).
+    if (data.status && data.status !== currentUser.status) {
+      await notifyStatusProgress({
+        phone: updatedUser.telefone,
+        clientName: updatedUser.name,
+        service: updatedUser.service,
+        newStatus: data.status,
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+      });
+    }
 
     // Registra no histórico quais campos foram alterados.
     const changed = diffFields(data as unknown as Record<string, unknown>, currentUser, CARD_FIELD_LABELS);

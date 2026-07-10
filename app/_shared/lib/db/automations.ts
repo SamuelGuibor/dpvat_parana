@@ -7,10 +7,16 @@ export type AutomationCondition = {
 };
 
 export type AutomationAction = {
-  type: "comment" | "file";
+  type: "comment" | "file" | "whatsapp";
   templateText?: string;
   templateFileKey?: string;
   templateFileName?: string;
+  // Ação "whatsapp": mensagem para o telefone do card quando ele entra na
+  // coluna. `waText` (com [[variáveis]]) vale na janela de 24h; fora dela a
+  // Meta só aceita template aprovado — `waTemplateName` + `waTemplateVars`.
+  waText?: string;
+  waTemplateName?: string;
+  waTemplateVars?: string[];
 };
 
 export type AutomationWithLabel = Awaited<ReturnType<typeof fetchAutomations>>[number];

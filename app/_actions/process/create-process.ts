@@ -4,6 +4,7 @@ import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { z } from "zod";
+import { createLog } from "../../_shared/lib/log";
 
 const createProcessSchema = z.object({
   userId: z.string(),
@@ -128,6 +129,21 @@ export async function createProcess(data: {
       label: true,
     },
   });
+
+  // Criação de card (processo) conta em "Criações" nos dashboards.
+  const me = await db.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, name: true },
+  });
+  if (me) {
+    await createLog({
+      action: "create",
+      message: "criou o card",
+      authorId: me.id,
+      authorName: me.name ?? "Usuário",
+      processId: process.id,
+    });
+  }
 
   return {
     id: process.id,

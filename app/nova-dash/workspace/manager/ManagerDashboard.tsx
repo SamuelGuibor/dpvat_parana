@@ -7,8 +7,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { Button } from '@/app/_shared/ui/button';
 import { BarChart3, Users, Activity, Flame, Loader2, Trophy, ChevronRight } from 'lucide-react';
 import { getTeamAnalytics, type TeamAnalytics } from '@/app/_actions/analytics/get-team-analytics';
+import { getChatbotDashboardAccess } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { metaFor } from '@/app/_shared/utils/action-meta';
 import { CollaboratorDetail } from './CollaboratorDetail';
+import { ChatbotDashboard } from './ChatbotDashboard';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -27,11 +29,17 @@ function StatCard({ icon: Icon, label, value, gradient }: { icon: React.ElementT
 }
 
 export function ManagerDashboard() {
-  const [period, setPeriod] = useState<7 | 30>(7);
+  const [period, setPeriod] = useState<7 | 30 | 90>(7);
   const [data, setData] = useState<TeamAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  // Desempenho do Chatbot só aparece para e-mails autorizados (allowlist própria).
+  const [chatbotAccess, setChatbotAccess] = useState(false);
+
+  useEffect(() => {
+    getChatbotDashboardAccess().then(setChatbotAccess).catch(() => setChatbotAccess(false));
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -59,7 +67,7 @@ export function ManagerDashboard() {
           <p className="text-sm text-gray-500 dark:text-zinc-400">Produtividade e ritmo da equipe · clique num colaborador para ver o detalhe.</p>
         </div>
         <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
-          {([7, 30] as const).map((p) => (
+          {([7, 30, 90] as const).map((p) => (
             <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} onClick={() => setPeriod(p)} className="h-7 px-3 text-xs">{p} dias</Button>
           ))}
         </div>
@@ -151,6 +159,13 @@ export function ManagerDashboard() {
               </div>
             </section>
           </div>
+
+          {/* Dashboard do chatbot (métricas da IA + gasto da API) — só para autorizados. */}
+          {chatbotAccess && (
+            <div className="mt-10">
+              <ChatbotDashboard />
+            </div>
+          )}
         </>
       )}
     </div>

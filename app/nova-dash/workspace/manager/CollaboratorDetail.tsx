@@ -119,7 +119,7 @@ export function CollaboratorDetail({ userId, onBack }: { userId: string; onBack:
             <Kpi label="Mês" value={data.totals.month} tone="emerald" />
             <Kpi label={`Período (${period}d)`} value={data.totals.period} tone="amber" />
             <Kpi label="Ranking" value={`#${data.team.rank}`} hint={`de ${data.team.totalCollaborators}`} tone="rose" />
-            <Kpi label="Fatia da equipe" value={`${data.team.sharePct}%`} hint={`${data.totals.allTime} no total`} tone="blue" />
+            <Kpi label="Fatia da equipe" value={`${data.team.sharePct}%`} hint={`${data.totals.allTime} nos últimos 90d`} tone="blue" />
           </div>
 
           {/* Gráficos: diário + por tipo */}
@@ -205,13 +205,13 @@ export function CollaboratorDetail({ userId, onBack }: { userId: string; onBack:
             </div>
           </div>
 
-          {/* Feed */}
+          {/* Feed — todos os logs do filtro ativo (7/30/90 dias), com rolagem */}
           <div className="mt-4">
-            <Card title="Atividade recente" icon={Activity}>
+            <Card title={`Atividade no período (${period} dias) — ${data.feed.length} ${data.feed.length === 1 ? 'ação' : 'ações'}`} icon={Activity}>
               {data.feed.length === 0 ? (
                 <p className="py-8 text-center text-sm text-gray-400">Nenhuma atividade.</p>
               ) : (
-                <ol className="space-y-1">
+                <ol className="max-h-[32rem] space-y-1 overflow-y-auto pr-2">
                   {data.feed.map((item, idx) => {
                     const meta = metaFor(item.action);
                     const Icon = meta.icon;

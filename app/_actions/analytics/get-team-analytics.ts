@@ -47,7 +47,7 @@ function localBucket(date: Date): { day: number; hour: number } {
  * Métricas agregadas da equipe (Visão do Gestor). Restrito a gestores.
  * Deriva tudo da tabela Log (campo authorId = quem executou a ação).
  */
-export async function getTeamAnalytics(periodDays: 7 | 30 = 7): Promise<TeamAnalytics> {
+export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<TeamAnalytics> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
   if (!isManager(session.user.email)) throw new Error('Acesso restrito a gestores.');

@@ -6,6 +6,7 @@ import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { db } from "./prisma";
 import { fetchAutomationsByLabel, AutomationCondition, AutomationAction } from "./db/automations";
+import { sendSystemWhatsApp } from "./whatsapp/outbound";
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -130,6 +131,27 @@ export async function runAutomations({
               processId: isProcess ? cardId : null,
             },
           });
+        }
+
+        if (action.type === "whatsapp" && action.waText) {
+          const phone = String(cardData.telefone ?? cardData.telefone_secundario ?? "").trim();
+          if (!phone) {
+            console.warn(`[AUTOMATION] Card ${cardId} sem telefone — ação de WhatsApp pulada (auto ${auto.id}).`);
+          } else {
+            const result = await sendSystemWhatsApp({
+              phone,
+              clientName: String(cardData.name ?? "") || null,
+              text: fillTemplate(action.waText, vars),
+              templateName: action.waTemplateName || null,
+              templateVars: (action.waTemplateVars ?? []).map((v) => fillTemplate(v, vars)),
+              authorId,
+              authorName: `🤖 Bot (Automação: ${auto.name})`,
+              source: "automation",
+            });
+            if (!result.sent) {
+              console.warn(`[AUTOMATION] WhatsApp não enviado (auto ${auto.id}): ${result.reason}`);
+            }
+          }
         }
 
         if (action.type === "file" && action.templateFileKey) {

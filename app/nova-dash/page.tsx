@@ -65,8 +65,17 @@ export default function Page() {
     function handleOpenCard() {
       setActiveTab('kanban');
     }
+    // Notificação de WhatsApp clicada → vai pra aba do Espaço de Trabalho
+    // (o Workspace troca pra seção WhatsApp e o inbox abre a conversa).
+    function handleOpenWhatsApp() {
+      setActiveTab('meu-espaco');
+    }
     window.addEventListener('open-kanban-card', handleOpenCard);
-    return () => window.removeEventListener('open-kanban-card', handleOpenCard);
+    window.addEventListener('open-whatsapp-conversation', handleOpenWhatsApp);
+    return () => {
+      window.removeEventListener('open-kanban-card', handleOpenCard);
+      window.removeEventListener('open-whatsapp-conversation', handleOpenWhatsApp);
+    };
   }, []);
 
   useEffect(() => {

@@ -7,7 +7,18 @@ export type LogAction =
   | "document_add"
   | "document_remove"
   | "comment_add"
-  | "create";
+  | "create"
+  // WhatsApp (auditoria do atendimento):
+  | "wa_assign"      // atendente assumiu / atribuiu a conversa
+  | "wa_reopen"      // reabriu um atendimento encerrado
+  | "wa_return_bot"  // devolveu a conversa pro bot
+  | "wa_close"       // encerrou (qualificada / não qualificada)
+  | "wa_text"        // enviou mensagem de texto
+  | "wa_document"    // enviou documento/arquivo
+  | "wa_media"       // enviou imagem/vídeo/áudio
+  | "wa_flow"        // disparou um fluxo pré-setado
+  | "wa_template"    // enviou um template aprovado na Meta
+  | "wa_bot";        // decisão da IA (qualify/disqualify/handoff/continue/erro)
 
 interface CreateLogInput {
   action: LogAction;
@@ -40,6 +51,48 @@ export async function createLog(input: CreateLogInput): Promise<void> {
     });
   } catch (err) {
     console.error("[LOG] Falha ao registrar log:", err);
+  }
+}
+
+/**
+ * Registra um evento de auditoria do atendimento por WhatsApp.
+ *
+ * Usa a mesma tabela `Log`, mas com um marcador `channel: "whatsapp"` no
+ * metadata e o contato guardado ali (contactId/contactName/phone) — os campos
+ * userId/processId da tabela ficam nulos, pois um contato de WhatsApp nem
+ * sempre está vinculado a um card. Isso permite listar "quem fez o quê" no
+ * atendimento e alimenta o dashboard do chatbot.
+ *
+ * NUNCA quebra a operação principal: falha aqui é só logada no console.
+ */
+export async function logWhatsAppEvent(input: {
+  action: LogAction;
+  message: string;
+  authorId: string;
+  authorName: string;
+  contactId: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  metadata?: Record<string, any>;
+}): Promise<void> {
+  try {
+    await db.log.create({
+      data: {
+        action: input.action,
+        message: input.message,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        metadata: {
+          channel: "whatsapp",
+          contactId: input.contactId,
+          contactName: input.contactName ?? null,
+          contactPhone: input.contactPhone ?? null,
+          ...(input.metadata ?? {}),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[LOG] Falha ao registrar log de WhatsApp:", err);
   }
 }
 

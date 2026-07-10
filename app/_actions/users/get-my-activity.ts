@@ -42,12 +42,15 @@ export async function getMyActivity(): Promise<MyActivity> {
   weekAgo.setDate(weekAgo.getDate() - 6); // 7 dias incluindo hoje
   const monthAgo = new Date(today);
   monthAgo.setDate(monthAgo.getDate() - 29);
+  // Janela máxima de análise: 90 dias (as métricas "resetam" a cada 90 dias).
+  const windowStart = new Date(today);
+  windowStart.setDate(windowStart.getDate() - 89);
   const chartStart = new Date(today);
   chartStart.setDate(chartStart.getDate() - 13); // últimos 14 dias
 
   const [allCount, todayCount, weekCount, monthCount, grouped, chartLogs, feedRows] =
     await Promise.all([
-      db.log.count({ where: { authorId } }),
+      db.log.count({ where: { authorId, createdAt: { gte: windowStart } } }),
       db.log.count({ where: { authorId, createdAt: { gte: today } } }),
       db.log.count({ where: { authorId, createdAt: { gte: weekAgo } } }),
       db.log.count({ where: { authorId, createdAt: { gte: monthAgo } } }),
@@ -61,7 +64,7 @@ export async function getMyActivity(): Promise<MyActivity> {
         select: { createdAt: true },
       }),
       db.log.findMany({
-        where: { authorId },
+        where: { authorId, createdAt: { gte: windowStart } },
         orderBy: { createdAt: "desc" },
         take: 30,
         select: {

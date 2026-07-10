@@ -41,7 +41,9 @@ import {
   ChevronUp,
   X,
   Bot,
+  MessageCircle,
 } from "lucide-react";
+import { listWhatsAppTemplates } from "../_actions/whatsapp/templates";
 import { toast } from "sonner";
 import { MentionsInput, Mention } from "react-mentions";
 import useSWR from "swr";
@@ -59,10 +61,20 @@ type Condition = {
 };
 
 type Action = {
-  type: "comment" | "file";
+  type: "comment" | "file" | "whatsapp";
   templateText?: string;
   templateFileKey?: string;
   templateFileName?: string;
+  waText?: string;
+  waTemplateName?: string;
+  waTemplateVars?: string[];
+};
+
+type WaTemplateOption = {
+  id: string;
+  name: string;
+  bodyVars: number;
+  bodyPreview: string | null;
 };
 
 type AutomationData = {
@@ -279,20 +291,28 @@ function ActionRow({
   onChange,
   onRemove,
   mentionUsers,
+  waTemplates,
 }: {
   action: Action;
   index: number;
   onChange: (a: Action) => void;
   onRemove: () => void;
   mentionUsers: MentionableUser[];
+  waTemplates: WaTemplateOption[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
   function insertVar(varName: string) {
+    if (action.type === "whatsapp") {
+      onChange({ ...action, waText: (action.waText ?? "") + `[[${varName}]]` });
+      return;
+    }
     const tpl = action.templateText ?? "";
     onChange({ ...action, templateText: tpl + `[[${varName}]]` });
   }
+
+  const selectedWaTemplate = waTemplates.find((t) => t.name === action.waTemplateName) ?? null;
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -323,11 +343,11 @@ function ActionRow({
           </span>
           <Select
             value={action.type}
-            onValueChange={(v: "comment" | "file") =>
-              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined })
+            onValueChange={(v: "comment" | "file" | "whatsapp") =>
+              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [] })
             }
           >
-            <SelectTrigger className="h-7 text-xs w-[140px]">
+            <SelectTrigger className="h-7 text-xs w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -339,6 +359,11 @@ function ActionRow({
               <SelectItem value="file" className="text-xs">
                 <span className="flex items-center gap-1.5">
                   <FileText className="w-3 h-3" /> Gerar Arquivo
+                </span>
+              </SelectItem>
+              <SelectItem value="whatsapp" className="text-xs">
+                <span className="flex items-center gap-1.5">
+                  <MessageCircle className="w-3 h-3" /> Enviar WhatsApp
                 </span>
               </SelectItem>
             </SelectContent>
@@ -442,6 +467,92 @@ function ActionRow({
             </p>
           </div>
         )}
+
+        {action.type === "whatsapp" && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+                Mensagem (enviada quando a janela de 24h está aberta)
+              </label>
+              <textarea
+                value={action.waText ?? ""}
+                onChange={(e) => onChange({ ...action, waText: e.target.value })}
+                placeholder="Ex: Olá [[name]]! Seu processo entrou em uma nova etapa. Qualquer dúvida é só responder por aqui. 😊"
+                rows={3}
+                className="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {VARIABLE_CHIPS.map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => insertVar(v)}
+                    className="text-xs px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-colors font-mono"
+                  >
+                    [[{v}]]
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+                Template de fallback (janela de 24h expirada — a Meta só aceita template aprovado)
+              </label>
+              <Select
+                value={action.waTemplateName ?? "__none__"}
+                onValueChange={(v) =>
+                  onChange({
+                    ...action,
+                    waTemplateName: v === "__none__" ? undefined : v,
+                    waTemplateVars: v === "__none__" ? [] : new Array(waTemplates.find((t) => t.name === v)?.bodyVars ?? 0).fill(""),
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Sem template (não envia fora da janela)" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  <SelectItem value="__none__" className="text-xs">Sem template (não envia fora da janela)</SelectItem>
+                  {waTemplates.map((t) => (
+                    <SelectItem key={t.id} value={t.name} className="text-xs">
+                      {t.name} {t.bodyVars > 0 ? `(${t.bodyVars} variáve${t.bodyVars > 1 ? "is" : "l"})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {waTemplates.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Nenhum template cadastrado. Sincronize com a Meta no inbox do WhatsApp (Templates → Sincronizar com a Meta).
+                </p>
+              )}
+              {selectedWaTemplate && selectedWaTemplate.bodyPreview && (
+                <p className="text-xs text-gray-400 dark:text-zinc-500 whitespace-pre-wrap">
+                  {selectedWaTemplate.bodyPreview}
+                </p>
+              )}
+              {selectedWaTemplate && selectedWaTemplate.bodyVars > 0 && (
+                <div className="space-y-1.5">
+                  {Array.from({ length: selectedWaTemplate.bodyVars }).map((_, vi) => (
+                    <Input
+                      key={vi}
+                      value={action.waTemplateVars?.[vi] ?? ""}
+                      onChange={(e) => {
+                        const next = [...(action.waTemplateVars ?? new Array(selectedWaTemplate.bodyVars).fill(""))];
+                        next[vi] = e.target.value;
+                        onChange({ ...action, waTemplateVars: next });
+                      }}
+                      placeholder={`Variável {{${vi + 1}}} — pode usar [[name]], [[service]], etc.`}
+                      className="h-8 text-xs"
+                    />
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-400 dark:text-zinc-500">
+                A mensagem vai para o telefone do card. Dentro da janela de 24h (cliente respondeu há menos de 24h) vai o texto livre; fora dela, só o template aprovado.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -472,6 +583,11 @@ function AutomationEditor({
 
   const { data: mentionUsers = [] } = useSWR<MentionableUser[]>("/api/admins", fetcher);
   const { data: hospitals = [] } = useSWR<string[]>("/api/hospitals", fetcher);
+  // Templates aprovados na Meta (cadastro local) — fallback fora da janela de 24h.
+  const { data: waTemplates = [] } = useSWR<WaTemplateOption[]>(
+    "wa-templates",
+    () => listWhatsAppTemplates().catch(() => []),
+  );
 
   useEffect(() => {
     if (open) {
@@ -491,6 +607,9 @@ function AutomationEditor({
 
     const invalidFile = actions.some((a) => a.type === "file" && !a.templateFileKey);
     if (invalidFile) { toast.error("Faça o upload do template .docx antes de salvar"); return; }
+
+    const invalidWa = actions.some((a) => a.type === "whatsapp" && !a.waText?.trim());
+    if (invalidWa) { toast.error("Escreva a mensagem de WhatsApp da ação"); return; }
 
     setSaving(true);
     try {
@@ -635,6 +754,7 @@ function AutomationEditor({
                   action={a}
                   index={i}
                   mentionUsers={mentionUsers}
+                  waTemplates={waTemplates}
                   onChange={(updated) =>
                     setActions((p) => p.map((x, xi) => (xi === i ? updated : x)))
                   }
@@ -771,6 +891,14 @@ function AutomationCard({
                       <MessageSquare className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
                       <span className="text-gray-600 dark:text-zinc-300 line-clamp-2">
                         {a.templateText || "(sem texto)"}
+                      </span>
+                    </>
+                  ) : a.type === "whatsapp" ? (
+                    <>
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                      <span className="text-gray-600 dark:text-zinc-300 line-clamp-2">
+                        {a.waText || "(sem mensagem)"}
+                        {a.waTemplateName && <span className="text-gray-400"> · fallback: {a.waTemplateName}</span>}
                       </span>
                     </>
                   ) : (

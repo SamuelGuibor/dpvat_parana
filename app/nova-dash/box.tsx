@@ -94,6 +94,19 @@ export function NotificationDropdown() {
                 <div
                   key={n.id}
                   onClick={() => {
+                    // Notificação de WhatsApp → abre a conversa direto no inbox.
+                    if (n.contactId) {
+                      setOpen(false);
+                      // sessionStorage cobre o caso do inbox ainda não estar
+                      // montado quando o evento dispara (troca de aba).
+                      sessionStorage.setItem('wa-open-contact', n.contactId);
+                      window.dispatchEvent(
+                        new CustomEvent('open-whatsapp-conversation', {
+                          detail: { contactId: n.contactId },
+                        }),
+                      );
+                      return;
+                    }
                     const cardId = n.processId ?? n.userId;
                     if (!cardId) return;
                     setOpen(false);

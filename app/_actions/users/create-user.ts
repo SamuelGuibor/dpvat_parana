@@ -1,6 +1,9 @@
 "use server";
 
 import { db } from "../../_shared/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "../../_shared/lib/auth";
+import { createLog } from "../../_shared/lib/log";
 
 interface CreateUserProps {
   name: string;
@@ -41,6 +44,21 @@ export const createUser = async ({ name, cpf, password, email, labelId, role, se
       cardNumber,
     },
   });
+
+  // Criação de card conta em "Criações" (só cards de cliente; membro da
+  // equipe criado pelo Team não entra na métrica).
+  if (!isAdmin) {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.id) {
+      await createLog({
+        action: "create",
+        message: "criou o card",
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+        userId: user.id,
+      });
+    }
+  }
 
   return { id: user.id, name: user.name, email: user.email, cpf: user.cpf, role: user.role, labelId: user.labelId, cardNumber: user.cardNumber };
 };

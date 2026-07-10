@@ -18,6 +18,7 @@ export interface CollaboratorDetail {
     lastSeenAt: string | null;
   };
   periodDays: number;
+  // allTime = janela máxima de 90 dias (reseta a cada 90 dias)
   totals: { today: number; week: number; month: number; period: number; allTime: number };
   byAction: Record<string, number>;
   daily: { date: string; label: string; count: number }[];
@@ -64,22 +65,25 @@ export async function getCollaboratorDetail(
   const today = startOfDay(now);
   const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
   const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate() - 29);
+  // Janela máxima de análise: 90 dias (as métricas "resetam" a cada 90 dias).
+  const windowStart = new Date(today); windowStart.setDate(windowStart.getDate() - 89);
   const periodStart = new Date(today); periodStart.setDate(periodStart.getDate() - (periodDays - 1));
 
   const [
     user, allTime, todayC, weekC, monthC, grouped, periodLogs, feedRows, teamGrouped,
   ] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, image: true, role: true, email: true, lastSeenAt: true } }),
-    db.log.count({ where: { authorId: userId } }),
+    db.log.count({ where: { authorId: userId, createdAt: { gte: windowStart } } }),
     db.log.count({ where: { authorId: userId, createdAt: { gte: today } } }),
     db.log.count({ where: { authorId: userId, createdAt: { gte: weekAgo } } }),
     db.log.count({ where: { authorId: userId, createdAt: { gte: monthAgo } } }),
     db.log.groupBy({ by: ['action'], where: { authorId: userId, createdAt: { gte: periodStart } }, _count: { _all: true } }),
     db.log.findMany({ where: { authorId: userId, createdAt: { gte: periodStart } }, select: { createdAt: true } }),
+    // Feed com TODOS os logs do filtro ativo (7/30/90 dias) — a UI rola.
     db.log.findMany({
-      where: { authorId: userId },
+      where: { authorId: userId, createdAt: { gte: periodStart } },
       orderBy: { createdAt: 'desc' },
-      take: 25,
+      take: 1000,
       select: { id: true, action: true, message: true, createdAt: true, processId: true, user: { select: { name: true } }, process: { select: { name: true } } },
     }),
     db.log.groupBy({ by: ['authorId'], where: { createdAt: { gte: periodStart } }, _count: { _all: true } }),
