@@ -22,10 +22,8 @@ import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
 //   WHATSAPP_APP_SECRET    App Secret do app (valida a assinatura HMAC)
 
 export const dynamic = "force-dynamic";
-// O bot pode fazer até 3 tentativas de 45s no cérebro (IA) antes de cair na
-// fila, e o caminho de lookup encadeia duas chamadas — precisa de folga na
-// duração da função. (Vercel limita ao teto do plano; Pro = 300s.)
-export const maxDuration = 300;
+
+export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
