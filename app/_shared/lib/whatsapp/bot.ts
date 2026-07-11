@@ -86,6 +86,9 @@ interface BotDecision {
   urgent: boolean;
   understood: boolean;
   confidence: number;
+  // A IA identificou (pelo contexto) que o cliente quer PARAR de receber
+  // mensagens. Diferente de disqualify: aqui marcamos optedOut no contato.
+  optOut?: boolean;
   // Tokens gastos na chamada ao Claude (o microserviço devolve; alimenta o
   // custo semanal/mensal no dashboard do chatbot).
   usage?: BotUsage | null;
@@ -433,6 +436,29 @@ export async function sendBotReply(
   text: string,
   delayMs = 0,
 ): Promise<void> {
+  // Guard anti-spam (política da Meta):
+  // 1. NUNCA responde a quem pediu opt-out.
+  // 2. NÃO reenvia uma mensagem idêntica à última enviada nos últimos 10min —
+  //    evita o padrão de "mesma saudação repetida" que caracteriza spam.
+  const contact = await db.whatsAppContact.findUnique({
+    where: { id: contactId },
+    select: { optedOut: true },
+  });
+  if (contact?.optedOut) {
+    console.warn("[WHATSAPP BOT] Envio bloqueado: contato em opt-out.", contactId);
+    return;
+  }
+  const lastOut = await db.whatsAppMessage.findFirst({
+    where: { contactId, direction: "out", deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { body: true, createdAt: true },
+  });
+  if (lastOut?.body && lastOut.body.trim() === text.trim()
+    && Date.now() - lastOut.createdAt.getTime() < 10 * 60_000) {
+    console.warn("[WHATSAPP BOT] Envio bloqueado: mensagem idêntica recente (anti-spam).", contactId);
+    return;
+  }
+
   if (delayMs > 0) await sleep(delayMs);
 
   const result = await sendText(phone, text);
@@ -650,6 +676,40 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         action: "handoff",
         handoffReason: decision.handoffReason ?? "urgência detectada",
       };
+    }
+
+    // ---- Opt-out identificado pela IA (com contexto) ----------------------
+    // A IA leu a conversa e concluiu que o cliente quer PARAR de receber
+    // mensagens. Envia a despedida da própria IA, marca optedOut e encerra —
+    // NÃO segue o roteiro nem outras ações. (Diferente do regex do webhook,
+    // aqui há contexto: "vou sair mas já volto" não vira descadastro.)
+    if (decision.optOut) {
+      const bye = decision.reply?.trim();
+      if (bye) {
+        await sendBotReply(contactId, message.contactPhone, message.contactName, bye, humanDelay(bye));
+      }
+      await db.whatsAppContact.update({ where: { id: contactId }, data: { optedOut: true } });
+      await db.whatsAppConversation.update({
+        where: { contactId },
+        data: {
+          status: "closed", assignedToId: null, closeCategory: "nao_qualificado", qualified: false,
+          botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
+        },
+      });
+      await logWhatsAppEvent({
+        action: "wa_bot",
+        message: "IA: descadastro (cliente pediu para parar de receber mensagens)",
+        authorId: "whatsapp-bot",
+        authorName: "🤖 Bot WhatsApp",
+        contactId,
+        contactName: message.contactName,
+        contactPhone: message.contactPhone,
+        metadata: {
+          outcome: "disqualify", optOut: true, intent: decision.intent,
+          closeCategory: "nao_qualificado", usage: decision.usage ?? undefined,
+        },
+      });
+      return;
     }
 
     // ---- Persiste memória/estado ------------------------------------------

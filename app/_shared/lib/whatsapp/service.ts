@@ -1,7 +1,8 @@
 import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
-import { downloadMediaToS3 } from "./client";
+import { downloadMediaToS3, sendText } from "./client";
+import { isOptOutMessage, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
@@ -119,9 +120,21 @@ export async function ingestIncomingMessage(
     create: { contactId: contact.id },
   });
 
+  // Opt-out / opt-in (anti-spam): analisa o texto do cliente cedo.
+  const incomingText = extractBody(msg);
+  const wantsOptOut = isOptOutMessage(incomingText);
+  const wantsOptIn = isOptInMessage(incomingText);
+
+  // Reativação explícita: quem estava opt-out pediu para voltar a ser atendido.
+  if (contact.optedOut && wantsOptIn && !wantsOptOut) {
+    await db.whatsAppContact.update({ where: { id: contact.id }, data: { optedOut: false } });
+    contact.optedOut = false;
+  }
+
   // Conversa encerrada + cliente mandou mensagem de novo → reabre (volta pro
-  // bot, sem atendente). Ela some de "Encerradas" e o bot/fila retoma o fluxo.
-  if (conversation.status === "closed") {
+  // bot, sem atendente). NÃO reabre se o contato está em opt-out: quem pediu
+  // silêncio não deve voltar a receber respostas automáticas.
+  if (conversation.status === "closed" && !contact.optedOut && !wantsOptOut) {
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: { status: "bot", assignedToId: null, lastReadAt: null },
@@ -194,6 +207,35 @@ export async function ingestIncomingMessage(
   // Best-effort, igual ao chat interno: se o relay estiver fora, o polling cobre.
   const recipients = await whatsappRecipients();
   await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+
+  // Opt-out por REGEX: só atua quando NÃO está em modo bot (fila/humano), onde
+  // não há IA para julgar o contexto. Em modo bot, deixamos a mensagem seguir
+  // para o cérebro, que decide o opt-out lendo a conversa inteira (evita tratar
+  // "vou precisar sair, mas já volto" como um comando de descadastro). O regex
+  // aqui é conservador: só casa frases explícitas de descadastro.
+  if (wantsOptOut && conversation.status !== "bot") {
+    if (!contact.optedOut) {
+      try {
+        const confirm = await sendText(contact.phone, OPT_OUT_CONFIRMATION);
+        if (confirm.waMessageId) {
+          await db.whatsAppMessage.create({
+            data: {
+              contactId: contact.id, waMessageId: confirm.waMessageId,
+              direction: "out", body: OPT_OUT_CONFIRMATION, status: "sent", sentByBot: true,
+            },
+          });
+        }
+      } catch (err) {
+        console.error("[WHATSAPP] Falha ao confirmar opt-out:", contact.id, err);
+      }
+    }
+    await db.whatsAppContact.update({ where: { id: contact.id }, data: { optedOut: true } });
+    conversation = await db.whatsAppConversation.update({
+      where: { id: conversation.id },
+      data: { status: "closed", assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
+    });
+    return { contactId: contact.id, conversationStatus: "closed", message: dto, isNew: true };
+  }
 
   // Notificação (sino) do "cliente respondeu": NUNCA para todo mundo quando
   // já existe um dono do ticket — só a fila de distribuição (sem atendente)

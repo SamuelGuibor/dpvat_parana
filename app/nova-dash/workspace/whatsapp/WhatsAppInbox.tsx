@@ -105,7 +105,7 @@ export function WhatsAppInbox() {
 
   const { conversations, refreshConversations } = useWhatsAppConversations();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
-  const { messages, mutate: mutateMessages } = useWhatsAppMessages(activeContactId);
+  const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
 
   const [search, setSearch] = useState('');
   const [clientModalOpen, setClientModalOpen] = useState(false);
@@ -206,7 +206,28 @@ export function WhatsAppInbox() {
   );
 
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [displayMessages.length]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Ao carregar mensagens ANTIGAS (prepend), preservamos a posição de leitura em
+  // vez de pular pro fim. Guardamos a altura antes do prepend e ajustamos depois.
+  const prependAnchorRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Prepend de bloco antigo: mantém o ponto onde o usuário estava lendo.
+    if (prependAnchorRef.current != null && scrollRef.current) {
+      const el = scrollRef.current;
+      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
+      prependAnchorRef.current = null;
+      return;
+    }
+    // Fluxo normal (mensagem nova / troca de conversa): desce pro fim.
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [displayMessages.length]);
+
+  async function handleLoadOlder() {
+    // Âncora = distância do fim; após o prepend, o effect recompõe o scrollTop.
+    if (scrollRef.current) prependAnchorRef.current = scrollRef.current.scrollHeight - scrollRef.current.scrollTop;
+    await loadOlder();
+  }
 
   // Busca por nome ou celular + filtro por tags (basta bater em uma das selecionadas).
   const filtered = useMemo(() => {
@@ -384,32 +405,32 @@ export function WhatsAppInbox() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex h-full overflow-hidden rounded-2xl border border-[#dce8e1] bg-[#dce8e1] shadow-sm dark:border-zinc-800 whatsapp-darkreader">
       {/* ---------- Lista de conversas ---------- */}
-      <aside className="flex w-[320px] shrink-0 flex-col border-r border-gray-100 bg-gray-50/50 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <aside className="flex w-[320px] shrink-0 flex-col border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader">
         {/* Cabeçalho fixo: título + busca + tags (não rola com a lista) */}
-        <div className="shrink-0 border-b border-gray-100 bg-gray-50/80 px-3 pb-3 pt-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/60">
+        <div className="shrink-0 border-b border-[#16362c] bg-[#1f3d33]/95 px-3 pb-3 pt-3 backdrop-blur dark:border-zinc-800 whatsapp-darkreader">
           <div className="mb-2 flex items-center gap-2 px-1">
-            <MessageCircle className="h-4 w-4 text-emerald-600" />
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">WhatsApp</span>
+            <MessageCircle className="h-4 w-4 text-[#6fd6ad]" />
+            <span className="text-xs font-bold uppercase tracking-wider text-[#6fd6ad]">WhatsApp</span>
             {conversations.length > 0 && (
-              <span className="ml-auto rounded-full bg-gray-200 px-1.5 text-[11px] font-bold text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">
+              <span className="ml-auto rounded-full bg-[#1d9e75] px-1.5 text-[11px] font-bold text-white">
                 {conversations.length}
               </span>
             )}
           </div>
 
           {/* Busca por nome ou celular */}
-          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500 dark:border-zinc-800 dark:bg-zinc-900">
-            <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          <div className="flex items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-[#6fd6ad]">
+            <Search className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por nome ou celular..."
-              className="w-full bg-transparent text-base outline-none placeholder:text-gray-400 dark:text-zinc-100"
+              className="w-full bg-transparent text-base text-white outline-none placeholder:text-[#8fbcac]"
             />
             {search && (
-              <button onClick={() => setSearch('')} title="Limpar busca" className="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300">
+              <button onClick={() => setSearch('')} title="Limpar busca" className="text-[#8fbcac] hover:text-white">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
@@ -433,14 +454,14 @@ export function WhatsAppInbox() {
                   </button>
                 );
               })}
-              <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-zinc-800">
+              <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-[#8fbcac] hover:bg-[#2e5749] hover:text-white">
                 <Settings2 className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
           {allTags.length === 0 && (
             <div className="mt-2">
-              <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300">
+              <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-[#8fbcac] hover:text-white">
                 <TagIcon className="h-3 w-3" /> Criar tags
               </button>
             </div>
@@ -450,14 +471,14 @@ export function WhatsAppInbox() {
         {/* Área rolável: só a lista de conversas rola */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
           {conversations.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
               <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
               <p className="text-base">Nenhuma conversa ainda.</p>
               <p className="mt-1 text-sm">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
             </div>
           )}
           {conversations.length > 0 && filtered.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
               <Search className="mb-2 h-6 w-6 opacity-40" />
               <p className="text-base">Nada encontrado com esse filtro.</p>
             </div>
@@ -469,19 +490,19 @@ export function WhatsAppInbox() {
 
           {/* Aba com o resto das categorias — uma lista por vez.
               Gruda no topo da área rolável (sticky) pra ficar sempre acessível. */}
-          <div className="sticky top-0 z-10 mt-3 flex gap-1 overflow-x-auto border-y border-gray-100 bg-gray-50/95 px-3 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+          <div className="sticky top-0 z-10 mt-3 flex gap-1 overflow-x-auto border-y border-[#14332a] bg-[#1f3d33]/95 px-3 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold transition-colors ${
                   activeTab === tab.key
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                    ? 'bg-[#1d9e75] text-white'
+                    : 'bg-[#2e5749] text-[#cfe6db] hover:bg-[#366b58]'
                 }`}
               >
                 {tab.label}
-                <span className={`rounded-full px-1.5 text-[11px] font-bold ${activeTab === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-zinc-700'}`}>
+                <span className={`rounded-full px-1.5 text-[11px] font-bold ${activeTab === tab.key ? 'bg-white/20' : 'bg-[#1a4034]'}`}>
                   {tabItems[tab.key].length}
                 </span>
               </button>
@@ -493,7 +514,7 @@ export function WhatsAppInbox() {
               <select
                 value={attendantFilter}
                 onChange={(e) => setAttendantFilter(e.target.value)}
-                className="h-7 w-full max-w-[180px] cursor-pointer rounded-md border border-gray-200 bg-white px-1.5 text-xs font-semibold text-gray-600 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                className="h-7 w-full max-w-[180px] cursor-pointer rounded-md border border-[#dce8e1] bg-[#2e5749] px-1.5 text-xs font-semibold text-[#cfe6db] outline-none"
               >
                 <option value="all">Todos os atendentes</option>
                 {attendants.filter((a) => a.id !== meId).map((a) => (
@@ -521,7 +542,7 @@ export function WhatsAppInbox() {
       </aside>
 
       {/* ---------- Thread ---------- */}
-      <section className="flex min-w-0 flex-1 flex-col bg-[rgba(30,58,138,0.1)] dark:bg-zinc-950/20">
+      <section className="flex min-w-0 flex-1 flex-col bg-[#dce8e1] dark:bg-zinc-950/20">
         {!active ? (
           <div className="flex h-full flex-col items-center justify-center text-gray-400">
             <MessageCircle className="mb-2 h-10 w-10 opacity-30" />
@@ -632,7 +653,21 @@ export function WhatsAppInbox() {
               )}
             </header>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+              {/* Carregar histórico anterior em blocos (evita puxar tudo de uma vez) */}
+              {hasMore && (
+                <div className="mb-2 flex justify-center">
+                  <button
+                    onClick={handleLoadOlder}
+                    disabled={loadingOlder}
+                    className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-500 shadow-sm transition-colors hover:bg-gray-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    {loadingOlder
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...</>
+                      : <><Clock className="h-3.5 w-3.5" /> Carregar mensagens anteriores</>}
+                  </button>
+                </div>
+              )}
               {displayMessages.map((msg, i) => {
                 const prev = displayMessages[i - 1];
                 const grouped = prev && prev.direction === msg.direction
@@ -725,14 +760,14 @@ function ConversationGroup({
   return (
     <div>
       {!hideTitle && (
-        <div className={`flex items-center gap-1.5 px-4 pb-1 pt-4 text-xs font-bold uppercase tracking-wider ${highlight ? 'text-amber-500' : 'text-gray-400'}`}>
+        <div className={`flex items-center gap-1.5 px-4 pb-1 pt-4 text-xs font-bold uppercase tracking-wider ${highlight ? 'text-amber-400' : 'text-[#8fbcac]'}`}>
           {title}
-          <span className="rounded-full bg-gray-200 px-1.5 text-[11px] font-bold text-gray-600 dark:bg-zinc-800 dark:text-zinc-300">{items.length}</span>
+          <span className="rounded-full bg-[#2e5749] px-1.5 text-[11px] font-bold text-[#cfe6db]">{items.length}</span>
           {headerExtra}
         </div>
       )}
       {!items.length && (
-        <p className="px-4 pb-1 text-sm text-gray-400">{emptyLabel ?? 'Nenhuma conversa aqui.'}</p>
+        <p className="px-4 pb-1 text-sm text-[#8fbcac]">{emptyLabel ?? 'Nenhuma conversa aqui.'}</p>
       )}
       {items.map((c) => {
         const isActive = c.contactId === activeContactId;
@@ -741,11 +776,11 @@ function ConversationGroup({
             key={c.id}
             onClick={() => onSelect(c.contactId)}
             className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-              isActive ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+              isActive ? 'bg-[#1a6649] text-white' : 'text-[#d3e2db] hover:bg-[#26483c]'
             }`}
           >
-            <Avatar className="h-8 w-8 shrink-0 border border-gray-100 dark:border-zinc-800">
-              <AvatarFallback className="bg-emerald-50 text-[11px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+            <Avatar className="h-8 w-8 shrink-0 border border-[#3a6b58]">
+              <AvatarFallback className="bg-[#356b57] text-[11px] font-bold text-[#c5ecdb]">
                 {initials(c.contactName ?? c.contactPhone)}
               </AvatarFallback>
             </Avatar>
@@ -759,11 +794,11 @@ function ConversationGroup({
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 text-xs text-gray-400">
+                <span className="shrink-0 text-xs text-[#8fbcac]">
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
               </span>
-              <span className="block truncate text-sm text-gray-400">{c.lastMessagePreview ?? '—'}</span>
+              <span className="block truncate text-sm text-[#a7c9bc]">{c.lastMessagePreview ?? '—'}</span>
               {c.tags.length > 0 && (
                 <span className="mt-1 flex flex-wrap gap-1">
                   {c.tags.map((t) => (

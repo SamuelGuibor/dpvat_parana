@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 @layer base {
+  .whatsapp-darkreader {
+    --darkreader-background-dce8e1: #18181B !important;
+    --darkreader-background-1f3d33: #252728cc !important;
+    --darkreader-background-1f3d33f2: #252728cc !important;
+    --darkreader-border-16362c: #2b2b2b !important;
+    --darkreader-border-14332a: #2b2b2b !important;
+    --darkreader-background-1a6649: #144f38 !important;
+    --darkreader-background-2e5749: #232627 !important;
+    }
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;

@@ -5,7 +5,9 @@ import { authOptions } from '@/app/_shared/lib/auth';
 
 // Histórico de uma conversa de WhatsApp (também é o polling de fallback do SWR,
 // espelho de /api/chat/messages).
-// GET /api/whatsapp/messages?contactId=<id>&after=<ISO>&limit=50
+// GET /api/whatsapp/messages?contactId=<id>&after=<ISO>&before=<ISO>&limit=50
+//   - after:  mensagens MAIS NOVAS que o ISO (polling incremental)
+//   - before: mensagens MAIS ANTIGAS que o ISO (paginação "carregar anteriores")
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -29,12 +31,14 @@ export async function GET(req: NextRequest) {
   }
 
   const after = searchParams.get('after');
+  const before = searchParams.get('before');
   const limit = Math.min(Number(searchParams.get('limit')) || 50, 200);
 
   const rows = await db.whatsAppMessage.findMany({
     where: {
       contactId,
       ...(after ? { createdAt: { gt: new Date(after) } } : {}),
+      ...(before ? { createdAt: { lt: new Date(before) } } : {}),
     },
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -64,5 +68,6 @@ export async function GET(req: NextRequest) {
       authorName: m.authorId ? nameById.get(m.authorId) ?? null : m.sentByBot ? 'Bot' : null,
     }));
 
-  return NextResponse.json({ messages });
+  // hasMore: veio o bloco cheio → provavelmente há mais mensagens antigas.
+  return NextResponse.json({ messages, hasMore: rows.length === limit });
 }
