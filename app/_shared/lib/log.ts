@@ -18,6 +18,7 @@ export type LogAction =
   | "wa_media"       // enviou imagem/vídeo/áudio
   | "wa_flow"        // disparou um fluxo pré-setado
   | "wa_template"    // enviou um template aprovado na Meta
+  | "wa_note"        // registrou uma nota interna na thread (só equipe vê)
   | "wa_bot";        // decisão da IA (qualify/disqualify/handoff/continue/erro)
 
 interface CreateLogInput {

@@ -8,7 +8,7 @@ import {
   UserRound, Undo2, Archive, Headset, Inbox as InboxIcon, Search, X,
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
-  HelpCircle, AlertTriangle,
+  HelpCircle, AlertTriangle, StickyNote,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/app/_shared/ui/avatar';
@@ -229,7 +229,9 @@ export function WhatsAppInbox() {
     // no fallback pelo `qualified` antigo (true→qualificada, senão→não qualificada).
     const byCategory = (cat: string) => closed.filter((c) => c.closeCategory === cat);
     return {
-      queued: filtered.filter((c) => c.status === 'queued'),
+      // Urgentes (detectados pela IA) primeiro na fila de espera.
+      queued: filtered.filter((c) => c.status === 'queued')
+        .sort((a, b) => Number(b.urgent) - Number(a.urgent)),
       mine: filtered.filter((c) => c.status === 'human' && c.assignedToId === meId),
       others: filtered.filter((c) => c.status === 'human' && c.assignedToId !== meId
         && (attendantFilter === 'all' || c.assignedToId === attendantFilter)),
@@ -384,14 +386,20 @@ export function WhatsAppInbox() {
   return (
     <div className="flex h-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       {/* ---------- Lista de conversas ---------- */}
-      <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-r border-gray-100 bg-gray-50/50 pb-2 dark:border-zinc-800 dark:bg-zinc-950/40">
-        <div className="flex items-center gap-2 px-4 pb-1 pt-3">
-          <MessageCircle className="h-4 w-4 text-emerald-600" />
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">WhatsApp</span>
-        </div>
+      <aside className="flex w-[320px] shrink-0 flex-col border-r border-gray-100 bg-gray-50/50 dark:border-zinc-800 dark:bg-zinc-950/40">
+        {/* Cabeçalho fixo: título + busca + tags (não rola com a lista) */}
+        <div className="shrink-0 border-b border-gray-100 bg-gray-50/80 px-3 pb-3 pt-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/60">
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <MessageCircle className="h-4 w-4 text-emerald-600" />
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">WhatsApp</span>
+            {conversations.length > 0 && (
+              <span className="ml-auto rounded-full bg-gray-200 px-1.5 text-[11px] font-bold text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">
+                {conversations.length}
+              </span>
+            )}
+          </div>
 
-        {/* Busca por nome ou celular */}
-        <div className="px-3 pt-2">
+          {/* Busca por nome ou celular */}
           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500 dark:border-zinc-800 dark:bg-zinc-900">
             <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
             <input
@@ -406,106 +414,110 @@ export function WhatsAppInbox() {
               </button>
             )}
           </div>
+
+          {/* Filtro por tags */}
+          {allTags.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {allTags.map((t) => {
+                const on = tagFilter.includes(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTagFilter((prev) => (on ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
+                    className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition-colors"
+                    style={on
+                      ? { backgroundColor: t.color, borderColor: t.color, color: 'white' }
+                      : { borderColor: t.color, color: t.color }}
+                  >
+                    {t.name}
+                  </button>
+                );
+              })}
+              <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-zinc-800">
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {allTags.length === 0 && (
+            <div className="mt-2">
+              <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300">
+                <TagIcon className="h-3 w-3" /> Criar tags
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Filtro por tags */}
-        {allTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
-            {allTags.map((t) => {
-              const on = tagFilter.includes(t.id);
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setTagFilter((prev) => (on ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
-                  className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition-colors"
-                  style={on
-                    ? { backgroundColor: t.color, borderColor: t.color, color: 'white' }
-                    : { borderColor: t.color, color: t.color }}
-                >
-                  {t.name}
-                </button>
-              );
-            })}
-            <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-zinc-800">
-              <Settings2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-        {allTags.length === 0 && (
-          <div className="px-3 pt-2">
-            <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300">
-              <TagIcon className="h-3 w-3" /> Criar tags
-            </button>
-          </div>
-        )}
+        {/* Área rolável: só a lista de conversas rola */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+          {conversations.length === 0 && (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
+              <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
+              <p className="text-base">Nenhuma conversa ainda.</p>
+              <p className="mt-1 text-sm">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
+            </div>
+          )}
+          {conversations.length > 0 && filtered.length === 0 && (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
+              <Search className="mb-2 h-6 w-6 opacity-40" />
+              <p className="text-base">Nada encontrado com esse filtro.</p>
+            </div>
+          )}
 
-        {conversations.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
-            <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
-            <p className="text-base">Nenhuma conversa ainda.</p>
-            <p className="mt-1 text-sm">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
-          </div>
-        )}
-        {conversations.length > 0 && filtered.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
-            <Search className="mb-2 h-6 w-6 opacity-40" />
-            <p className="text-base">Nada encontrado com esse filtro.</p>
-          </div>
-        )}
+          {/* Fixas no topo */}
+          <ConversationGroup title="Fila de espera" items={groups.queued} activeContactId={activeContactId} onSelect={setActiveContactId} highlight />
+          <ConversationGroup title="Meus atendimentos" items={groups.mine} activeContactId={activeContactId} onSelect={setActiveContactId} />
 
-        {/* Fixas no topo */}
-        <ConversationGroup title="Fila de espera" items={groups.queued} activeContactId={activeContactId} onSelect={setActiveContactId} highlight />
-        <ConversationGroup title="Meus atendimentos" items={groups.mine} activeContactId={activeContactId} onSelect={setActiveContactId} />
+          {/* Aba com o resto das categorias — uma lista por vez.
+              Gruda no topo da área rolável (sticky) pra ficar sempre acessível. */}
+          <div className="sticky top-0 z-10 mt-3 flex gap-1 overflow-x-auto border-y border-gray-100 bg-gray-50/95 px-3 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {tab.label}
+                <span className={`rounded-full px-1.5 text-[11px] font-bold ${activeTab === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-zinc-700'}`}>
+                  {tabItems[tab.key].length}
+                </span>
+              </button>
+            ))}
+          </div>
 
-        {/* Aba com o resto das categorias — uma lista por vez */}
-        <div className="mt-3 flex gap-1 overflow-x-auto px-3 pb-2">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold transition-colors ${
-                activeTab === tab.key
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-              }`}
-            >
-              {tab.label}
-              <span className={`rounded-full px-1.5 text-[11px] font-bold ${activeTab === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-zinc-700'}`}>
-                {tabItems[tab.key].length}
-              </span>
-            </button>
-          ))}
+          {activeTab === 'others' && attendants.length > 0 && (
+            <div className="px-4 pb-1 pt-2">
+              <select
+                value={attendantFilter}
+                onChange={(e) => setAttendantFilter(e.target.value)}
+                className="h-7 w-full max-w-[180px] cursor-pointer rounded-md border border-gray-200 bg-white px-1.5 text-xs font-semibold text-gray-600 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              >
+                <option value="all">Todos os atendentes</option>
+                {attendants.filter((a) => a.id !== meId).map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <ConversationGroup
+            title={TABS.find((t) => t.key === activeTab)!.label}
+            items={tabItems[activeTab]}
+            activeContactId={activeContactId}
+            onSelect={setActiveContactId}
+            hideTitle
+            emptyLabel={
+              activeTab === 'others' ? 'Nenhuma conversa com outros atendentes.'
+                : activeTab === 'bot' ? 'Nenhuma conversa com o bot.'
+                  : activeTab === 'qualified' ? 'Nenhuma conversa qualificada ainda.'
+                    : activeTab === 'unqualified' ? 'Nenhuma conversa encerrada não qualificada.'
+                      : `Nenhuma conversa encerrada como "${TABS.find((t) => t.key === activeTab)?.label}".`
+            }
+          />
         </div>
-
-        {activeTab === 'others' && attendants.length > 0 && (
-          <div className="px-4 pb-1">
-            <select
-              value={attendantFilter}
-              onChange={(e) => setAttendantFilter(e.target.value)}
-              className="h-7 w-full max-w-[180px] cursor-pointer rounded-md border border-gray-200 bg-white px-1.5 text-xs font-semibold text-gray-600 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-            >
-              <option value="all">Todos os atendentes</option>
-              {attendants.filter((a) => a.id !== meId).map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <ConversationGroup
-          title={TABS.find((t) => t.key === activeTab)!.label}
-          items={tabItems[activeTab]}
-          activeContactId={activeContactId}
-          onSelect={setActiveContactId}
-          hideTitle
-          emptyLabel={
-            activeTab === 'others' ? 'Nenhuma conversa com outros atendentes.'
-              : activeTab === 'bot' ? 'Nenhuma conversa com o bot.'
-                : activeTab === 'qualified' ? 'Nenhuma conversa qualificada ainda.'
-                  : activeTab === 'unqualified' ? 'Nenhuma conversa encerrada não qualificada.'
-                    : `Nenhuma conversa encerrada como "${TABS.find((t) => t.key === activeTab)?.label}".`
-          }
-        />
       </aside>
 
       {/* ---------- Thread ---------- */}
@@ -546,6 +558,11 @@ export function WhatsAppInbox() {
                   </span>
                 )}
               </button>
+              {active.urgent && active.status !== 'closed' && (
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+                  <AlertTriangle className="h-3 w-3" /> Urgente
+                </span>
+              )}
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_CHIP[active.status] ?? ''}`}>
                 {STATUS_LABEL[active.status] ?? active.status}
                 {active.status === 'closed' && (active.qualified ? ' · Qualificada' : ' · Não qualificada')}
@@ -734,7 +751,14 @@ function ConversationGroup({
             </Avatar>
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-base font-semibold">{c.contactName ?? formatPhone(c.contactPhone)}</span>
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                  <span className="truncate text-base font-semibold">{c.contactName ?? formatPhone(c.contactPhone)}</span>
+                  {c.urgent && c.status !== 'closed' && (
+                    <span className="shrink-0 animate-pulse rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      Urgente
+                    </span>
+                  )}
+                </span>
                 <span className="shrink-0 text-xs text-gray-400">
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
@@ -786,6 +810,24 @@ function ThreadMessageRow({
       <div ref={setRowRef} className={`flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-0.5' : 'mt-2'}`}>
         <div className="flex items-center gap-1.5 rounded-2xl border border-dashed border-gray-200 px-3 py-1.5 text-sm italic text-gray-400 dark:border-zinc-700">
           <Ban className="h-3 w-3" /> Mensagem apagada
+        </div>
+      </div>
+    );
+  }
+
+  // Nota interna: só a equipe vê (o cliente nunca recebeu). Renderiza como um
+  // aviso centralizado em âmbar — motivo de transferência do bot, recado entre
+  // atendentes etc.
+  if (msg.internal) {
+    return (
+      <div ref={setRowRef} className="mt-2 flex justify-center">
+        <div className="max-w-[85%] rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+          <span className="mr-1.5 inline-flex items-center gap-1 align-middle font-bold">
+            <StickyNote className="h-3 w-3" />
+            {msg.sentByBot ? 'Bot' : msg.authorName ?? 'Equipe'} · nota interna
+            <span className="font-normal opacity-60">{timeShort(msg.createdAt)}</span>
+          </span>
+          <span className="whitespace-pre-wrap break-words">{msg.body}</span>
         </div>
       </div>
     );

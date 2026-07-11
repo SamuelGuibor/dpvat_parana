@@ -171,6 +171,66 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
 }
 
 /**
+ * NOTA INTERNA: mensagem visível só pra equipe — NÃO passa pela Meta, o
+ * cliente nunca recebe. Serve pra passar contexto entre atendentes na própria
+ * thread ("cliente prefere ligação à tarde", "aguardando doc do hospital"...).
+ * Funciona mesmo com a janela de 24h expirada.
+ */
+export async function sendWhatsAppInternalNote({ contactId, body }: { contactId: string; body: string }): Promise<void> {
+  const me = await requireTeamMember();
+  const text = body.trim();
+  if (!text) throw new Error('Nota vazia.');
+  if (text.length > 4000) throw new Error('Nota muito longa.');
+
+  const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
+  if (!contact) throw new Error('Contato não encontrado.');
+
+  const message = await db.whatsAppMessage.create({
+    data: {
+      contactId,
+      direction: 'out',
+      body: text,
+      status: 'sent',
+      authorId: me.id,
+      internal: true,
+    },
+  });
+
+  // Broadcast pro relay: colegas com a thread aberta veem a nota na hora.
+  // Não mexe em lastMessageAt — nota interna não deve reordenar a lista nem
+  // marcar a conversa como "não lida" pro cliente ter respondido.
+  const dto: WhatsAppMessageDTO = {
+    id: message.id,
+    channelId: whatsappChannelId(contactId),
+    contactId,
+    direction: 'out',
+    body: text,
+    mediaKey: null,
+    mediaType: null,
+    status: 'sent',
+    sentByBot: false,
+    authorId: me.id,
+    createdAt: message.createdAt.toISOString(),
+    contactName: contact.name,
+    contactPhone: contact.phone,
+    conversationStatus: 'human',
+  };
+  const recipients = await whatsappRecipients();
+  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+
+  await logWhatsAppEvent({
+    action: 'wa_note',
+    message: `registrou uma nota interna na conversa de ${contact.name ?? contact.phone}`,
+    authorId: me.id,
+    authorName: me.name,
+    contactId,
+    contactName: contact.name,
+    contactPhone: contact.phone,
+    metadata: { preview: text.slice(0, 120) },
+  });
+}
+
+/**
  * Presigned PUT para o navegador subir o anexo direto ao S3 (contorna o
  * limite de 4.5 MB de body das functions da Vercel, igual ao roteiro).
  */

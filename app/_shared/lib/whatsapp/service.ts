@@ -28,6 +28,8 @@ export interface WhatsAppMessageDTO {
   id: string;
   channelId: string;
   contactId: string;
+  // id da Meta (mensagens recebidas) — o bot usa pra marcar como lida/digitando.
+  waMessageId?: string | null;
   direction: string;
   body: string | null;
   mediaKey: string | null;
@@ -171,6 +173,7 @@ export async function ingestIncomingMessage(
     id: message.id,
     channelId: whatsappChannelId(contact.id),
     contactId: contact.id,
+    waMessageId: message.waMessageId,
     direction: message.direction,
     body: message.body,
     mediaKey: message.mediaKey,

@@ -3,7 +3,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
-import { sendText } from "./client";
+import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import {
@@ -233,15 +233,62 @@ async function runLookup(kind: string, contactId: string, card: LinkedCard | nul
 // ---------------------------------------------------------------------------
 
 /**
+ * Nota interna na thread (só a equipe vê): registra o motivo de transferências
+ * e eventos do bot inline na conversa, pro atendente ter contexto na hora.
+ * Best-effort — falha aqui não interrompe o fluxo.
+ */
+async function postInternalNote(contactId: string, body: string): Promise<void> {
+  try {
+    const message = await db.whatsAppMessage.create({
+      data: { contactId, direction: "out", body, sentByBot: true, internal: true, status: "sent" },
+    });
+    const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { name: true, phone: true } });
+    const recipients = await whatsappRecipients();
+    await broadcastToRelay({
+      channelId: whatsappChannelId(contactId),
+      recipients,
+      message: {
+        id: message.id,
+        channelId: whatsappChannelId(contactId),
+        contactId,
+        direction: "out",
+        body,
+        mediaKey: null,
+        mediaType: null,
+        status: "sent",
+        sentByBot: true,
+        authorId: null,
+        createdAt: message.createdAt.toISOString(),
+        contactName: contact?.name ?? null,
+        contactPhone: contact?.phone ?? "",
+        conversationStatus: "queued",
+      } satisfies WhatsAppMessageDTO,
+    });
+  } catch (err) {
+    console.error("[WHATSAPP BOT] Falha ao registrar nota interna:", err);
+  }
+}
+
+/**
  * Joga a conversa na fila de distribuição e avisa a equipe (Notification +
  * Discord). NUNCA envia mensagem de erro ao cliente — se a IA falhou, o
  * cliente simplesmente passa a ser atendido por um humano.
  */
-async function handoffToQueue(contactId: string, contactLabel: string, reason: string, closeCategory: string = "transferido"): Promise<void> {
+async function handoffToQueue(
+  contactId: string,
+  contactLabel: string,
+  reason: string,
+  closeCategory: string = "transferido",
+  urgent = false,
+): Promise<void> {
   await db.whatsAppConversation.update({
     where: { contactId },
-    data: { status: "queued", assignedToId: null, botFailCount: 0, closeCategory },
+    // queuedAt alimenta o SLA da fila (cron alerta se ninguém assumir).
+    data: { status: "queued", assignedToId: null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null, ...(urgent ? { urgent: true } : {}) },
   });
+
+  // Motivo da transferência visível NA THREAD (nota interna, só equipe).
+  await postInternalNote(contactId, `🤖 Transferido para atendimento humano — ${reason}`);
 
   try {
     const recipients = await whatsappRecipients();
@@ -302,9 +349,10 @@ async function tagAsQualified(conversationId: string): Promise<void> {
 async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
   const conversation = await db.whatsAppConversation.update({
     where: { contactId },
-    data: { status: "queued", assignedToId: null, qualified: true, botFailCount: 0, closeCategory: "qualificado" },
+    data: { status: "queued", assignedToId: null, qualified: true, botFailCount: 0, closeCategory: "qualificado", queuedAt: new Date(), queueAlertAt: null },
   });
   await tagAsQualified(conversation.id);
+  await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}`);
   await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId);
 }
 
@@ -314,7 +362,7 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
     where: { contactId },
     // Encerrou como não qualificada: reseta a memória do cliente para que uma
     // futura conversa comece do zero.
-    data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, botMemory: null, botState: null },
+    data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, botMemory: null, botState: null, urgent: false, queuedAt: null, queueAlertAt: null },
   });
 }
 
@@ -327,7 +375,7 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
 async function resolveAndClose(contactId: string, category: string = "perguntas"): Promise<void> {
   await db.whatsAppConversation.update({
     where: { contactId },
-    data: { status: "closed", assignedToId: null, qualified: null, closeCategory: category, botFailCount: 0, botMemory: null, botState: null },
+    data: { status: "closed", assignedToId: null, qualified: null, closeCategory: category, botFailCount: 0, botMemory: null, botState: null, urgent: false, queuedAt: null, queueAlertAt: null },
   });
 }
 
@@ -488,6 +536,12 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   if (!isBotConfigured()) {
     await handoffToQueue(contactId, contactLabel, "bot não configurado");
     return;
+  }
+
+  // Tique azul + "digitando..." no celular do cliente enquanto a IA pensa —
+  // best-effort, roda em paralelo sem atrasar o fluxo.
+  if (message.waMessageId) {
+    markMessageRead(message.waMessageId, true).catch(() => {});
   }
 
   try {
@@ -658,6 +712,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
           contactId, contactLabel,
           decision.handoffReason ?? "transferido pelo bot",
           decision.closeCategory ?? "transferido",
+          decision.urgent, // urgência da IA vira selo vermelho no inbox
         );
         break;
       case "resolve":

@@ -70,6 +70,38 @@ async function postMessage(payload: Record<string, unknown>): Promise<SendResult
 }
 
 /**
+ * Marca uma mensagem RECEBIDA como lida no celular do cliente (tique azul).
+ * Com `typing=true` também liga o indicador "digitando..." por até 25s —
+ * usamos enquanto o bot prepara a resposta, pra parecer um atendente real.
+ * Best-effort: falha aqui nunca interrompe o fluxo de quem chamou.
+ */
+export async function markMessageRead(waMessageId: string, typing = false): Promise<void> {
+  if (!isWhatsAppConfigured() || !waMessageId) return;
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${PHONE_NUMBER_ID}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${TOKEN}`,
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: waMessageId,
+        ...(typing ? { typing_indicator: { type: "text" } } : {}),
+      }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      console.warn("[WHATSAPP] Falha ao marcar como lida:", data?.error?.message ?? `HTTP ${res.status}`);
+    }
+  } catch (err) {
+    console.warn("[WHATSAPP] Falha de rede ao marcar como lida:", err);
+  }
+}
+
+/**
  * Texto livre — só funciona dentro da janela de 24h desde a última mensagem
  * do cliente. `replyToWaId` transforma em resposta (quote) no celular dele.
  */

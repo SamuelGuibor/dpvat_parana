@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Bot, Loader2, BadgeCheck, XCircle, Headset, HelpCircle, AlertTriangle,
   Brain, Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
-  UserRound, Undo2, DollarSign,
+  UserRound, Undo2, DollarSign, StickyNote, Users,
 } from 'lucide-react';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
@@ -51,6 +51,7 @@ const ACTION_META: Record<string, { icon: React.ElementType; label: string }> = 
   wa_media: { icon: FileText, label: 'Mídia' },
   wa_flow: { icon: Workflow, label: 'Fluxo' },
   wa_template: { icon: FileBadge, label: 'Template' },
+  wa_note: { icon: StickyNote, label: 'Nota interna' },
 };
 
 function Bar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
@@ -159,6 +160,44 @@ export function ChatbotDashboard() {
               hint="mês ÷ decisões do período"
             />
           </div>
+
+          {/* Desempenho do atendimento humano */}
+          {data.team.attendants.length > 0 && (
+            <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <h2 className="mb-1 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
+                <Users className="h-4 w-4 text-emerald-500" /> Desempenho da equipe
+              </h2>
+              <p className="mb-4 text-xs text-gray-400">
+                Conversas assumidas, encerradas, mensagens enviadas e tempo médio até a primeira resposta após assumir.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400 dark:border-zinc-800">
+                      <th className="pb-2 pr-4 font-semibold">Atendente</th>
+                      <th className="pb-2 pr-4 font-semibold">Assumidas</th>
+                      <th className="pb-2 pr-4 font-semibold">Encerradas</th>
+                      <th className="pb-2 pr-4 font-semibold">Mensagens</th>
+                      <th className="pb-2 font-semibold">1ª resposta (média)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.team.attendants.map((a) => (
+                      <tr key={a.name} className="border-b border-gray-50 last:border-0 dark:border-zinc-800/50">
+                        <td className="py-2 pr-4 font-semibold text-gray-800 dark:text-zinc-100">{a.name}</td>
+                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.assumed}</td>
+                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.closed}</td>
+                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.messages}</td>
+                        <td className="py-2 tabular-nums text-gray-600 dark:text-zinc-300">
+                          {a.avgFirstResponseMin != null ? `${a.avgFirstResponseMin} min` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-5">
             {/* Intenções */}

@@ -25,6 +25,7 @@ import { DarkModeToggle, useDarkMode } from '@/app/nova-dash/_components/DarkMod
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
+import { useWhatsAppUnread } from '@/app/_shared/hooks/use-whatsapp';
 export const dynamic = "force-dynamic";
 
 type Theme = 'light' | 'dark';
@@ -39,6 +40,9 @@ export default function Page() {
   const router = useRouter();
   const { unread } = useUnread();
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
+  // Badge único da aba: soma não-lidas do chat interno + do WhatsApp.
+  const whatsappUnread = useWhatsAppUnread();
+  const workspaceUnread = chatUnread + whatsappUnread;
 
   // Carrega tema persistido no primeiro mount
   useEffect(() => {
@@ -191,9 +195,9 @@ export default function Page() {
             >
               <UserCircle className="w-4 h-4 mr-2" />
               Espaço de Trabalho
-              {chatUnread > 0 && (
+              {workspaceUnread > 0 && (
                 <span className="ml-2 grid h-5 min-w-[20px] place-items-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">
-                  {chatUnread > 99 ? '99+' : chatUnread}
+                  {workspaceUnread > 99 ? '99+' : workspaceUnread}
                 </span>
               )}
             </TabsTrigger>

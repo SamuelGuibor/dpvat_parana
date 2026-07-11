@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Send, ImagePlus, X, Workflow, Loader2, Settings2, Pencil,
   Reply as ReplyIcon, FileText, Image as ImageIcon, Video, Mic, Check, FileBadge,
+  StickyNote, Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/app/_shared/ui/button';
@@ -12,10 +13,12 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/app/_shared/ui/dropdown-menu';
-import { sendWhatsAppMessage, sendWhatsAppMedia } from '@/app/_actions/whatsapp/send-message';
+import { sendWhatsAppMessage, sendWhatsAppMedia, sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppFlows, logFlowDispatched, type WhatsAppFlowDTO, type WhatsAppFlowStep } from '@/app/_actions/whatsapp/flows';
+import { listWhatsAppQuickReplies, type WhatsAppQuickReplyDTO } from '@/app/_actions/whatsapp/quick-replies';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 import { WhatsAppFlowsModal } from './WhatsAppFlowsModal';
+import { WhatsAppQuickRepliesModal } from './WhatsAppQuickRepliesModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { checkFileForWhatsApp } from './media-rules';
 
@@ -62,12 +65,24 @@ export function WhatsAppComposer({
 
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
+  // Modo NOTA INTERNA: o texto vai só pra thread da equipe, nunca pro cliente.
+  // Funciona mesmo com a janela de 24h expirada (não passa pela Meta).
+  const [noteMode, setNoteMode] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
+  // Respostas rápidas (snippets) — inseridas no input com um clique.
+  const [quickReplies, setQuickReplies] = useState<WhatsAppQuickReplyDTO[]>([]);
+  const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+
   const editing = !!editTarget;
 
   async function reloadFlows() {
     try { setFlows(await listWhatsAppFlows()); } catch { /* sem permissão/offline: dropdown fica vazio */ }
   }
-  useEffect(() => { reloadFlows(); }, []);
+  async function reloadQuickReplies() {
+    try { setQuickReplies(await listWhatsAppQuickReplies()); } catch { /* idem */ }
+  }
+  useEffect(() => { reloadFlows(); reloadQuickReplies(); }, []);
 
   // Entrar no modo edição carrega o texto original no input.
   useEffect(() => {
@@ -98,7 +113,23 @@ export function WhatsAppComposer({
 
   async function submit() {
     const text = value.trim();
-    if (disabled) return;
+    // Nota interna não passa pela Meta — funciona com a janela de 24h expirada.
+    if (disabled && !noteMode) return;
+
+    if (noteMode && !editing) {
+      if (!text) return;
+      setSavingNote(true);
+      try {
+        await sendWhatsAppInternalNote({ contactId, body: text });
+        setValue('');
+        await onRefresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Falha ao salvar a nota.');
+      } finally {
+        setSavingNote(false);
+      }
+      return;
+    }
 
     if (editing && editTarget) {
       if (!text) return;
@@ -166,7 +197,22 @@ export function WhatsAppComposer({
   }
 
   return (
-    <div className="overflow-visible rounded-xl border border-gray-200 bg-white transition-all focus-within:ring-2 focus-within:ring-emerald-500 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className={`overflow-visible rounded-xl border bg-white transition-all focus-within:ring-2 dark:bg-zinc-900 ${
+      noteMode && !editing
+        ? 'border-amber-300 focus-within:ring-amber-500 dark:border-amber-800'
+        : 'border-gray-200 focus-within:ring-emerald-500 dark:border-zinc-800'
+    }`}>
+      {/* Barra do modo nota interna */}
+      {noteMode && !editing && (
+        <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+          <StickyNote className="h-3.5 w-3.5 shrink-0" />
+          Nota interna — só a equipe vê, o cliente NÃO recebe.
+          <button onClick={() => setNoteMode(false)} title="Voltar a responder o cliente" className="ml-auto text-amber-600 hover:text-red-500">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Barra de resposta (quote) */}
       {replyTo && !editing && (
         <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 dark:border-zinc-800">
@@ -227,12 +273,14 @@ export function WhatsAppComposer({
             setValue('');
           }
         }}
-        disabled={disabled}
+        disabled={disabled && !noteMode}
         placeholder={editing
           ? 'Novo texto da mensagem...'
-          : attachments.length
-            ? 'Legenda do primeiro anexo (opcional)...'
-            : placeholder ?? 'Escreva uma mensagem para o cliente... (*negrito* _itálico_ ~tachado~)'}
+          : noteMode
+            ? 'Escreva uma nota interna para a equipe (o cliente não recebe)...'
+            : attachments.length
+              ? 'Legenda do primeiro anexo (opcional)...'
+              : placeholder ?? 'Escreva uma mensagem para o cliente... (*negrito* _itálico_ ~tachado~)'}
         rows={2}
         className="w-full resize-none bg-transparent p-3 text-base outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
       />
@@ -247,7 +295,7 @@ export function WhatsAppComposer({
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || editing}
+            disabled={disabled || editing || noteMode}
             title="Anexar arquivos (pode selecionar vários)"
             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
@@ -301,21 +349,74 @@ export function WhatsAppComposer({
             <FileBadge className="h-6 w-6" />
           </button>
 
+          {/* Respostas rápidas: insere o texto no input com um clique */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={(disabled && !noteMode) || editing}
+                title="Respostas rápidas"
+                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              >
+                <Zap className="h-6 w-6" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-72">
+              <DropdownMenuLabel className="text-sm">Respostas rápidas</DropdownMenuLabel>
+              {quickReplies.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta criada ainda.</DropdownMenuItem>
+              )}
+              {quickReplies.map((q) => (
+                <DropdownMenuItem
+                  key={q.id}
+                  onClick={() => {
+                    setValue((prev) => (prev.trim() ? `${prev}\n${q.body}` : q.body));
+                    textareaRef.current?.focus();
+                  }}
+                  className="flex-col items-start gap-0.5 text-base"
+                >
+                  <span className="w-full truncate font-semibold">{q.title}</span>
+                  <span className="w-full truncate text-[11px] text-gray-400">{q.body}</span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setQuickRepliesOpen(true)} className="text-base">
+                <Settings2 className="mr-2 h-4 w-4" /> Gerenciar respostas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Toggle nota interna */}
+          <button
+            onClick={() => setNoteMode((v) => !v)}
+            disabled={editing}
+            title={noteMode ? 'Voltar a responder o cliente' : 'Nota interna (só a equipe vê)'}
+            className={`rounded-lg p-1.5 transition-colors disabled:opacity-50 ${
+              noteMode
+                ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300'
+                : 'text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
+            }`}
+          >
+            <StickyNote className="h-6 w-6" />
+          </button>
+
           <p className="ml-2 hidden text-[11px] text-gray-400 sm:block">Enter envia · Shift+Enter nova linha</p>
         </div>
         <Button
           onClick={submit}
-          disabled={disabled || savingEdit || (!value.trim() && !attachments.length)}
+          disabled={(disabled && !noteMode) || savingEdit || savingNote || (!value.trim() && !attachments.length)}
           size="sm"
-          className={`h-8 px-4 ${editing ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+          className={`h-8 px-4 ${editing || noteMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
         >
           {editing
             ? <>{savingEdit ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Check className="mr-2 h-3 w-3" />} Salvar edição</>
-            : <><Send className="mr-2 h-3 w-3" /> Enviar</>}
+            : noteMode
+              ? <>{savingNote ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <StickyNote className="mr-2 h-3 w-3" />} Salvar nota</>
+              : <><Send className="mr-2 h-3 w-3" /> Enviar</>}
         </Button>
       </div>
 
       <WhatsAppFlowsModal open={flowsOpen} onOpenChange={setFlowsOpen} onChanged={reloadFlows} />
+      <WhatsAppQuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} onChanged={reloadQuickReplies} />
       <WhatsAppSendTemplateModal
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}

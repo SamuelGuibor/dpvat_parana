@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
+import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { CLOSE_CATEGORY_LABELS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 
 // Fila e atribuição de conversas de WhatsApp (estilo Botconversa):
@@ -43,6 +44,8 @@ export interface WhatsAppConversationDTO {
   // Categoria do desfecho (só relevante quando status="closed"): qualificado |
   // nao_qualificado | perguntas | novo_acidente | transferido.
   closeCategory: string | null;
+  // Urgência detectada pela IA — some quando um atendente assume/encerra.
+  urgent: boolean;
   assignedToId: string | null;
   assignedToName: string | null;
   lastMessageAt: string;
@@ -54,7 +57,7 @@ export interface WhatsAppConversationDTO {
 }
 
 export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
-  await requireTeamMember();
+  const me = await requireTeamMember();
 
   const conversations = await db.whatsAppConversation.findMany({
     orderBy: { lastMessageAt: 'desc' },
@@ -62,6 +65,9 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     include: {
       contact: { select: { id: true, name: true, phone: true } },
       tags: { include: { tag: true } },
+      // Meu marcador de leitura (por atendente) — abrir a conversa não zera
+      // o não-lido dos colegas.
+      reads: { where: { userId: me.id }, select: { lastReadAt: true } },
     },
   });
   if (!conversations.length) return [];
@@ -99,6 +105,12 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       ? last.body ?? (last.mediaType ? '📎 Anexo' : null)
       : null;
     const inboundAt = inboundByContact.get(c.contactId) ?? null;
+    // Leitura efetiva: meu marcador por atendente; o lastReadAt global (legado)
+    // entra como fallback pra não marcar tudo como não-lido na virada.
+    const myReadAt = c.reads[0]?.lastReadAt ?? null;
+    const effectiveReadAt = myReadAt && c.lastReadAt
+      ? (myReadAt > c.lastReadAt ? myReadAt : c.lastReadAt)
+      : myReadAt ?? c.lastReadAt;
     return {
       id: c.id,
       contactId: c.contactId,
@@ -107,13 +119,14 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       status: c.status,
       qualified: c.qualified,
       closeCategory: c.closeCategory,
+      urgent: c.urgent,
       assignedToId: c.assignedToId,
       assignedToName: c.assignedToId ? nameById.get(c.assignedToId) ?? null : null,
       lastMessageAt: c.lastMessageAt.toISOString(),
-      lastReadAt: c.lastReadAt?.toISOString() ?? null,
+      lastReadAt: effectiveReadAt?.toISOString() ?? null,
       lastInboundAt: inboundAt?.toISOString() ?? null,
       lastMessagePreview: last?.direction === 'out' && preview ? `Você: ${preview}` : preview,
-      unread: !c.lastReadAt || c.lastMessageAt > c.lastReadAt,
+      unread: !effectiveReadAt || c.lastMessageAt > effectiveReadAt,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
   });
@@ -141,7 +154,8 @@ export async function assumeConversation(conversationId: string): Promise<void> 
   const before = await convContact(conversationId);
   await db.whatsAppConversation.update({
     where: { id: conversationId },
-    data: { status: 'human', assignedToId: me.id, qualified: null },
+    // Assumiu: some o selo de urgência e zeram os marcadores de SLA da fila.
+    data: { status: 'human', assignedToId: me.id, qualified: null, urgent: false, queuedAt: null, queueAlertAt: null },
   });
   if (before) {
     // "Assumir" reabre quando estava encerrada; senão é uma atribuição normal.
@@ -166,7 +180,7 @@ export async function returnConversationToBot(conversationId: string): Promise<v
   const before = await convContact(conversationId);
   await db.whatsAppConversation.update({
     where: { id: conversationId },
-    data: { status: 'bot', assignedToId: null },
+    data: { status: 'bot', assignedToId: null, queuedAt: null, queueAlertAt: null },
   });
   if (before) {
     await logWhatsAppEvent({
@@ -204,7 +218,7 @@ export async function closeConversation(
     where: { id: conversationId },
     // Ticket encerrado: zera a memória/estado do bot para que uma futura
     // conversa desse cliente comece do zero.
-    data: { status: 'closed', assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0 },
+    data: { status: 'closed', assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null },
   });
   if (before) {
     await logWhatsAppEvent({
@@ -220,11 +234,32 @@ export async function closeConversation(
   }
 }
 
-/** Zera o badge de não-lida (marcador global da conversa, não por usuário). */
+/**
+ * Zera o badge de não-lida DO ATENDENTE ATUAL (leitura por usuário) e, de
+ * quebra, marca a última mensagem recebida como lida na Meta — o cliente vê
+ * o tique azul quando alguém da equipe realmente abriu a conversa.
+ */
 export async function markConversationRead(conversationId: string): Promise<void> {
-  await requireTeamMember();
-  await db.whatsAppConversation.update({
+  const me = await requireTeamMember();
+  const now = new Date();
+  const conv = await db.whatsAppConversation.findUnique({
     where: { id: conversationId },
-    data: { lastReadAt: new Date() },
+    select: { contactId: true },
   });
+  await db.whatsAppConversationRead.upsert({
+    where: { conversationId_userId: { conversationId, userId: me.id } },
+    update: { lastReadAt: now },
+    create: { conversationId, userId: me.id, lastReadAt: now },
+  });
+
+  // Tique azul no celular do cliente (best-effort; não bloqueia a leitura).
+  if (conv) {
+    db.whatsAppMessage.findFirst({
+      where: { contactId: conv.contactId, direction: 'in', waMessageId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: { waMessageId: true },
+    }).then((last) => {
+      if (last?.waMessageId) return markMessageRead(last.waMessageId);
+    }).catch(() => {});
+  }
 }

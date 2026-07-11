@@ -398,16 +398,50 @@ model WhatsAppConversation {
   botFailCount  Int       @default(0) // "não entendi" seguidos; 2 → escala pra humano
   botNudge30At  DateTime? // "ainda está aí?" enviado (silêncio de 30min)
   botNudge24At  DateTime? // follow-up de ~24h enviado
+  // Urgência detectada pela IA — destaca a conversa no inbox até um atendente
+  // assumir ou encerrar.
+  urgent        Boolean   @default(false)
+  // SLA da fila de espera: quando entrou na fila e quando o último alerta de
+  // "cliente esperando demais" foi disparado pelo cron (evita spam).
+  queuedAt      DateTime?
+  queueAlertAt  DateTime?
   lastMessageAt DateTime        @default(now())
+  // Legado: marcador global de leitura (mantido como fallback na migração
+  // para leitura POR ATENDENTE — ver WhatsAppConversationRead).
   lastReadAt    DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   contact       WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   tags          WhatsAppConversationTag[]
+  reads         WhatsAppConversationRead[]
 
   @@index([status])
   @@index([assignedToId])
   @@map("whatsapp_conversations")
+}
+
+// Leitura POR ATENDENTE: cada membro da equipe tem seu próprio "até onde li"
+// em cada conversa — abrir a conversa não zera o não-lido dos colegas.
+model WhatsAppConversationRead {
+  conversationId String
+  userId         String
+  lastReadAt     DateTime             @default(now())
+  conversation   WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@map("whatsapp_conversation_reads")
+}
+
+// Respostas rápidas (snippets) do atendimento — textos curtos reutilizáveis
+// que o atendente insere no composer com um clique.
+model WhatsAppQuickReply {
+  id        String   @id @default(cuid())
+  title     String   @unique
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("whatsapp_quick_replies")
 }
 
 // Tags livres pra organizar conversas (ex.: "Urgente", "VIP", "Recontato").

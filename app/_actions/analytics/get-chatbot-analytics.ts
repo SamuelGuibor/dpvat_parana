@@ -50,6 +50,17 @@ export interface ChatbotAnalytics {
   };
   // Como os assuntos foram encerrados no período (perguntas, qualificado, etc.).
   closeCategories: Record<string, number>;
+  // Desempenho do atendimento HUMANO no período: quem assumiu/encerrou/enviou
+  // e o tempo médio até a primeira resposta depois de assumir.
+  team: {
+    attendants: {
+      name: string;
+      assumed: number;              // conversas assumidas (inclui reaberturas)
+      closed: number;               // atendimentos encerrados
+      messages: number;             // mensagens/mídias enviadas ao cliente
+      avgFirstResponseMin: number | null; // média assumir → 1ª resposta (min)
+    }[];
+  };
   activity: ChatbotActivityItem[];
 }
 
@@ -113,11 +124,28 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 29); monthAgo.setHours(0, 0, 0, 0);
   const costSince = since < monthAgo ? since : monthAgo;
 
-  const logs = await db.log.findMany({
-    where: { action: { startsWith: 'wa_' }, createdAt: { gte: costSince } },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, action: true, message: true, authorName: true, metadata: true, createdAt: true },
-  });
+  const [logs, humanMessages] = await Promise.all([
+    db.log.findMany({
+      where: { action: { startsWith: 'wa_' }, createdAt: { gte: costSince } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, action: true, message: true, authorId: true, authorName: true, metadata: true, createdAt: true },
+    }),
+    // Mensagens humanas do período — alimenta a 1ª resposta após assumir.
+    db.whatsAppMessage.findMany({
+      where: { direction: 'out', sentByBot: false, internal: false, createdAt: { gte: since }, authorId: { not: null } },
+      orderBy: { createdAt: 'asc' },
+      select: { contactId: true, authorId: true, createdAt: true },
+    }),
+  ]);
+
+  // Índice authorId:contactId → timestamps das mensagens (já em ordem asc).
+  const msgTimes = new Map<string, number[]>();
+  for (const m of humanMessages) {
+    const k = `${m.authorId}:${m.contactId}`;
+    const arr = msgTimes.get(k) ?? [];
+    arr.push(m.createdAt.getTime());
+    msgTimes.set(k, arr);
+  }
 
   const bot = {
     totalDecisions: 0, qualify: 0, disqualify: 0, handoff: 0, continueCount: 0,
@@ -137,6 +165,17 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
 
   const cost = { weekUSD: 0, monthUSD: 0, weekTokens: 0, monthTokens: 0, model: null as string | null };
   const closeCategories: Record<string, number> = {};
+
+  // Desempenho por atendente (chaveado por authorId).
+  const teamStats = new Map<string, {
+    name: string; assumed: number; closed: number; messages: number; firstResponses: number[];
+  }>();
+  function attendantOf(authorId: string | null, authorName: string) {
+    const key = authorId ?? authorName;
+    let s = teamStats.get(key);
+    if (!s) { s = { name: authorName, assumed: 0, closed: 0, messages: 0, firstResponses: [] }; teamStats.set(key, s); }
+    return s;
+  }
 
   for (const l of logs) {
     const meta = (l.metadata ?? {}) as any;
@@ -203,6 +242,25 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
           contactName: meta.contactName ?? null,
         });
       }
+
+      // Estatísticas por atendente.
+      const s = attendantOf(l.authorId, l.authorName);
+      if (l.action === 'wa_assign' || l.action === 'wa_reopen') {
+        s.assumed += 1;
+        // 1ª resposta: primeira mensagem DESSE atendente PRA ESSE contato
+        // depois do assumir (janela de até 24h pra descartar outliers).
+        const contactId = meta.contactId as string | undefined;
+        if (l.authorId && contactId) {
+          const times = msgTimes.get(`${l.authorId}:${contactId}`) ?? [];
+          const t0 = l.createdAt.getTime();
+          const first = times.find((t) => t > t0);
+          if (first && first - t0 < 24 * 60 * 60_000) s.firstResponses.push(first - t0);
+        }
+      } else if (l.action === 'wa_close') {
+        s.closed += 1;
+      } else if (['wa_text', 'wa_media', 'wa_document', 'wa_template'].includes(l.action)) {
+        s.messages += 1;
+      }
     }
   }
 
@@ -225,5 +283,18 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   cost.weekUSD = Math.round(cost.weekUSD * 10000) / 10000;
   cost.monthUSD = Math.round(cost.monthUSD * 10000) / 10000;
 
-  return { periodDays, bot, cost, closeCategories, activity };
+  const attendants = [...teamStats.values()]
+    .map((s) => ({
+      name: s.name,
+      assumed: s.assumed,
+      closed: s.closed,
+      messages: s.messages,
+      avgFirstResponseMin: s.firstResponses.length
+        ? Math.round(s.firstResponses.reduce((a, b) => a + b, 0) / s.firstResponses.length / 60_000)
+        : null,
+    }))
+    .filter((s) => s.assumed || s.closed || s.messages)
+    .sort((a, b) => b.messages - a.messages);
+
+  return { periodDays, bot, cost, closeCategories, team: { attendants }, activity };
 }
