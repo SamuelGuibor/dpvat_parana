@@ -32,9 +32,9 @@ export async function notifyStatusProgress(params: {
 
     const firstName = (params.clientName ?? "").trim().split(/\s+/)[0] || "cliente";
     const text =
-      `Olá, ${firstName}! 👋\n\n` +
-      `Temos uma atualização do seu atendimento: seu processo avançou para a etapa *${label}*${progress}. ✅\n\n` +
-      `Qualquer dúvida, é só responder por aqui. 😊`;
+      `Olá, ${firstName}!\n\n` +
+      `Temos uma atualização do seu atendimento: seu processo avançou para a etapa *${label}*${progress}.\n\n` +
+      `Qualquer dúvida, é só responder por aqui.`;
 
     const result = await sendSystemWhatsApp({
       phone,

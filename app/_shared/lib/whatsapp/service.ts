@@ -1,3 +1,4 @@
+import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { downloadMediaToS3 } from "./client";
@@ -194,7 +195,68 @@ export async function ingestIncomingMessage(
   const recipients = await whatsappRecipients();
   await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
 
+  // Notificação (sino) do "cliente respondeu": NUNCA para todo mundo quando
+  // já existe um dono do ticket — só a fila de distribuição (sem atendente)
+  // justifica avisar a equipe inteira. Conversa em modo "bot" não notifica
+  // aqui: se a IA decidir escalar, o próprio handoff cria a notificação certa.
+  await notifyIncomingMessage(conversation, contact, message.id, dto.body, mediaType);
+
   return { contactId: contact.id, conversationStatus: conversation.status, message: dto, isNew: true };
+}
+
+/**
+ * Notificação (sino) do "cliente respondeu" — política de destinatário:
+ *   - conversa "queued" (ninguém assumiu ainda) → toda a equipe pode pegar,
+ *     então TODOS recebem (é a fila de distribuição).
+ *   - conversa "human" com dono (assignedToId) → SÓ o dono é avisado.
+ *   - conversa "bot" → não notifica aqui; se a IA escalar, handoffToQueue/
+ *     qualifyToQueue já criam a notificação certa depois de decidir.
+ * Debounce leve (3min) por destinatário pra não inundar o sino quando o
+ * cliente manda várias mensagens em sequência.
+ */
+async function notifyIncomingMessage(
+  conversation: WhatsAppConversation,
+  contact: WhatsAppContact,
+  messageId: string,
+  body: string | null,
+  mediaType: string | null,
+): Promise<void> {
+  if (conversation.status !== "queued" && conversation.status !== "human") return;
+  if (conversation.status === "human" && !conversation.assignedToId) return;
+
+  try {
+    const recipientIds = conversation.status === "human"
+      ? [conversation.assignedToId as string]
+      : await whatsappRecipients();
+    if (!recipientIds.length) return;
+
+    const label = contact.name ?? `+${contact.phone}`;
+    const preview = body ? body.slice(0, 80) : mediaType ? "📎 Anexo" : "mensagem";
+    const message = conversation.status === "human"
+      ? `${label} respondeu: ${preview}`
+      : `${label} está aguardando na fila: ${preview}`;
+
+    for (const recipientId of recipientIds) {
+      const recent = await db.notification.findFirst({
+        where: { recipientId, contactId: contact.id, read: false, createdAt: { gte: new Date(Date.now() - 3 * 60_000) } },
+        select: { id: true },
+      });
+      if (recent) continue; // já tem aviso fresco pendente pra esse destinatário
+
+      await db.notification.create({
+        data: {
+          recipientId,
+          authorId: "whatsapp-client",
+          authorName: label,
+          targetName: label,
+          message,
+          contactId: contact.id,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[WHATSAPP] Falha ao notificar mensagem recebida:", messageId, err);
+  }
 }
 
 // Status de entrega reportado pela Meta (entry[].changes[].value.statuses[]).

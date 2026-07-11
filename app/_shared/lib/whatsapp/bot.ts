@@ -566,7 +566,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // Recebeu documento/foto (ex: RG na coleta de dados) → humano confere.
         await sendBotReply(
           contactId, message.contactPhone, message.contactName,
-          "Recebi seu arquivo! 📄 Vou passar para um de nossos atendentes conferir e já te retorno, tá bom?",
+          "Recebi seu arquivo! Vou passar para um de nossos atendentes conferir e já te retorno, tá bom?",
           humanDelay("x".repeat(60)),
         );
         await handoffToQueue(contactId, contactLabel, "cliente enviou documento/imagem para conferência");
@@ -635,7 +635,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
           ...decision,
           action: "handoff",
           handoffReason: "IA não entendeu o cliente 2x",
-          reply: "Para te atender melhor, vou encaminhar você para um de nossos especialistas, tá bom? 😊",
+          reply: "Para te atender melhor, vou encaminhar você para um de nossos especialistas, tá bom?",
           replies: [],
         };
       }
@@ -694,7 +694,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         if (!sent && outgoing.length === 0) {
           await sendBotReply(
             contactId, message.contactPhone, message.contactName,
-            "Só um instante que vou verificar isso pra você com um de nossos atendentes, tá? 😊",
+            "Só um instante que vou verificar isso pra você com um de nossos atendentes, tá?",
             humanDelay("x".repeat(50)),
           );
           await handoffToQueue(contactId, contactLabel, "fluxo escolhido pela IA não pôde ser enviado", "perguntas");

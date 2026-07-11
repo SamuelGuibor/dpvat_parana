@@ -21,9 +21,9 @@ import { whatsappRecipients } from '@/app/_shared/lib/whatsapp/service';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const NUDGE_30MIN = 'Você precisa de mais alguma coisa? 😊';
+const NUDGE_30MIN = 'Você precisa de mais alguma coisa?';
 const FAREWELL =
-  'Como não tivemos retorno, vou encerrar nosso atendimento por aqui, tá bom? Qualquer coisa é só mandar uma mensagem que a gente continua. 😊';
+  'Como não tivemos retorno, vou encerrar nosso atendimento por aqui, tá bom? Qualquer coisa é só mandar uma mensagem que a gente continua.';
 
 const NUDGE_AFTER_MS = 30 * 60_000; // 30min sem resposta → pergunta
 const CLOSE_AFTER_MS = 10 * 60_000; // +10min sem resposta → encerra
