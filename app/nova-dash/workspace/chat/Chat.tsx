@@ -442,15 +442,15 @@ function MessageRow({
                 onChange={(e: any) => setEditText(e.target.value)}
                 onKeyDown={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); } if (e.key === 'Escape') setEditing(false); }}
                 style={editMentionsStyles}
-                autoFocus
-              >
+                autoFocus               
+               >
                 <Mention
                   trigger="@"
                   data={mentionData}
                   markup="@[__display__](__id__)"
                   displayTransform={(_id: string, display: string) => `@${display}`}
                   renderSuggestion={renderMentionSuggestion}
-                  appendSpaceOnAdd
+                  appendSpaceOnAdd                  
                 />
               </MentionsInput>
               <div className="flex items-center justify-end gap-1.5 text-[11px]">

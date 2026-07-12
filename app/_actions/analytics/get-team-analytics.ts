@@ -4,6 +4,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { isManager } from '@/app/_shared/lib/managers';
+import { DEV_COMMIT_ACTION, devCommitFiles } from '@/app/_shared/lib/dev-activity';
 
 // Mesma janela do heartbeat de presença (api/presence/route.ts).
 const ONLINE_WINDOW_MS = 90_000;
@@ -56,10 +57,13 @@ export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<Tea
   since.setDate(since.getDate() - (periodDays - 1));
   since.setHours(0, 0, 0, 0);
 
-  const [byAuthor, byAuthorAction, heatmapLogs, users] = await Promise.all([
+  const [byAuthor, byAuthorAction, heatmapLogs, devLogs, users] = await Promise.all([
     db.log.groupBy({ by: ['authorId'], where: { createdAt: { gte: since } }, _count: { _all: true } }),
     db.log.groupBy({ by: ['authorId', 'action'], where: { createdAt: { gte: since } }, _count: { _all: true } }),
     db.log.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } }),
+    // Logs de desenvolvimento: pontuam por ARQUIVOS (metadata.files), não por
+    // 1 por commit. Buscamos à parte para aplicar o peso (ver dev-activity.ts).
+    db.log.findMany({ where: { action: DEV_COMMIT_ACTION, createdAt: { gte: since } }, select: { authorId: true, metadata: true } }),
     db.user.findMany({
       where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } },
       select: { id: true, name: true, image: true, lastSeenAt: true },
@@ -68,6 +72,16 @@ export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<Tea
 
   const userMap = new Map(users.map((u) => [u.id, u]));
 
+  // Peso de dev por autor: nº de arquivos somados e quantos commits (para trocar
+  // "1 por commit" já contado em byAuthor pelo total de arquivos).
+  const devByAuthor = new Map<string, { commits: number; files: number }>();
+  for (const l of devLogs) {
+    const cur = devByAuthor.get(l.authorId) ?? { commits: 0, files: 0 };
+    cur.commits += 1;
+    cur.files += devCommitFiles(l.metadata);
+    devByAuthor.set(l.authorId, cur);
+  }
+
   // Breakdown por autor/ação.
   const breakdown = new Map<string, Record<string, number>>();
   for (const row of byAuthorAction) {
@@ -75,19 +89,31 @@ export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<Tea
     m[row.action] = row._count._all;
     breakdown.set(row.authorId, m);
   }
+  // Desenvolvimento no breakdown = arquivos (não nº de commits).
+  for (const [authorId, dev] of devByAuthor) {
+    const m = breakdown.get(authorId) ?? {};
+    m[DEV_COMMIT_ACTION] = dev.files;
+    breakdown.set(authorId, m);
+  }
 
   const ranking: RankingEntry[] = byAuthor
     .map((row) => {
       const u = userMap.get(row.authorId);
+      const dev = devByAuthor.get(row.authorId);
+      // Troca o "1 por commit" (já somado em _all) pelo nº de arquivos.
+      const total = row._count._all + (dev ? dev.files - dev.commits : 0);
       return {
         id: row.authorId,
         name: u?.name ?? 'Usuário',
         image: u?.image ?? null,
-        total: row._count._all,
+        total,
         byAction: breakdown.get(row.authorId) ?? {},
       };
     })
     .sort((a, b) => b.total - a.total);
+
+  // Total de ações da equipe também reflete o peso de dev (arquivos).
+  const devTotalDelta = [...devByAuthor.values()].reduce((s, d) => s + d.files - d.commits, 0);
 
   // Heatmap 7x24.
   const heatmap: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
@@ -106,7 +132,7 @@ export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<Tea
     ranking,
     heatmap,
     totals: {
-      logs: heatmapLogs.length,
+      logs: heatmapLogs.length + devTotalDelta,
       activeCollaborators: ranking.length,
       onlineNow,
     },

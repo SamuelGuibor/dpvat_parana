@@ -2,7 +2,7 @@ import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { downloadMediaToS3, sendText } from "./client";
-import { isOptOutMessage, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
+import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
@@ -131,6 +131,8 @@ export async function ingestIncomingMessage(
   // Opt-out / opt-in (anti-spam): analisa o texto do cliente cedo.
   const incomingText = extractBody(msg);
   const wantsOptOut = isOptOutMessage(incomingText);
+  // Comando exato ("SAIR"/"STOP"/...): honrado mesmo em modo bot (ver abaixo).
+  const exactOptOut = isExactOptOutCommand(incomingText);
   const wantsOptIn = isOptInMessage(incomingText);
 
   // Reativação explícita: quem estava opt-out pediu para voltar a ser atendido.
@@ -216,12 +218,15 @@ export async function ingestIncomingMessage(
   const recipients = await whatsappRecipients();
   await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
 
-  // Opt-out por REGEX: só atua quando NÃO está em modo bot (fila/humano), onde
-  // não há IA para julgar o contexto. Em modo bot, deixamos a mensagem seguir
-  // para o cérebro, que decide o opt-out lendo a conversa inteira (evita tratar
-  // "vou precisar sair, mas já volto" como um comando de descadastro). O regex
-  // aqui é conservador: só casa frases explícitas de descadastro.
-  if (wantsOptOut && conversation.status !== "bot") {
+  // Opt-out por REGEX. Duas situações:
+  //   1. COMANDO exato ("SAIR"/"STOP"/"DESCADASTRAR"...): honrado SEMPRE,
+  //      inclusive em modo bot. É o que o rodapé das automáticas ensina, então
+  //      não pode cair no vácuo (antes, em modo bot, "SAIR" ia pra IA — e ela
+  //      podia não reconhecer, deixando o cliente sem descadastro).
+  //   2. FRASE ambígua ("pare de me mandar", etc.): fora do modo bot, honra
+  //      direto; em modo bot, deixa a IA julgar pelo contexto (evita tratar
+  //      "vou precisar sair, mas já volto" como descadastro).
+  if (wantsOptOut && (exactOptOut || conversation.status !== "bot")) {
     if (!contact.optedOut) {
       try {
         const confirm = await sendText(contact.phone, OPT_OUT_CONFIRMATION);

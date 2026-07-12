@@ -3,6 +3,7 @@
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
+import { DEV_COMMIT_ACTION, devCommitFiles, devFilesDelta, devFilesTotal } from "../../_shared/lib/dev-activity";
 
 export interface ActivityItem {
   id: string;
@@ -61,7 +62,7 @@ export async function getMyActivity(): Promise<MyActivity> {
       }),
       db.log.findMany({
         where: { authorId, createdAt: { gte: chartStart } },
-        select: { createdAt: true },
+        select: { createdAt: true, action: true, metadata: true },
       }),
       db.log.findMany({
         where: { authorId, createdAt: { gte: windowStart } },
@@ -79,10 +80,20 @@ export async function getMyActivity(): Promise<MyActivity> {
       }),
     ]);
 
+  // Logs de desenvolvimento (janela máx) — pontuam por ARQUIVOS, não 1/commit.
+  const myDevLogs = await db.log.findMany({
+    where: { authorId, action: DEV_COMMIT_ACTION, createdAt: { gte: windowStart } },
+    select: { createdAt: true, metadata: true },
+  });
+  const devDelta = (from: Date) => devFilesDelta(myDevLogs.filter((l) => l.createdAt >= from));
+
   const byAction: Record<string, number> = {};
   for (const g of grouped) byAction[g.action] = g._count.action;
+  // Desenvolvimento no breakdown = arquivos (não nº de commits).
+  const devFilesMonth = devFilesTotal(myDevLogs.filter((l) => l.createdAt >= monthAgo));
+  if (devFilesMonth > 0) byAction[DEV_COMMIT_ACTION] = devFilesMonth;
 
-  // Bucket diário dos últimos 14 dias (preenche dias sem atividade com 0).
+  // Bucket diário dos últimos 14 dias (dev pesa por arquivos; demais, 1 cada).
   const buckets = new Map<string, number>();
   for (let i = 0; i < 14; i++) {
     const d = new Date(chartStart);
@@ -90,8 +101,9 @@ export async function getMyActivity(): Promise<MyActivity> {
     buckets.set(d.toISOString().slice(0, 10), 0);
   }
   for (const l of chartLogs) {
+    const weight = l.action === DEV_COMMIT_ACTION ? devCommitFiles(l.metadata) : 1;
     const key = startOfDay(l.createdAt).toISOString().slice(0, 10);
-    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + weight);
   }
   const daily = Array.from(buckets.entries()).map(([date, count]) => ({
     date,
@@ -112,7 +124,12 @@ export async function getMyActivity(): Promise<MyActivity> {
   }));
 
   return {
-    totals: { today: todayCount, week: weekCount, month: monthCount, all: allCount },
+    totals: {
+      today: todayCount + devDelta(today),
+      week: weekCount + devDelta(weekAgo),
+      month: monthCount + devDelta(monthAgo),
+      all: allCount + devDelta(windowStart),
+    },
     byAction,
     daily,
     feed,

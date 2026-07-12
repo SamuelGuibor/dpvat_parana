@@ -6,7 +6,7 @@ import { Button } from '@/app/_shared/ui/button';
 import {
   History, Pencil, ArrowRightLeft, FilePlus, FileMinus,
   MessageSquare, Sparkles, Clock, RefreshCw, ArrowRight,
-  ListChecks, Archive, Building2,
+  ListChecks, Archive, Building2, Code2,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -81,6 +81,12 @@ const ACTION_STYLES: Record<
     node: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
     badge: 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
     label: 'Arquivo',
+  },
+  dev_commit: {
+    icon: Code2,
+    node: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400',
+    badge: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800',
+    label: 'Desenvolvimento',
   },
 };
 

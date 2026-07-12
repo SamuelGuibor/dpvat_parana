@@ -10,6 +10,7 @@ export type LogAction =
   | "document_remove"
   | "comment_add"
   | "create"
+  | "dev_commit"     // commit de desenvolvimento (atividade do dev, via git)
   // WhatsApp (auditoria do atendimento):
   | "wa_assign"      // atendente assumiu / atribuiu a conversa
   | "wa_reopen"      // reabriu um atendimento encerrado

@@ -55,6 +55,23 @@ export function isOptOutMessage(text: string | null | undefined): boolean {
   return OPT_OUT_PATTERNS.some((re) => re.test(t));
 }
 
+/**
+ * COMANDO exato de descadastro: a mensagem inteira é só "SAIR"/"STOP"/
+ * "DESCADASTRAR"/"UNSUBSCRIBE"/"CANCELAR INSCRICAO". É o que o rodapé das
+ * mensagens automáticas ensina ("responda SAIR") — inequívoco por si só.
+ *
+ * Diferente de `isOptOutMessage`, que também casa FRASES ambíguas ("pare de me
+ * mandar"): estas dependem de contexto e, em modo bot, ficam por conta da IA.
+ * O comando exato, não — deve valer sempre, inclusive em modo bot, senão o
+ * cliente responde "SAIR" e nada acontece (era o caso).
+ */
+export function isExactOptOutCommand(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const t = normalize(text);
+  if (!t) return false;
+  return OPT_OUT_EXACT.test(t);
+}
+
 /** Cliente (que estava opt-out) sinalizou que quer voltar a ser atendido. */
 export function isOptInMessage(text: string | null | undefined): boolean {
   if (!text) return false;

@@ -4,6 +4,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { isManager } from '@/app/_shared/lib/managers';
+import { DEV_COMMIT_ACTION, devCommitFiles, devFilesDelta, devFilesTotal } from '@/app/_shared/lib/dev-activity';
 
 const ONLINE_WINDOW_MS = 90_000;
 
@@ -78,7 +79,7 @@ export async function getCollaboratorDetail(
     db.log.count({ where: { authorId: userId, createdAt: { gte: weekAgo } } }),
     db.log.count({ where: { authorId: userId, createdAt: { gte: monthAgo } } }),
     db.log.groupBy({ by: ['action'], where: { authorId: userId, createdAt: { gte: periodStart } }, _count: { _all: true } }),
-    db.log.findMany({ where: { authorId: userId, createdAt: { gte: periodStart } }, select: { createdAt: true } }),
+    db.log.findMany({ where: { authorId: userId, createdAt: { gte: periodStart } }, select: { createdAt: true, action: true, metadata: true } }),
     // Feed com TODOS os logs do filtro ativo (7/30/90 dias) — a UI rola.
     db.log.findMany({
       where: { authorId: userId, createdAt: { gte: periodStart } },
@@ -91,10 +92,21 @@ export async function getCollaboratorDetail(
 
   if (!user) throw new Error('Colaborador não encontrado.');
 
+  // Logs de desenvolvimento do colaborador (janela máx) — pontuam por ARQUIVOS.
+  const myDevLogs = await db.log.findMany({
+    where: { authorId: userId, action: DEV_COMMIT_ACTION, createdAt: { gte: windowStart } },
+    select: { createdAt: true, metadata: true },
+  });
+  // Delta (Σ arquivos − nº commits) para cada janela — desde `from` até agora.
+  const devDelta = (from: Date) => devFilesDelta(myDevLogs.filter((l) => l.createdAt >= from));
+
   const byAction: Record<string, number> = {};
   for (const g of grouped) byAction[g.action] = g._count._all;
+  // Desenvolvimento no breakdown = arquivos (não nº de commits).
+  const devFilesPeriod = devFilesTotal(myDevLogs.filter((l) => l.createdAt >= periodStart));
+  if (devFilesPeriod > 0) byAction[DEV_COMMIT_ACTION] = devFilesPeriod;
 
-  // Série diária.
+  // Série diária (dev pesa por arquivos; demais ações, 1 cada).
   const buckets = new Map<string, number>();
   for (let i = 0; i < periodDays; i++) {
     const d = new Date(periodStart); d.setDate(d.getDate() + i);
@@ -103,11 +115,12 @@ export async function getCollaboratorDetail(
   const hourly = new Array(24).fill(0);
   const weekday = new Array(7).fill(0);
   for (const l of periodLogs) {
+    const weight = l.action === DEV_COMMIT_ACTION ? devCommitFiles(l.metadata) : 1;
     const key = startOfDay(l.createdAt).toISOString().slice(0, 10);
-    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + weight);
     const { day, hour } = localBucket(l.createdAt);
-    hourly[hour] += 1;
-    weekday[day] += 1;
+    hourly[hour] += weight;
+    weekday[day] += weight;
   }
   const daily = Array.from(buckets.entries()).map(([date, count]) => ({
     date,
@@ -123,11 +136,23 @@ export async function getCollaboratorDetail(
     createdAt: l.createdAt.toISOString(),
   }));
 
-  // Posição no ranking do período + fatia do total da equipe.
-  const sorted = [...teamGrouped].sort((a, b) => b._count._all - a._count._all);
-  const rank = sorted.findIndex((g) => g.authorId === userId) + 1;
-  const periodTotal = sorted.reduce((s, g) => s + g._count._all, 0);
-  const mine = sorted.find((g) => g.authorId === userId)?._count._all ?? 0;
+  // Posição no ranking do período + fatia do total da equipe. Dev pesa por
+  // arquivos, então aplicamos o delta de cada autor à contagem crua antes de
+  // ordenar (consistente com o ranking da Visão do Gestor).
+  const teamDevLogs = await db.log.findMany({
+    where: { action: DEV_COMMIT_ACTION, createdAt: { gte: periodStart } },
+    select: { authorId: true, metadata: true },
+  });
+  const teamDevDelta = new Map<string, number>();
+  for (const l of teamDevLogs) {
+    teamDevDelta.set(l.authorId, (teamDevDelta.get(l.authorId) ?? 0) + devCommitFiles(l.metadata) - 1);
+  }
+  const weighted = teamGrouped
+    .map((g) => ({ authorId: g.authorId, total: g._count._all + (teamDevDelta.get(g.authorId) ?? 0) }))
+    .sort((a, b) => b.total - a.total);
+  const rank = weighted.findIndex((g) => g.authorId === userId) + 1;
+  const periodTotal = weighted.reduce((s, g) => s + g.total, 0);
+  const mine = weighted.find((g) => g.authorId === userId)?.total ?? 0;
   const sharePct = periodTotal > 0 ? Math.round((mine / periodTotal) * 100) : 0;
 
   const online = !!user.lastSeenAt && Date.now() - new Date(user.lastSeenAt).getTime() < ONLINE_WINDOW_MS;
@@ -143,12 +168,18 @@ export async function getCollaboratorDetail(
       lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : null,
     },
     periodDays,
-    totals: { today: todayC, week: weekC, month: monthC, period: mine, allTime },
+    totals: {
+      today: todayC + devDelta(today),
+      week: weekC + devDelta(weekAgo),
+      month: monthC + devDelta(monthAgo),
+      period: mine, // já ponderado no ranking acima
+      allTime: allTime + devDelta(windowStart),
+    },
     byAction,
     daily,
     hourly,
     weekday,
     feed,
-    team: { rank: rank || sorted.length + 1, totalCollaborators: sorted.length, sharePct, periodTotal },
+    team: { rank: rank || weighted.length + 1, totalCollaborators: weighted.length, sharePct, periodTotal },
   };
 }

@@ -88,6 +88,30 @@ function ActionChips({ byAction }: { byAction: Record<string, number> }) {
   );
 }
 
+// Tooltip do comparativo em "média/pessoa": mostra o setor e, dentro dele, o
+// nome de cada pessoa com o seu total (os bars agrupados = pessoas do setor).
+function PerPersonTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: { value?: number; dataKey?: string | number; payload: Record<string, unknown> }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  const items = payload.filter((it) => it.value != null);
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,.12)', padding: '8px 10px', fontSize: 12 }}>
+      <p style={{ fontWeight: 700, marginBottom: 4, color: '#374151' }}>{String(row.name ?? '')}</p>
+      {items.map((it, i) => {
+        const idx = Number(String(it.dataKey).slice(1));
+        return (
+          <p key={i} style={{ color: '#4b5563' }}>
+            {String(row[`n${idx}`] ?? 'Pessoa')}: <span style={{ fontWeight: 600 }}>{it.value} ações</span>
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Linha de membro com barra de progresso relativa ao melhor do setor. */
 function MemberRow({ m, rank, max, color, canManage, onRemove }: {
   m: SectorMemberStats; rank: number; max: number; color: string;
@@ -223,13 +247,28 @@ export function SectorDashboard({ period = 30 }: Props) {
     return [...analytics.sectors].sort((a, b) => b.total - a.total)[0] ?? null;
   }, [analytics]);
 
+  // Modo "Total": uma barra por setor (total de ações do setor).
   const chartData = useMemo(() => (analytics?.sectors ?? []).map((s) => ({
     name: s.name,
-    value: chartMode === 'total' ? s.total : s.perMember,
+    value: s.total,
     total: s.total,
     perMember: s.perMember,
     color: s.color,
-  })), [analytics, chartMode]);
+  })), [analytics]);
+
+  // Modo "Média/pessoa": uma barra POR PESSOA dentro de cada setor, agrupadas.
+  // Cada linha é um setor; p0..pN = total de cada membro, n0..nN = nome (tooltip).
+  // `maxMembers` define quantas séries de barra o gráfico precisa.
+  const perPerson = useMemo(() => {
+    const sectors = analytics?.sectors ?? [];
+    const maxMembers = Math.max(1, ...sectors.map((s) => s.members.length));
+    const rows = sectors.map((s) => {
+      const row: Record<string, string | number> = { name: s.name, color: s.color };
+      s.members.forEach((m, i) => { row[`p${i}`] = m.total; row[`n${i}`] = m.name; });
+      return row;
+    });
+    return { rows, maxMembers };
+  }, [analytics]);
 
   if (loading || !analytics) {
     return (
@@ -277,7 +316,7 @@ export function SectorDashboard({ period = 30 }: Props) {
                 <p className="text-xs text-gray-400">
                   {chartMode === 'total'
                     ? `Total de ações registradas por setor nos últimos ${period} dias.`
-                    : `Média de ações por pessoa em cada setor (compara setores de tamanhos diferentes).`}
+                    : `Uma barra por pessoa dentro de cada setor — compare o rendimento individual, agrupado por setor (últimos ${period} dias).`}
                 </p>
               </div>
               <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
@@ -295,23 +334,36 @@ export function SectorDashboard({ period = 30 }: Props) {
             </div>
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(148,163,184,0.08)' }}
-                    contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,.12)', fontSize: 12 }}
-                    formatter={(v: number, _n, item) => {
-                      const p = item?.payload as { total: number; perMember: number } | undefined;
-                      return chartMode === 'total'
-                        ? [`${v} ações (${p?.perMember ?? 0}/pessoa)`, 'Total']
-                        : [`${v} ações/pessoa (${p?.total ?? 0} no total)`, 'Média'];
-                    }}
-                  />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={64}>
-                    {chartData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  </Bar>
-                </BarChart>
+                {chartMode === 'total' ? (
+                  <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                      contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,.12)', fontSize: 12 }}
+                      formatter={(v: number, _n, item) => {
+                        const p = item?.payload as { total: number; perMember: number } | undefined;
+                        return [`${v} ações (${p?.perMember ?? 0}/pessoa)`, 'Total'];
+                      }}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={64}>
+                      {chartData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                    </Bar>
+                  </BarChart>
+                ) : (
+                  // Barras AGRUPADAS: cada setor no eixo X, com uma barra por
+                  // pessoa do setor (todas na cor do setor).
+                  <BarChart data={perPerson.rows} margin={{ top: 5, right: 5, left: -20, bottom: 0 }} barCategoryGap="20%" barGap={2}>
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip cursor={{ fill: 'rgba(148,163,184,0.08)' }} content={<PerPersonTooltip />} />
+                    {Array.from({ length: perPerson.maxMembers }).map((_, i) => (
+                      <Bar key={i} dataKey={`p${i}`} radius={[4, 4, 0, 0]} maxBarSize={40}>
+                        {perPerson.rows.map((r, ri) => <Cell key={ri} fill={String(r.color)} />)}
+                      </Bar>
+                    ))}
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
           </section>
