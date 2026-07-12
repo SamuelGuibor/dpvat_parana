@@ -3,6 +3,7 @@
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
+import { hashPassword, verifyPassword } from "../../_shared/lib/password";
 
 /** Dados do perfil do próprio usuário logado. */
 export async function getMyProfile() {
@@ -20,6 +21,7 @@ export async function getMyProfile() {
       role: true,
       image: true,
       createdAt: true,
+      sector: { select: { id: true, name: true, color: true } },
     },
   });
 
@@ -34,6 +36,7 @@ export async function getMyProfile() {
     role: user.role ?? "",
     image: user.image ?? null,
     createdAt: user.createdAt.toISOString(),
+    sector: user.sector ? { id: user.sector.id, name: user.sector.name, color: user.sector.color } : null,
   };
 }
 
@@ -68,13 +71,14 @@ export async function updateMyProfile(data: UpdateProfileInput) {
     if (!data.currentPassword) {
       throw new Error("Informe a senha atual para poder alterá-la.");
     }
-    if (me.password && me.password !== data.currentPassword) {
-      throw new Error("A senha atual está incorreta.");
+    if (me.password) {
+      const { ok } = await verifyPassword(data.currentPassword, me.password);
+      if (!ok) throw new Error("A senha atual está incorreta.");
     }
-    if (data.newPassword.length < 4) {
-      throw new Error("A nova senha deve ter ao menos 4 caracteres.");
+    if (data.newPassword.length < 8) {
+      throw new Error("A nova senha deve ter ao menos 8 caracteres.");
     }
-    passwordUpdate = data.newPassword;
+    passwordUpdate = await hashPassword(data.newPassword);
   }
 
   // E-mail é único: valida antes para dar um erro amigável.

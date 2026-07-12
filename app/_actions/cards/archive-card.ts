@@ -59,7 +59,7 @@ export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStat
   }
 
   await createLog({
-    action: "update",
+    action: "archive",
     message: status
       ? `arquivou o card como "${ARCHIVE_LABELS[status]}"`
       : "desarquivou o card",
@@ -67,7 +67,11 @@ export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStat
     authorName: session.user.name ?? "Usuário",
     userId: isProcess ? null : id,
     processId: isProcess ? id : null,
-    metadata: { archiveStatus: status },
+    metadata: {
+      archiveStatus: status,
+      archiveLabel: status ? ARCHIVE_LABELS[status] : null,
+      archived: Boolean(status),
+    },
   });
 
   revalidatePath("/nova-dash");

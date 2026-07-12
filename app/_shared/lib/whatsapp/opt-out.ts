@@ -18,7 +18,9 @@ function normalize(text: string): string {
 // ambíguas como "sair"/"parar"/"chega" NÃO entram aqui de propósito: soltas,
 // elas dependem de contexto (ex.: "vou sair mas volto") — nesse caso quem
 // decide é a IA (que lê a conversa), não o regex.
-const OPT_OUT_EXACT = /^(descadastr\w*|stop|unsubscribe|cancelar\s+inscricao)[.!\s]*$/;
+// "sair" sozinho entra porque é o comando que o rodapé das mensagens
+// automáticas ensina ("responda SAIR") — como mensagem inteira é inequívoco.
+const OPT_OUT_EXACT = /^(descadastr\w*|stop|unsubscribe|sair|cancelar\s+inscricao)[.!\s]*$/;
 
 // Frases claras de descadastro em qualquer ponto do texto.
 const OPT_OUT_PATTERNS: RegExp[] = [
@@ -66,3 +68,8 @@ export function isOptInMessage(text: string | null | undefined): boolean {
 export const OPT_OUT_CONFIRMATION =
   'Tudo bem! Não vamos mais te enviar mensagens por aqui. '
   + 'Se precisar de algo no futuro, é só mandar uma mensagem que a gente te atende.';
+
+// Rodapé anexado a toda mensagem PROATIVA em texto livre (automações e avisos
+// de progresso): saída fácil reduz denúncias de spam — quem denuncia derruba o
+// quality rating da conta; quem responde SAIR só vira opt-out.
+export const OPT_OUT_FOOTER = '\n\nPara não receber mais avisos, responda SAIR.';

@@ -13,6 +13,7 @@ function toDTO(m: {
   id: string; body: string; authorId: string; authorName: string; channelId: string;
   createdAt: Date; editedAt: Date | null; deletedAt: Date | null;
   replyToId: string | null; replyToAuthor: string | null; replyToBody: string | null;
+  attachmentKey: string | null; attachmentName: string | null; attachmentType: string | null;
 }): ChatMessageDTO {
   return {
     id: m.id,
@@ -26,6 +27,10 @@ function toDTO(m: {
     replyToId: m.replyToId,
     replyToAuthor: m.replyToAuthor,
     replyToBody: m.replyToBody,
+    attachmentKey: m.attachmentKey,
+    attachmentName: m.attachmentName,
+    attachmentType: m.attachmentType,
+    reactions: [],
   };
 }
 
@@ -68,8 +73,8 @@ export async function deleteMessage({ messageId }: { messageId: string }): Promi
 
   const updated = await db.chatMessage.update({
     where: { id: messageId },
-    // Zera o corpo para não deixar rastro do conteúdo apagado.
-    data: { body: '', deletedAt: new Date(), editedAt: null },
+    // Zera corpo e anexo para não deixar rastro do conteúdo apagado.
+    data: { body: '', deletedAt: new Date(), editedAt: null, attachmentKey: null, attachmentName: null, attachmentType: null },
   });
 
   const dto = toDTO(updated);

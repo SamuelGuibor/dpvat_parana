@@ -81,6 +81,74 @@ export function getStatusLabelsByService(service?: string | null): Record<string
   }
 }
 
+// ─── Descrições amigáveis por status (texto plano) ───────────────────────────
+// Mesmo texto que o cliente vê na timeline de status (status-progress.tsx),
+// aqui em versão de string pura para reuso no bot de WhatsApp: quando o cliente
+// pergunta "em que etapa estou?", a IA responde com o título + esta explicação,
+// em vez do nome interno da coluna do Trello.
+
+export const DPVAT_STATUS_DESCRIPTIONS: Record<string, string> = {
+  DPVAT_S1: 'Juntamos toda a documentação necessária para dar início ao seu processo. Nossa equipe já está trabalhando para garantir que tudo esteja em ordem.',
+  DPVAT_S2: 'Nossos procuradores estão solicitando o seu prontuário médico junto ao hospital ou clínica em que você foi atendido. Conforme o prazo do Conselho Regional de Medicina (CRM), isso leva em média 30 dias.',
+  DPVAT_S3: 'O Boletim de Ocorrência precisa ser validado pela entidade que atendeu a ocorrência — Polícia Militar, Polícia Civil ou Polícia Rodoviária Federal. Nossa equipe está acompanhando.',
+  DPVAT_S4: 'Seus documentos foram enviados para análise pela Caixa Econômica Federal, responsável pelo seguro DPVAT. Essa fase pode levar até 30 dias e acompanhamos qualquer pendência de perto.',
+  DPVAT_S5: 'Reta final! Seu processo chegou à fase de perícia médica. Aguardamos a data e o horário do agendamento.',
+  DPVAT_S6: 'A perícia foi concluída com sucesso. O pagamento leva em torno de 7 dias para ser realizado e em breve você recebe os valores devidos.',
+  DPVAT_S7: 'Seu processo foi finalizado.',
+};
+
+export const INSS_STATUS_DESCRIPTIONS: Record<string, string> = {
+  INSS_S1: 'Estamos analisando seus dados e documentos para dar seguimento ao seu processo de Auxílio-Acidente no INSS.',
+  INSS_S2: 'Solicitamos sua documentação médica e hospitalar junto às instituições que prestaram atendimento. Conforme o prazo do CRM, essa etapa leva em média 30 dias e é fundamental para comprovar o acidente e as sequelas.',
+  INSS_S3: 'Solicitamos ao INSS o seu dossiê com todo o histórico previdenciário.',
+  INSS_S4: 'Seu processo aguarda a perícia médica administrativa no INSS. Assim que houver data confirmada, entramos em contato com as orientações.',
+  INSS_S5: 'A fase administrativa foi concluída. Estamos preparando os próximos passos junto à equipe jurídica.',
+  INSS_S6: 'Nossa equipe de advogados vai formular o pedido do seu benefício na esfera judicial. A partir daqui o processo segue para os tribunais.',
+  INSS_S7: 'Você já pode acompanhar o processo pelas plataformas oficiais do governo. Nossa equipe continua acompanhando cada movimentação.',
+  INSS_S8: 'Seu processo foi finalizado.',
+};
+
+export const GENERIC_STATUS_DESCRIPTIONS: Record<string, string> = {
+  INICIADO: 'Confirmado o envio dos seus documentos iniciais. Nossa equipe está preparando o protocolo de entrada.',
+  AGUARDANDO_ASSINATURA: 'Enviamos o contrato e a procuração e agora aguardamos a sua assinatura.',
+  SOLICITAR_DOCUMENTOS: 'Nossa equipe está solicitando os documentos necessários junto às instituições responsáveis. Essa fase pode levar de 30 a 60 dias.',
+  COLETA_DOCUMENTOS: 'Com os documentos prontos, nossa equipe vai retirá-los e organizar tudo para envio.',
+  ANALISE_DOCUMENTOS: 'Os documentos foram enviados e aguardam análise. O prazo de resposta é de até 30 dias.',
+  PERICIAL: 'Seu processo chegou à fase de perícia. Aguardamos a data e o horário do agendamento.',
+  AGUARDANDO_PERICIAL: 'Após a perícia, o resultado é liberado em até 7 dias.',
+  PAGAMENTO_HONORARIO: 'Aguardando o pagamento dos honorários pelo trabalho realizado.',
+  PROCESSO_ENCERRADO: 'Seu processo foi encerrado.',
+};
+
+export function getStatusDescriptionsByService(service?: string | null): Record<string, string> {
+  switch (service) {
+    case 'DPVAT': return DPVAT_STATUS_DESCRIPTIONS;
+    case 'INSS': return INSS_STATUS_DESCRIPTIONS;
+    default: return GENERIC_STATUS_DESCRIPTIONS;
+  }
+}
+
+// Chave normalizada de serviço para a config de mensagens de status. Vários
+// serviços "genéricos" (Seguro de Vida, RCF, SPVAT...) compartilham a mesma
+// grade de status, então compartilham a mesma config sob "GENERIC".
+export function statusServiceKey(service?: string | null): 'DPVAT' | 'INSS' | 'GENERIC' {
+  if (service === 'DPVAT') return 'DPVAT';
+  if (service === 'INSS') return 'INSS';
+  return 'GENERIC';
+}
+
+/** Título amigável de um status (ex.: DPVAT_S5 → "Perícia médica"). */
+export function getStatusLabel(service: string | null | undefined, status: string | null | undefined): string | null {
+  if (!status) return null;
+  return getStatusLabelsByService(service)[status] ?? null;
+}
+
+/** Explicação amigável de um status para o cliente (texto plano). */
+export function getStatusDescription(service: string | null | undefined, status: string | null | undefined): string | null {
+  if (!status) return null;
+  return getStatusDescriptionsByService(service)[status] ?? null;
+}
+
 export const ROLE_OPTIONS = [
   'Filtro de Cartões',
   'Gerar Procuração Automática',

@@ -24,6 +24,7 @@ import { ProfileDialog } from './ProfileDialog';
 interface Profile {
   id: string; name: string; email: string; telefone: string;
   cpf: string; role: string; image: string | null; createdAt: string;
+  sector: { id: string; name: string; color: string } | null;
 }
 
 /* ---------- helpers ---------- */
@@ -281,11 +282,24 @@ export function MySpace() {
                 <Badge className="gap-1 border-emerald-200 bg-emerald-100 text-[10px] text-emerald-700 hover:bg-emerald-100">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Online
                 </Badge>
-                {profile?.role && (
+                {/* Tag principal = setor da pessoa (Desenvolvedor, Comercial…);
+                    se ainda não tiver setor atribuído, cai no cargo (role). */}
+                {profile?.sector ? (
+                  <Badge
+                    className="gap-1 border text-[10px]"
+                    style={{
+                      backgroundColor: `${profile.sector.color}22`,
+                      color: profile.sector.color,
+                      borderColor: `${profile.sector.color}55`,
+                    }}
+                  >
+                    <ShieldCheck className="h-3 w-3" /> {profile.sector.name}
+                  </Badge>
+                ) : profile?.role ? (
                   <Badge variant="secondary" className="gap-1 text-[10px]">
                     <ShieldCheck className="h-3 w-3" /> {profile.role}
                   </Badge>
-                )}
+                ) : null}
               </div>
 
               {loading ? (

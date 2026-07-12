@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Send, FileBadge, Settings2 } from 'lucide-react';
+import { Loader2, Send, FileBadge, Settings2, Search, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -32,6 +32,7 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
   const [selectedId, setSelectedId] = useState('');
   const [vars, setVars] = useState<string[]>([]);
   const [manageOpen, setManageOpen] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
 
   async function reload() {
     setLoading(true);
@@ -46,9 +47,13 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
     }
   }
 
-  useEffect(() => { if (open) reload(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) reload(); else setTemplateSearch(''); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
+  const filteredTemplates = templates.filter((t) => {
+    const term = templateSearch.trim().toLowerCase();
+    return t.name.toLowerCase().includes(term) || t.language.toLowerCase().includes(term);
+  });
 
   useEffect(() => {
     setVars(selected ? Array.from({ length: selected.bodyVars }, () => '') : []);
@@ -97,18 +102,38 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
             </div>
           ) : (
             <div className="space-y-4">
-              <label className="block">
+              <div>
                 <span className="mb-1.5 block text-base font-semibold text-gray-600 dark:text-zinc-300">Template</span>
-                <select
-                  value={selectedId}
-                  onChange={(e) => setSelectedId(e.target.value)}
-                  className="h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-base outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                >
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.language})</option>
+                <div className="relative mb-2">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={templateSearch}
+                    onChange={(e) => setTemplateSearch(e.target.value)}
+                    placeholder="Buscar template..."
+                    className="h-10 pl-9 text-base"
+                  />
+                </div>
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-1.5 dark:border-zinc-700">
+                  {filteredTemplates.length === 0 && (
+                    <p className="p-2 text-sm text-gray-400">Nenhum template encontrado.</p>
+                  )}
+                  {filteredTemplates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSelectedId(t.id)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-base transition-colors ${
+                        t.id === selectedId
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                          : 'hover:bg-gray-100 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span className="truncate">{t.name} ({t.language})</span>
+                      {t.id === selectedId && <Check className="h-4 w-4 shrink-0" />}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
 
               {selected && selected.bodyVars > 0 && (
                 <div className="space-y-2.5">

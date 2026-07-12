@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, MessageCircle  } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, MessageCircle } from 'lucide-react';
 
 export type WorkspaceSection = 'meu-espaco' | 'chat' | 'whatsapp' | 'gestao' | 'dashboard';
 
@@ -40,8 +40,9 @@ export function WorkspaceSidebar({ active, onChange, isManager, chatUnread, what
       title: 'Dashboards',
       items: [
         { key: 'dashboard', label: 'Dashboard', desc: 'Leads', icon: LayoutDashboard },
+        // "Setores" agora vive dentro da Visão do Gestor (aba própria).
         ...(isManager
-          ? [{ key: 'gestao' as const, label: 'Visão do Gestor', desc: 'Métricas da equipe', icon: BarChart3 }]
+          ? [{ key: 'gestao' as const, label: 'Visão do Gestor', desc: 'Equipe e setores', icon: BarChart3 }]
           : []),
       ],
     },

@@ -6,6 +6,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { listMyChannels, type ChannelDTO } from '@/app/_actions/chat/channels';
 
+export interface Reaction {
+  emoji: string;
+  userId: string;
+  userName: string;
+}
+
 export interface ChatMessage {
   id: string;
   body: string;
@@ -18,6 +24,10 @@ export interface ChatMessage {
   replyToId?: string | null;
   replyToAuthor?: string | null;
   replyToBody?: string | null;
+  attachmentKey?: string | null;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  reactions?: Reaction[];
 }
 
 /** Evento efêmero de "digitando…" trafegado pelo mesmo canal SSE. */
@@ -28,10 +38,22 @@ export interface TypingEvent {
   userName: string;
 }
 
-export type ChatStreamEvent = ChatMessage | TypingEvent;
+/** Patch de reações de uma mensagem (não recarrega a mensagem inteira). */
+export interface ReactionEvent {
+  type: 'reaction';
+  channelId: string;
+  messageId: string;
+  reactions: Reaction[];
+}
+
+export type ChatStreamEvent = ChatMessage | TypingEvent | ReactionEvent;
 
 export function isTypingEvent(e: ChatStreamEvent): e is TypingEvent {
   return (e as TypingEvent).type === 'typing';
+}
+
+export function isReactionEvent(e: ChatStreamEvent): e is ReactionEvent {
+  return (e as ReactionEvent).type === 'reaction';
 }
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((r) => r.json());

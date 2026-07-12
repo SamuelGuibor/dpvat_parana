@@ -4,6 +4,8 @@ import { db } from "./prisma";
 export type LogAction =
   | "update"
   | "move"
+  | "status_change"   // avanço/recuo do status de progresso (checklist do cliente)
+  | "archive"         // arquivou/desarquivou o card
   | "document_add"
   | "document_remove"
   | "comment_add"
@@ -32,6 +34,28 @@ interface CreateLogInput {
 }
 
 /**
+ * Snapshot do setor do autor NO MOMENTO da ação. Gravado no metadata de todo
+ * log para permitir, no futuro, contabilizar/atribuir ações por setor (mesmo
+ * que a pessoa troque de setor depois, o histórico preserva onde ela estava).
+ */
+async function authorSectorSnapshot(authorId: string): Promise<Record<string, any> | null> {
+  try {
+    const u = await db.user.findUnique({
+      where: { id: authorId },
+      select: { sectorId: true, sector: { select: { name: true, slug: true } } },
+    });
+    if (!u?.sectorId) return null;
+    return {
+      authorSectorId: u.sectorId,
+      authorSectorName: u.sector?.name ?? null,
+      authorSectorSlug: u.sector?.slug ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Registra um evento de histórico do card.
  *
  * O log NUNCA pode quebrar a operação principal: qualquer falha aqui é apenas
@@ -39,6 +63,7 @@ interface CreateLogInput {
  */
 export async function createLog(input: CreateLogInput): Promise<void> {
   try {
+    const sector = await authorSectorSnapshot(input.authorId);
     await db.log.create({
       data: {
         action: input.action,
@@ -47,7 +72,7 @@ export async function createLog(input: CreateLogInput): Promise<void> {
         authorName: input.authorName,
         userId: input.userId ?? null,
         processId: input.processId ?? null,
-        metadata: input.metadata ?? undefined,
+        metadata: sector || input.metadata ? { ...(sector ?? {}), ...(input.metadata ?? {}) } : undefined,
       },
     });
   } catch (err) {
@@ -77,6 +102,7 @@ export async function logWhatsAppEvent(input: {
   metadata?: Record<string, any>;
 }): Promise<void> {
   try {
+    const sector = await authorSectorSnapshot(input.authorId);
     await db.log.create({
       data: {
         action: input.action,
@@ -88,6 +114,7 @@ export async function logWhatsAppEvent(input: {
           contactId: input.contactId,
           contactName: input.contactName ?? null,
           contactPhone: input.contactPhone ?? null,
+          ...(sector ?? {}),
           ...(input.metadata ?? {}),
         },
       },
@@ -97,9 +124,20 @@ export async function logWhatsAppEvent(input: {
   }
 }
 
+/** Uma alteração de campo, com o valor anterior e o novo (para o histórico). */
+export interface FieldChange {
+  field: string;      // nome técnico do campo (ex.: "telefone")
+  label: string;      // rótulo em PT-BR (ex.: "Telefone")
+  from: string | null;
+  to: string | null;
+}
+
+// Campos cujo VALOR não deve ir para o log (dado sensível) — registra só que mudou.
+const SENSITIVE_FIELDS = new Set(["senha_inss", "password"]);
+
 /**
- * Compara os dados recebidos com o registro anterior e devolve os rótulos
- * amigáveis dos campos que realmente mudaram.
+ * Compara os dados recebidos com o registro anterior e devolve as alterações
+ * detalhadas (campo, rótulo, valor antigo e novo) dos campos que mudaram.
  *
  * - `labels`: mapa campo -> rótulo em PT-BR (também define quais campos monitorar)
  * - `keyMap`: quando a coluna no banco tem nome diferente do campo recebido
@@ -110,8 +148,8 @@ export function diffFields(
   before: Record<string, any> | null,
   labels: Record<string, string>,
   keyMap: Record<string, string> = {},
-): string[] {
-  const changed: string[] = [];
+): FieldChange[] {
+  const changed: FieldChange[] = [];
 
   for (const key of Object.keys(labels)) {
     if (!(key in data)) continue;
@@ -124,7 +162,16 @@ export function diffFields(
     const a = newVal === null ? "" : String(newVal).trim();
     const b = oldVal === null || oldVal === undefined ? "" : String(oldVal).trim();
 
-    if (a !== b) changed.push(labels[key]);
+    if (a !== b) {
+      const hide = SENSITIVE_FIELDS.has(key);
+      changed.push({
+        field: key,
+        label: labels[key],
+        // Trunca valores longos (obs etc.) para o metadata não inchar.
+        from: hide ? "•••" : b ? b.slice(0, 180) : null,
+        to: hide ? "•••" : a ? a.slice(0, 180) : null,
+      });
+    }
   }
 
   return changed;
@@ -167,8 +214,15 @@ export const CARD_FIELD_LABELS: Record<string, string> = {
   profissao_res: "Profissão do responsável",
 };
 
-/** Monta a frase do log de atualização de campos. */
-export function buildUpdateMessage(changed: string[]): string {
-  if (changed.length === 1) return `alterou o campo ${changed[0]}`;
-  return `alterou os campos ${changed.join(", ")}`;
+/** Monta a frase do log de atualização de campos, com o de/para quando é um só. */
+export function buildUpdateMessage(changed: FieldChange[]): string {
+  if (changed.length === 1) {
+    const c = changed[0];
+    if (c.from && c.to && !SENSITIVE_FIELDS.has(c.field)) {
+      return `alterou ${c.label} de "${c.from}" para "${c.to}"`;
+    }
+    if (c.to && !SENSITIVE_FIELDS.has(c.field)) return `preencheu ${c.label} com "${c.to}"`;
+    return `alterou o campo ${c.label}`;
+  }
+  return `alterou os campos ${changed.map((c) => c.label).join(", ")}`;
 }

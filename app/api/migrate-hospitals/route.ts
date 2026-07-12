@@ -296,7 +296,8 @@ export async function POST() {
       create: {
         name: `[HOSPITAL] ${name}`,
         email,
-        password: 'ghost_user_no_login',
+        // Usuário-fantasma não faz login: sem senha o authorize() nunca o aceita.
+        password: null,
         role: 'GHOST',
         hospital: name,
         cardNumber,

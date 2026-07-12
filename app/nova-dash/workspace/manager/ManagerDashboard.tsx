@@ -5,12 +5,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { Button } from '@/app/_shared/ui/button';
-import { BarChart3, Users, Activity, Flame, Loader2, Trophy, ChevronRight } from 'lucide-react';
+import { BarChart3, Users, Activity, Flame, Loader2, Trophy, ChevronRight, Building2 } from 'lucide-react';
 import { getTeamAnalytics, type TeamAnalytics } from '@/app/_actions/analytics/get-team-analytics';
 import { getChatbotDashboardAccess } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { metaFor } from '@/app/_shared/utils/action-meta';
 import { CollaboratorDetail } from './CollaboratorDetail';
 import { ChatbotDashboard } from './ChatbotDashboard';
+import { SectorDashboard } from '../SectorDashboard';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -30,6 +31,7 @@ function StatCard({ icon: Icon, label, value, gradient }: { icon: React.ElementT
 
 export function ManagerDashboard() {
   const [period, setPeriod] = useState<7 | 30 | 90>(7);
+  const [tab, setTab] = useState<'equipe' | 'setores'>('equipe');
   const [data, setData] = useState<TeamAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,21 +61,38 @@ export function ManagerDashboard() {
 
   return (
     <div className="mx-auto max-w-8xl px-6 py-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">
             <BarChart3 className="h-6 w-6 text-blue-500" /> Visão do Gestor
           </h1>
-          <p className="text-sm text-gray-500 dark:text-zinc-400">Produtividade e ritmo da equipe · clique num colaborador para ver o detalhe.</p>
+          <p className="text-sm text-gray-500 dark:text-zinc-400">
+            {tab === 'equipe'
+              ? 'Produtividade e ritmo da equipe · clique num colaborador para ver o detalhe.'
+              : 'Rendimento por setor, ranking interno e gestão das funções da equipe.'}
+          </p>
         </div>
-        <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
-          {([7, 30, 90] as const).map((p) => (
-            <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} onClick={() => setPeriod(p)} className="h-7 px-3 text-xs">{p} dias</Button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Abas: Equipe | Setores */}
+          <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
+            <Button size="sm" variant={tab === 'equipe' ? 'default' : 'ghost'} onClick={() => setTab('equipe')} className="h-7 px-3 text-xs">
+              <Users className="mr-1.5 h-3.5 w-3.5" /> Equipe
+            </Button>
+            <Button size="sm" variant={tab === 'setores' ? 'default' : 'ghost'} onClick={() => setTab('setores')} className="h-7 px-3 text-xs">
+              <Building2 className="mr-1.5 h-3.5 w-3.5" /> Setores
+            </Button>
+          </div>
+          <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
+            {([7, 30, 90] as const).map((p) => (
+              <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} onClick={() => setPeriod(p)} className="h-7 px-3 text-xs">{p} dias</Button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {error ? (
+      {tab === 'setores' ? (
+        <SectorDashboard period={period} />
+      ) : error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">{error}</div>
       ) : loading || !data ? (
         <div className="flex items-center justify-center py-20 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>

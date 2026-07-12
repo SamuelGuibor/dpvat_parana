@@ -29,8 +29,8 @@ export async function updateKanbanStatus({
 
   // Coluna de origem (o `role` guarda o nome da etiqueta/coluna atual) para o log.
   const current = isProcess
-    ? await db.process.findUnique({ where: { id }, select: { role: true } })
-    : await db.user.findUnique({ where: { id }, select: { role: true } });
+    ? await db.process.findUnique({ where: { id }, select: { role: true, name: true, service: true } })
+    : await db.user.findUnique({ where: { id }, select: { role: true, name: true, service: true } });
   const fromColumn = current?.role ?? null;
 
   const now = new Date();
@@ -57,7 +57,12 @@ export async function updateKanbanStatus({
       authorName: session.user.name ?? "Usuário",
       userId: isProcess ? null : id,
       processId: isProcess ? id : null,
-      metadata: { from: fromColumn, to: label.name },
+      metadata: {
+        from: fromColumn,
+        to: label.name,
+        cardName: current?.name ?? null,
+        service: current?.service ?? null,
+      },
     });
   }
 

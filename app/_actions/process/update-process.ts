@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { createLog, diffFields, CARD_FIELD_LABELS, buildUpdateMessage } from "../../_shared/lib/log";
 import { notifyStatusProgress } from "../../_shared/lib/whatsapp/status-notify";
+import { getStatusLabel } from "../../nova-dash/card-dialog/constants";
 
 interface UpdateProcessData {
   id: string;
@@ -122,14 +123,39 @@ export async function updateProcess(data: UpdateProcessData) {
       });
     }
 
-    // Registra no histórico quais campos foram alterados.
+    // Mudança de status de progresso ganha um log próprio (mais granular que
+    // "Edições"), com de/para amigável — base para métricas por setor.
+    if (data.status && data.status !== currentProcess.status) {
+      const fromLabel = getStatusLabel(updatedProcess.service, currentProcess.status);
+      const toLabel = getStatusLabel(updatedProcess.service, data.status) ?? data.status;
+      await createLog({
+        action: "status_change",
+        message: fromLabel
+          ? `avançou o status de "${fromLabel}" para "${toLabel}"`
+          : `definiu o status como "${toLabel}"`,
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+        processId: data.id,
+        metadata: {
+          from: currentProcess.status,
+          to: data.status,
+          fromLabel,
+          toLabel,
+          service: updatedProcess.service ?? null,
+          cardName: updatedProcess.name ?? null,
+        },
+      });
+    }
+
+    // Registra no histórico quais campos foram alterados, com valor antigo e
+    // novo de cada um (status fica de fora: já tem log próprio acima).
     // `obs` no client é gravado na coluna `observacao` do Process.
     const changed = diffFields(
       data as unknown as Record<string, unknown>,
       currentProcess,
       CARD_FIELD_LABELS,
       { obs: "observacao" },
-    );
+    ).filter((c) => c.field !== "status");
     if (changed.length) {
       await createLog({
         action: "update",
@@ -137,7 +163,12 @@ export async function updateProcess(data: UpdateProcessData) {
         authorId: session.user.id,
         authorName: session.user.name ?? "Usuário",
         processId: data.id,
-        metadata: { fields: changed },
+        metadata: {
+          fields: changed.map((c) => c.label),
+          changes: changed,
+          service: updatedProcess.service ?? null,
+          cardName: updatedProcess.name ?? null,
+        },
       });
     }
 

@@ -107,11 +107,19 @@ export async function ingestIncomingMessage(
     select: { id: true },
   });
 
+  // Cliente escreveu = opt-in documentado (exigência da Meta pra mensagens
+  // proativas). Só preenche na primeira vez, preservando a data original.
   const contact = await db.whatsAppContact.upsert({
     where: { phone: msg.from },
     update: profileName ? { name: profileName } : {},
-    create: { phone: msg.from, name: profileName ?? null },
+    create: { phone: msg.from, name: profileName ?? null, optedInAt: new Date(), optInSource: "inbound" },
   });
+  if (!contact.optedInAt) {
+    await db.whatsAppContact.update({
+      where: { id: contact.id },
+      data: { optedInAt: new Date(), optInSource: "inbound" },
+    });
+  }
 
   // Cliente respondeu → zera os marcadores de silêncio do bot (30min/24h).
   let conversation = await db.whatsAppConversation.upsert({
@@ -305,17 +313,123 @@ async function notifyIncomingMessage(
 export interface IncomingWaStatus {
   id: string; // waMessageId da mensagem enviada por nós
   status: string; // sent | delivered | read | failed
+  // Presentes quando status = "failed": código e descrição do erro da Meta.
+  errors?: { code?: number; title?: string; message?: string }[];
 }
+
+// Debounce do alerta de falha de entrega: no máximo 1 aviso por conversa a
+// cada 6h, mesmo que várias mensagens falhem em sequência.
+const DELIVERY_ALERT_DEBOUNCE_MS = 6 * 60 * 60_000;
+
+// Erro 131050: o PRÓPRIO cliente pediu à Meta para não receber mensagens de
+// marketing desta empresa. É um opt-out formal — ignorá-lo é o que derruba a
+// conta por spam, então aqui (e só aqui) marcamos optedOut automaticamente.
+const META_USER_OPTED_OUT = 131050;
 
 /** Atualiza o status de entrega de uma mensagem enviada (out). */
 export async function applyStatusUpdate(st: IncomingWaStatus): Promise<void> {
   if (!["sent", "delivered", "read", "failed"].includes(st.status)) return;
+  let message: { id: string; contactId: string } | null = null;
   try {
-    await db.whatsAppMessage.update({
+    message = await db.whatsAppMessage.update({
       where: { waMessageId: st.id },
       data: { status: st.status },
+      select: { id: true, contactId: true },
     });
   } catch {
     // Mensagem não encontrada (ex: enviada fora do sistema) — ignora.
+  }
+  if (!message || st.status !== "failed") return;
+
+  try {
+    const codes = (st.errors ?? []).map((e) => e.code).filter((c): c is number => typeof c === "number");
+    if (codes.includes(META_USER_OPTED_OUT)) {
+      await db.whatsAppContact.update({
+        where: { id: message.contactId },
+        data: { optedOut: true },
+      });
+    }
+    const detail = (st.errors ?? [])
+      .map((e) => [e.code, e.title ?? e.message].filter(Boolean).join(" "))
+      .filter(Boolean)
+      .join("; ");
+    await alertDeliveryFailure(
+      message.contactId,
+      `a Meta recusou o envio${detail ? ` (${detail})` : ""}`,
+    );
+  } catch (err) {
+    console.error("[WHATSAPP] Falha ao tratar status failed:", st.id, err);
+  }
+}
+
+/**
+ * Falha de entrega (status "failed" ou mensagem parada em "sent" — provável
+ * bloqueio ou número errado). Política escolhida: NÃO bloqueia envios futuros
+ * (a janela de 24h continua sendo validada em todo envio); em vez disso a
+ * conversa vai para a FILA e a equipe recebe notificação pedindo verificação:
+ * número correto? cliente bloqueou? janela de 24h expirada?
+ * Debounce por conversa via deliveryAlertAt.
+ */
+export async function alertDeliveryFailure(contactId: string, cause: string): Promise<void> {
+  const conversation = await db.whatsAppConversation.upsert({
+    where: { contactId },
+    update: {},
+    create: { contactId },
+    include: { contact: true },
+  });
+  const alertedRecently =
+    conversation.deliveryAlertAt &&
+    conversation.deliveryAlertAt.getTime() > Date.now() - DELIVERY_ALERT_DEBOUNCE_MS;
+  if (alertedRecently) return;
+
+  // Manda pra fila de atendimento (se ninguém já estiver cuidando): alguém
+  // precisa conferir o número/bloqueio antes do próximo envio automático.
+  const shouldQueue = conversation.status === "bot" || conversation.status === "closed";
+  await db.whatsAppConversation.update({
+    where: { id: conversation.id },
+    data: {
+      deliveryAlertAt: new Date(),
+      ...(shouldQueue ? { status: "queued", assignedToId: null, queuedAt: new Date(), queueAlertAt: null } : {}),
+    },
+  });
+
+  const contact = conversation.contact;
+  const label = contact.name ?? `+${contact.phone}`;
+  const text =
+    `⚠️ WhatsApp: mensagem para ${label} não foi entregue — ${cause}. ` +
+    `Verifique se o número está correto, se o cliente bloqueou nosso contato ou se a janela de 24h expirou.`;
+
+  // Dono do ticket é avisado sozinho; sem dono, a equipe toda (é a fila).
+  const recipients =
+    conversation.status === "human" && conversation.assignedToId
+      ? [conversation.assignedToId]
+      : await whatsappRecipients();
+  for (const recipientId of recipients) {
+    await db.notification.create({
+      data: {
+        recipientId,
+        authorId: "whatsapp-bot",
+        authorName: "🤖 Bot WhatsApp",
+        targetName: label,
+        message: text,
+        contactId,
+      },
+    });
+  }
+
+  const discordUrl = process.env.DISCORD_WEBHOOK_URL_WHATSAPP;
+  if (discordUrl) {
+    await fetch(discordUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [{
+          title: "⚠️ Mensagem de WhatsApp não entregue",
+          description: `**${label}**\n${cause}.\nVerificar: número correto? cliente bloqueou? janela de 24h expirada?`,
+          color: 0xf59e0b,
+          timestamp: new Date().toISOString(),
+        }],
+      }),
+    }).catch(() => {});
   }
 }

@@ -11,6 +11,13 @@ interface SendMessageInput {
   channelId: string;
   body: string;
   replyToId?: string | null;
+  attachment?: { key: string; name: string; type: string } | null;
+}
+
+export interface ReactionDTO {
+  emoji: string;
+  userId: string;
+  userName: string;
 }
 
 export interface ChatMessageDTO {
@@ -25,6 +32,10 @@ export interface ChatMessageDTO {
   replyToId: string | null;
   replyToAuthor: string | null;
   replyToBody: string | null;
+  attachmentKey: string | null;
+  attachmentName: string | null;
+  attachmentType: string | null;
+  reactions: ReactionDTO[];
 }
 
 /**
@@ -34,13 +45,19 @@ export interface ChatMessageDTO {
  * dois; canal custom só membros). Cria Notification por @menção (padrão de
  * comment-actions.ts) e avisa o relay SSE para entrega em tempo real.
  */
-export async function sendMessage({ channelId, body, replyToId }: SendMessageInput): Promise<ChatMessageDTO> {
+export async function sendMessage({ channelId, body, replyToId, attachment }: SendMessageInput): Promise<ChatMessageDTO> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Usuário não autenticado.');
 
   const text = body.trim();
-  if (!text) throw new Error('Mensagem vazia.');
+  // Mensagem pode ser só um anexo (texto vazio), mas não vazia dos dois.
+  if (!text && !attachment) throw new Error('Mensagem vazia.');
   if (text.length > 4000) throw new Error('Mensagem muito longa.');
+  // Só aceita anexos do próprio prefixo de chat do usuário (o mesmo que a URL
+  // pré-assinada gera) — evita gravar uma key forjada para outra área do bucket.
+  if (attachment && !attachment.key.startsWith(`chat/${session.user.id}/`)) {
+    throw new Error('Anexo inválido.');
+  }
 
   if (!(await canAccessChannel(channelId, session.user.id))) {
     throw new Error('Sem acesso a este canal.');
@@ -73,6 +90,9 @@ export async function sendMessage({ channelId, body, replyToId }: SendMessageInp
       replyToId: validReplyId,
       replyToAuthor,
       replyToBody,
+      attachmentKey: attachment?.key ?? null,
+      attachmentName: attachment?.name ?? null,
+      attachmentType: attachment?.type ?? null,
     },
   });
 
@@ -88,18 +108,37 @@ export async function sendMessage({ channelId, body, replyToId }: SendMessageInp
     replyToId: message.replyToId,
     replyToAuthor: message.replyToAuthor,
     replyToBody: message.replyToBody,
+    attachmentKey: message.attachmentKey,
+    attachmentName: message.attachmentName,
+    attachmentType: message.attachmentType,
+    reactions: [],
   };
 
   const recipients = await channelRecipients(channelId, session.user.id);
 
   // Notificações de @menção (não podem quebrar o envio). "@everyone" expande
-  // para todos os destinatários do canal (equivalente a mencionar um por um).
+  // para todos os destinatários do canal; "@setor" (id "sector:<id>") expande
+  // para todos os membros daquele setor.
   try {
     const mentions = extractMentions(text);
     const targetIds = new Set<string>();
+
+    const sectorIds = mentions
+      .filter((m) => m.id.startsWith('sector:'))
+      .map((m) => m.id.slice('sector:'.length));
+    if (sectorIds.length) {
+      const sectorMembers = await db.user.findMany({
+        where: { sectorId: { in: sectorIds } },
+        select: { id: true },
+      });
+      sectorMembers.forEach((u) => targetIds.add(u.id));
+    }
+
     for (const mention of mentions) {
       if (mention.id === 'everyone') {
         recipients.forEach((id) => targetIds.add(id));
+      } else if (mention.id.startsWith('sector:')) {
+        // já expandido acima
       } else {
         targetIds.add(mention.id);
       }

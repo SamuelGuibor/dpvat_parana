@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "../../_shared/lib/prisma";
 
-const DEFAULT_ITEMS: string[] = [
-  "ASSINOU A PROCURAÇÃO",
-  "SENHA INSS/DOCS INSS",
-  "COMPROVANTE DE ENDEREÇO",
-  "PRONTUÁRIO ANEXADO",
-  "ROTEIRO",
-  "DOCUMENTO ATUALIZADO",
+// Itens padrão do Checklist Previdenciário, agrupados por seção. A ordem aqui
+// define a ordem exibida; a seção agrupa visualmente no card (aba Arquivos).
+const DEFAULT_ITEMS: { text: string; section: string }[] = [
+  { section: "COMERCIAL", text: "DOCUMENTO PESSOAL (ATUALIZADO)" },
+  { section: "COMERCIAL", text: "COMPROVANTE DE ENDEREÇO" },
+  { section: "COMERCIAL", text: "PROCURAÇÕES" },
+  { section: "ADM", text: "SENHA/DOCS INSS" },
+  { section: "ADM", text: "ROTEIRO" },
+  { section: "MÉDICO", text: "PRONTUÁRIOS" },
+  { section: "MÉDICO", text: "LAUDOS MÉDICOS" },
 ];
 
 type ItemRow = {
@@ -15,6 +18,7 @@ type ItemRow = {
   processId: string | null;
   userId: string | null;
   text: string;
+  section: string | null;
   checked: boolean;
   order: number;
   createdAt: Date;
@@ -47,10 +51,11 @@ export async function GET(request: Request) {
       // Primeira carga deste card: semeia os itens padrão.
       if (items.length === 0) {
         await tx.adminChecklistItem.createMany({
-          data: DEFAULT_ITEMS.map((text, i) => ({
+          data: DEFAULT_ITEMS.map((item, i) => ({
             processId: processId ?? null,
             userId: userId ?? null,
-            text,
+            text: item.text,
+            section: item.section,
             checked: false,
             order: i,
           })),
@@ -97,10 +102,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { processId, userId, text } = body as {
+    const { processId, userId, text, section } = body as {
       processId?: string;
       userId?: string;
       text?: string;
+      section?: string | null;
     };
 
     if (!processId && !userId) {
@@ -127,6 +133,7 @@ export async function POST(request: Request) {
         processId: processId ?? null,
         userId: userId ?? null,
         text: text.trim(),
+        section: section?.trim() || null,
         order: (last?.order ?? -1) + 1,
       },
     });

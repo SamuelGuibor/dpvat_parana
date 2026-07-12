@@ -3,15 +3,18 @@ import { Label } from '@/app/_shared/ui/label';
 import { Badge } from '@/app/_shared/ui/badge';
 import { Separator } from '@/app/_shared/ui/separator';
 import { getStatusOrderByService, getStatusLabelsByService } from './constants';
+import { StatusMessagesManager } from './StatusMessagesManager';
 
 interface Props {
   status: string;
   service?: string | null;
+  phone?: string | null;
+  clientName?: string | null;
   // eslint-disable-next-line no-unused-vars
   onStatusChange: (status: string) => void;
 }
 
-export function ChecklistTab({ status, service, onStatusChange }: Props) {
+export function ChecklistTab({ status, service, phone, clientName, onStatusChange }: Props) {
   const statusOrder = getStatusOrderByService(service);
   const statusLabels = getStatusLabelsByService(service);
 
@@ -64,6 +67,15 @@ export function ChecklistTab({ status, service, onStatusChange }: Props) {
           </div>
         ))}
       </div>
+
+      <Separator />
+
+      <StatusMessagesManager
+        service={service}
+        currentStatus={status}
+        phone={phone}
+        clientName={clientName}
+      />
     </div>
   );
 }

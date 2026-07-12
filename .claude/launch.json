@@ -9,6 +9,12 @@
       "autoPort": true
     },
     {
+      "name": "jarvis",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:\\jarvis"],
+      "port": 3005
+    },
+    {
       "name": "dev-verify",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "-p", "3001"],

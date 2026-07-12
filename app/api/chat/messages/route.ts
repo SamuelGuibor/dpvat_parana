@@ -35,13 +35,19 @@ export async function GET(req: NextRequest) {
       id: true, body: true, authorId: true, authorName: true,
       channelId: true, createdAt: true, editedAt: true, deletedAt: true,
       replyToId: true, replyToAuthor: true, replyToBody: true,
+      attachmentKey: true, attachmentName: true, attachmentType: true,
+      reactions: { select: { emoji: true, userId: true, userName: true }, orderBy: { createdAt: 'asc' } },
     },
   });
 
   // Devolve em ordem cronológica (mais antigo primeiro) para render direto.
   const messages = rows
     .reverse()
-    .map((m) => ({ ...m, createdAt: m.createdAt.toISOString() }));
+    .map((m) => ({
+      ...m,
+      createdAt: m.createdAt.toISOString(),
+      editedAt: m.editedAt?.toISOString() ?? null,
+    }));
 
   return NextResponse.json({ messages });
 }

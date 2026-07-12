@@ -1,6 +1,11 @@
-// app/api/botconversa/teste/route.ts
+// Webhook do Trello → alertas no Discord.
+//
+// Auth: shared secret na URL de callback do webhook (?secret=...) validado
+// contra a env TRELLO_WEBHOOK_SECRET. O HEAD fica aberto — é só o handshake
+// que o Trello faz ao registrar o webhook.
 
 import { NextRequest, NextResponse } from "next/server";
+import { verifyWebhookSecret } from "@/app/_shared/lib/webhook-auth";
 // import axios from "axios";
 
 export async function HEAD() {
@@ -8,6 +13,9 @@ export async function HEAD() {
 }
 
 export async function POST(req: NextRequest) {
+    if (!verifyWebhookSecret(req, "TRELLO_WEBHOOK_SECRET")) {
+        return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
     const body = await req.json();
 
     console.log("🔥 CHEGOU EVENTO DO TRELLO");

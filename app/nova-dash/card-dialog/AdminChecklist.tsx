@@ -9,9 +9,12 @@ import { Plus, Trash2, Loader2 } from "lucide-react";
 type Item = {
   id: string;
   text: string;
+  section: string | null;
   checked: boolean;
   order: number;
 };
+
+const NO_SECTION = "OUTROS";
 
 type Props = {
   cardId: string;
@@ -24,6 +27,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
   const [loading, setLoading] = useState(true);
   const [hideChecked, setHideChecked] = useState(false);
   const [newText, setNewText] = useState("");
+  const [newSection, setNewSection] = useState<string>("");
   const [adding, setAdding] = useState(false);
   const [showAddInput, setShowAddInput] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
@@ -68,7 +72,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
     if (!text) return;
     setAdding(true);
     try {
-      const payload: Record<string, string> = { text };
+      const payload: Record<string, string | null> = { text, section: newSection || null };
       if (isProcess) payload.processId = cardId;
       else payload.userId = cardId;
       const res = await fetch("/api/admin-checklist", {
@@ -144,6 +148,23 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
   const visible = hideChecked ? items.filter((i) => !i.checked) : items;
   const checkedCount = items.filter((i) => i.checked).length;
 
+  // Seções existentes (para o seletor do "adicionar"), na ordem de aparição.
+  const sectionOptions = Array.from(
+    new Set(items.map((i) => i.section).filter((s): s is string => !!s)),
+  );
+
+  // Agrupa os itens visíveis por seção, preservando a ordem de primeira aparição.
+  const grouped: { section: string; items: Item[] }[] = [];
+  for (const item of visible) {
+    const key = item.section || NO_SECTION;
+    let group = grouped.find((g) => g.section === key);
+    if (!group) {
+      group = { section: key, items: [] };
+      grouped.push(group);
+    }
+    group.items.push(item);
+  }
+
   return (
     <div className="border border-gray-200 dark:border-zinc-800 rounded-xl p-4 bg-white dark:bg-zinc-900">
       <div className="flex items-center justify-between mb-3">
@@ -178,7 +199,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
           <Loader2 size={18} className="animate-spin text-gray-400 dark:text-zinc-500" />
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {visible.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-zinc-500 py-2">
               {hideChecked && items.length > 0
@@ -186,29 +207,36 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
                 : "Nenhum item ainda. Adicione abaixo."}
             </p>
           )}
-          {visible.map((item) => (
-            <div key={item.id} className="flex items-center gap-2 group">
-              <Checkbox
-                id={`adm-chk-${item.id}`}
-                checked={item.checked}
-                onCheckedChange={() => toggleItem(item)}
-              />
-              <label
-                htmlFor={`adm-chk-${item.id}`}
-                className={`flex-1 text-sm cursor-pointer select-none ${
-                  item.checked ? "line-through text-gray-400 dark:text-zinc-500" : "text-gray-700 dark:text-zinc-300"
-                }`}
-              >
-                {item.text}
-              </label>
-              <button
-                type="button"
-                onClick={() => deleteItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 text-gray-400 dark:text-zinc-500 hover:text-red-500 transition-opacity p-1"
-                title="Excluir item"
-              >
-                <Trash2 size={14} />
-              </button>
+          {grouped.map((group) => (
+            <div key={group.section} className="space-y-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">
+                {group.section}
+              </p>
+              {group.items.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 group">
+                  <Checkbox
+                    id={`adm-chk-${item.id}`}
+                    checked={item.checked}
+                    onCheckedChange={() => toggleItem(item)}
+                  />
+                  <label
+                    htmlFor={`adm-chk-${item.id}`}
+                    className={`flex-1 text-sm cursor-pointer select-none ${
+                      item.checked ? "line-through text-gray-400 dark:text-zinc-500" : "text-gray-700 dark:text-zinc-300"
+                    }`}
+                  >
+                    {item.text}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => deleteItem(item.id)}
+                    className="opacity-0 group-hover:opacity-100 text-gray-400 dark:text-zinc-500 hover:text-red-500 transition-opacity p-1"
+                    title="Excluir item"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -217,6 +245,17 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
       <div className="mt-3">
         {showAddInput ? (
           <div className="flex items-center gap-2">
+            <select
+              value={newSection}
+              onChange={(e) => setNewSection(e.target.value)}
+              className="h-9 rounded-md border border-gray-300 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-950 px-2 text-sm"
+              title="Seção do item"
+            >
+              <option value="">Outros</option>
+              {sectionOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
             <Input
               ref={addInputRef}
               type="text"

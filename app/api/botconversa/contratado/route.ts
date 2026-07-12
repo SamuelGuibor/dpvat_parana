@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
+import { hashPassword } from '@/app/_shared/lib/password';
+import { verifyWebhookSecret } from '@/app/_shared/lib/webhook-auth';
 
 async function notifyBot(record: unknown) {
   const url = process.env.BOT_WEBHOOK_URL;
@@ -24,6 +26,9 @@ async function nextCardNumber(): Promise<number> {
 }
 
 export async function POST(req: NextRequest) {
+  if (!verifyWebhookSecret(req, 'BOTCONVERSA_WEBHOOK_SECRET')) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  }
   try {
     const body = await req.json();
     console.log('Recebido webhook BotConversa:', body);
@@ -86,7 +91,7 @@ export async function POST(req: NextRequest) {
             email: `inserir_email-${telefone}@gmail.com`,
             telefone,
             role: 'Filtro de Cartões',
-            password: 'segurosparana1',
+            password: await hashPassword('segurosparana1'),
             cardNumber,
             ...(label && { labelId: label.id }),
           },

@@ -8,6 +8,8 @@ import { Adapter } from "next-auth/adapters";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import jwt from "jsonwebtoken";
+import { verifyPassword, hashPassword } from "./password";
+import { rateLimit } from "./rate-limit";
 
 export const authOptions: AuthOptions = {
   adapter: PrismaAdapter(db) as Adapter,
@@ -22,27 +24,50 @@ export const authOptions: AuthOptions = {
         cpf: { label: "CPF", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.cpf || !credentials?.password) {
           throw new Error("CPF e senha são obrigatórios");
         }
 
-        const user = await db.user.findFirst({
-          select: { id: true, email: true, name: true, role: true, password: true, service: true },
-          where: { cpf: credentials.cpf, password: credentials.password },
-        });
-
-        if (!user || !user.password) {
-          throw new Error("Usuário não encontrado ou senha não configurada");
+        // Força-bruta: 10 tentativas por IP e 5 por CPF a cada 15 minutos.
+        const forwarded = (req?.headers?.["x-forwarded-for"] as string) ?? "";
+        const ip = forwarded.split(",")[0]?.trim() || "unknown";
+        const windowMs = 15 * 60_000;
+        if (!rateLimit(`login:ip:${ip}`, 10, windowMs) || !rateLimit(`login:cpf:${credentials.cpf}`, 5, windowMs)) {
+          throw new Error("Muitas tentativas de login. Aguarde alguns minutos e tente novamente.");
         }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          service: user.service ?? undefined,
-        };
+        // CPF não é único no banco: verifica a senha contra cada candidato.
+        // Senhas legadas em texto puro são re-gravadas como hash bcrypt no
+        // primeiro login válido (migração lazy).
+        const candidates = await db.user.findMany({
+          select: { id: true, email: true, name: true, role: true, password: true, service: true },
+          where: { cpf: credentials.cpf, password: { not: null } },
+          take: 10,
+        });
+
+        for (const user of candidates) {
+          if (!user.password) continue;
+          const { ok, needsRehash } = await verifyPassword(credentials.password, user.password);
+          if (!ok) continue;
+
+          if (needsRehash) {
+            const newHash = await hashPassword(credentials.password);
+            await db.user
+              .update({ where: { id: user.id }, data: { password: newHash } })
+              .catch((err) => console.error("[AUTH] Falha ao re-hashear senha legada:", err));
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            service: user.service ?? undefined,
+          };
+        }
+
+        throw new Error("Usuário não encontrado ou senha inválida");
       },
     }),
   ],

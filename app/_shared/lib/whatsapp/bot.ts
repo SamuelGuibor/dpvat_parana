@@ -6,6 +6,7 @@ import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
   whatsappChannelId,
   whatsappRecipients,
@@ -49,7 +50,13 @@ const s3 = new S3Client({
 
 interface ProcessInfo {
   name: string | null;
+  // Etapa AMIGÁVEL para o cliente (mesmo texto da timeline de status), não o
+  // nome interno da coluna do Trello. Ex.: "Perícia médica", não "Enviar
+  // Mensagem – Previdenciário".
   etapa: string | null;
+  // Explicação em texto plano da etapa, para a IA saber contar ao cliente o que
+  // está acontecendo naquela fase.
+  etapaDescricao: string | null;
   service: string | null;
 }
 
@@ -166,11 +173,11 @@ async function findLinkedCard(contactId: string): Promise<LinkedCard | null> {
 
   if (contact.userId) {
     const u = await db.user.findUnique({ where: { id: contact.userId }, include: { label: true } });
-    if (u) return { kind: "user", id: u.id, name: u.name, etapa: u.label?.name ?? u.role, service: u.service };
+    if (u) return { kind: "user", id: u.id, name: u.name, etapa: getStatusLabel(u.service, u.status) ?? u.label?.name ?? u.role, etapaDescricao: getStatusDescription(u.service, u.status), service: u.service };
   }
   if (contact.processId) {
     const p = await db.process.findUnique({ where: { id: contact.processId }, include: { label: true } });
-    if (p) return { kind: "process", id: p.id, name: p.name, etapa: p.label?.name ?? p.role, service: p.service };
+    if (p) return { kind: "process", id: p.id, name: p.name, etapa: getStatusLabel(p.service, p.status) ?? p.label?.name ?? p.role, etapaDescricao: getStatusDescription(p.service, p.status), service: p.service };
   }
 
   const last8 = contact.phone.replace(/\D/g, "").slice(-8);
@@ -183,7 +190,7 @@ async function findLinkedCard(contactId: string): Promise<LinkedCard | null> {
   `);
   if (users.length) {
     const u = await db.user.findUnique({ where: { id: users[0].id }, include: { label: true } });
-    if (u) return { kind: "user", id: u.id, name: u.name, etapa: u.label?.name ?? u.role, service: u.service };
+    if (u) return { kind: "user", id: u.id, name: u.name, etapa: getStatusLabel(u.service, u.status) ?? u.label?.name ?? u.role, etapaDescricao: getStatusDescription(u.service, u.status), service: u.service };
   }
 
   const processes = await db.$queryRaw<{ id: string }[]>(Prisma.sql`
@@ -193,7 +200,7 @@ async function findLinkedCard(contactId: string): Promise<LinkedCard | null> {
   `);
   if (processes.length) {
     const p = await db.process.findUnique({ where: { id: processes[0].id }, include: { label: true } });
-    if (p) return { kind: "process", id: p.id, name: p.name, etapa: p.label?.name ?? p.role, service: p.service };
+    if (p) return { kind: "process", id: p.id, name: p.name, etapa: getStatusLabel(p.service, p.status) ?? p.label?.name ?? p.role, etapaDescricao: getStatusDescription(p.service, p.status), service: p.service };
   }
 
   return null;
@@ -210,7 +217,7 @@ async function runLookup(kind: string, contactId: string, card: LinkedCard | nul
       return {
         kind,
         data: fresh
-          ? { encontrado: true, nome: fresh.name, etapa: fresh.etapa, servico: fresh.service }
+          ? { encontrado: true, nome: fresh.name, etapa: fresh.etapa, etapaDescricao: fresh.etapaDescricao, servico: fresh.service }
           : { encontrado: false },
       };
     }
@@ -622,7 +629,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
 
     const basePayload = {
       contact: { name: message.contactName, phone: message.contactPhone },
-      processInfo: card ? { name: card.name, etapa: card.etapa, service: card.service } : null,
+      processInfo: card ? { name: card.name, etapa: card.etapa, etapaDescricao: card.etapaDescricao, service: card.service } : null,
       // Fluxos que a IA pode disparar (action="send_flow" + flowName).
       flows,
       history: history

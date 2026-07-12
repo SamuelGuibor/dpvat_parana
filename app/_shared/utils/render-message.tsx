@@ -72,11 +72,14 @@ function parseSegments(text: string, keyPrefix: string): React.ReactNode[] {
     if (m[1]) {
       const display = m[2]; const id = m[3];
       const isEveryone = id === 'everyone';
+      const isSector = id.startsWith('sector:');
       const c = isEveryone
         ? { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300' }
-        : colorFromId(id);
+        : isSector
+          ? { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-300' }
+          : colorFromId(id);
       parts.push(
-        <Badge key={`${keyPrefix}-mention-${key++}`} variant="secondary" className={`mx-1 ${c.bg} ${c.text} ${c.border} ${isEveryone ? 'font-bold' : ''}`}>
+        <Badge key={`${keyPrefix}-mention-${key++}`} variant="secondary" className={`mx-1 ${c.bg} ${c.text} ${c.border} ${isEveryone || isSector ? 'font-bold' : ''}`}>
           @{display}
         </Badge>
       );

@@ -4,6 +4,7 @@ import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { createLog } from "../../_shared/lib/log";
+import { hashPassword } from "../../_shared/lib/password";
 
 interface CreateUserProps {
   name: string;
@@ -37,11 +38,15 @@ export const createUser = async ({ name, cpf, password, email, labelId, role, se
       name,
       email: finalEmail,
       cpf,
-      password,
+      password: password ? await hashPassword(password) : password,
       role,
       labelId: finalLabelId,
       senha_inss,
       cardNumber,
+      // Card de cliente já nasce na primeira etapa do fluxo (INSS por padrão)
+      // e com o timer da coluna rodando — antes ficava "Sem data" até a
+      // primeira movimentação.
+      ...(isAdmin ? {} : { service: "INSS", status: "INSS_S1", statusStartedAt: new Date() }),
     },
   });
 
@@ -52,10 +57,17 @@ export const createUser = async ({ name, cpf, password, email, labelId, role, se
     if (session?.user?.id) {
       await createLog({
         action: "create",
-        message: "criou o card",
+        message: `criou o card "${name}"`,
         authorId: session.user.id,
         authorName: session.user.name ?? "Usuário",
         userId: user.id,
+        metadata: {
+          cardName: name,
+          cardNumber,
+          service: user.service ?? null,
+          status: user.status ?? null,
+          column: role ?? null,
+        },
       });
     }
   }

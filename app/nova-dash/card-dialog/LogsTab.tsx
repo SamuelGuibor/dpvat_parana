@@ -6,6 +6,7 @@ import { Button } from '@/app/_shared/ui/button';
 import {
   History, Pencil, ArrowRightLeft, FilePlus, FileMinus,
   MessageSquare, Sparkles, Clock, RefreshCw, ArrowRight,
+  ListChecks, Archive, Building2,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -68,6 +69,18 @@ const ACTION_STYLES: Record<
     node: 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-400',
     badge: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800',
     label: 'Criação',
+  },
+  status_change: {
+    icon: ListChecks,
+    node: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400',
+    badge: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800',
+    label: 'Status',
+  },
+  archive: {
+    icon: Archive,
+    node: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+    badge: 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+    label: 'Arquivo',
   },
 };
 
@@ -136,16 +149,53 @@ function LogDetails({ log }: { log: LogItem }) {
     );
   }
 
-  if (log.action === 'update' && Array.isArray(meta.fields) && meta.fields.length) {
+  // Avanço de status (checklist do cliente): de → para com rótulos amigáveis.
+  if (log.action === 'status_change' && (meta.fromLabel || meta.toLabel)) {
     return (
-      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-        {meta.fields.map((f: string, i: number) => (
-          <Badge key={i} variant="secondary" className="text-[10px] font-medium bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800">
-            {f}
+      <div className="flex items-center gap-2 mt-2 flex-wrap">
+        {meta.fromLabel && (
+          <Badge variant="outline" className="font-medium text-[11px] bg-gray-50 dark:bg-zinc-800">
+            {meta.fromLabel}
           </Badge>
-        ))}
+        )}
+        <ArrowRight className="w-3 h-3 text-gray-400 shrink-0" />
+        <Badge variant="outline" className="font-medium text-[11px] bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300">
+          {meta.toLabel ?? meta.to}
+        </Badge>
       </div>
     );
+  }
+
+  if (log.action === 'update') {
+    // Logs novos trazem `changes` com o de/para de cada campo.
+    if (Array.isArray(meta.changes) && meta.changes.length) {
+      return (
+        <div className="mt-2 space-y-1">
+          {meta.changes.map((c: { label: string; from: string | null; to: string | null }, i: number) => (
+            <div key={i} className="flex items-center gap-1.5 flex-wrap text-[11px]">
+              <Badge variant="secondary" className="text-[10px] font-medium bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800">
+                {c.label}
+              </Badge>
+              {c.from && <span className="text-gray-400 line-through decoration-gray-300 max-w-[160px] truncate">{c.from}</span>}
+              <ArrowRight className="w-3 h-3 text-gray-400 shrink-0" />
+              <span className="font-medium text-gray-700 dark:text-zinc-300 max-w-[200px] truncate">{c.to ?? '—'}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    // Logs antigos só têm os rótulos dos campos.
+    if (Array.isArray(meta.fields) && meta.fields.length) {
+      return (
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {meta.fields.map((f: string, i: number) => (
+            <Badge key={i} variant="secondary" className="text-[10px] font-medium bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800">
+              {f}
+            </Badge>
+          ))}
+        </div>
+      );
+    }
   }
 
   if (log.action === 'comment_add' && meta.preview) {
@@ -287,6 +337,13 @@ export function LogsTab({ cardId, isProcess }: Props) {
                             <span className="capitalize">
                               {formatDistanceToNow(date, { addSuffix: true, locale: ptBR })}
                             </span>
+                            {/* Setor do autor no momento da ação (snapshot do log) */}
+                            {log.metadata?.authorSectorName && (
+                              <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-gray-50 dark:bg-zinc-800 px-1.5 py-px text-[10px] font-semibold text-gray-500 dark:text-zinc-400">
+                                <Building2 className="w-2.5 h-2.5" />
+                                {log.metadata.authorSectorName}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </li>

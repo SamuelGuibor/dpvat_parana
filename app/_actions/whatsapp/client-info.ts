@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { createLog } from '@/app/_shared/lib/log';
+import { hashPassword } from '@/app/_shared/lib/password';
 
 // Ficha do cliente dentro do atendimento de WhatsApp.
 //
@@ -207,7 +208,7 @@ export async function addClientFromConversation(contactId: string, input: Client
       email,
       telefone: contact.phone,
       role: 'Filtro de Cartões',
-      password: 'segurosparana1',
+      password: await hashPassword('segurosparana1'),
       cardNumber,
       ...(label && { labelId: label.id }),
     },

@@ -16,6 +16,7 @@ import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
 import { deletDoc } from '@/app/_actions/documents/delete-document';
 import { DeleteConfirmDialog } from '@/app/nova-dash/card-dialog/DeleteConfirmDialog';
+import { AdminChecklist } from './AdminChecklist';
 import type { FileWithBase64 } from './types';
 
 interface Props {
@@ -270,6 +271,12 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       {error && <p className="text-red-500 text-sm">{error}</p>}
 
       <Separator />
+
+      {/* Checklist Previdenciário: fica entre a área de upload e a lista de
+          anexos, para conferir a documentação sem sair da aba Arquivos. */}
+      {cardId && (
+        <AdminChecklist cardId={cardId} isProcess={isProcess} title="Checklist Previdenciário" />
+      )}
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">

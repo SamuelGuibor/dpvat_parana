@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { createLog, diffFields, CARD_FIELD_LABELS, buildUpdateMessage } from "../../_shared/lib/log";
 import { notifyStatusProgress } from "../../_shared/lib/whatsapp/status-notify";
+import { getStatusLabel } from "../../nova-dash/card-dialog/constants";
 
 interface UpdateUserData {
   id: string;
@@ -122,8 +123,34 @@ export async function updateUser(data: UpdateUserData) {
       });
     }
 
-    // Registra no histórico quais campos foram alterados.
-    const changed = diffFields(data as unknown as Record<string, unknown>, currentUser, CARD_FIELD_LABELS);
+    // Mudança de status de progresso ganha um log próprio (mais granular que
+    // "Edições"), com de/para amigável — base para métricas por setor.
+    if (data.status && data.status !== currentUser.status) {
+      const fromLabel = getStatusLabel(updatedUser.service, currentUser.status);
+      const toLabel = getStatusLabel(updatedUser.service, data.status) ?? data.status;
+      await createLog({
+        action: "status_change",
+        message: fromLabel
+          ? `avançou o status de "${fromLabel}" para "${toLabel}"`
+          : `definiu o status como "${toLabel}"`,
+        authorId: session.user.id,
+        authorName: session.user.name ?? "Usuário",
+        userId: data.id,
+        metadata: {
+          from: currentUser.status,
+          to: data.status,
+          fromLabel,
+          toLabel,
+          service: updatedUser.service ?? null,
+          cardName: updatedUser.name ?? null,
+        },
+      });
+    }
+
+    // Registra no histórico quais campos foram alterados, com valor antigo e
+    // novo de cada um (status fica de fora: já tem log próprio acima).
+    const changed = diffFields(data as unknown as Record<string, unknown>, currentUser, CARD_FIELD_LABELS)
+      .filter((c) => c.field !== "status");
     if (changed.length) {
       await createLog({
         action: "update",
@@ -131,7 +158,12 @@ export async function updateUser(data: UpdateUserData) {
         authorId: session.user.id,
         authorName: session.user.name ?? "Usuário",
         userId: data.id,
-        metadata: { fields: changed },
+        metadata: {
+          fields: changed.map((c) => c.label),
+          changes: changed,
+          service: updatedUser.service ?? null,
+          cardName: updatedUser.name ?? null,
+        },
       });
     }
 

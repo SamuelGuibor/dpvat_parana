@@ -138,10 +138,17 @@ export async function createProcess(data: {
   if (me) {
     await createLog({
       action: "create",
-      message: "criou o card",
+      message: `criou o card "${process.name ?? "sem nome"}"`,
       authorId: me.id,
       authorName: me.name ?? "Usuário",
       processId: process.id,
+      metadata: {
+        cardName: process.name ?? null,
+        cardNumber: process.cardNumber ?? null,
+        service: process.service ?? null,
+        status: process.status ?? null,
+        type: process.type ?? null,
+      },
     });
   }
 

@@ -16,6 +16,23 @@ model SavedPrompt {
   updatedAt DateTime @updatedAt
 }
 
+// Config das mensagens automáticas de PROGRESSÃO DE STATUS enviadas ao cliente
+// no WhatsApp. Uma linha por (serviceKey, status) — global, não por card.
+// customText nulo = usa o texto padrão do sistema; enabled=false = não envia.
+// serviceKey é normalizado: "DPVAT" | "INSS" | "GENERIC".
+model StatusMessageConfig {
+  id         String   @id @default(cuid())
+  serviceKey String
+  status     String
+  enabled    Boolean  @default(true)
+  customText String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([serviceKey, status])
+  @@map("status_message_configs")
+}
+
 model User {
   id                  String         @id @default(cuid())
   name                String?
@@ -68,6 +85,8 @@ model User {
   rede_social         String?
   archiveStatus       String?
   archivedAt          DateTime?
+  sectorId            String?
+  sector              Sector?        @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
   accounts            Account[]
   commentsAsAuthor    Comment[]      @relation("CommentAuthor")
   commentsOnCard      Comment[]      @relation("UserComments")
@@ -77,30 +96,72 @@ model User {
   sessions            Session[]
   label               Label?         @relation("UserLabel", fields: [labelId], references: [id])
   chatMessages        ChatMessage[]  @relation("ChatAuthor")
+  chatReactions       ChatReaction[] @relation("ReactionAuthor")
   logs                Log[]          @relation("UserLogs")
 }
 
+// Setor/função da pessoa (Comercial, Financeiro, Desenvolvedor…). Diferente de
+// `role` (nível de acesso): o setor é a "área" da pessoa, usada para @menção no
+// chat, tag no perfil e dashboard de rendimento por setor. Quem pode gerir os
+// setores é controlado por SECTOR_ADMIN_IDS (ver app/_shared/lib/sector-admin.ts).
+model Sector {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  // slug em minúsculas, sem espaço — é o que se digita no @menção (@comercial).
+  slug      String   @unique
+  color     String   @default("#3b82f6")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]   @relation("UserSector")
+
+  @@map("sectors")
+}
+
 model ChatMessage {
-  id         String    @id @default(cuid())
-  body       String
-  authorId   String
-  authorName String
-  channelId  String
-  createdAt  DateTime  @default(now())
-  editedAt   DateTime?
+  id             String         @id @default(cuid())
+  body           String
+  authorId       String
+  authorName     String
+  channelId      String
+  createdAt      DateTime       @default(now())
+  editedAt       DateTime?
   // Soft-delete estilo WhatsApp: quando preenchido, renderiza "mensagem apagada".
-  deletedAt  DateTime?
+  deletedAt      DateTime?
   // Resposta a outra mensagem (reply). Guarda também um snapshot do original
   // (autor + trecho) para render estável mesmo se o pai for alterado/apagado.
-  replyToId       String?
-  replyToAuthor   String?
-  replyToBody     String?
-  author     User      @relation("ChatAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  replyTo    ChatMessage?  @relation("ChatReply", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies    ChatMessage[] @relation("ChatReply")
+  replyToId      String?
+  replyToAuthor  String?
+  replyToBody    String?
+  // Anexo opcional (foto/vídeo/áudio/arquivo). A key aponta pro S3 (prefixo
+  // "chat/"); o tipo MIME decide o render inline (imagem/vídeo/áudio) ou link.
+  attachmentKey  String?
+  attachmentName String?
+  attachmentType String?
+  author         User           @relation("ChatAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  replyTo        ChatMessage?   @relation("ChatReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        ChatMessage[]  @relation("ChatReply")
+  reactions      ChatReaction[]
 
   @@index([channelId, createdAt])
   @@map("chat_messages")
+}
+
+// Reação (emoji) de uma pessoa numa mensagem. Unicidade por (msg, user, emoji)
+// permite alternar (toggle): reagir de novo com o mesmo emoji remove.
+model ChatReaction {
+  id        String      @id @default(cuid())
+  messageId String
+  userId    String
+  userName  String
+  emoji     String
+  createdAt DateTime    @default(now())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User        @relation("ReactionAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("chat_reactions")
 }
 
 model ChatRead {
@@ -360,60 +421,71 @@ model Log {
 // User/Process já cadastrado (userId/processId são referências soltas, sem FK,
 // para não criar cascade com dados de clientes).
 model WhatsAppContact {
-  id           String                @id @default(cuid())
-  phone        String                @unique // E.164, ex: 5541999999999
-  name         String?
-  userId       String?
-  processId    String?
-  optedOut     Boolean               @default(false)
+  id             String                @id @default(cuid())
+  phone          String                @unique // E.164, ex: 5541999999999
+  name           String?
+  userId         String?
+  processId      String?
+  optedOut       Boolean               @default(false)
+  // Opt-in documentado (exigência anti-spam da Meta): quando e como o cliente
+  // aceitou receber mensagens. Preenchido automaticamente na 1ª mensagem
+  // recebida ("inbound"). Sem opt-in, envio proativo fora da janela de 24h é
+  // pulado (dentro da janela sempre pode, pois o cliente acabou de escrever).
+  optedInAt      DateTime?
+  optInSource    String? // inbound | manual
   // Rascunho da ficha do cliente preenchida no atendimento, quando o contato
   // ainda não tem User vinculado. Vira User no "Adicionar cliente".
-  clientDraft  Json?
+  clientDraft    Json?
   // Documentos pessoais anexados na ficha antes do contato virar cliente:
   // [{ key, name, uploadedAt }]. Migram para Document real no "Adicionar cliente".
   draftDocuments Json?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  conversation WhatsAppConversation?
-  messages     WhatsAppMessage[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  conversation   WhatsAppConversation?
+  messages       WhatsAppMessage[]
 
   @@map("whatsapp_contacts")
 }
 
 model WhatsAppConversation {
-  id            String          @id @default(cuid())
-  contactId     String          @unique
-  status        String          @default("bot") // bot | queued | human | closed
-  assignedToId  String?
+  id              String                     @id @default(cuid())
+  contactId       String                     @unique
+  status          String                     @default("bot") // bot | queued | human | closed
+  assignedToId    String?
   // Só relevante quando status="closed": null/false = não qualificada
   // (default), true = qualificada. Decidido no botão de encerrar ou pela IA.
-  qualified     Boolean?
+  qualified       Boolean?
   // Desfecho do atendimento (categoria de encerramento decidida pela IA ou
   // pelo atendente): qualificado | nao_qualificado | perguntas | novo_acidente
   // | transferido. Null enquanto em andamento.
-  closeCategory String?
+  closeCategory   String?
   // Cérebro da IA (persistido por conversa; o microserviço é stateless):
-  botMemory     String?   // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
-  botState      String?   // etapa da conversa (triagem_seguro, coleta_cpf...)
-  botFailCount  Int       @default(0) // "não entendi" seguidos; 2 → escala pra humano
-  botNudge30At  DateTime? // "ainda está aí?" enviado (silêncio de 30min)
-  botNudge24At  DateTime? // follow-up de ~24h enviado
+  botMemory       String? // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
+  botState        String? // etapa da conversa (triagem_seguro, coleta_cpf...)
+  botFailCount    Int                        @default(0) // "não entendi" seguidos; 2 → escala pra humano
+  botNudge30At    DateTime? // "ainda está aí?" enviado (silêncio de 30min)
+  botNudge24At    DateTime? // follow-up de ~24h enviado
   // Urgência detectada pela IA — destaca a conversa no inbox até um atendente
   // assumir ou encerrar.
-  urgent        Boolean   @default(false)
+  urgent          Boolean                    @default(false)
   // SLA da fila de espera: quando entrou na fila e quando o último alerta de
   // "cliente esperando demais" foi disparado pelo cron (evita spam).
-  queuedAt      DateTime?
-  queueAlertAt  DateTime?
-  lastMessageAt DateTime        @default(now())
+  queuedAt        DateTime?
+  queueAlertAt    DateTime?
+  // Último alerta de FALHA DE ENTREGA (status "failed" da Meta ou mensagem
+  // parada em "sent" sem "delivered" = provável bloqueio/número errado) —
+  // debounce para não repetir o aviso. O envio ao número NÃO é bloqueado:
+  // a equipe é avisada para verificar número/bloqueio/janela de 24h.
+  deliveryAlertAt DateTime?
+  lastMessageAt   DateTime                   @default(now())
   // Legado: marcador global de leitura (mantido como fallback na migração
   // para leitura POR ATENDENTE — ver WhatsAppConversationRead).
-  lastReadAt    DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  contact       WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  tags          WhatsAppConversationTag[]
-  reads         WhatsAppConversationRead[]
+  lastReadAt      DateTime?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  contact         WhatsAppContact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tags            WhatsAppConversationTag[]
+  reads           WhatsAppConversationRead[]
 
   @@index([status])
   @@index([assignedToId])
@@ -446,10 +518,10 @@ model WhatsAppQuickReply {
 
 // Tags livres pra organizar conversas (ex.: "Urgente", "VIP", "Recontato").
 model WhatsAppTag {
-  id            String                     @id @default(cuid())
-  name          String                     @unique
-  color         String                     @default("#10b981")
-  createdAt     DateTime                   @default(now())
+  id            String                    @id @default(cuid())
+  name          String                    @unique
+  color         String                    @default("#10b981")
+  createdAt     DateTime                  @default(now())
   conversations WhatsAppConversationTag[]
 
   @@map("whatsapp_tags")
@@ -466,26 +538,30 @@ model WhatsAppConversationTag {
 }
 
 model WhatsAppMessage {
-  id          String          @id @default(cuid())
-  contactId   String
-  waMessageId String?         @unique // id da Meta; evita duplicar em retry de webhook
-  direction   String // in | out
-  body        String?
-  mediaKey    String? // chave no S3 (mesmo bucket dos documentos)
-  mediaType   String?
-  status      String          @default("sent") // sent | delivered | read | failed
-  sentByBot   Boolean         @default(false)
-  authorId    String? // funcionário que enviou (se humano)
-  internal    Boolean         @default(false) // nota interna, não vai pro cliente
+  id               String          @id @default(cuid())
+  contactId        String
+  waMessageId      String?         @unique // id da Meta; evita duplicar em retry de webhook
+  direction        String // in | out
+  body             String?
+  mediaKey         String? // chave no S3 (mesmo bucket dos documentos)
+  mediaType        String?
+  status           String          @default("sent") // sent | delivered | read | failed
+  sentByBot        Boolean         @default(false)
+  // Origem de mensagem PROATIVA do sistema ("automation" | "progress").
+  // Null em respostas do bot conversacional e de atendentes. Usado pelo cap
+  // de frequência anti-spam (máx. 1 proativa por contato a cada N horas).
+  systemSource     String?
+  authorId         String? // funcionário que enviou (se humano)
+  internal         Boolean         @default(false) // nota interna, não vai pro cliente
   // Edição/exclusão LOCAIS (a Cloud API não propaga pro celular do cliente).
-  editedAt    DateTime?
-  deletedAt   DateTime?
+  editedAt         DateTime?
+  deletedAt        DateTime?
   // Resposta (quote): id da mensagem respondida + snapshot pro render estável.
   replyToId        String?
   replyToBody      String?
   replyToDirection String?
-  createdAt   DateTime        @default(now())
-  contact     WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdAt        DateTime        @default(now())
+  contact          WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId, createdAt])
   @@map("whatsapp_messages")
@@ -494,26 +570,26 @@ model WhatsAppMessage {
 // Fluxo de mensagens pré-setadas do atendimento (sequência de textos com
 // delay entre os envios). steps = [{ body: string, delayMs: number }].
 model WhatsAppFlow {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
   // Descrição do fluxo em linguagem natural — a IA lê isto para decidir QUANDO
   // este fluxo se encaixa na situação do cliente e dispará-lo automaticamente.
   description String?
-  steps     Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  steps       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("whatsapp_flows")
 }
 
 model WhatsAppTemplate {
-  id           String @id @default(cuid())
-  name         String @unique // nome aprovado na Meta
-  language     String @default("pt_BR")
-  bodyVars     Int    @default(0)
+  id          String  @id @default(cuid())
+  name        String  @unique // nome aprovado na Meta
+  language    String  @default("pt_BR")
+  bodyVars    Int     @default(0)
   // Texto de referência com {{1}} {{2}}... só pra equipe saber o que digitar
   // em cada variável — não é enviado à Meta (ela já tem o template aprovado).
-  bodyPreview  String?
+  bodyPreview String?
 
   @@map("whatsapp_templates")
 }
@@ -566,6 +642,8 @@ model AdminChecklistItem {
   processId String?
   userId    String?
   text      String
+  // Agrupamento visual (COMERCIAL, ADM, MÉDICO…). Null = grupo "Outros".
+  section   String?
   checked   Boolean  @default(false)
   order     Int      @default(0)
   createdAt DateTime @default(now())

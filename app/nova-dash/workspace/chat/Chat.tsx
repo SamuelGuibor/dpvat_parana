@@ -16,6 +16,14 @@ import {
 } from '@/app/_shared/hooks/use-chat';
 import { sendMessage } from '@/app/_actions/chat/send-message';
 import { editMessage, deleteMessage } from '@/app/_actions/chat/message-actions';
+import { toggleReaction } from '@/app/_actions/chat/reactions';
+import { getChatUploadUrl } from '@/app/_actions/chat/upload-attachment';
+import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
+import { listSectors, type SectorDTO } from '@/app/_actions/sectors/list-sectors';
+import { Smile, Download as DownloadIcon, FileText } from 'lucide-react';
+
+// Emojis disponíveis para reação (deve casar com o ALLOWED do server action).
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
 import { GENERAL_CHANNEL, dmChannelId } from '@/app/_shared/utils/chat';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { MessageComposer } from './MessageComposer';
@@ -80,6 +88,11 @@ export function Chat() {
 
   const others = useMemo(() => members.filter((m) => !m.isMe), [members]);
 
+  // Setores viram opções de @menção (@comercial, @financeiro…). Carregados uma
+  // vez; o servidor expande "sector:<id>" para todos os membros do setor.
+  const [sectors, setSectors] = useState<SectorDTO[]>([]);
+  useEffect(() => { listSectors().then(setSectors).catch(() => {}); }, []);
+
   const isDm = activeChannel.startsWith('dm:');
   const activeCustom = channels.find((c) => c.id === activeChannel) ?? null;
   const activeMember = isDm ? members.find((m) => activeChannel === dmChannelId(meId, m.id)) : null;
@@ -88,8 +101,10 @@ export function Chat() {
   // a outra pessoa. Ao ser enviado, o servidor expande para todo mundo do canal.
   const mentionData = useMemo(() => [
     ...(isDm ? [] : [{ id: 'everyone', display: 'everyone' }]),
+    // Menção de setor só faz sentido em grupo (Geral/canal), não em DM.
+    ...(isDm ? [] : sectors.map((s) => ({ id: `sector:${s.id}`, display: s.slug }))),
     ...others.map((m) => ({ id: m.id, display: m.name })),
-  ], [others, isDm]);
+  ], [others, isDm, sectors]);
   // Em canais de grupo (Geral/custom) mostramos o nome do autor; em DM não.
   const isGroup = !isDm;
 
@@ -137,10 +152,40 @@ export function Chat() {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, replyTo]);
 
-  async function handleSend(text: string) {
-    await sendMessage({ channelId: activeChannel, body: text, replyToId: replyTo?.id ?? null });
+  async function handleSend(text: string, file?: File | null) {
+    let attachment: { key: string; name: string; type: string } | null = null;
+
+    // Sobe o anexo direto no S3 via URL pré-assinada antes de gravar a mensagem.
+    if (file) {
+      const presign = await getChatUploadUrl({ name: file.name, type: file.type, size: file.size });
+      if (!presign.success || !presign.url || !presign.key) {
+        toast.error(presign.error ?? 'Falha ao enviar o anexo.');
+        return;
+      }
+      const put = await fetch(presign.url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      });
+      if (!put.ok) {
+        toast.error('Falha ao enviar o anexo.');
+        return;
+      }
+      attachment = { key: presign.key, name: file.name, type: file.type || 'application/octet-stream' };
+    }
+
+    await sendMessage({ channelId: activeChannel, body: text, replyToId: replyTo?.id ?? null, attachment });
     setReplyTo(null);
     await mutate();
+  }
+
+  async function handleReact(messageId: string, emoji: string) {
+    try {
+      await toggleReaction({ messageId, emoji });
+      await mutate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao reagir.');
+    }
   }
 
   async function handleEdit(messageId: string, body: string) {
@@ -243,12 +288,14 @@ export function Chat() {
                   key={msg.id}
                   msg={msg}
                   mine={mine}
+                  meId={meId}
                   grouped={!!grouped}
                   showName={isGroup && !mine}
                   mentionData={mentionData}
                   onReply={() => setReplyTo(msg)}
                   onEdit={(body) => handleEdit(msg.id, body)}
                   onDelete={() => handleDelete(msg.id)}
+                  onReact={(emoji) => handleReact(msg.id, emoji)}
                 />
               );
             })
@@ -323,14 +370,16 @@ export function Chat() {
 /* ---------- subcomponentes ---------- */
 
 function MessageRow({
-  msg, mine, grouped, showName, mentionData, onReply, onEdit, onDelete,
+  msg, mine, meId, grouped, showName, mentionData, onReply, onEdit, onDelete, onReact,
 }: {
-  msg: ChatMessage; mine: boolean; grouped: boolean; showName: boolean; mentionData: MentionableUser[];
+  msg: ChatMessage; mine: boolean; meId: string; grouped: boolean; showName: boolean; mentionData: MentionableUser[];
   onReply: () => void; onEdit: (body: string) => Promise<void>; onDelete: () => Promise<void>;
+  onReact: (emoji: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(msg.body);
   const [busy, setBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const deleted = !!msg.deletedAt;
 
   async function saveEdit() {
@@ -419,7 +468,15 @@ function MessageRow({
                   <p className={`truncate ${mine ? 'text-white/80' : 'text-gray-500 dark:text-zinc-400'}`}>{msg.replyToBody}</p>
                 </div>
               )}
-              <p className="whitespace-pre-wrap break-words leading-relaxed">{renderFormattedText(msg.body)}</p>
+              {msg.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{renderFormattedText(msg.body)}</p>}
+              {msg.attachmentKey && (
+                <AttachmentView
+                  attachmentKey={msg.attachmentKey}
+                  name={msg.attachmentName ?? 'arquivo'}
+                  type={msg.attachmentType ?? ''}
+                  mine={mine}
+                />
+              )}
               <span className={`ml-2 mt-0.5 flex items-center justify-end gap-1 text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>
                 {msg.editedAt && <span className="italic">editado</span>}
                 {timeShort(msg.createdAt)}
@@ -427,11 +484,35 @@ function MessageRow({
             </>
           )}
         </div>
+
+        {/* Reações agrupadas por emoji */}
+        {!deleted && msg.reactions && msg.reactions.length > 0 && (
+          <ReactionChips reactions={msg.reactions} meId={meId} onReact={onReact} align={mine ? 'end' : 'start'} />
+        )}
       </div>
 
       {/* Ações (aparecem no hover). Editar/apagar só do autor; não em msg apagada/edição. */}
       {!deleted && !editing && (
-        <div className="mb-1 flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="relative mb-1 flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100">
+          <button onClick={() => setPickerOpen((v) => !v)} title="Reagir" className="grid h-6 w-6 place-items-center rounded-full text-gray-400 hover:bg-amber-100 hover:text-amber-600 dark:hover:bg-amber-900/30">
+            <Smile className="h-3.5 w-3.5" />
+          </button>
+          {pickerOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setPickerOpen(false)} />
+              <div className="absolute bottom-8 left-0 z-20 flex gap-0.5 rounded-full border border-gray-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+                {REACTION_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => { onReact(emoji); setPickerOpen(false); }}
+                    className="grid h-7 w-7 place-items-center rounded-full text-base hover:bg-gray-100 dark:hover:bg-zinc-700"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <button onClick={onReply} title="Responder" className="grid h-6 w-6 place-items-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-zinc-800">
             <Reply className="h-3.5 w-3.5" />
           </button>
@@ -448,6 +529,97 @@ function MessageRow({
         </div>
       )}
     </div>
+  );
+}
+
+/** Agrupa reações por emoji e mostra a contagem; destaca as que eu dei. */
+function ReactionChips({
+  reactions, meId, onReact, align,
+}: { reactions: { emoji: string; userId: string; userName: string }[]; meId: string; onReact: (e: string) => void; align: 'start' | 'end' }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, { count: number; mine: boolean; names: string[] }>();
+    for (const r of reactions) {
+      const g = map.get(r.emoji) ?? { count: 0, mine: false, names: [] };
+      g.count++;
+      g.names.push(r.userName);
+      if (r.userId === meId) g.mine = true;
+      map.set(r.emoji, g);
+    }
+    return Array.from(map.entries());
+  }, [reactions, meId]);
+
+  return (
+    <div className={`mt-1 flex flex-wrap gap-1 ${align === 'end' ? 'justify-end' : 'justify-start'}`}>
+      {groups.map(([emoji, g]) => (
+        <button
+          key={emoji}
+          onClick={() => onReact(emoji)}
+          title={g.names.join(', ')}
+          className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] transition-colors ${
+            g.mine
+              ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
+              : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+          }`}
+        >
+          <span>{emoji}</span>
+          <span className="tabular-nums">{g.count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Renderiza o anexo: imagem/vídeo/áudio inline; outros como card de download.
+ *  Busca a URL pré-assinada (inline) sob demanda. */
+function AttachmentView({
+  attachmentKey, name, type, mine,
+}: { attachmentKey: string; name: string; type: string; mine: boolean }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const kind = type.startsWith('image/') ? 'image'
+    : type.startsWith('video/') ? 'video'
+    : type.startsWith('audio/') ? 'audio' : 'file';
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    downloadFileFromS3(attachmentKey, name, true)
+      .then((r) => { if (alive && r.success && r.presignedUrl) setUrl(r.presignedUrl); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [attachmentKey, name]);
+
+  async function forceDownload() {
+    const r = await downloadFileFromS3(attachmentKey, name, false);
+    if (r.success && r.presignedUrl) window.location.href = r.presignedUrl;
+  }
+
+  if (loading && !url) {
+    return <div className="my-1 h-24 w-48 animate-pulse rounded-lg bg-black/10 dark:bg-white/10" />;
+  }
+  if (!url) return null;
+
+  if (kind === 'image') {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt={name} className="my-1 max-h-64 max-w-full cursor-pointer rounded-lg" onClick={() => window.open(url, '_blank')} />;
+  }
+  if (kind === 'video') {
+    return <video src={url} controls className="my-1 max-h-64 max-w-full rounded-lg" />;
+  }
+  if (kind === 'audio') {
+    return <audio src={url} controls className="my-1 w-56 max-w-full" />;
+  }
+  return (
+    <button
+      onClick={forceDownload}
+      className={`my-1 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+        mine ? 'border-white/30 bg-white/10 hover:bg-white/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-900'
+      }`}
+    >
+      <FileText className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <DownloadIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+    </button>
   );
 }
 

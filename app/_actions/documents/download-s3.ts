@@ -3,6 +3,7 @@
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { db } from '@/app/_shared/lib/prisma';
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -19,6 +20,28 @@ interface DownloadFileResponse {
   error?: string;
 }
 
+// Esta action é chamada também por páginas públicas (área do cliente), então
+// qualquer visitante consegue invocá-la. Sem esta lista, ela viraria um leitor
+// arbitrário do bucket inteiro: só assinamos chaves dos prefixos que o app
+// realmente usa para arquivos de cliente/atendimento.
+const ALLOWED_KEY_PREFIXES = [
+  'uploads/',
+  'whatsapp/',
+  'roteiro-temp/',
+  'instructions/',
+  'automation-templates/',
+  'chat/',
+];
+
+async function isAllowedKey(key: string): Promise<boolean> {
+  if (key.includes('..')) return false;
+  if (ALLOWED_KEY_PREFIXES.some((p) => key.startsWith(p))) return true;
+  // Documentos antigos podem ter chave fora dos prefixos atuais: se a chave
+  // está registrada na tabela de documentos, o download continua liberado.
+  const doc = await db.document.findFirst({ where: { key }, select: { id: true } });
+  return doc !== null;
+}
+
 export async function downloadFileFromS3(
   key: string,
   fileName: string,
@@ -27,6 +50,10 @@ export async function downloadFileFromS3(
   try {
     if (!key) {
       throw new Error('Chave do arquivo não fornecida');
+    }
+    if (!(await isAllowedKey(key))) {
+      console.warn('[S3] Chave fora dos prefixos permitidos, download negado:', key);
+      throw new Error('Arquivo não permitido');
     }
 
     console.log('Gerando URL pré-assinada para o arquivo:', key); // Log para depuração

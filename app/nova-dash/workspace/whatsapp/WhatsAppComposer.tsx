@@ -5,10 +5,11 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Send, ImagePlus, X, Workflow, Loader2, Settings2, Pencil,
   Reply as ReplyIcon, FileText, Image as ImageIcon, Video, Mic, Check, FileBadge,
-  StickyNote, Zap,
+  StickyNote, Zap, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/app/_shared/ui/button';
+import { Input } from '@/app/_shared/ui/input';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -60,6 +61,7 @@ export function WhatsAppComposer({
 
   const [flows, setFlows] = useState<WhatsAppFlowDTO[]>([]);
   const [flowsOpen, setFlowsOpen] = useState(false);
+  const [flowSearch, setFlowSearch] = useState('');
   const [runningFlow, setRunningFlow] = useState<{ name: string; step: number; total: number } | null>(null);
   const cancelFlowRef = useRef(false);
 
@@ -73,6 +75,7 @@ export function WhatsAppComposer({
   // Respostas rápidas (snippets) — inseridas no input com um clique.
   const [quickReplies, setQuickReplies] = useState<WhatsAppQuickReplyDTO[]>([]);
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const [replySearch, setReplySearch] = useState('');
 
   const editing = !!editTarget;
 
@@ -83,6 +86,12 @@ export function WhatsAppComposer({
     try { setQuickReplies(await listWhatsAppQuickReplies()); } catch { /* idem */ }
   }
   useEffect(() => { reloadFlows(); reloadQuickReplies(); }, []);
+
+  const filteredFlows = flows.filter((f) => f.name.toLowerCase().includes(flowSearch.trim().toLowerCase()));
+  const filteredQuickReplies = quickReplies.filter((q) => {
+    const term = replySearch.trim().toLowerCase();
+    return q.title.toLowerCase().includes(term) || q.body.toLowerCase().includes(term);
+  });
 
   // Entrar no modo edição carrega o texto original no input.
   useEffect(() => {
@@ -302,7 +311,7 @@ export function WhatsAppComposer({
             <ImagePlus className="h-6 w-6" />
           </button>
 
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={(o) => { if (!o) setFlowSearch(''); }}>
             <DropdownMenuTrigger asChild>
               <button
                 disabled={disabled || editing || !!runningFlow}
@@ -314,10 +323,25 @@ export function WhatsAppComposer({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64">
               <DropdownMenuLabel className="text-sm">Fluxos de mensagens</DropdownMenuLabel>
+              {flows.length > 0 && (
+                <div className="relative px-2 pb-1.5">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={flowSearch}
+                    onChange={(e) => setFlowSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Buscar fluxo..."
+                    className="h-8 pl-7 text-sm"
+                  />
+                </div>
+              )}
               {flows.length === 0 && (
                 <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo criado ainda.</DropdownMenuItem>
               )}
-              {flows.map((f) => (
+              {flows.length > 0 && filteredFlows.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo encontrado.</DropdownMenuItem>
+              )}
+              {filteredFlows.map((f) => (
                 <DropdownMenuItem key={f.id} onClick={() => runFlow(f)} className="gap-2 text-base">
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-semibold">{f.name}</span>
@@ -350,7 +374,7 @@ export function WhatsAppComposer({
           </button>
 
           {/* Respostas rápidas: insere o texto no input com um clique */}
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={(o) => { if (!o) setReplySearch(''); }}>
             <DropdownMenuTrigger asChild>
               <button
                 disabled={(disabled && !noteMode) || editing}
@@ -362,10 +386,25 @@ export function WhatsAppComposer({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-72">
               <DropdownMenuLabel className="text-sm">Respostas rápidas</DropdownMenuLabel>
+              {quickReplies.length > 0 && (
+                <div className="relative px-2 pb-1.5">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={replySearch}
+                    onChange={(e) => setReplySearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Buscar resposta..."
+                    className="h-8 pl-7 text-sm"
+                  />
+                </div>
+              )}
               {quickReplies.length === 0 && (
                 <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta criada ainda.</DropdownMenuItem>
               )}
-              {quickReplies.map((q) => (
+              {quickReplies.length > 0 && filteredQuickReplies.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta encontrada.</DropdownMenuItem>
+              )}
+              {filteredQuickReplies.map((q) => (
                 <DropdownMenuItem
                   key={q.id}
                   onClick={() => {

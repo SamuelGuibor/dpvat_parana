@@ -9,7 +9,6 @@ import {
   SERVICE_OPTIONS, ESTADOS, ESTADO_CIVIL,
   NACIONALIDADES,
 } from './constants';
-import { AdminChecklist } from './AdminChecklist';
 import { HospitalCombobox } from './HospitalCombobox';
 
 interface Props {
@@ -284,9 +283,6 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
         </div>
       </Section>
 
-      {cardId && (
-        <AdminChecklist cardId={cardId} isProcess={!!isProcess} title="Checklist Previdenciário" />
-      )}
     </div>
   );
 }

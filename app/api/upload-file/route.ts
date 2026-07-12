@@ -18,6 +18,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Nenhum arquivo enviado" }, { status: 400 });
     }
 
+    // Limite de 20MB: evita abuso de quota da API do Google e estouro de memória.
+    const MAX_BYTES = 20 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json({ error: "Arquivo excede o limite de 20MB" }, { status: 413 });
+    }
+
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 

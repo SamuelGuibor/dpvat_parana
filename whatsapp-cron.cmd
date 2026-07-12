@@ -1,1 +1,8 @@
-curl.exe -s "http://localhost:3000/api/whatsapp/cron?secret=b3c9f046e283e1b95088d5b628b6a23813d23c1dd9f6f1fb"
+@echo off
+rem O secret NUNCA deve ficar hardcoded aqui (este arquivo esta no git).
+rem Defina CRON_SECRET no ambiente (mesmo valor da env na Vercel) antes de rodar.
+if "%CRON_SECRET%"=="" (
+  echo [ERRO] Defina a variavel de ambiente CRON_SECRET antes de rodar este script.
+  exit /b 1
+)
+curl.exe -s "http://localhost:3000/api/whatsapp/cron?secret=%CRON_SECRET%"

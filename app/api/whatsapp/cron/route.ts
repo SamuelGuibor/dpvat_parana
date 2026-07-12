@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
-import { whatsappRecipients } from '@/app/_shared/lib/whatsapp/service';
+import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 
 // Detector de silêncio do bot (rodado por cron externo, a cada 15min):
 //
@@ -29,6 +29,11 @@ const NUDGE_AFTER_MS = 30 * 60_000; // 30min sem resposta → pergunta
 const CLOSE_AFTER_MS = 10 * 60_000; // +10min sem resposta → encerra
 const QUEUE_SLA_MS = 10 * 60_000;   // 10min na fila sem atendente → alerta
 const QUEUE_REALERT_MS = 60 * 60_000; // repete o alerta a cada 1h
+// Mensagem "sent" que nunca virou "delivered": quando um número BLOQUEIA a
+// empresa a Meta nem manda status "failed" — a mensagem só fica travada no
+// tique único. 12h+ nesse estado → alerta de verificação pra equipe.
+const STUCK_SENT_MS = 12 * 60 * 60_000;
+const STUCK_SENT_LOOKBACK_MS = 72 * 60 * 60_000; // ignora histórico antigo
 
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, '') ?? '';
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? '';
@@ -94,7 +99,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const results = { nudged30: 0, closed: 0, queueAlerts: 0, errors: 0 };
+  const results = { nudged30: 0, closed: 0, queueAlerts: 0, deliveryAlerts: 0, errors: 0 };
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   // Última atividade há 30min+, ainda em modo bot, sem aviso pendente.
@@ -236,6 +241,43 @@ export async function GET(req: NextRequest) {
         console.error('[WHATSAPP CRON] Falha no alerta de fila:', conv.contactId, err);
         results.errors++;
       }
+    }
+  }
+
+  // ---- 4. Mensagem enviada e nunca entregue ---------------------------------
+  // "sent" há 12h+ sem virar "delivered" = provável bloqueio ou número errado.
+  // Política: NÃO paramos de enviar pro número — a conversa vai pra fila e a
+  // equipe recebe notificação pedindo pra verificar (número correto? bloqueou?
+  // janela de 24h expirou?). O debounce por conversa (deliveryAlertAt, 6h)
+  // fica dentro de alertDeliveryFailure.
+  const stuck = await db.whatsAppMessage.groupBy({
+    by: ['contactId'],
+    where: {
+      direction: 'out',
+      status: 'sent',
+      internal: false,
+      deletedAt: null,
+      createdAt: {
+        gte: new Date(now - STUCK_SENT_LOOKBACK_MS),
+        lte: new Date(now - STUCK_SENT_MS),
+      },
+    },
+    _count: { _all: true },
+    orderBy: { contactId: 'asc' },
+    take: 25,
+  });
+
+  for (const group of stuck) {
+    try {
+      const n = group._count._all;
+      await alertDeliveryFailure(
+        group.contactId,
+        `${n === 1 ? 'mensagem enviada há mais de 12h segue' : `${n} mensagens enviadas seguem`} sem confirmação de entrega (possível bloqueio ou número incorreto)`,
+      );
+      results.deliveryAlerts++;
+    } catch (err) {
+      console.error('[WHATSAPP CRON] Falha no alerta de entrega:', group.contactId, err);
+      results.errors++;
     }
   }
 
