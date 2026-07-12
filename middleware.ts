@@ -67,7 +67,17 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  const token = await getToken({ req, secret: NEXTAUTH_SECRET });
+  // Em HTTPS (produção) o NextAuth grava o cookie de sessão como
+  // "__Secure-next-auth.session-token"; em HTTP (localhost) como
+  // "next-auth.session-token". O getToken precisa procurar o nome certo — se
+  // errar, não acha a sessão e redireciona pro login mesmo com o usuário logado
+  // (era o bug: funcionava no localhost e falhava no domínio https). Derivamos
+  // do protocolo real da requisição (x-forwarded-proto atrás do proxy/CDN) e,
+  // por segurança, tentamos o nome alternativo caso o primeiro não encontre.
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+  const secureCookie = proto === "https";
+  let token = await getToken({ req, secret: NEXTAUTH_SECRET, secureCookie });
+  if (!token) token = await getToken({ req, secret: NEXTAUTH_SECRET, secureCookie: !secureCookie });
   if (token) return NextResponse.next();
 
   if (isApi || isServerAction) {
