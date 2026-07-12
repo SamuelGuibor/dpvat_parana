@@ -9,7 +9,8 @@ const HARDCODED_MANAGER_EMAILS = [
   "martinez.thomaz@segurosparana.com.br",
   "nikolas.paranaseguros@gmail.com",
   "daniel.paranaseguros@gmail.com",
-  "luana.paranaseguros@gmail.com"
+  "luana.paranaseguros@gmail.com",
+  "eduardocamargomartinez8@gmail.com"
 ];
 
 function normalize(email?: string | null): string {
