@@ -20,6 +20,7 @@ import { getSectorAnalytics, type SectorAnalytics, type SectorMemberStats } from
 import {
   createSector, updateSector, deleteSector, assignUserSector,
 } from '@/app/_actions/sectors/manage-sectors';
+import type { DateRange } from '../DateFilter';
 
 const COLOR_CHOICES = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#64748b'];
 
@@ -148,11 +149,11 @@ function MemberRow({ m, rank, max, color, canManage, onRemove }: {
 }
 
 interface Props {
-  /** Janela de análise (compartilhada com o seletor da Visão do Gestor). */
-  period?: 7 | 30 | 90;
+  /** Intervalo de datas (compartilhado com o filtro da Visão do Gestor). */
+  range: DateRange;
 }
 
-export function SectorDashboard({ period = 30 }: Props) {
+export function SectorDashboard({ range }: Props) {
   const [analytics, setAnalytics] = useState<SectorAnalytics | null>(null);
   const [sectors, setSectors] = useState<SectorDTO[]>([]);
   const [users, setUsers] = useState<AssignableUser[]>([]);
@@ -168,7 +169,11 @@ export function SectorDashboard({ period = 30 }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const [a, s, c] = await Promise.all([getSectorAnalytics(period), listSectors(), getSectorAdminContext()]);
+      const [a, s, c] = await Promise.all([
+        getSectorAnalytics({ from: range.from.toISOString(), to: range.to.toISOString() }),
+        listSectors(),
+        getSectorAdminContext(),
+      ]);
       setAnalytics(a);
       setSectors(s);
       setCtx(c);
@@ -179,7 +184,7 @@ export function SectorDashboard({ period = 30 }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [range]);
 
   useEffect(() => { setLoading(true); load(); }, [load]);
 
@@ -286,7 +291,7 @@ export function SectorDashboard({ period = 30 }: Props) {
     <div className="space-y-6">
       {/* Cartões de resumo */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard icon={Activity} label={`Ações (${period}d)`} value={analytics.totals.actions}
+        <StatCard icon={Activity} label="Ações no período" value={analytics.totals.actions}
           gradient="bg-gradient-to-br from-blue-500 to-indigo-600" />
         <StatCard icon={Trophy} label="Setor líder" value={leader?.total ?? 0}
           sub={leader ? `${leader.name} · ${leader.perMember}/pessoa` : 'Sem setores'}
@@ -315,8 +320,8 @@ export function SectorDashboard({ period = 30 }: Props) {
                 </h2>
                 <p className="text-xs text-gray-400">
                   {chartMode === 'total'
-                    ? `Total de ações registradas por setor nos últimos ${period} dias.`
-                    : `Uma barra por pessoa dentro de cada setor — compare o rendimento individual, agrupado por setor (últimos ${period} dias).`}
+                    ? `Total de ações registradas por setor no período selecionado.`
+                    : `Uma barra por pessoa dentro de cada setor — compare o rendimento individual, agrupado por setor (período selecionado).`}
                 </p>
               </div>
               <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">

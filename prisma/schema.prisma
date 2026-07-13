@@ -180,6 +180,9 @@ model ChatChannel {
   name        String
   createdById String
   createdAt   DateTime            @default(now())
+  // "Modo aviso": quando true, só o dono (createdById) pode enviar mensagens —
+  // os demais membros só leem (tipo mural/anúncios). Alternável só pelo dono.
+  announceOnly Boolean            @default(false)
   members     ChatChannelMember[]
 
   @@map("chat_channels")

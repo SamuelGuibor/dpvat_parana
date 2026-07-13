@@ -23,6 +23,27 @@ export async function canAccessChannel(channelId: string, userId: string): Promi
   return !!member;
 }
 
+/**
+ * Permissão de ENVIAR mensagem (distinta de acessar/ler): igual a
+ * `canAccessChannel`, exceto que um canal custom em modo "aviso"
+ * (announceOnly) só deixa o DONO escrever — os demais membros só leem.
+ * General e DMs não têm esse conceito (não têm um único "dono").
+ */
+export async function canSendToChannel(channelId: string, userId: string): Promise<boolean> {
+  if (channelId === GENERAL_CHANNEL) return true;
+
+  const parts = dmParticipants(channelId);
+  if (parts) return parts.includes(userId);
+
+  const channel = await db.chatChannel.findUnique({
+    where: { id: channelId },
+    select: { createdById: true, announceOnly: true, members: { where: { userId }, select: { userId: true } } },
+  });
+  if (!channel || channel.members.length === 0) return false;
+  if (channel.announceOnly) return channel.createdById === userId;
+  return true;
+}
+
 /** Destinatários do broadcast em tempo real para um canal. */
 export async function channelRecipients(channelId: string, fallbackUserId: string): Promise<string[]> {
   if (channelId === GENERAL_CHANNEL) {

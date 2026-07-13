@@ -1,6 +1,8 @@
-'use client';
+'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/rules-of-hooks */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -12,6 +14,13 @@ import {
   ChevronDown, User as UserIcon, Settings, LogOut, ShieldCheck, Mail,
 } from 'lucide-react';
 import { ProfileDialog } from './ProfileDialog';
+import { getMyProfile } from '@/app/_actions/users/update-profile';
+
+interface Profile {
+  id: string; name: string; email: string; telefone: string;
+  cpf: string; role: string; image: string | null; createdAt: string;
+  sector: { id: string; name: string; color: string } | null;
+}
 
 function initials(name?: string | null) {
   return (
@@ -28,15 +37,27 @@ function initials(name?: string | null) {
 export function UserMenu() {
   const { data: session } = useSession();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await getMyProfile();
+        setProfile(data);
+
+      } catch (err: any) {
+        console.log('Falha ao carregar perfil do usuário:', err);
+      }
+    })();
+  }, []);
 
   const name = session?.user?.name ?? 'Usuário';
   const email = session?.user?.email ?? '';
   const role = session?.user?.role ?? '';
   const image = session?.user?.image ?? null;
-
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu >
         <DropdownMenuTrigger asChild>
           <button
             className="flex items-center gap-2 rounded-full border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 pl-1 pr-2.5 py-1 hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40"
@@ -63,7 +84,7 @@ export function UserMenu() {
           </button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" className="w-72 p-0 overflow-hidden">
+        <DropdownMenuContent align="end" className="w-96 p-0 overflow-hidden">
           {/* Cabeçalho do menu */}
           <div className="bg-gradient-to-br from-blue-600 to-indigo-600 px-4 py-3.5 text-white">
             <div className="flex items-center gap-3">
@@ -90,6 +111,16 @@ export function UserMenu() {
                 <Badge className="bg-white/15 text-white border-white/20 hover:bg-white/15 gap-1 text-[10px]">
                   <ShieldCheck className="h-3 w-3" /> {role}
                 </Badge>
+              )}
+              {profile?.sector && (
+                <Badge
+                  className="gap-1 border text-[11px]"
+                  style={{
+                    backgroundColor: `${profile.sector.color}22`,
+                    color: profile.sector.color,
+                    borderColor: `${profile.sector.color}55`,
+                  }}
+                ><ShieldCheck className="h-3 w-3" /> {profile.sector.name}</Badge>
               )}
             </div>
           </div>

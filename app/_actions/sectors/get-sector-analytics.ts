@@ -32,13 +32,20 @@ export interface SectorStats {
 }
 
 export interface SectorAnalytics {
-  periodDays: number;
-  /** Rótulos "dd/MM" dos dias do período (mesmo índice de `daily`). */
+  /** Nº de dias do intervalo selecionado (para rótulos e média/dia). */
+  rangeDays: number;
+  /** Rótulos "dd/MM" de cada ponto da série (mesmo índice de `daily`). */
   dayLabels: string[];
   sectors: SectorStats[];
   /** Equipe sem setor atribuído (com as mesmas métricas individuais). */
   unassigned: SectorMemberStats[];
   totals: { actions: number; assigned: number; unassigned: number };
+}
+
+/** Intervalo de datas (ISO) escolhido no filtro — mesmo formato do DateFilter. */
+export interface DateRangeInput {
+  from: string;
+  to: string;
 }
 
 const TEAM_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
@@ -57,19 +64,26 @@ const dayLabelFmt = new Intl.DateTimeFormat("pt-BR", {
  * ação (tabela Log), série diária para tendência e ranking interno de membros.
  * Qualquer usuário autenticado pode consultar (métrica de equipe).
  */
-export async function getSectorAnalytics(periodDays: 7 | 30 | 90 = 30): Promise<SectorAnalytics> {
+export async function getSectorAnalytics(range: DateRangeInput): Promise<SectorAnalytics> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error("Não autenticado.");
 
-  const now = new Date();
-  const dayKeys: string[] = [];
+  const from = new Date(range.from);
+  const to = new Date(range.to);
+  const rangeDays = Math.max(1, Math.floor((to.getTime() - from.getTime()) / DAY_MS) + 1);
+
+  // Série da tendência: 1 ponto por dia, mas agrupando dias em intervalos longos
+  // para manter no máx. ~90 pontos (ex.: "este ano" vira ~90 pontos semanais).
+  const bucketSize = Math.max(1, Math.ceil(rangeDays / 90));
   const dayLabels: string[] = [];
-  for (let i = periodDays - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * DAY_MS);
-    dayKeys.push(dayKeyFmt.format(d));
-    dayLabels.push(dayLabelFmt.format(d));
+  const dayIndex = new Map<string, number>(); // dayKey (Brasília) -> índice do ponto
+  for (let i = 0; i < rangeDays; i++) {
+    const d = new Date(from.getTime() + i * DAY_MS);
+    const bucket = Math.floor(i / bucketSize);
+    dayIndex.set(dayKeyFmt.format(d), bucket);
+    if (i % bucketSize === 0) dayLabels.push(dayLabelFmt.format(d)); // rótulo = 1º dia do ponto
   }
-  const dayIndex = new Map(dayKeys.map((k, i) => [k, i]));
+  const points = dayLabels.length;
 
   const [sectors, team] = await Promise.all([
     db.sector.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }] }),
@@ -80,17 +94,14 @@ export async function getSectorAnalytics(periodDays: 7 | 30 | 90 = 30): Promise<
     }),
   ]);
 
-  // Janela um dia mais larga que o período: o corte fino é feito pelo bucket
-  // diário em horário de Brasília (logs fora dos dias listados são ignorados).
-  const since = new Date(now.getTime() - (periodDays + 1) * DAY_MS);
   const logs = await db.log.findMany({
-    where: { createdAt: { gte: since }, authorId: { in: team.map((u) => u.id) } },
+    where: { createdAt: { gte: from, lte: to }, authorId: { in: team.map((u) => u.id) } },
     select: { authorId: true, action: true, createdAt: true },
   });
 
   const userStats = new Map<string, { total: number; byAction: Record<string, number> }>();
   const sectorDaily = new Map<string, number[]>();
-  for (const s of sectors) sectorDaily.set(s.id, new Array(periodDays).fill(0));
+  for (const s of sectors) sectorDaily.set(s.id, new Array(points).fill(0));
   const sectorOf = new Map(team.map((u) => [u.id, u.sectorId]));
 
   let totalActions = 0;
@@ -145,7 +156,7 @@ export async function getSectorAnalytics(periodDays: 7 | 30 | 90 = 30): Promise<
       total,
       perMember: members.length ? Math.round((total / members.length) * 10) / 10 : 0,
       byAction,
-      daily: sectorDaily.get(s.id) ?? new Array(periodDays).fill(0),
+      daily: sectorDaily.get(s.id) ?? new Array(points).fill(0),
       members,
     };
   });
@@ -154,7 +165,7 @@ export async function getSectorAnalytics(periodDays: 7 | 30 | 90 = 30): Promise<
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
   return {
-    periodDays,
+    rangeDays,
     dayLabels,
     sectors: sectorStats,
     unassigned,

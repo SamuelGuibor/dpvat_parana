@@ -9,6 +9,8 @@ export interface ChannelDTO {
   name: string;
   memberIds: string[];
   createdById: string;
+  // "Modo aviso": só o dono pode enviar mensagens; os demais membros só leem.
+  announceOnly: boolean;
 }
 
 /**
@@ -40,6 +42,7 @@ export async function createChannel(input: { name: string; memberIds: string[] }
     name: channel.name,
     memberIds: channel.members.map((m) => m.userId),
     createdById: channel.createdById,
+    announceOnly: channel.announceOnly,
   };
 }
 
@@ -59,6 +62,7 @@ export async function listMyChannels(): Promise<ChannelDTO[]> {
     name: c.name,
     memberIds: c.members.map((m) => m.userId),
     createdById: c.createdById,
+    announceOnly: c.announceOnly,
   }));
 }
 
@@ -90,6 +94,31 @@ export async function renameChannel({ channelId, name }: { channelId: string; na
     name: updated.name,
     memberIds: updated.members.map((m) => m.userId),
     createdById: updated.createdById,
+    announceOnly: updated.announceOnly,
+  };
+}
+
+/**
+ * Liga/desliga o modo "aviso" (só o dono envia mensagens). Restrito ao dono.
+ */
+export async function setAnnounceOnly({ channelId, announceOnly }: { channelId: string; announceOnly: boolean }): Promise<ChannelDTO> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) throw new Error('Usuário não autenticado.');
+
+  await assertOwner(channelId, session.user.id);
+
+  const updated = await db.chatChannel.update({
+    where: { id: channelId },
+    data: { announceOnly },
+    include: { members: { select: { userId: true } } },
+  });
+
+  return {
+    id: updated.id,
+    name: updated.name,
+    memberIds: updated.members.map((m) => m.userId),
+    createdById: updated.createdById,
+    announceOnly: updated.announceOnly,
   };
 }
 

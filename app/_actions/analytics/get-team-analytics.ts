@@ -18,11 +18,16 @@ export interface RankingEntry {
 }
 
 export interface TeamAnalytics {
-  periodDays: number;
   ranking: RankingEntry[];
   // heatmap[diaDaSemana 0=Dom..6=Sáb][hora 0..23] = nº de ações
   heatmap: number[][];
   totals: { logs: number; activeCollaborators: number; onlineNow: number };
+}
+
+/** Intervalo de datas (ISO) escolhido no filtro — mesmo formato do DateFilter. */
+export interface DateRangeInput {
+  from: string;
+  to: string;
 }
 
 // Extrai (diaDaSemana, hora) no fuso America/Sao_Paulo sem libs externas.
@@ -48,26 +53,32 @@ function localBucket(date: Date): { day: number; hour: number } {
  * Métricas agregadas da equipe (Visão do Gestor). Restrito a gestores.
  * Deriva tudo da tabela Log (campo authorId = quem executou a ação).
  */
-export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<TeamAnalytics> {
+export async function getTeamAnalytics(range: DateRangeInput): Promise<TeamAnalytics> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
   if (!isManager(session.user.email)) throw new Error('Acesso restrito a gestores.');
 
-  const since = new Date();
-  since.setDate(since.getDate() - (periodDays - 1));
-  since.setHours(0, 0, 0, 0);
+  const from = new Date(range.from);
+  const to = new Date(range.to);
 
-  const [byAuthor, byAuthorAction, heatmapLogs, devLogs, users] = await Promise.all([
-    db.log.groupBy({ by: ['authorId'], where: { createdAt: { gte: since } }, _count: { _all: true } }),
-    db.log.groupBy({ by: ['authorId', 'action'], where: { createdAt: { gte: since } }, _count: { _all: true } }),
-    db.log.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } }),
+  // Só colaboradores ATUAIS entram nas métricas do Gestor. Se alguém foi
+  // demitido (usuário deletado), os logs dele continuam no banco — e no
+  // histórico dos cards — mas somem daqui. Filtramos os logs por autor ∈ equipe
+  // atual (isso também exclui autores não-humanos, ex.: "whatsapp-bot").
+  const users = await db.user.findMany({
+    where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } },
+    select: { id: true, name: true, image: true, lastSeenAt: true },
+  });
+  const teamIds = users.map((u) => u.id);
+  const scoped = { createdAt: { gte: from, lte: to }, authorId: { in: teamIds } };
+
+  const [byAuthor, byAuthorAction, heatmapLogs, devLogs] = await Promise.all([
+    db.log.groupBy({ by: ['authorId'], where: scoped, _count: { _all: true } }),
+    db.log.groupBy({ by: ['authorId', 'action'], where: scoped, _count: { _all: true } }),
+    db.log.findMany({ where: scoped, select: { createdAt: true } }),
     // Logs de desenvolvimento: pontuam por ARQUIVOS (metadata.files), não por
     // 1 por commit. Buscamos à parte para aplicar o peso (ver dev-activity.ts).
-    db.log.findMany({ where: { action: DEV_COMMIT_ACTION, createdAt: { gte: since } }, select: { authorId: true, metadata: true } }),
-    db.user.findMany({
-      where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } },
-      select: { id: true, name: true, image: true, lastSeenAt: true },
-    }),
+    db.log.findMany({ where: { ...scoped, action: DEV_COMMIT_ACTION }, select: { authorId: true, metadata: true } }),
   ]);
 
   const userMap = new Map(users.map((u) => [u.id, u]));
@@ -128,7 +139,6 @@ export async function getTeamAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<Tea
   ).length;
 
   return {
-    periodDays,
     ranking,
     heatmap,
     totals: {

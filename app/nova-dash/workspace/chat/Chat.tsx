@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { MentionsInput, Mention } from 'react-mentions';
-import { Hash, MessageSquare, Plus, Reply, X, Users, Lock, Pencil, Trash2, Check, Ban } from 'lucide-react';
+import { Hash, MessageSquare, Plus, Reply, X, Users, Lock, Pencil, Trash2, Check, Ban, Megaphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { usePresence, type PresenceMember } from '@/app/_shared/hooks/use-presence';
@@ -108,6 +108,12 @@ export function Chat() {
   // Em canais de grupo (Geral/custom) mostramos o nome do autor; em DM não.
   const isGroup = !isDm;
 
+  // Canal custom em "modo aviso": só o dono envia; os demais só leem.
+  const isLocked = !!activeCustom?.announceOnly && activeCustom.createdById !== meId;
+  const lockedOwnerName = isLocked
+    ? members.find((m) => m.id === activeCustom?.createdById)?.name ?? 'o dono do canal'
+    : '';
+
   // Se o canal ativo era um canal custom e o dono o excluiu (ou você perdeu o
   // acesso), volta pro Geral em vez de deixar o membro numa conversa morta.
   useEffect(() => {
@@ -153,6 +159,10 @@ export function Chat() {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, replyTo]);
 
   async function handleSend(text: string, file?: File | null) {
+    if (isLocked) {
+      toast.error('Este canal está em modo aviso: só o dono pode enviar mensagens.');
+      return;
+    }
     let attachment: { key: string; name: string; type: string } | null = null;
 
     // Sobe o anexo direto no S3 via URL pré-assinada antes de gravar a mensagem.
@@ -230,7 +240,14 @@ export function Chat() {
         </div>
         <ConversationButton active={activeChannel === GENERAL_CHANNEL} onClick={() => setActiveChannel(GENERAL_CHANNEL)} icon={<Hash className="h-4 w-4" />} label="Geral" badge={unread[GENERAL_CHANNEL]} />
         {channels.map((c) => (
-          <ConversationButton key={c.id} active={activeChannel === c.id} onClick={() => setActiveChannel(c.id)} icon={<Lock className="h-3.5 w-3.5" />} label={c.name} badge={unread[c.id]} />
+          <ConversationButton
+            key={c.id}
+            active={activeChannel === c.id}
+            onClick={() => setActiveChannel(c.id)}
+            icon={c.announceOnly ? <Megaphone className="h-3.5 w-3.5 text-amber-500" /> : <Lock className="h-3.5 w-3.5" />}
+            label={c.name}
+            badge={unread[c.id]}
+          />
         ))}
 
         <div className="px-4 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-gray-400">Mensagens diretas</div>
@@ -248,7 +265,7 @@ export function Chat() {
       <section className="flex min-w-0 flex-1 flex-col bg-gray-50/30 dark:bg-zinc-950/20">
         <header className="flex items-center gap-2 border-b border-gray-100 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
           {activeChannel === GENERAL_CHANNEL ? <Hash className="h-4 w-4 text-blue-500" />
-            : activeCustom ? <Lock className="h-4 w-4 text-blue-500" />
+            : activeCustom ? (activeCustom.announceOnly ? <Megaphone className="h-4 w-4 text-amber-500" /> : <Lock className="h-4 w-4 text-blue-500" />)
               : activeMember ? <PresenceAvatar member={activeMember} /> : null}
           <span className="font-bold text-gray-900 dark:text-zinc-100">{headerName}</span>
           {infoChannel && (
@@ -332,12 +349,19 @@ export function Chat() {
         )}
 
         <div className="border-t border-gray-100 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <MessageComposer
-            members={mentionData}
-            onSend={handleSend}
-            onTyping={() => sendTyping(activeChannel)}
-            placeholder={`Mensagem para ${headerName}...`}
-          />
+          {isLocked ? (
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-300">
+              <Megaphone className="h-4 w-4 shrink-0" />
+              Este canal é só de leitura — apenas {lockedOwnerName} pode enviar mensagens.
+            </div>
+          ) : (
+            <MessageComposer
+              members={mentionData}
+              onSend={handleSend}
+              onTyping={() => sendTyping(activeChannel)}
+              placeholder={`Mensagem para ${headerName}...`}
+            />
+          )}
         </div>
       </section>
 

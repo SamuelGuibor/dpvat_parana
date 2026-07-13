@@ -5,7 +5,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { getServerSession } from 'next-auth';
 import { extractMentions } from '@/app/_shared/utils/mentions';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
-import { canAccessChannel, channelRecipients } from '@/app/_shared/lib/chat-access';
+import { canAccessChannel, canSendToChannel, channelRecipients } from '@/app/_shared/lib/chat-access';
 
 interface SendMessageInput {
   channelId: string;
@@ -61,6 +61,9 @@ export async function sendMessage({ channelId, body, replyToId, attachment }: Se
 
   if (!(await canAccessChannel(channelId, session.user.id))) {
     throw new Error('Sem acesso a este canal.');
+  }
+  if (!(await canSendToChannel(channelId, session.user.id))) {
+    throw new Error('Este canal está em modo aviso: só o dono pode enviar mensagens.');
   }
 
   const authorName = session.user.name ?? 'Usuário';

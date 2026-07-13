@@ -12,6 +12,7 @@ import { metaFor } from '@/app/_shared/utils/action-meta';
 import { CollaboratorDetail } from './CollaboratorDetail';
 import { ChatbotDashboard } from './ChatbotDashboard';
 import { SectorDashboard } from '../SectorDashboard';
+import { DateFilter, getDefaultDateRange, type DateRange } from '../../DateFilter';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -30,7 +31,7 @@ function StatCard({ icon: Icon, label, value, gradient }: { icon: React.ElementT
 }
 
 export function ManagerDashboard() {
-  const [period, setPeriod] = useState<7 | 30 | 90>(7);
+  const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const [tab, setTab] = useState<'equipe' | 'setores'>('equipe');
   const [data, setData] = useState<TeamAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,12 +47,12 @@ export function ManagerDashboard() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    getTeamAnalytics(period)
+    getTeamAnalytics({ from: dateRange.from.toISOString(), to: dateRange.to.toISOString() })
       .then((d) => { if (alive) { setData(d); setError(null); } })
       .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [period]);
+  }, [dateRange]);
 
   const maxTotal = useMemo(() => Math.max(1, ...(data?.ranking.map((r) => r.total) ?? [1])), [data]);
   const heatMax = useMemo(() => Math.max(1, ...((data?.heatmap ?? []).flat())), [data]);
@@ -82,16 +83,12 @@ export function ManagerDashboard() {
               <Building2 className="mr-1.5 h-3.5 w-3.5" /> Setores
             </Button>
           </div>
-          <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
-            {([7, 30, 90] as const).map((p) => (
-              <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} onClick={() => setPeriod(p)} className="h-7 px-3 text-xs">{p} dias</Button>
-            ))}
-          </div>
+          <DateFilter value={dateRange} onChange={setDateRange} />
         </div>
       </div>
 
       {tab === 'setores' ? (
-        <SectorDashboard period={period} />
+        <SectorDashboard range={dateRange} />
       ) : error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">{error}</div>
       ) : loading || !data ? (
@@ -99,7 +96,7 @@ export function ManagerDashboard() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <StatCard icon={Activity} label={`Ações (${period}d)`} value={data.totals.logs} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" />
+            <StatCard icon={Activity} label="Ações no período" value={data.totals.logs} gradient="bg-gradient-to-br from-blue-500 to-indigo-600" />
             <StatCard icon={Users} label="Colaboradores ativos" value={data.totals.activeCollaborators} gradient="bg-gradient-to-br from-violet-500 to-purple-600" />
             <StatCard icon={Flame} label="Online agora" value={data.totals.onlineNow} gradient="bg-gradient-to-br from-emerald-500 to-teal-600" />
             <StatCard icon={Trophy} label={`Líder do período: ${data.ranking[0]?.name ?? ''}`} value={data.ranking[0]?.total ?? 0} gradient="bg-gradient-to-br from-orange-500 to-rose-600" />

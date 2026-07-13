@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -14,10 +14,11 @@ import { Badge } from '@/app/_shared/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import {
   User as UserIcon, Mail, Phone, IdCard, Lock, Loader2, ShieldCheck,
-  Eye, EyeOff, CalendarDays, Save,
+  Eye, EyeOff, CalendarDays, Save, Camera,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getMyProfile, updateMyProfile } from '@/app/_actions/users/update-profile';
+import { getAvatarUploadUrl, confirmMyAvatar, removeMyAvatar } from '@/app/_actions/users/avatar';
 
 interface Props {
   open: boolean;
@@ -33,6 +34,7 @@ interface Profile {
   role: string;
   image: string | null;
   createdAt: string;
+  sector: { id: string; name: string; color: string } | null;
 }
 
 function initials(name: string) {
@@ -63,6 +65,53 @@ export function ProfileDialog({ open, onClose }: Props) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [revealPwd, setRevealPwd] = useState(false);
+
+  // Foto de perfil (JPEG/PNG, sobe direto pro S3 via URL pré-assinada).
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
+
+  async function handlePhotoPick(file: File | null) {
+    if (!file) return;
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      toast.error('Formato inválido: envie uma imagem JPEG ou PNG.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('A imagem excede o limite de 5MB.');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const presign = await getAvatarUploadUrl({ type: file.type, size: file.size });
+      if (!presign.success || !presign.url) throw new Error(presign.error ?? 'Falha ao preparar o upload.');
+      const put = await fetch(presign.url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      if (!put.ok) throw new Error('Falha ao enviar a imagem.');
+      const { image } = await confirmMyAvatar();
+      setProfile((p) => (p ? { ...p, image } : p));
+      // Sessão atualizada na hora → o avatar do header troca sem relogar.
+      await updateSession({ picture: image });
+      toast.success('Foto de perfil atualizada!');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Não foi possível atualizar a foto.');
+    } finally {
+      setUploadingPhoto(false);
+      if (photoRef.current) photoRef.current.value = '';
+    }
+  }
+
+  async function handlePhotoRemove() {
+    setUploadingPhoto(true);
+    try {
+      await removeMyAvatar();
+      setProfile((p) => (p ? { ...p, image: null } : p));
+      await updateSession({ picture: null });
+      toast.success('Foto removida.');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Não foi possível remover a foto.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -134,15 +183,33 @@ export function ProfileDialog({ open, onClose }: Props) {
           </DialogHeader>
         </div>
 
-        {/* Avatar sobreposto */}
-        <div className="px-6 -mt-12">
+        {/* Avatar sobreposto (clique na câmera para trocar a foto) */}
+        <div className="px-6 -mt-10">
           <div className="flex items-end gap-4">
-            <Avatar className="h-20 w-20 border-4 border-white dark:border-zinc-900 shadow-lg">
-              {profile?.image && <AvatarImage src={profile.image} alt={profile.name} />}
-              <AvatarFallback className="bg-blue-100 text-blue-700 text-xl font-bold">
-                {initials(name || profile?.name || 'U')}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative shrink-0">
+              <Avatar className="h-20 w-20 border-4 border-white dark:border-zinc-900 shadow-lg">
+                {profile?.image && <AvatarImage src={profile.image} alt={profile.name} />}
+                <AvatarFallback className="bg-blue-100 text-blue-700 text-xl font-bold">
+                  {initials(name || profile?.name || 'U')}
+                </AvatarFallback>
+              </Avatar>
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/jpeg,image/png"
+                className="hidden"
+                onChange={(e) => handlePhotoPick(e.target.files?.[0] ?? null)}
+              />
+              <button
+                type="button"
+                onClick={() => photoRef.current?.click()}
+                disabled={uploadingPhoto}
+                title="Trocar foto de perfil (JPEG ou PNG, até 5MB)"
+                className="absolute -bottom-0.5 -right-0.5 grid h-7 w-7 place-items-center rounded-full bg-blue-600 text-white shadow-md ring-2 ring-white transition-colors hover:bg-blue-700 disabled:opacity-60 dark:ring-zinc-900"
+              >
+                {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              </button>
+            </div>
             <div className="pb-1 min-w-0">
               <p className="font-bold text-gray-900 dark:text-zinc-100 truncate">{name || profile?.name}</p>
               <div className="flex items-center gap-2 mt-0.5">
@@ -154,7 +221,27 @@ export function ProfileDialog({ open, onClose }: Props) {
                     <ShieldCheck className="h-3 w-3" /> {profile.role}
                   </Badge>
                 )}
+                {profile?.sector && (
+                  <Badge
+                    className="gap-1 border text-[11px]"
+                    style={{
+                      backgroundColor: `${profile.sector.color}22`,
+                      color: profile.sector.color,
+                      borderColor: `${profile.sector.color}55`,
+                    }}
+                  ><ShieldCheck className="h-3 w-3" /> {profile.sector.name}</Badge>
+                )}
               </div>
+              {profile?.image && (
+                <button
+                  type="button"
+                  onClick={handlePhotoRemove}
+                  disabled={uploadingPhoto}
+                  className="mt-1 text-[11px] text-gray-400 underline-offset-2 hover:text-red-500 hover:underline disabled:opacity-60"
+                >
+                  Remover foto
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -18,10 +18,10 @@ import { Separator } from '@/app/_shared/ui/separator';
 import { toast } from 'sonner';
 import {
   Lock, Crown, Loader2, ShieldCheck, Phone, Mail, ChevronRight, CheckCircle2, Copy,
-  Hash, Pencil, Check, X, Trash2,
+  Hash, Pencil, Check, X, Trash2, Megaphone,
 } from 'lucide-react';
 import { getTeamProfiles, type TeamProfile } from '@/app/_actions/users/get-team-profiles';
-import { renameChannel, deleteChannel, type ChannelDTO } from '@/app/_actions/chat/channels';
+import { renameChannel, deleteChannel, setAnnounceOnly, type ChannelDTO } from '@/app/_actions/chat/channels';
 import type { PresenceMember } from '@/app/_shared/hooks/use-presence';
 
 function initials(name: string) {
@@ -36,6 +36,7 @@ type ChannelInfo = {
   memberIds: string[];
   createdById?: string | null;
   isGeneral?: boolean;
+  announceOnly?: boolean;
 };
 
 interface Props {
@@ -44,7 +45,7 @@ interface Props {
   channel: ChannelInfo;
   presenceMembers: PresenceMember[];
   meId: string;
-  /** Chamado após renomear/excluir com sucesso, para o pai revalidar a lista de canais. */
+  /** Chamado após renomear/excluir/alterar config, para o pai revalidar a lista de canais. */
   onRenamed?: () => void;
   onDeleted?: () => void;
 }
@@ -67,17 +68,20 @@ export function ChannelInfoDialog({ open, onClose, channel, presenceMembers, meI
   const [savingName, setSavingName] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [announceOnly, setAnnounceOnlyState] = useState(!!channel.announceOnly);
+  const [savingAnnounce, setSavingAnnounce] = useState(false);
 
   useEffect(() => {
     if (!open) { setSelected(null); setRenaming(false); setDeleteOpen(false); return; }
     setNameDraft(channel.name);
+    setAnnounceOnlyState(!!channel.announceOnly);
     let alive = true;
     setLoading(true);
     getTeamProfiles(channel.memberIds)
       .then((p) => { if (alive) setProfiles(p); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [open, channel.memberIds, channel.name]);
+  }, [open, channel.memberIds, channel.name, channel.announceOnly]);
 
   async function saveRename() {
     const name = nameDraft.trim();
@@ -92,6 +96,22 @@ export function ChannelInfoDialog({ open, onClose, channel, presenceMembers, meI
       toast.error(e instanceof Error ? e.message : 'Falha ao renomear.');
     } finally {
       setSavingName(false);
+    }
+  }
+
+  async function toggleAnnounceOnly() {
+    if (savingAnnounce) return;
+    const next = !announceOnly;
+    setSavingAnnounce(true);
+    try {
+      await setAnnounceOnly({ channelId: channel.id, announceOnly: next });
+      setAnnounceOnlyState(next);
+      toast.success(next ? 'Modo aviso ativado: só você poderá enviar mensagens.' : 'Modo aviso desativado: todos os membros podem enviar mensagens.');
+      onRenamed?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao alterar a configuração.');
+    } finally {
+      setSavingAnnounce(false);
     }
   }
 
@@ -227,6 +247,45 @@ export function ChannelInfoDialog({ open, onClose, channel, presenceMembers, meI
                   ))}
                 </div>
               </div>
+
+              {!channel.isGeneral && isOwner && (
+                <>
+                  <Separator />
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-100 p-3 transition-colors hover:bg-gray-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60">
+                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                      <Megaphone className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-gray-800 dark:text-zinc-100">Modo aviso</span>
+                        <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
+                          <input
+                            type="checkbox"
+                            className="peer sr-only"
+                            checked={announceOnly}
+                            disabled={savingAnnounce}
+                            onChange={toggleAnnounceOnly}
+                          />
+                          <span className="absolute inset-0 rounded-full bg-gray-200 transition-colors peer-checked:bg-amber-500 dark:bg-zinc-700" />
+                          <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-gray-400">
+                        Apenas você (dono do canal) pode mandar mensagens — os demais membros só leem.
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
+
+              {!channel.isGeneral && !isOwner && channel.announceOnly && (
+                <div className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/40 dark:bg-amber-900/10">
+                  <Megaphone className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Canal em modo aviso — só {creator?.name ?? 'o dono'} pode enviar mensagens aqui.
+                  </p>
+                </div>
+              )}
 
               {isOwner && (
                 <>

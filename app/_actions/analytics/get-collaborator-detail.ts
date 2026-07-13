@@ -71,7 +71,7 @@ export async function getCollaboratorDetail(
   const periodStart = new Date(today); periodStart.setDate(periodStart.getDate() - (periodDays - 1));
 
   const [
-    user, allTime, todayC, weekC, monthC, grouped, periodLogs, feedRows, teamGrouped,
+    user, allTime, todayC, weekC, monthC, grouped, periodLogs, feedRows, teamGrouped, teamMembers,
   ] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, image: true, role: true, email: true, lastSeenAt: true } }),
     db.log.count({ where: { authorId: userId, createdAt: { gte: windowStart } } }),
@@ -88,9 +88,14 @@ export async function getCollaboratorDetail(
       select: { id: true, action: true, message: true, createdAt: true, processId: true, user: { select: { name: true } }, process: { select: { name: true } } },
     }),
     db.log.groupBy({ by: ['authorId'], where: { createdAt: { gte: periodStart } }, _count: { _all: true } }),
+    // Equipe atual: usada para excluir do ranking quem foi demitido (deletado)
+    // ou autores não-humanos (ex.: "whatsapp-bot").
+    db.user.findMany({ where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } }, select: { id: true } }),
   ]);
 
   if (!user) throw new Error('Colaborador não encontrado.');
+
+  const teamIdSet = new Set(teamMembers.map((u) => u.id));
 
   // Logs de desenvolvimento do colaborador (janela máx) — pontuam por ARQUIVOS.
   const myDevLogs = await db.log.findMany({
@@ -148,6 +153,7 @@ export async function getCollaboratorDetail(
     teamDevDelta.set(l.authorId, (teamDevDelta.get(l.authorId) ?? 0) + devCommitFiles(l.metadata) - 1);
   }
   const weighted = teamGrouped
+    .filter((g) => teamIdSet.has(g.authorId)) // exclui demitidos/bot do ranking
     .map((g) => ({ authorId: g.authorId, total: g._count._all + (teamDevDelta.get(g.authorId) ?? 0) }))
     .sort((a, b) => b.total - a.total);
   const rank = weighted.findIndex((g) => g.authorId === userId) + 1;
