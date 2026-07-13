@@ -42,3 +42,26 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+// Limpa as notificações do usuário logado (todas, ou só as informadas em ids).
+export async function DELETE(request: Request) {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  const { ids } = await request.json().catch(() => ({ ids: "all" }));
+
+  if (ids === "all") {
+    await db.notification.deleteMany({
+      where: { recipientId: session.user.id },
+    });
+  } else if (Array.isArray(ids)) {
+    await db.notification.deleteMany({
+      where: { id: { in: ids }, recipientId: session.user.id },
+    });
+  }
+
+  return NextResponse.json({ ok: true });
+}

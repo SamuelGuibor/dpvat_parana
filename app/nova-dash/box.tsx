@@ -33,7 +33,7 @@ function HighlightedMessage({ message, names }: { message: string; names: string
 }
 
 export function NotificationDropdown() {
-  const { notifications, unreadCount, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markAllRead, clearAll } = useNotifications();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -74,14 +74,24 @@ export function NotificationDropdown() {
         <div className="absolute right-0 mt-2 w-96 bg-white dark:bg-zinc-900 border rounded-xl shadow-lg z-50">
           <div className="px-4 py-3 border-b flex items-center justify-between">
             <span className="font-semibold text-sm">Notificações</span>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="text-xs text-blue-600 hover:underline"
-              >
-                Marcar todas como lidas
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllRead}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Marcar todas como lidas
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearAll}
+                  className="text-xs text-red-600 hover:underline"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-80 overflow-y-auto">

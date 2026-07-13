@@ -331,18 +331,31 @@ const DELIVERY_ALERT_DEBOUNCE_MS = 6 * 60 * 60_000;
 // conta por spam, então aqui (e só aqui) marcamos optedOut automaticamente.
 const META_USER_OPTED_OUT = 131050;
 
+// Progressão dos status da Meta. Um status NUNCA regride (os webhooks chegam
+// fora de ordem: um "sent" atrasado não pode rebaixar um "delivered"/"read" já
+// aplicado — era isso que deixava mensagens entregues com tique único).
+const STATUS_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 4 };
+
 /** Atualiza o status de entrega de uma mensagem enviada (out). */
 export async function applyStatusUpdate(st: IncomingWaStatus): Promise<void> {
-  if (!["sent", "delivered", "read", "failed"].includes(st.status)) return;
+  const rank = STATUS_RANK[st.status];
+  if (!rank) return;
+
+  // A linha da mensagem é criada DEPOIS da chamada à Meta — o webhook de
+  // status pode chegar antes do INSERT commitar. Sem retry, o update não acha
+  // nada, o evento é perdido e a mensagem fica "sent" para sempre.
   let message: { id: string; contactId: string } | null = null;
-  try {
-    message = await db.whatsAppMessage.update({
+  for (let attempt = 0; attempt < 4 && !message; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    const found = await db.whatsAppMessage.findUnique({
       where: { waMessageId: st.id },
-      data: { status: st.status },
-      select: { id: true, contactId: true },
+      select: { id: true, contactId: true, status: true },
     });
-  } catch {
-    // Mensagem não encontrada (ex: enviada fora do sistema) — ignora.
+    if (!found) continue; // ainda não gravada (ou enviada fora do sistema)
+    if ((STATUS_RANK[found.status] ?? 0) < rank) {
+      await db.whatsAppMessage.update({ where: { id: found.id }, data: { status: st.status } });
+    }
+    message = found;
   }
   if (!message || st.status !== "failed") return;
 
@@ -389,7 +402,9 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
 
   // Manda pra fila de atendimento (se ninguém já estiver cuidando): alguém
   // precisa conferir o número/bloqueio antes do próximo envio automático.
-  const shouldQueue = conversation.status === "bot" || conversation.status === "closed";
+  // Conversa ENCERRADA não volta pra fila: reabrir ticket fechado por causa de
+  // status antigo era o que gerava alertas de fila a noite toda.
+  const shouldQueue = conversation.status === "bot";
   await db.whatsAppConversation.update({
     where: { id: conversation.id },
     data: {

@@ -267,7 +267,19 @@ export async function GET(req: NextRequest) {
     take: 25,
   });
 
+  // Conversa encerrada = caso resolvido pela equipe; não fica revalidando
+  // entrega de mensagem antiga (era o que reabria tickets fechados de noite).
+  const stuckContactIds = stuck.map((g) => g.contactId);
+  const closedConvs = stuckContactIds.length
+    ? await db.whatsAppConversation.findMany({
+        where: { contactId: { in: stuckContactIds }, status: 'closed' },
+        select: { contactId: true },
+      })
+    : [];
+  const closedSet = new Set(closedConvs.map((c) => c.contactId));
+
   for (const group of stuck) {
+    if (closedSet.has(group.contactId)) continue;
     try {
       const n = group._count._all;
       await alertDeliveryFailure(

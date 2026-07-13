@@ -26,6 +26,16 @@ export function useNotifications() {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, []);
 
+  const clearAll = useCallback(async () => {
+    await fetch("/api/notification", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: "all" }),
+    });
+
+    setNotifications([]);
+  }, []);
+
   useEffect(() => {
     loadNotifications();
     const interval = setInterval(loadNotifications, 60_000);
@@ -34,5 +44,5 @@ export function useNotifications() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  return { notifications, unreadCount, markAllRead };
+  return { notifications, unreadCount, markAllRead, clearAll };
 }
