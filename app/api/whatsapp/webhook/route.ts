@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 
 // 120s: o fluxo do bot agora inclui o debounce de rajada (~8s) antes de
 // chamar a IA. A Vercel limita ao teto do plano automaticamente.
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
