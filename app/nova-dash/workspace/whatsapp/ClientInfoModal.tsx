@@ -6,6 +6,7 @@ import {
   Loader2, UserRoundPlus, Save, BadgeCheck, FilePen, Upload, FileText, Trash2, Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
@@ -78,6 +79,7 @@ export function ClientInfoModal({ open, onOpenChange, contactId, contactLabel }:
   const [docsLoading, setDocsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
   function reloadDocs() {
     setDocsLoading(true);
@@ -131,7 +133,10 @@ export function ClientInfoModal({ open, onOpenChange, contactId, contactLabel }:
   }
 
   async function removeDoc(doc: ClientDocumentDTO) {
-    if (!window.confirm(`Excluir "${doc.name}"?`)) return;
+    if (!(await confirm({
+      title: 'Excluir documento',
+      description: <>O arquivo <strong>{doc.name}</strong> será removido da ficha.</>,
+    }))) return;
     try {
       setDocs(await deleteClientDocument(contactId, doc.id));
     } catch (e) {
@@ -161,6 +166,7 @@ export function ClientInfoModal({ open, onOpenChange, contactId, contactLabel }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {confirmDialog}
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

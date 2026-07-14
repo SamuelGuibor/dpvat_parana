@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Save, Zap } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function WhatsAppQuickRepliesModal({ open, onOpenChange, onChanged }: Props) {
+  const { confirm, confirmDialog } = useConfirm();
   const [items, setItems] = useState<WhatsAppQuickReplyDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,7 +60,10 @@ export function WhatsAppQuickRepliesModal({ open, onOpenChange, onChanged }: Pro
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Excluir esta resposta rápida?')) return;
+    if (!(await confirm({
+      title: 'Excluir resposta rápida',
+      description: 'Ela some do menu de respostas de todos os atendentes.',
+    }))) return;
     try {
       await deleteWhatsAppQuickReply(id);
       if (editingId === id) { setEditingId(null); setTitle(''); setBody(''); }
@@ -71,6 +76,7 @@ export function WhatsAppQuickRepliesModal({ open, onOpenChange, onChanged }: Pro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {confirmDialog}
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

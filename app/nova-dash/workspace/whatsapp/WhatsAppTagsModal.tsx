@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Save, Tag as TagIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function WhatsAppTagsModal({ open, onOpenChange, onChanged }: Props) {
+  const { confirm, confirmDialog } = useConfirm();
   const [tags, setTags] = useState<WhatsAppTagDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,7 +58,10 @@ export function WhatsAppTagsModal({ open, onOpenChange, onChanged }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Excluir esta tag? Ela sai de todas as conversas.')) return;
+    if (!(await confirm({
+      title: 'Excluir tag',
+      description: 'Ela sai de todas as conversas que a usam. Essa ação não pode ser desfeita.',
+    }))) return;
     try {
       await deleteWhatsAppTag(id);
       if (editingId === id) { setEditingId(null); setName(''); }
@@ -69,6 +74,7 @@ export function WhatsAppTagsModal({ open, onOpenChange, onChanged }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {confirmDialog}
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

@@ -10,6 +10,7 @@ import {
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
+import { SystemMap } from './SystemMap';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -277,6 +278,7 @@ export function ChatbotDashboard() {
           </div>
         </>
       )}
+      <SystemMap />
     </div>
   );
 }

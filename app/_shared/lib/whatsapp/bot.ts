@@ -29,6 +29,31 @@ import {
 
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, "") ?? "";
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? "";
+// ---- Ambiente de HOMOLOGAÇÃO do bot -----------------------------------------
+// CHATBOT_URL_STAGING: URL de um cérebro de teste (prompt novo em validação).
+// WHATSAPP_TEST_NUMBERS: números (E.164, separados por vírgula) cujas conversas
+// usam o cérebro de staging — os clientes reais continuam no de produção.
+// Fluxo: número de teste da Meta manda mensagem → cai aqui como qualquer
+// cliente → responde com o prompt de staging, sem afetar ninguém.
+const CHATBOT_URL_STAGING = process.env.CHATBOT_URL_STAGING?.replace(/\/$/, "") ?? "";
+const TEST_NUMBERS = (process.env.WHATSAPP_TEST_NUMBERS ?? "")
+  .split(",")
+  .map((s) => s.replace(/\D/g, ""))
+  .filter(Boolean);
+
+/** Cérebro a usar para este telefone: staging para números de teste, senão produção. */
+function brainUrlFor(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (CHATBOT_URL_STAGING && TEST_NUMBERS.includes(digits)) return CHATBOT_URL_STAGING;
+  return CHATBOT_URL;
+}
+
+// Debounce de RAJADA: cliente que digita a mensagem picada em 3-4 balões gera
+// 3-4 webhooks em segundos — sem isso são 3-4 chamadas ao Claude respondendo
+// fora de ordem. Cada invocação espera DEBOUNCE_MS; se nesse meio tempo chegou
+// mensagem MAIS NOVA do cliente, esta invocação desiste (a da mensagem mais
+// recente processa o lote inteiro de uma vez).
+const BURST_DEBOUNCE_MS = 8_000;
 // 45s: o caminho de áudio tem dois saltos (S3 → transcrição Gemini → Claude);
 // 25s era curto demais e derrubava pra fila com "erro no bot" mesmo o cérebro
 // respondendo bem (só que tarde).
@@ -60,7 +85,7 @@ interface ProcessInfo {
   service: string | null;
 }
 
-interface LinkedCard extends ProcessInfo {
+export interface LinkedCard extends ProcessInfo {
   kind: "user" | "process";
   id: string;
 }
@@ -167,7 +192,7 @@ function businessHours(): { open: boolean; reopens: string; greeting: string } {
  * Prioridade: vínculo manual no contato; senão, busca pelos últimos 8 dígitos.
  * Só expõe dados NÃO sensíveis (nome, etapa, serviço) — nada de obs/CPF/endereço.
  */
-async function findLinkedCard(contactId: string): Promise<LinkedCard | null> {
+export async function findLinkedCard(contactId: string): Promise<LinkedCard | null> {
   const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
   if (!contact) return null;
 
@@ -511,11 +536,11 @@ export async function sendBotReply(
 // ---------------------------------------------------------------------------
 // Chamada ao microserviço
 // ---------------------------------------------------------------------------
-async function callBrainOnce(payload: object): Promise<BotDecision> {
+async function callBrainOnce(payload: object, baseUrl: string = CHATBOT_URL): Promise<BotDecision> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), BOT_TIMEOUT_MS);
   try {
-    const res = await fetch(`${CHATBOT_URL}/reply`, {
+    const res = await fetch(`${baseUrl}/reply`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -538,11 +563,11 @@ async function callBrainOnce(payload: object): Promise<BotDecision> {
  * de erro do chamador, que joga a conversa na fila de distribuição. Erros que
  * NÃO são timeout (serviço fora, HTTP 4xx/5xx) sobem na hora, sem reprocessar.
  */
-async function callBrain(payload: object): Promise<BotDecision> {
+async function callBrain(payload: object, baseUrl: string = CHATBOT_URL): Promise<BotDecision> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= BOT_MAX_ATTEMPTS; attempt++) {
     try {
-      return await callBrainOnce(payload);
+      return await callBrainOnce(payload, baseUrl);
     } catch (err) {
       lastErr = err;
       const isTimeout = err instanceof Error && err.name === "AbortError";
@@ -577,11 +602,40 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     markMessageRead(message.waMessageId, true).catch(() => {});
   }
 
+  // ---- Debounce de rajada -------------------------------------------------
+  // Espera BURST_DEBOUNCE_MS: se o cliente mandou outra mensagem nesse meio
+  // tempo, ESTA invocação desiste — a invocação da mensagem mais nova é quem
+  // responde, com o lote inteiro agregado (ver "burst" abaixo). Assim 3
+  // mensagens picadas viram UMA chamada ao Claude, e não 3 respostas fora de
+  // ordem.
+  await sleep(BURST_DEBOUNCE_MS);
+  const newerInbound = await db.whatsAppMessage.findFirst({
+    where: {
+      contactId,
+      direction: "in",
+      deletedAt: null,
+      id: { not: message.id },
+      createdAt: { gt: new Date(message.createdAt) },
+    },
+    select: { id: true },
+  });
+  if (newerInbound) {
+    console.log(`[WHATSAPP BOT] ${contactId}: mensagem mais nova chegou durante o debounce — esta invocação desiste.`);
+    return;
+  }
+
   try {
     const conversation = await db.whatsAppConversation.findUnique({
       where: { contactId },
-      select: { id: true, botMemory: true, botState: true, botFailCount: true },
+      select: { id: true, status: true, botMemory: true, botState: true, botFailCount: true },
     });
+
+    // Durante o debounce um atendente pode ter assumido/encerrado a conversa —
+    // nesse caso o bot não tem mais nada a fazer aqui.
+    if (conversation && conversation.status !== "bot") {
+      console.log(`[WHATSAPP BOT] ${contactId}: conversa saiu do modo bot durante o debounce (${conversation.status}).`);
+      return;
+    }
 
     // ---- Mídia ----------------------------------------------------------
     // Áudio: a IA escuta (URL pré-assinada do S3 → Gemini multimodal).
@@ -607,7 +661,32 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       }
     }
 
-    const clientText = message.body?.trim() ?? "";
+    // ---- Lote da rajada ---------------------------------------------------
+    // Todas as mensagens do cliente desde a nossa última resposta formam UM
+    // "turno" só: os textos são agregados numa única mensagem pra IA. (Mídia
+    // de mensagens anteriores do lote não é reprocessada — só a da mensagem
+    // que disparou esta invocação, tratada acima.)
+    const lastOut = await db.whatsAppMessage.findFirst({
+      where: { contactId, direction: "out", internal: false, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    const burst = await db.whatsAppMessage.findMany({
+      where: {
+        contactId,
+        direction: "in",
+        deletedAt: null,
+        ...(lastOut ? { createdAt: { gt: lastOut.createdAt } } : {}),
+      },
+      orderBy: { createdAt: "asc" },
+      take: 12,
+      select: { id: true, body: true },
+    });
+    const burstIds = burst.length ? burst.map((b) => b.id) : [message.id];
+    const clientText = (burst.length ? burst.map((b) => b.body?.trim()).filter(Boolean) : [message.body?.trim()])
+      .filter(Boolean)
+      .join("\n");
+
     if (!clientText && !media) {
       // Mensagem sem conteúdo interpretável (sticker etc) → fila.
       await handoffToQueue(contactId, contactLabel, "mensagem sem texto/áudio interpretável");
@@ -617,7 +696,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     // ---- Contexto -------------------------------------------------------
     const [history, card, flows] = await Promise.all([
       db.whatsAppMessage.findMany({
-        where: { contactId, internal: false, id: { not: message.id }, deletedAt: null },
+        where: { contactId, internal: false, id: { notIn: burstIds }, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 30,
         select: { direction: true, sentByBot: true, body: true },
@@ -648,11 +727,16 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     };
 
     // ---- IA (com no máximo 1 consulta intermediária ao banco) -----------
-    let decision = await callBrain(basePayload);
+    // Números de teste usam o cérebro de STAGING (validação de prompt novo).
+    const brainUrl = brainUrlFor(message.contactPhone);
+    if (brainUrl !== CHATBOT_URL) {
+      console.log(`[WHATSAPP BOT] ${message.contactPhone} é número de TESTE → cérebro de staging.`);
+    }
+    let decision = await callBrain(basePayload, brainUrl);
     if (decision.action === "lookup" && decision.lookup) {
       const firstUsage = decision.usage;
       const lookupResult = await runLookup(decision.lookup, contactId, card);
-      decision = await callBrain({ ...basePayload, lookupResult });
+      decision = await callBrain({ ...basePayload, lookupResult }, brainUrl);
       // Soma o gasto das duas chamadas ao Claude na métrica de custo.
       decision = { ...decision, usage: sumUsage(firstUsage, decision.usage) };
       // Segunda passada não pode pedir lookup de novo: rebaixa pra continue.

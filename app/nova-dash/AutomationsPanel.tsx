@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { listWhatsAppTemplates } from "../_actions/whatsapp/templates";
 import { toast } from "sonner";
+import { useConfirm } from "@/app/_shared/ui/confirm-dialog";
 import { MentionsInput, Mention } from "react-mentions";
 import useSWR from "swr";
 import { mentionsStyles } from "./card-dialog/constants";
@@ -383,6 +384,7 @@ function ActionRow({
                 onChange={(e: any) => onChange({ ...action, templateText: e.target.value })}
                 placeholder="Escreva o texto... Use @ para mencionar e [[name]], [[cpf]] para variáveis"
                 style={mentionsStyles}
+                allowSuggestionsAboveCursor
               >
                 <Mention
                   trigger="@"
@@ -923,6 +925,7 @@ function AutomationCard({
 
 export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProps) {
   const [automations, setAutomations] = useState<AutomationData[]>([]);
+  const { confirm, confirmDialog } = useConfirm();
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AutomationData | null>(null);
@@ -977,7 +980,10 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Deseja excluir esta automação?")) return;
+    if (!(await confirm({
+      title: "Excluir automação",
+      description: "Ela para de rodar imediatamente. Essa ação não pode ser desfeita.",
+    }))) return;
     await fetch(`/api/automations/${id}`, { method: "DELETE" });
     setAutomations((p) => p.filter((a) => a.id !== id));
     toast.success("Automação excluída");
@@ -985,6 +991,7 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
 
   return (
     <>
+      {confirmDialog}
       <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
         <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
           <SheetHeader className="px-6 py-5 border-b border-gray-100 dark:border-zinc-800">

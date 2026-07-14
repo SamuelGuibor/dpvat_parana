@@ -9,6 +9,7 @@ import { Send, Paperclip, X, FileText, Image as ImageIcon, Film, Mic } from 'luc
 import { Button } from '@/app/_shared/ui/button';
 import { mentionsStyles } from '../../card-dialog/constants';
 import { renderMentionSuggestion } from './mention-suggestion';
+import { toast } from 'sonner';
 
 type MentionableUser = { id: string; display: string };
 
@@ -54,7 +55,7 @@ export function MessageComposer({ members, disabled, placeholder, onSend, onTypi
   function pickFile(f: File | null) {
     if (!f) return;
     if (f.size > MAX_ATTACH_BYTES) {
-      alert('Arquivo excede o limite de 25MB.');
+      toast.error('Arquivo excede o limite de 25MB.');
       return;
     }
     setFile(f);
@@ -143,6 +144,8 @@ export function MessageComposer({ members, disabled, placeholder, onSend, onTypi
         }}
         placeholder={placeholder ?? 'Escreva uma mensagem... Use @ para mencionar. **negrito** *itálico*'}
         style={mentionsStyles}
+        // O composer fica no rodapé: abrir pra baixo cortava a lista — agora abre pra cima.
+        forceSuggestionsAboveCursor
       >
         <Mention
           trigger="@"

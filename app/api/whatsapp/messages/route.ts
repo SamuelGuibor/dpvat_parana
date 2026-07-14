@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       id: true, contactId: true, direction: true, body: true,
       mediaKey: true, mediaType: true, status: true, sentByBot: true,
       authorId: true, internal: true, createdAt: true,
-      editedAt: true, deletedAt: true,
+      editedAt: true, deletedAt: true, transcript: true,
       replyToId: true, replyToBody: true, replyToDirection: true,
     },
   });

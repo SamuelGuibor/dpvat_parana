@@ -148,6 +148,17 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
     activeBg: 'bg-purple-600 text-white border-purple-600',
     iconBg: 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300',
   },
+
+  voltar_um_dia: {
+    label: 'Voltar um dia',
+    icon: RotateCcw,
+    bar: 'bg-indigo-500',
+    chipBg: 'bg-indigo-50 dark:bg-indigo-950/40',
+    chipText: 'text-indigo-700 dark:text-indigo-300',
+    ring: 'ring-indigo-200 dark:ring-indigo-900',
+    activeBg: 'bg-indigo-600 text-white border-indigo-600',
+    iconBg: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300',
+  },
 };
 
 type Filter = 'all' | ArchiveStatus;

@@ -18,6 +18,7 @@ import {
   Copy,
 } from "lucide-react";
 import type { LockerEntry, LockerFile } from "./LokerCard";
+import { toast } from 'sonner';
 
 // Email clicável que copia para o clipboard ao invés de abrir mailto:
 function EmailChip({ email }: { email: string }) {
@@ -238,7 +239,7 @@ export function ViewModal({ open, entry, onClose, onEdit, onDelete }: Props) {
       a.remove();
     } catch (e) {
       console.error(e);
-      alert("Não foi possível baixar o arquivo.");
+      toast.error("Não foi possível baixar o arquivo.");
     } finally {
       setDownloadingId(null);
     }

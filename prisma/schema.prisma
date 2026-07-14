@@ -98,6 +98,7 @@ model User {
   chatMessages        ChatMessage[]  @relation("ChatAuthor")
   chatReactions       ChatReaction[] @relation("ReactionAuthor")
   logs                Log[]          @relation("UserLogs")
+  cardTags            CardTag[]      @relation("UserCardTags")
 }
 
 // Setor/função da pessoa (Comercial, Financeiro, Desenvolvedor…). Diferente de
@@ -254,6 +255,22 @@ model Process {
   label               Label?     @relation("ProcessLabel", fields: [labelId], references: [id])
   user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   logs                Log[]      @relation("ProcessLogs")
+  cardTags            CardTag[]  @relation("ProcessCardTags")
+}
+
+// Tag livre dos CARDS do kanban (diferente de Label = coluna e de WhatsAppTag
+// = tag de conversa). Aparece no card ao lado do badge de serviço; criada e
+// gerenciada de dentro do diálogo do card. Many-to-many com User e Process
+// (os dois tipos de card).
+model CardTag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  color     String    @default("#6366f1")
+  createdAt DateTime  @default(now())
+  users     User[]    @relation("UserCardTags")
+  processes Process[] @relation("ProcessCardTags")
+
+  @@map("card_tags")
 }
 
 model Label {
@@ -563,6 +580,9 @@ model WhatsAppMessage {
   replyToId        String?
   replyToBody      String?
   replyToDirection String?
+  // Transcrição de áudio feita a pedido do atendente (botão "transcrever").
+  // Persistida: o próximo clique (de qualquer atendente) não paga IA de novo.
+  transcript       String?
   createdAt        DateTime        @default(now())
   contact          WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 

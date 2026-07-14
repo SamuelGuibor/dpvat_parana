@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from 'sonner';
 import {
   FileText,
   File,
@@ -95,7 +96,7 @@ export function LockerCard({ entry, onEdit, onDelete, onView }: Props) {
       a.remove();
     } catch (e) {
       console.error(e);
-      alert("Não foi possível baixar o arquivo.");
+      toast.error("Não foi possível baixar o arquivo.");
     } finally {
       setDownloadingId(null);
     }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Send, ImagePlus, X, Workflow, Loader2, Settings2, Pencil,
   Reply as ReplyIcon, FileText, Image as ImageIcon, Video, Mic, Check, FileBadge,
-  StickyNote, Zap, Search,
+  StickyNote, Zap, Search, Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/app/_shared/ui/button';
@@ -17,6 +17,7 @@ import {
 import { sendWhatsAppMessage, sendWhatsAppMedia, sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppFlows, logFlowDispatched, type WhatsAppFlowDTO, type WhatsAppFlowStep } from '@/app/_actions/whatsapp/flows';
 import { listWhatsAppQuickReplies, type WhatsAppQuickReplyDTO } from '@/app/_actions/whatsapp/quick-replies';
+import { suggestWhatsAppReply } from '@/app/_actions/whatsapp/assist';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 import { WhatsAppFlowsModal } from './WhatsAppFlowsModal';
 import { WhatsAppQuickRepliesModal } from './WhatsAppQuickRepliesModal';
@@ -71,6 +72,9 @@ export function WhatsAppComposer({
   // Funciona mesmo com a janela de 24h expirada (não passa pela Meta).
   const [noteMode, setNoteMode] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
+
+  // Sugestão de resposta pela IA: preenche o input; o humano revisa e envia.
+  const [suggesting, setSuggesting] = useState(false);
 
   // Respostas rápidas (snippets) — inseridas no input com um clique.
   const [quickReplies, setQuickReplies] = useState<WhatsAppQuickReplyDTO[]>([]);
@@ -423,6 +427,33 @@ export function WhatsAppComposer({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Sugestão de resposta pela IA (propõe → humano revisa → envia) */}
+          <button
+            onClick={async () => {
+              if (suggesting) return;
+              setSuggesting(true);
+              try {
+                const suggestion = await suggestWhatsAppReply(contactId);
+                setValue(suggestion);
+                textareaRef.current?.focus();
+                toast.success('Sugestão pronta — revise antes de enviar.');
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
+              } finally {
+                setSuggesting(false);
+              }
+            }}
+            disabled={disabled || editing || noteMode || suggesting}
+            title="Sugerir resposta com IA (você revisa antes de enviar)"
+            className={`rounded-lg p-1.5 transition-colors disabled:opacity-50 ${
+              suggesting
+                ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'
+                : 'text-gray-400 hover:bg-violet-100 hover:text-violet-600 dark:hover:bg-violet-900/40 dark:hover:text-violet-300'
+            }`}
+          >
+            {suggesting ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6" />}
+          </button>
 
           {/* Toggle nota interna */}
           <button

@@ -19,7 +19,8 @@ export type ArchiveStatus =
   | "perdeu_contato_definitivo"
   | "nao_assinaram_procuracao"
   | "descartados_analise_interna"
-  | "desistiram_expressamente";
+  | "desistiram_expressamente"
+  | "voltar_um_dia";
 
 const ARCHIVE_LABELS: Record<ArchiveStatus, string> = {
   pagos_ccs: "PAGOS CCS",
@@ -33,6 +34,7 @@ const ARCHIVE_LABELS: Record<ArchiveStatus, string> = {
   nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
   descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
   desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
+  voltar_um_dia: "VOLTAR UM DIA"
 };
 
 interface SetArchiveStatusProps {

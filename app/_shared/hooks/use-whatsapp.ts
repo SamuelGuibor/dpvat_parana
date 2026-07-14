@@ -26,6 +26,8 @@ export interface WhatsAppThreadMessage {
   createdAt: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  // Transcrição do áudio (feita sob demanda pelo botão "transcrever").
+  transcript?: string | null;
   replyToId?: string | null;
   replyToBody?: string | null;
   replyToDirection?: string | null;

@@ -243,13 +243,18 @@ export const mentionsStyles = {
     input: { padding: 9, border: '1px solid #e5e7eb', borderRadius: '0.5rem', outline: 'none' },
   },
   suggestions: {
+    // zIndex alto: o dropdown de @menção precisa flutuar sobre dialogs/sheets
+    // (antes ficava cortado/escondido atrás de outros elementos).
+    zIndex: 80,
     list: {
-      backgroundColor: 'white', border: '1px solid rgba(0,0,0,0.15)',
-      fontSize: 14, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-      maxHeight: 200, overflowY: 'auto' as const,
+      backgroundColor: 'white', border: '1px solid rgba(0,0,0,0.12)',
+      fontSize: 14, borderRadius: '0.75rem',
+      boxShadow: '0 12px 32px -8px rgb(0 0 0 / 0.25)',
+      maxHeight: 220, overflowY: 'auto' as const,
+      padding: 4, minWidth: 220,
     },
     item: {
-      padding: '8px 12px', borderBottom: '1px solid rgba(0,0,0,0.05)',
+      padding: '8px 12px', borderRadius: '0.5rem',
       '&focused': { backgroundColor: '#eff6ff', color: '#1d4ed8' },
     },
   },

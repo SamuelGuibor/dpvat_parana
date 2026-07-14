@@ -7,6 +7,7 @@ import {
   FileText, Image as ImageIcon, Video, Mic, File as FileIcon, Upload, CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
@@ -45,6 +46,7 @@ interface Props {
 }
 
 export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
+  const { confirm, confirmDialog } = useConfirm();
   const [flows, setFlows] = useState<WhatsAppFlowDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -99,7 +101,10 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Excluir este fluxo?')) return;
+    if (!(await confirm({
+      title: 'Excluir fluxo',
+      description: 'Os passos deste fluxo serão apagados. Essa ação não pode ser desfeita.',
+    }))) return;
     try {
       await deleteWhatsAppFlow(id);
       toast.success('Fluxo excluído.');
@@ -113,6 +118,7 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {confirmDialog}
       <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2.5 text-xl">

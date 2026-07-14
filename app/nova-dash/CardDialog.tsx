@@ -20,6 +20,7 @@ import { updateKanbanStatus } from '@/app/_actions/cards/update-kanban';
 
 import type { ExtendedKanbanCard } from './card-dialog/types';
 import { DetailsTab } from './card-dialog/DetailsTab';
+import { CardTagsBar } from './card-dialog/CardTagsBar';
 import { ChecklistTab } from './card-dialog/ChecklistTab';
 import { FilesTab } from './card-dialog/FilesTab';
 import { CommentsTab } from './card-dialog/CommentsTab';
@@ -259,6 +260,17 @@ export const CardDialog: React.FC<CardDialogProps> = ({
             Manual de Instruções <Link className="w-4 h-4 inline-block" />
           </a>
           <DialogDescription>Edição detalhada do processo</DialogDescription>
+          {/* Tags do card: gerenciadas SÓ aqui; o kanban exibe (badge + "+N"). */}
+          <CardTagsBar
+            cardId={cardId}
+            isProcess={isProcess}
+            onTagsChange={(tags) => {
+              // Atualiza o card no board na hora, sem esperar o polling.
+              window.dispatchEvent(new CustomEvent('card-tags-changed', {
+                detail: { cardId, isProcess, tags },
+              }));
+            }}
+          />
         </DialogHeader>
 
         {pendingDraft && (

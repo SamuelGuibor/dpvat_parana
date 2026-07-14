@@ -35,6 +35,14 @@ const QUEUE_REALERT_MS = 60 * 60_000; // repete o alerta a cada 1h
 const STUCK_SENT_MS = 12 * 60 * 60_000;
 const STUCK_SENT_LOOKBACK_MS = 72 * 60 * 60_000; // ignora histórico antigo
 
+// Cards ESTOURADOS no kanban: card parado numa coluna além do timeLimitDays
+// dela → notificação pra equipe INTEIRA, re-notificada a cada 24h enquanto o
+// card não sair da coluna. Se estourou, algo deu errado — ninguém pode deixar
+// de ver.
+const OVERDUE_RENOTIFY_MS = 24 * 60 * 60_000;
+const OVERDUE_AUTHOR_ID = 'kanban-overdue';
+const OVERDUE_MAX_CARDS = 60; // teto por rodada (os mais atrasados primeiro)
+
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, '') ?? '';
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? '';
 
@@ -99,7 +107,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const results = { nudged30: 0, closed: 0, queueAlerts: 0, deliveryAlerts: 0, errors: 0 };
+  const results = { nudged30: 0, closed: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   // Última atividade há 30min+, ainda em modo bot, sem aviso pendente.
@@ -291,6 +299,115 @@ export async function GET(req: NextRequest) {
       console.error('[WHATSAPP CRON] Falha no alerta de entrega:', group.contactId, err);
       results.errors++;
     }
+  }
+
+  // ---- 5. Cards ESTOURADOS no kanban (limite de dias da coluna) -------------
+  // Colunas têm timeLimitDays; card com statusStartedAt além do limite gera
+  // notificação pra equipe INTEIRA (o sino "incomoda" mesmo: repete a cada 24h
+  // enquanto o card não sair da coluna — se estourou, algo deu errado).
+  try {
+    const limitedLabels = await db.label.findMany({
+      where: { timeLimitDays: { not: null, gt: 0 } },
+      select: { id: true, name: true, timeLimitDays: true },
+    });
+
+    if (limitedLabels.length) {
+      const labelById = new Map(limitedLabels.map((l) => [l.id, l]));
+
+      // O corte de data mais permissivo entre as colunas: filtra grosso no SQL
+      // e refina por coluna em JS (cada coluna tem seu próprio limite).
+      const minLimitDays = Math.min(...limitedLabels.map((l) => l.timeLimitDays!));
+      const coarseCutoff = new Date(now - minLimitDays * 24 * 60 * 60_000);
+      const labelIds = limitedLabels.map((l) => l.id);
+
+      const [users, processes] = await Promise.all([
+        db.user.findMany({
+          where: {
+            labelId: { in: labelIds },
+            statusStartedAt: { not: null, lte: coarseCutoff },
+            archiveStatus: null,
+            role: { notIn: ['GHOST'] },
+            NOT: { role: { startsWith: 'ADMIN' } },
+          },
+          select: { id: true, name: true, cardNumber: true, labelId: true, statusStartedAt: true },
+        }),
+        db.process.findMany({
+          where: {
+            labelId: { in: labelIds },
+            statusStartedAt: { not: null, lte: coarseCutoff },
+            archiveStatus: null,
+          },
+          select: { id: true, name: true, cardNumber: true, labelId: true, statusStartedAt: true },
+        }),
+      ]);
+
+      type OverdueCard = {
+        id: string; isProcess: boolean; name: string | null; cardNumber: number | null;
+        labelName: string; limitDays: number; days: number;
+      };
+      const overdue: OverdueCard[] = [];
+      for (const [rows, isProcess] of [[users, false], [processes, true]] as const) {
+        for (const c of rows) {
+          const label = c.labelId ? labelById.get(c.labelId) : null;
+          if (!label || !c.statusStartedAt) continue;
+          const days = Math.floor((now - c.statusStartedAt.getTime()) / (24 * 60 * 60_000));
+          if (days > label.timeLimitDays!) {
+            overdue.push({
+              id: c.id, isProcess, name: c.name, cardNumber: c.cardNumber,
+              labelName: label.name, limitDays: label.timeLimitDays!, days,
+            });
+          }
+        }
+      }
+
+      if (overdue.length) {
+        // Mais atrasados primeiro; teto por rodada pra não explodir o banco.
+        overdue.sort((a, b) => b.days - a.days);
+        const batch = overdue.slice(0, OVERDUE_MAX_CARDS);
+
+        // Quem já foi avisado nas últimas 24h não é avisado de novo (por card).
+        const recent = await db.notification.findMany({
+          where: {
+            authorId: OVERDUE_AUTHOR_ID,
+            createdAt: { gte: new Date(now - OVERDUE_RENOTIFY_MS) },
+          },
+          select: { userId: true, processId: true },
+          distinct: ['userId', 'processId'],
+        });
+        const alerted = new Set(recent.map((n) => n.processId ? `p:${n.processId}` : `u:${n.userId}`));
+
+        const recipients = await whatsappRecipients().catch(() => [] as string[]);
+        for (const card of batch) {
+          const key = card.isProcess ? `p:${card.id}` : `u:${card.id}`;
+          if (alerted.has(key)) continue;
+          const cardLabel = `${card.cardNumber != null ? `#${card.cardNumber} ` : ''}${card.name ?? 'Sem nome'}`;
+          const message =
+            `⏰ ATRASADO: ${cardLabel} está há ${card.days} dias em "${card.labelName}" ` +
+            `(limite: ${card.limitDays} ${card.limitDays === 1 ? 'dia' : 'dias'}). ` +
+            `Se estourou o prazo, algo deu errado — verifique o card!`;
+          try {
+            await db.notification.createMany({
+              data: recipients.map((recipientId) => ({
+                recipientId,
+                authorId: OVERDUE_AUTHOR_ID,
+                authorName: '⏰ Prazo do Kanban',
+                targetName: card.name ?? 'Card sem nome',
+                message,
+                userId: card.isProcess ? null : card.id,
+                processId: card.isProcess ? card.id : null,
+              })),
+            });
+            results.overdueAlerts++;
+          } catch (err) {
+            console.error('[WHATSAPP CRON] Falha no alerta de card atrasado:', card.id, err);
+            results.errors++;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[WHATSAPP CRON] Falha na varredura de cards atrasados:', err);
+    results.errors++;
   }
 
   return NextResponse.json({ ok: true, ...results });

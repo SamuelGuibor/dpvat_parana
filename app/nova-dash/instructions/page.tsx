@@ -7,6 +7,7 @@ import { LockerModal } from "./components/LokerModal";
 import { ViewModal } from "./components/ViewModal";
 import { DeleteConfirm } from "./components/DeleteConfirm";
 import type { LockerEntry } from "./components/LokerCard";
+import { toast } from 'sonner';
 
 {/* MARKER-MAKE-KIT-INVOKED */}
 {/* MARKER-MAKE-KIT-DISCOVERY-READ */}
@@ -142,7 +143,7 @@ export default function App() {
       setDeleteId(null);
     } catch (e) {
       console.error(e);
-      alert("Não foi possível excluir a instrução.");
+      toast.error("Não foi possível excluir a instrução.");
     } finally {
       setDeleting(false);
     }

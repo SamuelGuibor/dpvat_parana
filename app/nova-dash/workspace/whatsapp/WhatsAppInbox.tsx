@@ -8,9 +8,10 @@ import {
   UserRound, Undo2, Archive, Headset, Inbox as InboxIcon, Search, X,
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
-  HelpCircle, AlertTriangle, StickyNote,
+  HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import { Avatar, AvatarFallback } from '@/app/_shared/ui/avatar';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -29,6 +30,7 @@ import {
   editWhatsAppMessage, deleteWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
 import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { WhatsAppComposer } from './WhatsAppComposer';
@@ -117,6 +119,8 @@ export function WhatsAppInbox() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
+
+  const { confirm, confirmDialog } = useConfirm();
 
   function reloadTags() {
     listWhatsAppTags().then(setAllTags).catch(() => {});
@@ -395,7 +399,11 @@ export function WhatsAppInbox() {
   }
 
   async function handleDelete(msg: WhatsAppThreadMessage) {
-    if (!window.confirm('Apagar esta mensagem da thread? (ela continua no celular do cliente)')) return;
+    if (!(await confirm({
+      title: 'Apagar mensagem da thread',
+      description: 'Ela some só para a equipe — no celular do cliente a mensagem continua.',
+      confirmLabel: 'Apagar',
+    }))) return;
     try {
       await deleteWhatsAppMessage(msg.id);
       await mutateMessages();
@@ -406,6 +414,7 @@ export function WhatsAppInbox() {
 
   return (
     <div className="flex h-full overflow-hidden rounded-2xl border border-[#dce8e1] bg-[#dce8e1] shadow-sm dark:border-zinc-800 whatsapp-darkreader">
+      {confirmDialog}
       {/* ---------- Lista de conversas ---------- */}
       <aside className="flex w-[320px] shrink-0 flex-col border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader">
         {/* Cabeçalho fixo: título + busca + tags (não rola com a lista) */}
@@ -899,7 +908,7 @@ function ThreadMessageRow({
               <span className="line-clamp-2">{msg.replyToBody ?? '—'}</span>
             </button>
           )}
-          {msg.mediaKey && <WaMediaBubble mediaKey={msg.mediaKey} mediaType={msg.mediaType} mine={mine} />}
+          {msg.mediaKey && <WaMediaBubble msg={msg} mine={mine} />}
           {!msg.mediaKey && msg.mediaType && (
             <span className={`mb-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold ${mine ? 'bg-white/15' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
               <Paperclip className="h-3.5 w-3.5" /> Enviando anexo...
@@ -937,11 +946,17 @@ function ThreadMessageRow({
 }
 
 /**
- * Mídia inline na bolha: imagem/vídeo tocam direto, áudio ganha player nativo.
- * Documento continua como botão (abre em nova aba). Busca a URL pré-assinada
- * uma vez (cache em memória) e mostra estado de carregando/erro.
+ * Mídia inline na bolha — visual novo:
+ *   - imagem: cartão arredondado com zoom no hover, clique abre em nova aba
+ *   - vídeo: player nativo em cartão arredondado
+ *   - áudio: player próprio (play/pausa + barra + tempo) e botão "Transcrever"
+ *     (IA; o texto fica salvo na mensagem — o próximo clique é grátis)
+ *   - documento: cartão com ícone, extensão em selo e ação "abrir"
+ * A URL pré-assinada é buscada uma vez (cache em memória via getMediaUrl).
  */
-function WaMediaBubble({ mediaKey, mediaType, mine }: { mediaKey: string; mediaType: string | null; mine: boolean }) {
+function WaMediaBubble({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolean }) {
+  const mediaKey = msg.mediaKey as string;
+  const mediaType = msg.mediaType;
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -967,7 +982,7 @@ function WaMediaBubble({ mediaKey, mediaType, mine }: { mediaKey: string; mediaT
 
   if (failed) {
     return (
-      <button onClick={openInNewTab} title={docName} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
+      <button onClick={openInNewTab} title={docName} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
         <Paperclip className="h-4 w-4 shrink-0" /> <span className="truncate">{docName}</span>
       </button>
     );
@@ -975,12 +990,21 @@ function WaMediaBubble({ mediaKey, mediaType, mine }: { mediaKey: string; mediaT
 
   if (mediaType?.startsWith('image/')) {
     return url ? (
-      <button onClick={openInNewTab} className="mb-1 block overflow-hidden rounded-lg">
+      <button
+        onClick={openInNewTab}
+        title="Abrir imagem em tamanho real"
+        className="group/img relative mb-1 block overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10"
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="Imagem enviada" className="max-h-64 max-w-full rounded-lg object-cover" />
+        <img src={url} alt="Imagem enviada" className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]" />
+        <span className="pointer-events-none absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/25 via-transparent to-transparent p-2 opacity-0 transition-opacity group-hover/img:opacity-100">
+          <span className="rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+            Abrir
+          </span>
+        </span>
       </button>
     ) : (
-      <div className={`mb-1 flex h-32 w-48 items-center justify-center rounded-lg ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
+      <div className={`mb-1 flex h-36 w-52 items-center justify-center rounded-xl ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
         <Loader2 className="h-5 w-5 animate-spin opacity-60" />
       </div>
     );
@@ -988,36 +1012,191 @@ function WaMediaBubble({ mediaKey, mediaType, mine }: { mediaKey: string; mediaT
 
   if (mediaType?.startsWith('video/')) {
     return url ? (
-      <video src={url} controls className="mb-1 max-h-64 max-w-full rounded-lg" />
+      <div className="mb-1 overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10">
+        <video src={url} controls className="max-h-72 max-w-full" />
+      </div>
     ) : (
-      <div className={`mb-1 flex h-32 w-48 items-center justify-center rounded-lg ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
+      <div className={`mb-1 flex h-36 w-52 items-center justify-center rounded-xl ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
         <Loader2 className="h-5 w-5 animate-spin opacity-60" />
       </div>
     );
   }
 
   if (mediaType?.startsWith('audio/')) {
-    return url ? (
-      <audio src={url} controls className="mb-1 h-10 w-64 max-w-full" />
-    ) : (
-      <div className={`mb-1 flex h-10 w-64 max-w-full items-center gap-2 rounded-lg px-2 text-sm ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
-        <Loader2 className="h-4 w-4 animate-spin opacity-60" /> Carregando áudio...
-      </div>
-    );
+    return <WaAudioBubble msg={msg} mine={mine} url={url} />;
   }
 
+  const ext = (docName.split('.').pop() ?? '').toUpperCase().slice(0, 5);
   return (
     <button
       onClick={openInNewTab}
       title={docName}
-      className={`mb-1 flex max-w-[16rem] items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}
+      className={`mb-1 flex w-64 max-w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold shadow-sm transition-colors ${
+        mine
+          ? 'border-white/15 bg-white/10 hover:bg-white/20'
+          : 'border-gray-100 bg-gray-50 hover:bg-gray-100 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'
+      }`}
     >
-      <FileText className="h-5 w-5 shrink-0 opacity-80" />
-      <span className="flex min-w-0 flex-col items-start leading-tight">
-        <span className="w-full truncate">{docName}</span>
-        <span className="text-[11px] font-normal opacity-60">Abrir documento</span>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${mine ? 'bg-white/15' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>
+        <FileText className="h-5 w-5" />
       </span>
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate">{docName}</span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] font-normal opacity-70">
+          {ext && (
+            <span className={`rounded px-1 py-px text-[10px] font-bold ${mine ? 'bg-white/20' : 'bg-gray-200 dark:bg-zinc-800'}`}>{ext}</span>
+          )}
+          Clique para abrir
+        </span>
+      </span>
+      <Download className={`h-4 w-4 shrink-0 ${mine ? 'text-white/70' : 'text-gray-400'}`} />
     </button>
+  );
+}
+
+function fmtAudioTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * Player de áudio próprio (o <audio controls> nativo destoava do resto do
+ * inbox) + botão "Transcrever": chama a IA uma vez, o texto fica salvo na
+ * mensagem e aparece pra equipe inteira nas próximas aberturas.
+ */
+function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: boolean; url: string | null }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [current, setCurrent] = useState(0);
+  const [transcript, setTranscript] = useState<string | null>(msg.transcript ?? null);
+  const [transcribing, setTranscribing] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(true);
+
+  // Transcrição pode chegar pelo polling (outro atendente transcreveu).
+  useEffect(() => {
+    if (msg.transcript && !transcript) setTranscript(msg.transcript);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msg.transcript]);
+
+  function toggle() {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) a.pause();
+    else a.play().catch(() => toast.error('Não foi possível tocar o áudio.'));
+  }
+
+  function seek(e: React.MouseEvent<HTMLDivElement>) {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    a.currentTime = frac * duration;
+  }
+
+  async function handleTranscribe() {
+    if (transcribing) return;
+    setTranscribing(true);
+    try {
+      const text = await transcribeWhatsAppAudio(msg.id);
+      setTranscript(text);
+      setShowTranscript(true);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao transcrever o áudio.');
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  const progress = duration ? (current / duration) * 100 : 0;
+  const isTemp = msg.id.startsWith('temp-');
+
+  return (
+    <div className="mb-1 w-72 max-w-full">
+      {url && (
+        <audio
+          ref={audioRef}
+          src={url}
+          preload="metadata"
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => { setPlaying(false); setCurrent(0); }}
+          className="hidden"
+        />
+      )}
+      <div className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 shadow-sm ${
+        mine ? 'border-white/15 bg-white/10' : 'border-gray-100 bg-gray-50 dark:border-zinc-800 dark:bg-zinc-900/60'
+      }`}>
+        <button
+          onClick={toggle}
+          disabled={!url}
+          title={playing ? 'Pausar' : 'Tocar áudio'}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50 ${
+            mine
+              ? 'bg-white/90 text-emerald-700 hover:bg-white'
+              : 'bg-emerald-600 text-white hover:bg-emerald-700'
+          }`}
+        >
+          {!url
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : playing
+              ? <Pause className="h-4 w-4" />
+              : <Play className="ml-0.5 h-4 w-4" />}
+        </button>
+        <div className="min-w-0 flex-1">
+          <div
+            onClick={seek}
+            title="Clique para avançar"
+            className={`h-1.5 cursor-pointer overflow-hidden rounded-full ${mine ? 'bg-white/25' : 'bg-gray-200 dark:bg-zinc-700'}`}
+          >
+            <div
+              className={`h-full rounded-full transition-[width] duration-150 ${mine ? 'bg-white' : 'bg-emerald-500'}`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className={`mt-1 flex items-center justify-between text-[11px] tabular-nums ${mine ? 'text-white/75' : 'text-gray-400'}`}>
+            <span className="flex items-center gap-1"><Mic className="h-3 w-3" /> áudio</span>
+            <span>{fmtAudioTime(current)} / {fmtAudioTime(duration)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Transcrição pela IA */}
+      {!transcript && !isTemp && (
+        <button
+          onClick={handleTranscribe}
+          disabled={transcribing}
+          className={`mt-1.5 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors disabled:opacity-70 ${
+            mine
+              ? 'bg-white/15 text-white/90 hover:bg-white/25'
+              : 'bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/70'
+          }`}
+        >
+          {transcribing
+            ? <><Loader2 className="h-3 w-3 animate-spin" /> Transcrevendo…</>
+            : <><Sparkles className="h-3 w-3" /> Transcrever com IA</>}
+        </button>
+      )}
+      {transcript && (
+        <div className={`mt-1.5 rounded-lg border-l-2 px-2.5 py-1.5 text-sm leading-relaxed ${
+          mine
+            ? 'border-white/40 bg-white/10 text-white/90'
+            : 'border-violet-400 bg-violet-50/70 text-gray-600 dark:bg-violet-950/30 dark:text-zinc-300'
+        }`}>
+          <button
+            onClick={() => setShowTranscript((v) => !v)}
+            className={`mb-0.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide ${mine ? 'text-white/70' : 'text-violet-500 dark:text-violet-300'}`}
+          >
+            <Sparkles className="h-2.5 w-2.5" /> Transcrição {showTranscript ? '▾' : '▸'}
+          </button>
+          {showTranscript && <p className="whitespace-pre-wrap break-words">{transcript}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 

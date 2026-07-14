@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Checkbox } from "@/app/_shared/ui/checkbox";
 import { Input } from "@/app/_shared/ui/input";
 import { Plus, Trash2, Loader2 } from "lucide-react";
+import { toast } from 'sonner';
 
 type Item = {
   id: string;
@@ -86,7 +87,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
       setNewText("");
     } catch (e) {
       console.error(e);
-      alert("Não foi possível adicionar o item.");
+      toast.error("Não foi possível adicionar o item.");
     } finally {
       setAdding(false);
     }
@@ -124,7 +125,7 @@ export function AdminChecklist({ cardId, isProcess, title = "Checklist Administr
     } catch (e) {
       console.error(e);
       setItems(backup);
-      alert("Não foi possível excluir o item.");
+      toast.error("Não foi possível excluir o item.");
     }
   }
 

@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from '@/app/_shared/ui/avatar';
 import { MessageSquare, Send, Clock, Trash2, Pencil, Check, X, Bot } from 'lucide-react';
 import { MentionsInput, Mention } from 'react-mentions';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import { createComment } from '@/app/_actions/comments/comment-actions';
@@ -44,6 +45,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
   async function send() {
     if (!newComment.trim()) return;
@@ -62,7 +64,10 @@ export function CommentsTab({ cardId, isProcess }: Props) {
   }
 
   async function handleDelete(commentId: string) {
-    if (!confirm('Deseja excluir este comentário?')) return;
+    if (!(await confirm({
+      title: 'Excluir comentário',
+      description: 'Essa ação não pode ser desfeita.',
+    }))) return;
     setLoadingId(commentId);
     try {
       await deleteComment(commentId);
@@ -95,6 +100,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
 
   return (
     <div className="space-y-6 px-10 pt-6">
+      {confirmDialog}
       <div className="space-y-4">
         {/* Nova mensagem */}
         <div className="space-y-2 relative">
@@ -108,6 +114,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
               onChange={(e: any) => setNewComment(e.target.value)}
               placeholder="Comente e use @ para mencionar membros da equipe... Use **negrito** ou *itálico*"
               style={mentionsStyles}
+              allowSuggestionsAboveCursor
             >
               <Mention
                 trigger="@"

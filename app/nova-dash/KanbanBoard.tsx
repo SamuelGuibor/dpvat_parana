@@ -11,6 +11,7 @@ import {
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
   User, GripVertical, Zap, CheckSquare, Minimize2, Maximize2,
   Archive, DollarSign, XCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { AutomationsPanel } from './AutomationsPanel';
 import { getStatusOrderByService } from './card-dialog/constants';
@@ -135,6 +136,13 @@ export interface KanbanCard {
   commentCount?: number;
   attachmentCount?: number;
   cardNumber?: number | null;
+  tags?: CardTagInfo[];
+}
+
+export interface CardTagInfo {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface Comment {
@@ -665,6 +673,49 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
               <Badge variant="outline" className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
                 {card.service}
               </Badge>
+              {/* Tags do card: mostra as 2 primeiras; o resto vira "+N" com
+                  dropdown (gerenciar é só dentro do card). */}
+              {(card.tags ?? []).slice(0, 2).map((tag) => (
+                <span
+                  key={tag.id}
+                  title={tag.name}
+                  className="max-w-[90px] truncate rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                  style={{ backgroundColor: tag.color }}
+                >
+                  {tag.name}
+                </span>
+              ))}
+              {(card.tags?.length ?? 0) > 2 && (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      title="Ver todas as tags"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600 shadow-sm hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    >
+                      +{(card.tags?.length ?? 0) - 2}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuLabel className="text-xs text-gray-400">Tags deste card</DropdownMenuLabel>
+                    <div className="flex flex-wrap gap-1.5 px-2 pb-2">
+                      {(card.tags ?? []).map((tag) => (
+                        <span
+                          key={tag.id}
+                          className="rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                          style={{ backgroundColor: tag.color }}
+                        >
+                          {tag.name}
+                        </span>
+                      ))}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => onCardClick(card)} className="text-xs">
+                      Gerenciar tags (abrir card)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <div className="relative flex items-center gap-1 ml-auto">
                 <Clock className="w-4 h-4" />
                 {renderTimerBadge(card)}
@@ -822,6 +873,13 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         Desistiram Expressamente
                       </DropdownMenuItem>
 
+                      <DropdownMenuItem
+                        onSelect={(e) => { e.preventDefault(); onArchive(card.id, "voltar_um_dia"); }}
+                        className="cursor-pointer text-indigo-600 focus:text-indigo-600 focus:bg-indigo-50 dark:focus:bg-indigo-950/40"
+                      >
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Voltar um Dia
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
 
                   </DropdownMenu>
@@ -884,7 +942,9 @@ const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
     a.commentCount === b.commentCount &&
     a.attachmentCount === b.attachmentCount &&
     a.status === b.status &&
-    a.isProcess === b.isProcess
+    a.isProcess === b.isProcess &&
+    (a.tags ?? []).map((t) => `${t.id}:${t.name}:${t.color}`).join(',') ===
+      (b.tags ?? []).map((t) => `${t.id}:${t.name}:${t.color}`).join(',')
   );
 });
 
@@ -1227,6 +1287,12 @@ export const KanbanBoard: React.FC = () => {
     users: Record<string, { comments: number; attachments: number }>;
     processes: Record<string, { comments: number; attachments: number }>;
   }>({ users: {}, processes: {} });
+  // Tags dos cards (CardTag): buscadas em lote junto com as contagens e
+  // atualizadas na hora pelo evento 'card-tags-changed' (vindo do CardDialog).
+  const [cardTags, setCardTags] = useState<{
+    users: Record<string, CardTagInfo[]>;
+    processes: Record<string, CardTagInfo[]>;
+  }>({ users: {}, processes: {} });
   const [searchOpen, setSearchOpen] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
@@ -1288,6 +1354,17 @@ export const KanbanBoard: React.FC = () => {
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function handleTagsChanged(e: Event) {
+      const { cardId, isProcess, tags } = (e as CustomEvent<{ cardId: string; isProcess: boolean; tags: CardTagInfo[] }>).detail;
+      setCardTags((prev) => isProcess
+        ? { ...prev, processes: { ...prev.processes, [cardId]: tags } }
+        : { ...prev, users: { ...prev.users, [cardId]: tags } });
+    }
+    window.addEventListener('card-tags-changed', handleTagsChanged);
+    return () => window.removeEventListener('card-tags-changed', handleTagsChanged);
   }, []);
 
   useEffect(() => {
@@ -1413,14 +1490,19 @@ export const KanbanBoard: React.FC = () => {
 
     (async () => {
       try {
-        const res = await fetch('/api/card-counts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userIds, processIds }),
-        });
-        if (!res.ok) throw new Error('Falha ao buscar contagens');
-        const data = await res.json();
+        const body = JSON.stringify({ userIds, processIds });
+        const headers = { 'Content-Type': 'application/json' };
+        const [countsRes, tagsRes] = await Promise.all([
+          fetch('/api/card-counts', { method: 'POST', headers, body }),
+          fetch('/api/card-tags/lookup', { method: 'POST', headers, body }),
+        ]);
+        if (!countsRes.ok) throw new Error('Falha ao buscar contagens');
+        const data = await countsRes.json();
         if (!cancelled) setCounts(data);
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json();
+          if (!cancelled) setCardTags({ users: tagsData.users ?? {}, processes: tagsData.processes ?? {} });
+        }
       } catch (err) {
         console.error('[card-counts]', err);
       }
@@ -1457,6 +1539,7 @@ export const KanbanBoard: React.FC = () => {
         commentCount: c?.comments ?? 0,
         attachmentCount: c?.attachments ?? 0,
         cardNumber: item.cardNumber ?? null,
+        tags: (item.isProcess ? cardTags.processes : cardTags.users)?.[item.id] ?? [],
       };
     });
 
@@ -1478,7 +1561,7 @@ export const KanbanBoard: React.FC = () => {
     }
 
     setColumns(newColumns);
-  }, [filteredItems, labels, serviceFilter, counts, debouncedQuery]);
+  }, [filteredItems, labels, serviceFilter, counts, cardTags, debouncedQuery]);
 
   // ============= LABEL CRUD =============
   async function createLabel(data: LabelInput) {
@@ -1592,8 +1675,8 @@ export const KanbanBoard: React.FC = () => {
   const handleQuickAction = useCallback((cardId: string, action: string) => {
     const card = columnsRef.current.flatMap(col => col.cards).find(c => c.id === cardId);
     if (!card) return;
-    if (action === 'email') alert(`📧 Enviando email para ${card.assignee} sobre: ${card.title}`);
-    else if (action === 'whatsapp') alert(`💬 Enviando WhatsApp para ${card.assignee} sobre: ${card.title}`);
+    if (action === 'email') toast.info(`📧 Enviando email para ${card.assignee} sobre: ${card.title}`);
+    else if (action === 'whatsapp') toast.info(`💬 Enviando WhatsApp para ${card.assignee} sobre: ${card.title}`);
   }, []);
 
   const handleCardUpdate = (updatedCard: KanbanCard) => {
@@ -1646,6 +1729,7 @@ export const KanbanBoard: React.FC = () => {
       nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
       descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
       desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
+      voltar_um_dia: "VOLTAR UM DIA",
     };
 
     setArchiveStatus({ id: cardId, isProcess, status })

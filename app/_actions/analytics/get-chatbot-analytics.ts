@@ -180,8 +180,10 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   for (const l of logs) {
     const meta = (l.metadata ?? {}) as any;
 
-    // Gasto com a API do Claude (janelas fixas de 7 e 30 dias).
-    if (l.action === 'wa_bot' && meta.usage) {
+    // Gasto com a API do Claude (janelas fixas de 7 e 30 dias). Entram na
+    // conta as decisões do bot (wa_bot) e as chamadas de agent-assist —
+    // sugestão de resposta (wa_suggest) e resumo pro card (wa_summary).
+    if (['wa_bot', 'wa_suggest', 'wa_summary'].includes(l.action) && meta.usage) {
       const usd = usageCostUSD(meta.usage);
       const tokens =
         (meta.usage.inputTokens ?? 0) + (meta.usage.outputTokens ?? 0) +

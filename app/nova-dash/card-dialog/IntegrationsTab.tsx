@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Mail, MessageCircle } from 'lucide-react';
 import { IoIosDocument } from 'react-icons/io';
 import type { ExtendedKanbanCard } from './types';
+import { toast } from 'sonner';
 
 interface Template {
   filename: string;
@@ -82,7 +83,7 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `Erro ${res.status}` }));
-      alert(`Erro ao gerar PDF: ${err.error || res.statusText}`);
+      toast.error(`Erro ao gerar PDF: ${err.error || res.statusText}`);
       return;
     }
 
@@ -141,7 +142,7 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
             buttonClass="bg-blue-600 hover:bg-blue-700"
             buttonIcon={<Mail className="w-4 h-4 mr-2" />}
             buttonLabel="Solicitar Prontuário"
-            onClick={() => alert('Solicitando Prontuário por Email...')}
+            onClick={() => toast.info('Solicitando Prontuário por Email...')}
             disabled
           />
           <IntegrationCard
@@ -152,7 +153,7 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
             buttonClass="bg-green-600 hover:bg-green-700"
             buttonIcon={<MessageCircle className="w-4 h-4 mr-2" />}
             buttonLabel="Enviar Status Atual"
-            onClick={() => alert(`Enviando WhatsApp para etapa: ${editedCard.status}`)}
+            onClick={() => toast.info(`Enviando WhatsApp para etapa: ${editedCard.status}`)}
             disabled
           />
         </div>

@@ -283,7 +283,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-md">Em Negociação - Honorários</CardTitle>
             <FaPersonCircleQuestion className="text-blue-600" size={30} />
@@ -297,7 +297,7 @@ export const StrategicDashboard: React.FC = () => {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card> */}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -315,7 +315,7 @@ export const StrategicDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-md">Não Responde</CardTitle>
             <TbXboxX className=" text-orange-600" size={32} />
@@ -329,7 +329,7 @@ export const StrategicDashboard: React.FC = () => {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card> */}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -379,8 +379,8 @@ export const StrategicDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          {/* <CardHeader className="flex flex-row items-center justify-between pb-2">
+        {/* <Card>
+         <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-md">Contratado <span className='font-bold'>(Mês Atual)</span></CardTitle>
             <FaPersonCircleCheck className="text-green-600" size={32} />
           </CardHeader>
@@ -392,8 +392,8 @@ export const StrategicDashboard: React.FC = () => {
                 {contratadoMesAtual}
               </div>
             )}
-          </CardContent> */}
-        </Card>
+          </CardContent> 
+        </Card> */}
 
       </div>
 
@@ -403,9 +403,9 @@ export const StrategicDashboard: React.FC = () => {
           <TabsTrigger value="form-leads">Leads</TabsTrigger>
           {/* <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger> */}
-          <TabsTrigger value="integrations">Integrações</TabsTrigger>
+          {/* <TabsTrigger value="integrations">Integrações</TabsTrigger> */}
           <TabsTrigger value="calendario">Calendário</TabsTrigger>
-          <TabsTrigger value="botIA">Bot IA</TabsTrigger>
+          {/* <TabsTrigger value="botIA">Bot IA</TabsTrigger> */}
         </TabsList>
 
         <TabsContent value="analytics" className="space-y-4">
@@ -441,12 +441,12 @@ export const StrategicDashboard: React.FC = () => {
               <div className="relative space-y-1 text-sm left-5">
                 <div className="flex items-center gap-2">
                   <FaSquare className="w-3 h-3 text-[#f59e0b]" />
-                  <span>Iniciado | Não Responde</span>
+                  <span>Iniciado</span>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <FaSquare className="w-3 h-3 text-[#3b82f6]" />
-                  <span>Em honorário | Em conversa | Envio Documentos</span>
+                  <span>Em conversa | Envio Documentos</span>
                 </div>
 
                 <div className="flex items-center gap-2">

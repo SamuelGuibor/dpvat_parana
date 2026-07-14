@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Save, FileBadge, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props) {
+  const { confirm, confirmDialog } = useConfirm();
   const [templates, setTemplates] = useState<WhatsAppTemplateDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,7 +79,10 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Excluir este template do cadastro?')) return;
+    if (!(await confirm({
+      title: 'Excluir template',
+      description: 'Ele sai só do cadastro do sistema — o template aprovado na Meta continua existindo.',
+    }))) return;
     try {
       await deleteWhatsAppTemplate(id);
       if (editing.id === id) setEditing(EMPTY);
@@ -90,6 +95,7 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {confirmDialog}
       <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2.5 text-xl">

@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
   Building2, Plus, Pencil, Trash2, Check, X, Users, TrendingUp, Loader2, Info,
   Trophy, UserPlus, Activity, UserX, Crown,
@@ -166,6 +167,7 @@ export function SectorDashboard({ range }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [chartMode, setChartMode] = useState<'total' | 'perMember'>('total');
+  const { confirm, confirmDialog } = useConfirm();
 
   const load = useCallback(async () => {
     try {
@@ -227,7 +229,10 @@ export function SectorDashboard({ range }: Props) {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Excluir o setor "${name}"? As pessoas nele ficam sem setor.`)) return;
+    if (!(await confirm({
+      title: `Excluir o setor "${name}"`,
+      description: 'As pessoas dele ficam sem setor (nada mais é apagado).',
+    }))) return;
     try {
       await deleteSector(id);
       toast.success('Setor excluído.');
@@ -289,6 +294,7 @@ export function SectorDashboard({ range }: Props) {
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
       {/* Cartões de resumo */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard icon={Activity} label="Ações no período" value={analytics.totals.actions}

@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { MentionsInput, Mention } from 'react-mentions';
 import { Hash, MessageSquare, Plus, Reply, X, Users, Lock, Pencil, Trash2, Check, Ban, Megaphone } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { usePresence, type PresenceMember } from '@/app/_shared/hooks/use-presence';
 import {
@@ -404,6 +405,7 @@ function MessageRow({
   const [editText, setEditText] = useState(msg.body);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
   const deleted = !!msg.deletedAt;
 
   async function saveEdit() {
@@ -422,7 +424,11 @@ function MessageRow({
   }
 
   async function confirmDelete() {
-    if (!confirm('Apagar esta mensagem?')) return;
+    if (!(await confirm({
+      title: 'Apagar mensagem',
+      description: 'Ela vira "mensagem apagada" para todo mundo do canal.',
+      confirmLabel: 'Apagar',
+    }))) return;
     setBusy(true);
     try {
       await onDelete();
@@ -435,6 +441,7 @@ function MessageRow({
 
   return (
     <div className={`group flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-0.5' : 'mt-2'}`}>
+      {confirmDialog}
       {/* Avatar só para os outros (WhatsApp não mostra o seu). */}
       <div className="w-7 shrink-0">
         {!mine && !grouped && (
@@ -466,7 +473,8 @@ function MessageRow({
                 onChange={(e: any) => setEditText(e.target.value)}
                 onKeyDown={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); } if (e.key === 'Escape') setEditing(false); }}
                 style={editMentionsStyles}
-                autoFocus               
+                allowSuggestionsAboveCursor
+                autoFocus
                >
                 <Mention
                   trigger="@"

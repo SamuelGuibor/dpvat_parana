@@ -5,6 +5,7 @@ import {
   applyStatusUpdate,
   type IncomingWaMessage,
   type IncomingWaStatus,
+  type IngestResult,
 } from "@/app/_shared/lib/whatsapp/service";
 import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
 
@@ -23,7 +24,9 @@ import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
 
 export const dynamic = "force-dynamic";
 
-export const maxDuration = 60;
+// 120s: o fluxo do bot agora inclui o debounce de rajada (~8s) antes de
+// chamar a IA. A Vercel limita ao teto do plano automaticamente.
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -92,13 +95,19 @@ export async function POST(req: NextRequest) {
         // Nome de perfil do remetente (quando a Meta manda os contatos).
         const profileName: string | undefined = value.contacts?.[0]?.profile?.name;
 
+        // Ingere TODAS as mensagens do payload primeiro (a Meta pode mandar
+        // várias de uma vez) e só depois aciona o bot — UMA vez por contato,
+        // na mensagem mais recente. O lote inteiro é agregado pelo próprio
+        // bot (debounce de rajada + burst desde a última resposta).
+        const botCandidates = new Map<string, IngestResult>();
         for (const msg of value.messages ?? []) {
           const result = await ingestIncomingMessage(msg, profileName);
-
-          // Conversa em modo bot → IA responde (ou escala pra fila humana).
           if (result?.isNew && result.conversationStatus === "bot") {
-            await handleIncomingWhatsApp(result);
+            botCandidates.set(result.contactId, result); // fica a última do contato
           }
+        }
+        for (const result of botCandidates.values()) {
+          await handleIncomingWhatsApp(result);
         }
 
         for (const st of value.statuses ?? []) {

@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { createLog } from '@/app/_shared/lib/log';
+import { summarizeConversationToCard } from '@/app/_shared/lib/whatsapp/assist';
 import { hashPassword } from '@/app/_shared/lib/password';
 
 // Ficha do cliente dentro do atendimento de WhatsApp.
@@ -102,6 +103,10 @@ export async function getClientInfo(contactId: string): Promise<ClientInfoResult
     if (found) {
       userId = found.id;
       await db.whatsAppContact.update({ where: { id: contactId }, data: { userId } });
+      // Acabou de VINCULAR a conversa a um card → resumo automático do
+      // histórico vira comentário no card (best-effort, nunca quebra a ficha).
+      const me = await requireTeamMember();
+      await summarizeConversationToCard(contactId, { userId }, me);
     }
   }
 
@@ -189,6 +194,8 @@ export async function addClientFromConversation(contactId: string, input: Client
       where: { id: contactId },
       data: { userId: existing.id, clientDraft: Prisma.DbNull },
     });
+    // Vinculou ao cadastro existente → resumo da conversa no card.
+    await summarizeConversationToCard(contactId, { userId: existing.id }, me);
     return saveClientInfo(contactId, input);
   }
 
@@ -229,6 +236,10 @@ export async function addClientFromConversation(contactId: string, input: Client
     where: { id: contactId },
     data: { userId: user.id, clientDraft: Prisma.DbNull, ...(fields.name ? { name: fields.name } : {}) },
   });
+
+  // Card recém-criado a partir da conversa → resumo automático do histórico
+  // como primeiro comentário (best-effort).
+  await summarizeConversationToCard(contactId, { userId: user.id }, me);
 
   return getClientInfo(contactId);
 }
