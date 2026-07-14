@@ -225,7 +225,7 @@ export const ESTADO_CIVIL = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúv
 
 export const NACIONALIDADES = [
   'Brasileiro(a)', 'Venezuelano(a)', 'Colombiano(a)', 'Uruguaio(a)',
-  'Argentino(a)', 'Peruano(a)', 'Boliviano(a)',
+  'Argentino(a)', 'Peruano(a)', 'Boliviano(a)', 'Equatoriana(o)'
 ];
 
 export const ATENDIMENTO_VIA = [
