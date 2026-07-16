@@ -203,7 +203,7 @@ export interface MetaTemplate {
 }
 
 export async function fetchApprovedTemplates(): Promise<MetaTemplate[]> {
-  const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? "";
+  const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
   if (!TOKEN || !wabaId) {
     throw new Error("Sincronização indisponível: configure WHATSAPP_WABA_ID (id da conta WhatsApp Business) no ambiente.");
   }

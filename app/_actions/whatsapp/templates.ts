@@ -70,9 +70,20 @@ export async function saveWhatsAppTemplate(input: {
  * então o envio nunca falha por divergência de variáveis/idioma.
  * Requer WHATSAPP_WABA_ID no ambiente.
  */
-export async function syncWhatsAppTemplatesFromMeta(): Promise<{ imported: number; skipped: number }> {
+export async function syncWhatsAppTemplatesFromMeta(): Promise<{ imported: number; skipped: number; error?: string }> {
   await requireTeamMember();
-  const metaTemplates = await fetchApprovedTemplates();
+
+  // Erros da Graph API voltam como campo `error` (não como throw): em
+  // produção o Next mascara exceptions de server action com um 500 genérico,
+  // e o atendente precisa LER o motivo (ex.: token expirado) pra agir.
+  let metaTemplates;
+  try {
+    metaTemplates = await fetchApprovedTemplates();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Falha ao consultar os templates na Meta.';
+    console.error('[WHATSAPP TEMPLATES] Sincronização falhou:', message);
+    return { imported: 0, skipped: 0, error: message };
+  }
 
   let imported = 0;
   let skipped = 0;
