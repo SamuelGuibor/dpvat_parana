@@ -43,8 +43,7 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
     try {
       const { imported, skipped, error } = await syncWhatsAppTemplatesFromMeta();
       if (error) {
-        // Erro da Graph API (ex.: token expirado) vem no retorno — em produção
-        // um throw da action chegaria aqui como 500 genérico, sem o motivo.
+
         toast.error(error, { duration: 12000 });
         return;
       }
