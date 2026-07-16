@@ -100,14 +100,13 @@ export default function Page() {
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60" />
-          <p className="text-sm opacity-70">Carregando sessão...</p>
+          <p className="text-sm opacity-70">Carregando sessão</p>
         </div>
       </div>
     );
   }
 
-  // Sessão resolvida: bloqueia apenas quem está logado mas não é ADMIN.
-  // (Quem não tem sessão já foi redirecionado pelo efeito acima.)
+
   if (status === 'unauthenticated') return null;
   if (session?.user?.role !== 'ADMIN') {
     return (
@@ -143,8 +142,6 @@ export default function Page() {
               />
             </Link>
             <div className="flex items-center gap-3">
-
-              {/* Modo escuro via Dark Reader (darkreader.org) */}
               <DarkModeToggle />
 
               <TeamPresence isDark={isDark} onOpenTeam={() => setOpen(true)} />
