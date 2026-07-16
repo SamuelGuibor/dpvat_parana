@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Bot, Loader2, BadgeCheck, XCircle, Headset, HelpCircle, AlertTriangle,
   Brain, Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
-  UserRound, Undo2, DollarSign, StickyNote, Users,
+  UserRound, Undo2, DollarSign, StickyNote, Users, ShieldAlert, ShieldCheck,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
@@ -41,6 +42,43 @@ function Metric({
     </div>
   );
 }
+
+// Avisos da Meta (Saúde da conta): cor/ícone por gravidade + rótulo por campo
+// do webhook. A gravidade vem pronta do servidor (metadata do log wa_account).
+const EVENT_SEVERITY_META: Record<string, { icon: React.ElementType; circle: string; label: string }> = {
+  critical: {
+    icon: ShieldAlert,
+    circle: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-400',
+    label: 'Crítico',
+  },
+  warning: {
+    icon: AlertTriangle,
+    circle: 'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400',
+    label: 'Atenção',
+  },
+  ok: {
+    icon: ShieldCheck,
+    circle: 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400',
+    label: 'Positivo',
+  },
+  info: {
+    icon: Info,
+    circle: 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-400',
+    label: 'Informativo',
+  },
+};
+
+const EVENT_FIELD_LABELS: Record<string, string> = {
+  account_update: 'Conta',
+  account_alerts: 'Alerta',
+  account_review_update: 'Revisão da conta',
+  phone_number_quality_update: 'Qualidade do número',
+  phone_number_name_update: 'Nome de exibição',
+  message_template_status_update: 'Template',
+  message_template_quality_update: 'Qualidade de template',
+  security: 'Segurança',
+  flows: 'Flows',
+};
 
 const ACTION_META: Record<string, { icon: React.ElementType; label: string }> = {
   wa_assign: { icon: UserRound, label: 'Assumiu' },
@@ -161,6 +199,48 @@ export function ChatbotDashboard() {
               hint="mês ÷ decisões do período"
             />
           </div>
+
+          {/* Saúde da conta WhatsApp: avisos oficiais da Meta (webhook) */}
+          <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-1 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
+              <ShieldCheck className="h-4 w-4 text-emerald-500" /> Saúde da conta WhatsApp
+            </h2>
+            <p className="mb-4 text-xs text-gray-400">
+              Avisos oficiais da Meta: violações de política, restrições, qualidade do número e status de templates.
+            </p>
+            {data.accountEvents.length === 0 ? (
+              <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                Nenhum aviso da Meta no período — conta em dia.
+              </div>
+            ) : (
+              <ul className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {data.accountEvents.map((e) => {
+                  const sev = EVENT_SEVERITY_META[e.severity] ?? EVENT_SEVERITY_META.info;
+                  const Icon = sev.icon;
+                  return (
+                    <li key={e.id} className="flex items-start gap-3 rounded-xl border border-gray-100 p-3 dark:border-zinc-800">
+                      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${sev.circle}`}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
+                          <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">
+                            {EVENT_FIELD_LABELS[e.field] ?? e.field}
+                          </span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{sev.label}</span>
+                        </div>
+                        <p className="break-words text-sm text-gray-700 dark:text-zinc-200">{e.message}</p>
+                        <p className="mt-0.5 text-[11px] text-gray-400">
+                          {formatDistanceToNow(new Date(e.at), { addSuffix: true, locale: ptBR })}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
 
           {/* Desempenho do atendimento humano */}
           {data.team.attendants.length > 0 && (

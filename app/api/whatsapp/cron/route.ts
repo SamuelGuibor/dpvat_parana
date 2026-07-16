@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
+import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
 
 // Detector de silêncio do bot (rodado por cron externo, a cada 15min):
 //
@@ -134,6 +135,13 @@ export async function GET(req: NextRequest) {
         await db.whatsAppConversation.update({ where: { id: conv.id }, data: { botNudge30At: new Date() } });
         continue;
       }
+      // Janela de 24h fechada → texto livre seria recusado pela Meta (131047).
+      // Não tenta: taxa de erro alta também derruba a nota de qualidade da
+      // conta. Marca o nudge pra fase 2 encerrar a conversa em silêncio.
+      if (!(await isWindowOpen(conv.contactId))) {
+        await db.whatsAppConversation.update({ where: { id: conv.id }, data: { botNudge30At: new Date() } });
+        continue;
+      }
       await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, NUDGE_30MIN);
       await db.whatsAppConversation.update({ where: { id: conv.id }, data: { botNudge30At: new Date() } });
       results.nudged30++;
@@ -160,10 +168,14 @@ export async function GET(req: NextRequest) {
   for (const conv of silentAfterNudge) {
     try {
       try {
-        const farewell = await buildFarewell(conv.contactId, conv.contact.name);
-        await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, farewell);
+        // Janela fechada → nem tenta a despedida (evita o erro 131047 na
+        // conta); encerra em silêncio.
+        if (await isWindowOpen(conv.contactId)) {
+          const farewell = await buildFarewell(conv.contactId, conv.contact.name);
+          await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, farewell);
+        }
       } catch (err) {
-        // Janela de 24h pode ter fechado — encerra mesmo sem conseguir avisar.
+        // Falha no envio não trava o encerramento.
         console.error('[WHATSAPP CRON] Despedida não entregue (encerrando mesmo assim):', conv.contactId, err);
       }
       await db.whatsAppConversation.update({

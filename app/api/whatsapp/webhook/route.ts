@@ -8,6 +8,7 @@ import {
   type IngestResult,
 } from "@/app/_shared/lib/whatsapp/service";
 import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
+import { handleAccountEvent } from "@/app/_shared/lib/whatsapp/account-events";
 
 // Webhook da WhatsApp Cloud API (Meta oficial).
 //
@@ -90,6 +91,14 @@ export async function POST(req: NextRequest) {
     for (const entry of payload?.entry ?? []) {
       for (const change of entry?.changes ?? []) {
         const value = change?.value;
+        // Eventos administrativos (violação de política, restrição, qualidade
+        // do número, status de template...): registra + notifica a equipe.
+        // Antes eram descartados sem rastro — a violação de spam da Meta
+        // chegou por aqui e a única evidência que sobrou foi o e-mail.
+        if (change?.field && change.field !== "messages") {
+          await handleAccountEvent(change.field, value as Record<string, unknown> | undefined);
+          continue;
+        }
         if (change?.field !== "messages" || !value) continue;
 
         // Nome de perfil do remetente (quando a Meta manda os contatos).

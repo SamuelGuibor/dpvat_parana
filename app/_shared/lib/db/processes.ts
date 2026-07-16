@@ -17,6 +17,7 @@ const processBasicSelect = {
   cardNumber: true,
   afastadoAte: true,
   archiveStatus: true,
+  boardOrder: true,
 };
 
 const processFullSelect = {

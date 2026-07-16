@@ -85,7 +85,9 @@ export async function GET(request: Request) {
           select: { id: true, service: true, type: true, cardNumber: true },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      // Ordem manual primeiro (sortOrder); arquivos sem ordem definida caem
+      // no fim, na ordem de criação.
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
     });
 
     return NextResponse.json(documents);

@@ -23,13 +23,15 @@ export async function POST() {
   try {
     const now = new Date();
 
+    // Card arquivado não gera notificação de vencimento — o caso já foi
+    // encerrado/movido pra fora do board, avisar só gera ruído.
     const [users, processes] = await Promise.all([
       db.user.findMany({
-        where: { afastadoAte: { lte: now }, afastadoNotificado: false },
+        where: { afastadoAte: { lte: now }, afastadoNotificado: false, archiveStatus: null },
         select: { id: true, name: true, afastadoAte: true },
       }),
       db.process.findMany({
-        where: { afastadoAte: { lte: now }, afastadoNotificado: false },
+        where: { afastadoAte: { lte: now }, afastadoNotificado: false, archiveStatus: null },
         select: { id: true, name: true, afastadoAte: true },
       }),
     ]);

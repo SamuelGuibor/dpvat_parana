@@ -1,13 +1,18 @@
 import { db } from "../prisma";
 
 export type AutomationCondition = {
+  // Campo do card, ou o campo especial "tags" (tags do card, com os
+  // operadores hasTag/notHasTag — o value guarda o NOME da tag).
   field: string;
-  operator: "equals" | "contains" | "startsWith" | "endsWith" | "notEquals" | "isEmpty" | "isNotEmpty";
+  operator:
+    | "equals" | "contains" | "startsWith" | "endsWith" | "notEquals"
+    | "isEmpty" | "isNotEmpty"
+    | "hasTag" | "notHasTag";
   value: string;
 };
 
 export type AutomationAction = {
-  type: "comment" | "file" | "whatsapp";
+  type: "comment" | "file" | "whatsapp" | "move";
   templateText?: string;
   templateFileKey?: string;
   templateFileName?: string;
@@ -17,6 +22,10 @@ export type AutomationAction = {
   waText?: string;
   waTemplateName?: string;
   waTemplateVars?: string[];
+  // Ação "move": coluna de destino. É uma ação TERMINAL — depois de mover,
+  // nada mais roda para a coluna antiga; as automações da coluna de destino
+  // disparam em seguida (com limite de encadeamento contra loops).
+  moveLabelId?: string;
 };
 
 export type AutomationWithLabel = Awaited<ReturnType<typeof fetchAutomations>>[number];

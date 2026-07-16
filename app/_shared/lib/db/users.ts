@@ -15,6 +15,7 @@ const userBasicSelect = {
   cardNumber: true,
   afastadoAte: true,
   archiveStatus: true,
+  boardOrder: true,
 };
 
 const userFullSelect = {

@@ -45,6 +45,7 @@ interface UserData {
   cardNumber?: number | null;
   afastadoAte?: string | null;
   archiveStatus?: string | null;
+  boardOrder?: number | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,6 +66,7 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
     cardNumber: user.cardNumber ?? null,
     afastadoAte: user.afastadoAte ? user.afastadoAte.toISOString() : null,
     archiveStatus: user.archiveStatus ?? null,
+    boardOrder: user.boardOrder ?? null,
     ...(fields === "full" && {
       cpf: user.cpf || "",
       data_nasc: user.data_nasc || "",

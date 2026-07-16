@@ -3,7 +3,6 @@
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
-import { revalidatePath } from "next/cache";
 import { unstable_noStore as noStore } from "next/cache";
 import { createLog } from "../../_shared/lib/log";
 
@@ -76,7 +75,8 @@ export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStat
     },
   });
 
-  revalidatePath("/nova-dash");
+  // Sem revalidatePath: o board remove/repõe o card de forma otimista e o
+  // polling sincroniza o resto — revalidar re-renderizava a rota inteira.
   return { success: true };
 }
 

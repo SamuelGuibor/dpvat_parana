@@ -42,6 +42,7 @@ import {
   X,
   Bot,
   MessageCircle,
+  MoveRight,
 } from "lucide-react";
 import { listWhatsAppTemplates } from "../_actions/whatsapp/templates";
 import { toast } from "sonner";
@@ -62,14 +63,17 @@ type Condition = {
 };
 
 type Action = {
-  type: "comment" | "file" | "whatsapp";
+  type: "comment" | "file" | "whatsapp" | "move";
   templateText?: string;
   templateFileKey?: string;
   templateFileName?: string;
   waText?: string;
   waTemplateName?: string;
   waTemplateVars?: string[];
+  moveLabelId?: string;
 };
+
+type CardTagOption = { id: string; name: string; color: string };
 
 type WaTemplateOption = {
   id: string;
@@ -106,6 +110,7 @@ interface AutomationsPanelProps {
 // ─── Field map ──────────────────────────────────────────────────────────────
 
 const CARD_FIELDS: { value: string; label: string }[] = [
+  { value: "tags", label: "Tag do card" },
   { value: "name", label: "Nome" },
   { value: "cpf", label: "CPF" },
   { value: "data_nasc", label: "Data de Nascimento" },
@@ -148,6 +153,14 @@ const OPERATORS = [
   { value: "isNotEmpty", label: "não está vazio" },
 ];
 
+// Operadores exclusivos do campo "tags" (o value guarda o NOME da tag).
+const TAG_OPERATORS = [
+  { value: "hasTag", label: "tem a tag" },
+  { value: "notHasTag", label: "não tem a tag" },
+  { value: "isEmpty", label: "não tem nenhuma tag" },
+  { value: "isNotEmpty", label: "tem alguma tag" },
+];
+
 const VARIABLE_CHIPS = [
   "name", "cpf", "rg", "data_nasc", "telefone", "email",
   "cidade", "estado", "cep", "hospital", "data_acidente",
@@ -169,8 +182,11 @@ function labelForField(val: string) {
   return CARD_FIELDS.find((f) => f.value === val)?.label ?? val;
 }
 
-function labelForOp(val: string) {
-  return OPERATORS.find((o) => o.value === val)?.label ?? val;
+function labelForOp(val: string, field?: string) {
+  const list = field === "tags" ? TAG_OPERATORS : OPERATORS;
+  return list.find((o) => o.value === val)?.label
+    ?? OPERATORS.find((o) => o.value === val)?.label
+    ?? val;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -186,6 +202,7 @@ function ConditionRow({
   onChange,
   onRemove,
   hospitals,
+  cardTags,
 }: {
   cond: Condition;
   index: number;
@@ -194,9 +211,17 @@ function ConditionRow({
   onChange: (c: Condition) => void;
   onRemove: () => void;
   hospitals: string[];
+  cardTags: CardTagOption[];
 }) {
   const needsValue = !["isEmpty", "isNotEmpty"].includes(cond.operator);
+  const isTagField = cond.field === "tags";
   const isHospitalField = HOSPITAL_FIELDS.has(cond.field);
+  const operatorOptions = isTagField ? TAG_OPERATORS : OPERATORS;
+  // Tag salva que foi excluída depois: mantém na lista pra não sumir do editor.
+  const tagOptions =
+    cond.value && !cardTags.some((t) => t.name === cond.value)
+      ? [{ id: "__missing__", name: cond.value, color: "#6b7280" }, ...cardTags]
+      : cardTags;
   // Garante que um valor já salvo apareça mesmo se sumir da lista (hospital removido).
   const hospitalOptions =
     cond.value && !hospitals.includes(cond.value)
@@ -214,7 +239,14 @@ function ConditionRow({
       <div className="flex-1 flex flex-wrap gap-2 bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-2 border border-gray-100 dark:border-zinc-700">
         <Select
           value={cond.field}
-          onValueChange={(v) => onChange({ ...cond, field: v })}
+          onValueChange={(v) => {
+            // Trocar de/para "tags" muda o conjunto de operadores — reseta.
+            if ((v === "tags") !== isTagField) {
+              onChange({ field: v, operator: v === "tags" ? "hasTag" : "equals", value: "" });
+            } else {
+              onChange({ ...cond, field: v });
+            }
+          }}
         >
           <SelectTrigger className="h-8 text-xs w-[170px]">
             <SelectValue />
@@ -236,13 +268,38 @@ function ConditionRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {OPERATORS.map((o) => (
+            {operatorOptions.map((o) => (
               <SelectItem key={o.value} value={o.value} className="text-xs">
                 {o.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+
+        {needsValue && isTagField && (
+          <Select
+            value={cond.value}
+            onValueChange={(v) => onChange({ ...cond, value: v })}
+          >
+            <SelectTrigger className="h-8 text-xs flex-1 min-w-[100px]">
+              <SelectValue placeholder="Selecionar tag..." />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {tagOptions.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-gray-400">Nenhuma tag criada ainda</div>
+              ) : (
+                tagOptions.map((t) => (
+                  <SelectItem key={t.id} value={t.name} className="text-xs">
+                    <span className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ background: t.color }} />
+                      {t.name}
+                    </span>
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        )}
 
         {needsValue && isHospitalField && (
           <Select
@@ -266,7 +323,7 @@ function ConditionRow({
           </Select>
         )}
 
-        {needsValue && !isHospitalField && (
+        {needsValue && !isHospitalField && !isTagField && (
           <Input
             value={cond.value}
             onChange={(e) => onChange({ ...cond, value: e.target.value })}
@@ -293,6 +350,8 @@ function ActionRow({
   onRemove,
   mentionUsers,
   waTemplates,
+  labels,
+  triggerLabelId,
 }: {
   action: Action;
   index: number;
@@ -300,6 +359,8 @@ function ActionRow({
   onRemove: () => void;
   mentionUsers: MentionableUser[];
   waTemplates: WaTemplateOption[];
+  labels: Label[];
+  triggerLabelId: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -344,8 +405,8 @@ function ActionRow({
           </span>
           <Select
             value={action.type}
-            onValueChange={(v: "comment" | "file" | "whatsapp") =>
-              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [] })
+            onValueChange={(v: "comment" | "file" | "whatsapp" | "move") =>
+              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [], moveLabelId: undefined })
             }
           >
             <SelectTrigger className="h-7 text-xs w-[160px]">
@@ -365,6 +426,11 @@ function ActionRow({
               <SelectItem value="whatsapp" className="text-xs">
                 <span className="flex items-center gap-1.5">
                   <MessageCircle className="w-3 h-3" /> Enviar WhatsApp
+                </span>
+              </SelectItem>
+              <SelectItem value="move" className="text-xs">
+                <span className="flex items-center gap-1.5">
+                  <MoveRight className="w-3 h-3" /> Mover Card
                 </span>
               </SelectItem>
             </SelectContent>
@@ -555,6 +621,42 @@ function ActionRow({
             </div>
           </div>
         )}
+
+        {action.type === "move" && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+              Mover o card para a coluna
+            </label>
+            <Select
+              value={action.moveLabelId ?? ""}
+              onValueChange={(v) => onChange({ ...action, moveLabelId: v })}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Selecionar coluna de destino..." />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {labels
+                  .filter((l) => l.id !== triggerLabelId)
+                  .map((l) => (
+                    <SelectItem key={l.id} value={l.id} className="text-xs">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                          style={{ background: l.color }}
+                        />
+                        {l.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-400 dark:text-zinc-500">
+              Se as condições forem verdadeiras, o card é movido para a coluna escolhida
+              e as automações dela disparam em seguida. Mover é a última ação executada —
+              o que vier depois dela nesta automação não roda.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -585,6 +687,8 @@ function AutomationEditor({
 
   const { data: mentionUsers = [] } = useSWR<MentionableUser[]>("/api/admins", fetcher);
   const { data: hospitals = [] } = useSWR<string[]>("/api/hospitals", fetcher);
+  // Tags dos cards — usadas nas condições (campo "Tag do card").
+  const { data: cardTags = [] } = useSWR<CardTagOption[]>("/api/card-tags", fetcher);
   // Templates aprovados na Meta (cadastro local) — fallback fora da janela de 24h.
   const { data: waTemplates = [] } = useSWR<WaTemplateOption[]>(
     "wa-templates",
@@ -612,6 +716,17 @@ function AutomationEditor({
 
     const invalidWa = actions.some((a) => a.type === "whatsapp" && !a.waText?.trim());
     if (invalidWa) { toast.error("Escreva a mensagem de WhatsApp da ação"); return; }
+
+    const invalidMove = actions.some((a) => a.type === "move" && !a.moveLabelId);
+    if (invalidMove) { toast.error("Selecione a coluna de destino da ação de mover"); return; }
+
+    const moveToSelf = actions.some((a) => a.type === "move" && a.moveLabelId === triggerLabelId);
+    if (moveToSelf) { toast.error("A ação de mover não pode apontar para a própria coluna que dispara"); return; }
+
+    const invalidTagCond = conditions.some(
+      (c) => c.field === "tags" && ["hasTag", "notHasTag"].includes(c.operator) && !c.value
+    );
+    if (invalidTagCond) { toast.error("Selecione a tag da condição"); return; }
 
     setSaving(true);
     try {
@@ -728,6 +843,7 @@ function AutomationEditor({
                   logic={conditionLogic}
                   total={conditions.length}
                   hospitals={hospitals}
+                  cardTags={cardTags}
                   onChange={(updated) =>
                     setConditions((p) => p.map((x, xi) => (xi === i ? updated : x)))
                   }
@@ -757,6 +873,8 @@ function AutomationEditor({
                   index={i}
                   mentionUsers={mentionUsers}
                   waTemplates={waTemplates}
+                  labels={labels}
+                  triggerLabelId={triggerLabelId}
                   onChange={(updated) =>
                     setActions((p) => p.map((x, xi) => (xi === i ? updated : x)))
                   }
@@ -784,11 +902,13 @@ function AutomationEditor({
 
 function AutomationCard({
   auto,
+  labels,
   onToggle,
   onEdit,
   onDelete,
 }: {
   auto: AutomationData;
+  labels: Label[];
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -875,7 +995,7 @@ function AutomationCard({
                 {auto.conditions.map((c, i) => (
                   <div key={i} className="text-xs bg-gray-50 dark:bg-zinc-800 rounded-lg px-3 py-1.5">
                     <span className="font-medium">{labelForField(c.field)}</span>{" "}
-                    <span className="text-gray-500">{labelForOp(c.operator)}</span>{" "}
+                    <span className="text-gray-500">{labelForOp(c.operator, c.field)}</span>{" "}
                     {c.value && <span className="font-mono text-blue-600 dark:text-blue-400">{c.value}</span>}
                   </div>
                 ))}
@@ -901,6 +1021,13 @@ function AutomationCard({
                       <span className="text-gray-600 dark:text-zinc-300 line-clamp-2">
                         {a.waText || "(sem mensagem)"}
                         {a.waTemplateName && <span className="text-gray-400"> · fallback: {a.waTemplateName}</span>}
+                      </span>
+                    </>
+                  ) : a.type === "move" ? (
+                    <>
+                      <MoveRight className="w-3.5 h-3.5 text-purple-500 shrink-0 mt-0.5" />
+                      <span className="text-gray-600 dark:text-zinc-300">
+                        Mover para: {labels.find((l) => l.id === a.moveLabelId)?.name ?? "(coluna removida)"}
                       </span>
                     </>
                   ) : (
@@ -1049,6 +1176,7 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
                 <AutomationCard
                   key={auto.id}
                   auto={auto}
+                  labels={labels}
                   onToggle={() => handleToggle(auto)}
                   onEdit={() => { setEditTarget(auto); setEditorOpen(true); }}
                   onDelete={() => handleDelete(auto.id)}

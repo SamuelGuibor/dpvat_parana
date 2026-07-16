@@ -3,7 +3,6 @@
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
-import { revalidatePath } from "next/cache";
 import { runAutomations } from "../../_shared/lib/automation-executor";
 import { createLog } from "../../_shared/lib/log";
 
@@ -75,6 +74,7 @@ export async function updateKanbanStatus({
     authorName: session.user.name ?? "Usuário",
   }).catch((err) => console.error("[AUTOMATION] Erro ao disparar:", err));
 
-  revalidatePath('/nova-dash');
+  // Sem revalidatePath aqui: /nova-dash é 100% client e sincroniza por
+  // polling; revalidar a rota re-renderizava a página inteira a cada drop.
   return { success: true };
 }

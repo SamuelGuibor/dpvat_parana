@@ -8,7 +8,7 @@ import { Separator } from '@/app/_shared/ui/separator';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
-import { Download, Loader2, Trash, FileArchive, Eye, FileText } from 'lucide-react';
+import { Download, Loader2, Trash, FileArchive, Eye, FileText, ChevronUp, ChevronDown } from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
 import { toast } from 'sonner';
 import { getPresignedUrls } from '@/app/_actions/documents/upload-s3';
@@ -240,6 +240,28 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     }
   }
 
+  // Sobe/desce o arquivo uma posição e persiste a nova ordem completa.
+  // Otimista: troca no estado na hora; se a persistência falhar, recarrega.
+  async function moveDoc(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= docs.length) return;
+    const next = [...docs];
+    [next[index], next[target]] = [next[target], next[index]];
+    setDocs(next);
+    try {
+      const res = await fetch('/api/documents/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds: next.map((d) => d.id) }),
+      });
+      if (!res.ok) throw new Error('Erro ao salvar a ordem');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao salvar a ordem dos arquivos.');
+      await loadDocs();
+    }
+  }
+
   async function confirmDeleteDoc() {
     if (!deletingDoc) return;
     try {
@@ -312,7 +334,7 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {docs.map((doc) => (
+                {docs.map((doc, i) => (
                   <tr key={doc.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800">
                     <td className="p-3">
                       {editingId === doc.id ? (
@@ -341,6 +363,16 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                     <td className="p-3 text-right">
                       {editingId !== doc.id && (
                         <div className="flex items-center justify-end gap-1">
+                          <div className="flex flex-col mr-1">
+                            <Button variant="ghost" size="icon" className="h-4 w-6" title="Mover para cima"
+                              onClick={() => moveDoc(i, -1)} disabled={i === 0}>
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-4 w-6" title="Mover para baixo"
+                              onClick={() => moveDoc(i, 1)} disabled={i === docs.length - 1}>
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                           <Button variant="ghost" size="icon" className="h-8 w-8"
                             onClick={() => {
                               setEditingId(doc.id);

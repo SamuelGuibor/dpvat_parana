@@ -85,6 +85,7 @@ model User {
   rede_social         String?
   archiveStatus       String?
   archivedAt          DateTime?
+  boardOrder          Int?
   sectorId            String?
   sector              Sector?        @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
   accounts            Account[]
@@ -250,6 +251,7 @@ model Process {
   rede_social         String?
   archiveStatus       String?
   archivedAt          DateTime?
+  boardOrder          Int?
   commentsOnProcess   Comment[]  @relation("ProcessComments")
   documents           Document[]
   label               Label?     @relation("ProcessLabel", fields: [labelId], references: [id])
@@ -382,6 +384,8 @@ model Document {
   userId     String
   key        String
   name       String
+  // Ordem manual na aba Arquivos (menor = mais acima); null = ordem de criação.
+  sortOrder  Int?
   uploadedAt DateTime  @default(now())
   processId  String?
   createdAt  DateTime? @default(now())

@@ -21,6 +21,16 @@ export interface ChatbotActivityItem {
   contactName: string | null;
 }
 
+// Aviso administrativo da Meta (webhook account_update, qualidade do número,
+// status de template...) — gravado como log "wa_account" pelo webhook.
+export interface MetaAccountEvent {
+  id: string;
+  at: string;
+  message: string;
+  field: string; // campo do webhook (account_update, phone_number_quality_update...)
+  severity: 'critical' | 'warning' | 'ok' | 'info';
+}
+
 export interface ChatbotAnalytics {
   periodDays: number;
   bot: {
@@ -62,6 +72,9 @@ export interface ChatbotAnalytics {
     }[];
   };
   activity: ChatbotActivityItem[];
+  // Saúde da conta: avisos oficiais da Meta no período (violação, restrição,
+  // qualidade do número, templates). Vazio = conta sem ocorrências.
+  accountEvents: MetaAccountEvent[];
 }
 
 // Preço por 1M de tokens (USD) — tabela oficial da Anthropic (jun/2026).
@@ -162,6 +175,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   const qualifyDurations: number[] = [];
 
   const activity: ChatbotActivityItem[] = [];
+  const accountEvents: MetaAccountEvent[] = [];
 
   const cost = { weekUSD: 0, monthUSD: 0, weekTokens: 0, monthTokens: 0, model: null as string | null };
   const closeCategories: Record<string, number> = {};
@@ -195,6 +209,22 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
 
     // Métricas/atividade respeitam o filtro de período ativo.
     if (l.createdAt < since) continue;
+
+    // Avisos da Meta (webhook administrativo) → seção "Saúde da conta".
+    // Não entram na atividade da equipe nem nas estatísticas de atendente.
+    if (l.action === 'wa_account') {
+      if (accountEvents.length < 100) {
+        const sev = String(meta.severity ?? '');
+        accountEvents.push({
+          id: l.id,
+          at: l.createdAt.toISOString(),
+          message: l.message,
+          field: String(meta.field ?? ''),
+          severity: sev === 'critical' || sev === 'warning' || sev === 'ok' ? sev : 'info',
+        });
+      }
+      continue;
+    }
 
     // Conta o desfecho tanto quando quem encerra é a IA (wa_bot) quanto o
     // atendente pelo menu "Encerrar" (wa_close).
@@ -298,5 +328,5 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     .filter((s) => s.assumed || s.closed || s.messages)
     .sort((a, b) => b.messages - a.messages);
 
-  return { periodDays, bot, cost, closeCategories, team: { attendants }, activity };
+  return { periodDays, bot, cost, closeCategories, team: { attendants }, activity, accountEvents };
 }

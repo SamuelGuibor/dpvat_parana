@@ -45,6 +45,7 @@ interface ProcessGet {
   cardNumber?: number | null;
   afastadoAte?: string | null;
   archiveStatus?: string | null;
+  boardOrder?: number | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +67,7 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
     cardNumber: process.cardNumber ?? null,
     afastadoAte: process.afastadoAte ? process.afastadoAte.toISOString() : null,
     archiveStatus: process.archiveStatus ?? null,
+    boardOrder: process.boardOrder ?? null,
     ...(fields === "full" && {
       cpf: process.cpf || "",
       data_nasc: process.data_nasc || "",

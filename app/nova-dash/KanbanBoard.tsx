@@ -37,6 +37,7 @@ import { getProcess } from '@/app/_actions/process/get-process';
 import { CreateNewCard } from '@/app/nova-dash/_components/create-newcard';
 import { differenceInDays } from 'date-fns';
 import { updateKanbanStatus } from '@/app/_actions/cards/update-kanban';
+import { reorderCards } from '@/app/_actions/cards/reorder-cards';
 import useSWR from 'swr';
 import { getLabels } from '../_actions/labels/get-labels';
 import { deleteCard } from '../_actions/cards/delete-card';
@@ -137,6 +138,8 @@ export interface KanbanCard {
   attachmentCount?: number;
   cardNumber?: number | null;
   tags?: CardTagInfo[];
+  // Posição manual dentro da coluna (menor = mais acima); null = sem ordem.
+  boardOrder?: number | null;
 }
 
 export interface CardTagInfo {
@@ -260,6 +263,7 @@ interface Item {
   ownerId?: string
   cardNumber?: number | null
   archiveStatus?: string | null
+  boardOrder?: number | null
 }
 
 const renderTimerBadge = (card: KanbanCard) => {
@@ -593,16 +597,34 @@ interface DraggableCardProps {
   onQuickAction: (cardId: string, action: string) => void;
   onDelete: (cardId: string) => void;
   onArchive: (cardId: string, status: ArchiveStatus) => void;
+  // Soltar um card em cima deste: insere o arrastado ANTES deste card
+  // (reordenação dentro da coluna ou posição exata vindo de outra coluna).
+  onCardDrop: (cardId: string, sourceColumnId: string, targetColumnId: string, beforeCardId: string) => void;
 }
 
-const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete, onArchive }) => {
+const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete, onArchive, onCardDrop }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
     item: { cardId: card.id, sourceColumnId: columnId },
     collect: (monitor) => ({ isDragging: !!monitor.isDragging() }),
   }));
+  // Cada card também é alvo de drop: soltar outro card aqui o insere ACIMA
+  // deste. Soltar no corpo vazio da coluna continua mandando pro fim.
+  const [{ isOverCard }, dropOnCard] = useDrop(() => ({
+    accept: 'CARD',
+    drop: (item: { cardId: string; sourceColumnId: string }) => {
+      if (item.cardId === card.id) return;
+      onCardDrop(item.cardId, item.sourceColumnId, columnId, card.id);
+    },
+    collect: (monitor) => ({
+      isOverCard:
+        !!monitor.isOver({ shallow: true }) &&
+        (monitor.getItem() as { cardId?: string } | null)?.cardId !== card.id,
+    }),
+  }));
   const ref = useRef<HTMLDivElement>(null);
   drag(ref);
+  dropOnCard(ref);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -636,7 +658,12 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
 
   return (
     <>
-      <div ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }} className="cursor-move group">
+      <div ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }} className="cursor-move group relative">
+        {/* Linha de inserção em overlay absoluto: inserir um elemento no fluxo
+            aqui causava reflow da coluna inteira a cada hover do arrasto. */}
+        {isOverCard && (
+          <div className="pointer-events-none absolute -top-2 left-1 right-1 z-10 h-1.5 rounded-full bg-blue-500/80 shadow-[0_0_6px_rgba(59,130,246,0.6)]" />
+        )}
         <Card className={cn(
           "mb-3 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white dark:bg-zinc-900",
           card.isProcess ? "ring-1 ring-blue-100" : "ring-1 ring-gray-100"
@@ -931,6 +958,7 @@ const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
     prev.onQuickAction === next.onQuickAction &&
     prev.onDelete === next.onDelete &&
     prev.onArchive === next.onArchive &&
+    prev.onCardDrop === next.onCardDrop &&
     a.id === b.id &&
     a.title === b.title &&
     a.description === b.description &&
@@ -955,6 +983,7 @@ interface DroppableColumnProps {
   column: Column;
   index: number;
   onDrop: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
+  onCardDrop: (cardId: string, sourceColumnId: string, targetColumnId: string, beforeCardId: string) => void;
   onColumnReorder: (dragIndex: number, hoverIndex: number) => void;
   onCardClick: (card: KanbanCard) => void;
   onQuickAction: (cardId: string, action: string) => void;
@@ -967,7 +996,7 @@ interface DroppableColumnProps {
 }
 
 const DroppableColumn: React.FC<DroppableColumnProps> = ({
-  column, index, onDrop, onColumnReorder, onCardClick, onQuickAction, onDelete, onArchive,
+  column, index, onDrop, onCardDrop, onColumnReorder, onCardClick, onQuickAction, onDelete, onArchive,
   onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -1001,7 +1030,10 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
 
   const [{ isOver }, drop] = useDrop(() => ({
     accept: 'CARD',
-    drop: (item: { cardId: string; sourceColumnId: string }) => {
+    drop: (item: { cardId: string; sourceColumnId: string }, monitor) => {
+      // Se o drop caiu em cima de um card, ele já tratou a inserção na
+      // posição exata — a coluna não deve mover o card pro fim de novo.
+      if (monitor.didDrop()) return;
       onDrop(item.cardId, item.sourceColumnId, column.id);
     },
     collect: (monitor) => ({ isOver: !!monitor.isOver() }),
@@ -1180,6 +1212,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
               onQuickAction={onQuickAction}
               onDelete={onDelete}
               onArchive={onArchive}
+              onCardDrop={onCardDrop}
             />
           ))}
           {column.cards.length === 0 && (
@@ -1415,12 +1448,18 @@ export const KanbanBoard: React.FC = () => {
     setSearchOpen(false);
   }
 
-  // Pausa o polling enquanto há uma mutação local em voo (drag/drop) ou o
-  // diálogo de um card está aberto — evita reverter o estado otimista ou
-  // recarregar dados embaixo de uma edição em andamento.
-  const isMutatingRef = useRef(false);
+  // Pausa o polling enquanto há mutações locais em voo (drag/drop/arquivar)
+  // ou o diálogo de um card está aberto — evita reverter o estado otimista.
+  // É um CONTADOR (não boolean): drops rápidos em sequência se sobrepõem e o
+  // primeiro a terminar não pode liberar o polling enquanto outro persiste.
+  const pendingMutationsRef = useRef(0);
   const isDialogOpenRef = useRef(false);
   useEffect(() => { isDialogOpenRef.current = !!selectedCard; }, [selectedCard]);
+
+  // Assinaturas (JSON) do último payload aplicado por fonte. O polling roda a
+  // cada 7s, mas na maioria dos ticks NADA mudou — sem isso, cada tick trocava
+  // a identidade de labels/items/counts/tags e re-renderizava o board inteiro.
+  const lastSigRef = useRef({ labels: '', items: '', counts: '', tags: '' });
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -1430,7 +1469,13 @@ export const KanbanBoard: React.FC = () => {
         getUsers('basic'),
         getProcess('basic'),
       ]);
-      setLabels(labelsData);
+
+      const labelsSig = JSON.stringify(labelsData);
+      if (labelsSig !== lastSigRef.current.labels) {
+        lastSigRef.current.labels = labelsSig;
+        setLabels(labelsData);
+      }
+
       const users = Array.isArray(usersData)
         ? usersData
           .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST' && !u.archiveStatus)
@@ -1442,7 +1487,45 @@ export const KanbanBoard: React.FC = () => {
           .map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
         : [];
       const combined = [...users, ...processes];
-      setItems(combined);
+      const itemsSig = JSON.stringify(combined);
+      if (itemsSig !== lastSigRef.current.items) {
+        lastSigRef.current.items = itemsSig;
+        setItems(combined);
+      }
+
+      // Contagens (comentários/anexos) e tags: mudam sem os items mudarem,
+      // então sempre refaz a busca — mas só aplica no estado se o payload
+      // mudou (senão todo card re-renderizava a cada tick).
+      if (combined.length === 0) {
+        setCounts({ users: {}, processes: {} });
+        setCardTags({ users: {}, processes: {} });
+      } else {
+        const body = JSON.stringify({
+          userIds: users.map((u) => u.id),
+          processIds: processes.map((p) => p.id),
+        });
+        const headers = { 'Content-Type': 'application/json' };
+        const [countsRes, tagsRes] = await Promise.all([
+          fetch('/api/card-counts', { method: 'POST', headers, body }),
+          fetch('/api/card-tags/lookup', { method: 'POST', headers, body }),
+        ]);
+        if (countsRes.ok) {
+          const data = await countsRes.json();
+          const sig = JSON.stringify(data);
+          if (sig !== lastSigRef.current.counts) {
+            lastSigRef.current.counts = sig;
+            setCounts(data);
+          }
+        }
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json();
+          const sig = JSON.stringify(tagsData);
+          if (sig !== lastSigRef.current.tags) {
+            lastSigRef.current.tags = sig;
+            setCardTags({ users: tagsData.users ?? {}, processes: tagsData.processes ?? {} });
+          }
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -1465,7 +1548,7 @@ export const KanbanBoard: React.FC = () => {
   // Polling: mantém o board sincronizado entre múltiplas sessões sem F5.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (isMutatingRef.current || isDialogOpenRef.current) return;
+      if (pendingMutationsRef.current > 0 || isDialogOpenRef.current) return;
       if (typeof document !== 'undefined' && document.hidden) return; // aba em background
       fetchData(true);
     }, KANBAN_POLL_MS);
@@ -1476,40 +1559,6 @@ export const KanbanBoard: React.FC = () => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 180);
     return () => clearTimeout(t);
   }, [searchQuery]);
-
-  // Busca contagens reais (comentários + documentos) em lote sempre que
-  // os items são atualizados.
-  useEffect(() => {
-    if (items.length === 0) {
-      setCounts({ users: {}, processes: {} });
-      return;
-    }
-    const userIds = items.filter((i) => !i.isProcess).map((i) => i.id);
-    const processIds = items.filter((i) => i.isProcess).map((i) => i.id);
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const body = JSON.stringify({ userIds, processIds });
-        const headers = { 'Content-Type': 'application/json' };
-        const [countsRes, tagsRes] = await Promise.all([
-          fetch('/api/card-counts', { method: 'POST', headers, body }),
-          fetch('/api/card-tags/lookup', { method: 'POST', headers, body }),
-        ]);
-        if (!countsRes.ok) throw new Error('Falha ao buscar contagens');
-        const data = await countsRes.json();
-        if (!cancelled) setCounts(data);
-        if (tagsRes.ok) {
-          const tagsData = await tagsRes.json();
-          if (!cancelled) setCardTags({ users: tagsData.users ?? {}, processes: tagsData.processes ?? {} });
-        }
-      } catch (err) {
-        console.error('[card-counts]', err);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [items]);
 
   useEffect(() => {
     const kanbanCards: KanbanCard[] = filteredItems.map(item => {
@@ -1540,6 +1589,7 @@ export const KanbanBoard: React.FC = () => {
         attachmentCount: c?.attachments ?? 0,
         cardNumber: item.cardNumber ?? null,
         tags: (item.isProcess ? cardTags.processes : cardTags.users)?.[item.id] ?? [],
+        boardOrder: item.boardOrder ?? null,
       };
     });
 
@@ -1552,7 +1602,11 @@ export const KanbanBoard: React.FC = () => {
       title: label.name,
       color: label.color,
       timeLimitDays: label.timeLimitDays,
-      cards: kanbanCards.filter(c => c.labelId === label.id),
+      // Ordem manual (boardOrder) primeiro; cards sem ordem caem no fim, na
+      // ordem natural (sort estável preserva a ordem de criação entre eles).
+      cards: kanbanCards
+        .filter(c => c.labelId === label.id)
+        .sort((a, b) => (a.boardOrder ?? Number.MAX_SAFE_INTEGER) - (b.boardOrder ?? Number.MAX_SAFE_INTEGER)),
     }));
 
     // Durante busca, esconde colunas vazias
@@ -1617,60 +1671,107 @@ export const KanbanBoard: React.FC = () => {
     }
   }
 
-  const handleDrop = async (cardId: string, sourceColumnId: string, targetColumnId: string) => {
-    if (sourceColumnId === targetColumnId) return;
-
-    // Segura o polling até a persistência terminar, senão um tick poderia
-    // recarregar o card na coluna antiga antes do servidor confirmar a troca.
-    isMutatingRef.current = true;
-    try {
-      const targetLabel = labels.find(l => l.id === targetColumnId) ?? null;
-      let droppedCard: KanbanCard | null = null;
-
-      setColumns((prev) => {
-        const newCols = structuredClone(prev);
-        const source = newCols.find(c => c.id === sourceColumnId);
-        const target = newCols.find(c => c.id === targetColumnId);
-        if (!source || !target) return prev;
-        const index = source.cards.findIndex(c => c.id === cardId);
-        if (index === -1) return prev;
-        const [card] = source.cards.splice(index, 1);
-        card.labelId = targetColumnId;
-        card.label = targetLabel;
-        card.status = target.title;
-        card.statusStartedAt = new Date().toISOString();
-        target.cards.push(card);
-        droppedCard = card;
-        return newCols;
-      });
-
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === cardId
-            ? { ...it, labelId: targetColumnId, label: targetLabel }
-            : it
-        )
-      );
-
-      if (droppedCard) {
-        try {
-          await updateKanbanStatus({
-            id: (droppedCard as KanbanCard).id,
-            labelId: targetColumnId,
-            isProcess: (droppedCard as KanbanCard).isProcess,
-          });
-        } catch (err) {
-          console.error("Erro ao salvar:", err);
-          toast.error("Erro ao mover card");
-        }
-      }
-    } finally {
-      isMutatingRef.current = false;
-    }
-  };
-
   const columnsRef = useRef(columns);
   useEffect(() => { columnsRef.current = columns; }, [columns]);
+
+  // Move um card de coluna e/ou de posição. `beforeCardId` diz ANTES de qual
+  // card inserir na coluna de destino (null = fim da coluna). A ordem final da
+  // coluna de destino é persistida por inteiro (índice → boardOrder).
+  const moveCard = useCallback(async (
+    cardId: string,
+    sourceColumnId: string,
+    targetColumnId: string,
+    beforeCardId: string | null,
+  ) => {
+    if (cardId === beforeCardId) return;
+    const columnChanged = sourceColumnId !== targetColumnId;
+
+    const prevCols = columnsRef.current;
+    const source = prevCols.find(c => c.id === sourceColumnId);
+    const target = prevCols.find(c => c.id === targetColumnId);
+    if (!source || !target) return;
+    const movedCard = source.cards.find(c => c.id === cardId);
+    if (!movedCard) return;
+
+    // Segura o polling até a persistência terminar, senão um tick poderia
+    // recarregar o card na posição antiga antes do servidor confirmar.
+    pendingMutationsRef.current++;
+    try {
+      const targetLabel = labels.find(l => l.id === targetColumnId) ?? null;
+      const nowIso = new Date().toISOString();
+
+      // Monta a nova lista da coluna de destino SEM clonar o board inteiro
+      // (structuredClone de centenas de cards por drop pesava o arrasto).
+      const newTargetCards = target.cards.filter(c => c.id !== cardId);
+      let insertAt = beforeCardId ? newTargetCards.findIndex(c => c.id === beforeCardId) : -1;
+      if (insertAt === -1) insertAt = newTargetCards.length;
+      const movedClone: KanbanCard = columnChanged
+        ? { ...movedCard, labelId: targetColumnId, label: targetLabel, status: target.title, statusStartedAt: nowIso }
+        : movedCard;
+      newTargetCards.splice(insertAt, 0, movedClone);
+      // Índice = boardOrder. Só clona os cards cuja ordem mudou — os demais
+      // mantêm identidade e o React.memo evita o re-render deles.
+      const reindexed = newTargetCards.map((c, i) => (c.boardOrder === i ? c : { ...c, boardOrder: i }));
+      const targetOrder = reindexed.map(c => ({ id: c.id, isProcess: c.isProcess }));
+      const orderById = new Map(targetOrder.map((c, i) => [c.id, i]));
+
+      // Só as colunas de origem/destino trocam de identidade.
+      setColumns((prev) =>
+        prev.map((col) => {
+          if (col.id === targetColumnId) return { ...col, cards: reindexed };
+          if (col.id === sourceColumnId) return { ...col, cards: col.cards.filter(c => c.id !== cardId) };
+          return col;
+        })
+      );
+
+      // Espelha nos items (fonte da verdade local): sem isso, o próximo
+      // recompute das colunas voltaria o card pra posição/coluna antiga.
+      setItems((prev) =>
+        prev.map((it) => {
+          const newOrder = orderById.get(it.id);
+          if (newOrder === undefined && it.id !== cardId) return it;
+          const changed =
+            (newOrder !== undefined && it.boardOrder !== newOrder) ||
+            (it.id === cardId && columnChanged);
+          if (!changed) return it;
+          return {
+            ...it,
+            ...(it.id === cardId && columnChanged
+              ? { labelId: targetColumnId, label: targetLabel, statusStartedAt: nowIso }
+              : {}),
+            ...(newOrder !== undefined ? { boardOrder: newOrder } : {}),
+          };
+        })
+      );
+
+      try {
+        if (columnChanged) {
+          await updateKanbanStatus({
+            id: cardId,
+            labelId: targetColumnId,
+            isProcess: movedCard.isProcess,
+          });
+        }
+        await reorderCards({ cards: targetOrder });
+      } catch (err) {
+        console.error("Erro ao salvar:", err);
+        toast.error("Erro ao mover card");
+      }
+    } finally {
+      pendingMutationsRef.current--;
+    }
+  }, [labels]);
+
+  // Drop no corpo da coluna (fora de um card): manda o card pro fim dela.
+  const handleDrop = useCallback((cardId: string, sourceColumnId: string, targetColumnId: string) => {
+    if (sourceColumnId === targetColumnId) return; // soltou na própria coluna sem mirar um card
+    moveCard(cardId, sourceColumnId, targetColumnId, null);
+  }, [moveCard]);
+
+  // Drop em cima de um card: insere o arrastado logo acima dele.
+  const handleCardDrop = useCallback((cardId: string, sourceColumnId: string, targetColumnId: string, beforeCardId: string) => {
+    moveCard(cardId, sourceColumnId, targetColumnId, beforeCardId);
+  }, [moveCard]);
 
   const handleQuickAction = useCallback((cardId: string, action: string) => {
     const card = columnsRef.current.flatMap(col => col.cards).find(c => c.id === cardId);
@@ -1710,7 +1811,7 @@ export const KanbanBoard: React.FC = () => {
     if (!item) return;
     const isProcess = !!item.isProcess;
 
-    isMutatingRef.current = true;
+    pendingMutationsRef.current++;
     setColumns((prev) =>
       prev.map((col) => ({ ...col, cards: col.cards.filter((c) => c.id !== cardId) }))
     );
@@ -1739,7 +1840,7 @@ export const KanbanBoard: React.FC = () => {
         toast.error('Erro ao arquivar card');
         setRefreshKey((k) => k + 1);
       })
-      .finally(() => { isMutatingRef.current = false; });
+      .finally(() => { pendingMutationsRef.current--; });
   }, [items]);
 
   const toggleCollapse = (colId: string) => {
@@ -1948,6 +2049,7 @@ export const KanbanBoard: React.FC = () => {
                       column={column}
                       index={idx}
                       onDrop={handleDrop}
+                      onCardDrop={handleCardDrop}
                       onColumnReorder={handleColumnReorder}
                       onCardClick={setSelectedCard}
                       onQuickAction={handleQuickAction}
