@@ -6,6 +6,9 @@ import { db } from "@/app/_shared/lib/prisma";
 
 // Rota depende de request.url (params da query), então é sempre dinâmica.
 export const dynamic = "force-dynamic";
+// 300s: baixa todos os arquivos do S3 e monta o zip em memória — com muitos
+// documentos grandes o default da Vercel derrubava a função no meio.
+export const maxDuration = 300;
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,

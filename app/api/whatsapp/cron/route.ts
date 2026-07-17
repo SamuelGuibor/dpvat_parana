@@ -4,7 +4,8 @@ import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
 
-// Detector de silêncio do bot (rodado por cron externo, a cada 15min):
+// Detector de silêncio do bot (rodado pelo Vercel Cron — vercel.json — a cada
+// 15min; o whatsapp-cron.cmd continua servindo pra disparo manual em dev):
 //
 // 1. Cliente sumiu há 30min+ → "Você precisa de mais alguma coisa? 😊"
 //    Se ele responder, o atendimento segue normalmente (o marcador
@@ -20,7 +21,9 @@ import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
 // env CRON_SECRET existe; também aceita ?secret= pra disparo manual/externo.
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// 300s (teto do Pro): a rodada pode gerar N despedidas contextuais (fetch de
+// até 15s cada na IA) + varrer até 60 cards estourados — 60s não dava folga.
+export const maxDuration = 300;
 
 const NUDGE_30MIN = 'Você precisa de mais alguma coisa?';
 const FAREWELL =

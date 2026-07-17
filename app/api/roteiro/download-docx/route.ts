@@ -6,6 +6,10 @@ import { db } from "@/app/_shared/lib/prisma";
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
+// 120s: a rota faz duas chamadas sequenciais ao microserviço (extração de
+// campos via IA + conversão DOCX→PDF), que juntas passam fácil do default.
+export const maxDuration = 120;
+
 /**
  * Parse the chat response directly using regex.
  * Handles formats like:

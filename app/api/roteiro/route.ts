@@ -173,7 +173,10 @@ function buildContextMessage(cardData: Record<string, any> | null): string {
 //   }
 // }
 
-export const maxDuration = 60; // 60 seconds
+// 300s (teto do Pro): roteiros longos com muitos anexos passavam perto dos
+// 60s do plano antigo. O heartbeat abaixo continua necessário (mantém a
+// conexão do navegador/proxy viva durante o processamento da IA).
+export const maxDuration = 300;
 
 const HEARTBEAT_CHAR = "​";
 const HEARTBEAT_INTERVAL_MS = 4000;

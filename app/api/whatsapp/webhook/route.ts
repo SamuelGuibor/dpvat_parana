@@ -25,9 +25,10 @@ import { handleAccountEvent } from "@/app/_shared/lib/whatsapp/account-events";
 
 export const dynamic = "force-dynamic";
 
-// 120s: o fluxo do bot agora inclui o debounce de rajada (~8s) antes de
-// chamar a IA. A Vercel limita ao teto do plano automaticamente.
-export const maxDuration = 60;
+// 120s: o fluxo do bot inclui o debounce de rajada (~8s) + chamada à IA (com
+// retry) + envio das respostas. No plano Pro o teto é 300s, então 120s aqui é
+// folga real — no Hobby ficava capado em 60s.
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;

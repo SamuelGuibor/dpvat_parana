@@ -3,6 +3,10 @@ import { gerarProcuracaoById } from "@/app/_shared/utils/gerarProcuracaoById";
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
+// 120s: a conversão DOCX→PDF no microserviço pode levar dezenas de segundos
+// (LibreOffice frio) — o default da Vercel não dá garantia.
+export const maxDuration = 120;
+
 export async function POST(req: Request) {
     try {
         const { id, type, template } = await req.json();
