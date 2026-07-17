@@ -117,6 +117,7 @@ export default function Page() {
   }
 
   const isWorkspace = activeTab === 'meu-espaco';
+  const kanban = activeTab === 'kanban';
 
   const ALLOWED_ARCHIVE_USERS = [
     "cmazo6j870000ia0gw5ppb486",
@@ -229,7 +230,7 @@ export default function Page() {
         </Tabs>
       </main>
 
-      {!isWorkspace && (
+      {!isWorkspace && !kanban && (
         <footer className={`shrink-0 border-t transition-colors ${
           isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
         }`}>
