@@ -19,7 +19,7 @@ export async function GET(req: Request) {
       userId: userId ?? undefined,
       processId: processId ?? undefined,
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
     include: {
       author: {
         select: {

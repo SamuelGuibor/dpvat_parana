@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
@@ -16,6 +16,7 @@ import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
 import { Workspace } from '@/app/nova-dash/workspace/Workspace';
 import Team from '@/app/nova-dash/_components/team_dash';
 import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
+import { TicketsBoard } from '@/app/nova-dash/tickets/TicketsBoard';
 
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
@@ -127,6 +128,21 @@ export default function Page() {
 
   const canViewArchived = ALLOWED_ARCHIVE_USERS.includes(session?.user?.id ?? "");
 
+  const ALLOWED_TICKETS_USERS = [
+    "cmazo6j870000ia0gw5ppb486",
+    "cmazuwrcj0000iav499hqf5ij",
+    "cmpwucq210001jv041oc9twsr",
+    "cmqp5w7hd000dl404atfj5mrd"
+  ];
+
+  const canViewTickets = ALLOWED_TICKETS_USERS.includes(session?.user?.id ?? "");
+
+  // Kanban + Espaço de Trabalho são fixos; Arquivados e Tickets Dev entram
+  // conforme a permissão. Classes literais para o Tailwind não perder o JIT.
+  const visibleTabs = 2 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
+  const tabsGridCols =
+    visibleTabs === 4 ? "grid-cols-4" : visibleTabs === 3 ? "grid-cols-3" : "grid-cols-2";
+
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
       <header className={`shrink-0 z-50 border-b ${
@@ -160,9 +176,9 @@ export default function Page() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
           <TabsList
-              className={`grid w-full max-w-3xl ${
-                canViewArchived ? "grid-cols-3" : "grid-cols-2"
-              } ${isDark ? "bg-zinc-800 text-zinc-300" : ""}`}
+              className={`grid w-full max-w-4xl ${tabsGridCols} ${
+                isDark ? "bg-zinc-800 text-zinc-300" : ""
+              }`}
             >
             {/* <TabsTrigger
               value="dashboard"
@@ -185,6 +201,15 @@ export default function Page() {
               >
                 <Archive className="w-4 h-4 mr-2" />
                 Arquivados
+              </TabsTrigger>
+            )}
+            {canViewTickets && (
+              <TabsTrigger
+                value="tickets-dev"
+                className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+              >
+                <Ticket className="w-4 h-4 mr-2" />
+                Tickets Dev
               </TabsTrigger>
             )}
             <TabsTrigger
@@ -223,6 +248,9 @@ export default function Page() {
           </TabsContent>
           <TabsContent value="meu-espaco" className="min-h-0">
             <Workspace />
+          </TabsContent>
+          <TabsContent value="tickets-dev">
+            <TicketsBoard />
           </TabsContent>
           <TabsContent value="ponto">
             <WorkSessionPanel isDark={isDark} role={session?.user?.role} userId={session?.user?.id} />

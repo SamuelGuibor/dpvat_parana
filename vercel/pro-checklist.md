@@ -29,13 +29,19 @@ O `vercel.json` agora agenda `/api/whatsapp/cron` a cada 15 minutos.
 
 ## 3. Skew Protection
 
-**Project → Settings → Deployment Protection → Skew Protection**
+**Project → Settings → Advanced → rolar até "Skew Protection"**
+(não fica em Deployment Protection!)
 
-- [ ] Ativar com janela máxima (12h no Pro).
+- [ ] Pré-requisito: ativar **"Enable access to System Environment Variables"**
+      (Settings → Environment Variables) — sem isso o Skew Protection não opera.
+- [ ] Ativar o toggle **Skew Protection** em Settings → Advanced.
+- [ ] Maximum Age: o padrão (1 dia) já cobre o dashboard aberto o dia todo.
+- [ ] **Redeployar** o deployment de produção depois de ativar (só vale a
+      partir do próximo deploy).
 
 Por quê: o dashboard fica aberto o dia todo com polling de 5s + server actions.
 Sem isso, cada deploy quebra as abas abertas (chunk 404 / "server action not
-found") até o usuário recarregar.
+found") até o usuário recarregar. Next 14.2 já suporta sem config extra.
 
 ## 4. Spend Management
 

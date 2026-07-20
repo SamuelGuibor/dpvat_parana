@@ -709,3 +709,28 @@ model InstructionFile {
   @@index([instructionId])
   @@map("instruction_files")
 }
+
+model DevTicket {
+  id           String    @id @default(cuid())
+  title        String
+  description  String
+  // BUG | ALTERACAO | MELHORIA | OUTRO
+  type         String    @default("BUG")
+  // Fluxo: EM_DISTRIBUICAO -> EM_ANALISE -> EM_DESENVOLVIMENTO -> CONCLUIDO
+  status       String    @default("EM_DISTRIBUICAO")
+  // Print/foto opcional do problema (chave no S3, prefixo dev-tickets/).
+  imageKey     String?
+  imageName    String?
+  creatorId    String
+  creatorName  String
+  // Dev que assumiu o ticket (null = aguardando em distribuição).
+  assigneeId   String?
+  assigneeName String?
+  concludedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([assigneeId])
+  @@map("dev_tickets")
+}

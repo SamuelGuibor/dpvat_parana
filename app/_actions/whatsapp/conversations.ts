@@ -65,9 +65,9 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     include: {
       contact: { select: { id: true, name: true, phone: true } },
       tags: { include: { tag: true } },
-      // Meu marcador de leitura (por atendente) — abrir a conversa não zera
-      // o não-lido dos colegas.
-      reads: { where: { userId: me.id }, select: { lastReadAt: true } },
+      // Leitura GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa
+      // de contar como não-lida para o resto da equipe.
+      reads: { orderBy: { lastReadAt: 'desc' }, take: 1, select: { lastReadAt: true } },
     },
   });
   if (!conversations.length) return [];
@@ -105,12 +105,12 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       ? last.body ?? (last.mediaType ? '📎 Anexo' : null)
       : null;
     const inboundAt = inboundByContact.get(c.contactId) ?? null;
-    // Leitura efetiva: meu marcador por atendente; o lastReadAt global (legado)
-    // entra como fallback pra não marcar tudo como não-lido na virada.
-    const myReadAt = c.reads[0]?.lastReadAt ?? null;
-    const effectiveReadAt = myReadAt && c.lastReadAt
-      ? (myReadAt > c.lastReadAt ? myReadAt : c.lastReadAt)
-      : myReadAt ?? c.lastReadAt;
+    // Leitura efetiva: a leitura mais recente de QUALQUER atendente, com o
+    // lastReadAt global (legado) como fallback.
+    const anyReadAt = c.reads[0]?.lastReadAt ?? null;
+    const effectiveReadAt = anyReadAt && c.lastReadAt
+      ? (anyReadAt > c.lastReadAt ? anyReadAt : c.lastReadAt)
+      : anyReadAt ?? c.lastReadAt;
     return {
       id: c.id,
       contactId: c.contactId,
@@ -235,9 +235,10 @@ export async function closeConversation(
 }
 
 /**
- * Zera o badge de não-lida DO ATENDENTE ATUAL (leitura por usuário) e, de
- * quebra, marca a última mensagem recebida como lida na Meta — o cliente vê
- * o tique azul quando alguém da equipe realmente abriu a conversa.
+ * Marca a conversa como lida PARA A EQUIPE TODA: se um atendente já abriu o
+ * chat, o não-lido e as notificações do sino somem para os demais conectados.
+ * De quebra, marca a última mensagem recebida como lida na Meta — o cliente
+ * vê o tique azul quando alguém da equipe realmente abriu a conversa.
  */
 export async function markConversationRead(conversationId: string): Promise<void> {
   const me = await requireTeamMember();
@@ -251,6 +252,21 @@ export async function markConversationRead(conversationId: string): Promise<void
     update: { lastReadAt: now },
     create: { conversationId, userId: me.id, lastReadAt: now },
   });
+  // Leitura global (legado lastReadAt): garante que o badge some pra todo
+  // mundo mesmo que a linha por-atendente acima seja só a minha.
+  await db.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: { lastReadAt: now },
+  });
+
+  // Sino: alguém já viu o chat → apaga o alerta pendente desse contato para
+  // TODOS os destinatários (não só quem abriu).
+  if (conv) {
+    await db.notification.updateMany({
+      where: { contactId: conv.contactId, read: false },
+      data: { read: true },
+    });
+  }
 
   // Tique azul no celular do cliente (best-effort; não bloqueia a leitura).
   if (conv) {

@@ -31,6 +31,7 @@ const ALLOWED_KEY_PREFIXES = [
   'instructions/',
   'automation-templates/',
   'chat/',
+  'dev-tickets/',
 ];
 
 async function isAllowedKey(key: string): Promise<boolean> {
