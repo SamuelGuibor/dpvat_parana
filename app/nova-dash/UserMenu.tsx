@@ -12,14 +12,218 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { Badge } from '@/app/_shared/ui/badge';
 import {
   ChevronDown, User as UserIcon, Settings, LogOut, ShieldCheck, Mail,
+  Megaphone, BellRing, Loader2, MonitorUp,
 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/app/_shared/ui/dialog';
+import { Button } from '@/app/_shared/ui/button';
+import { Input } from '@/app/_shared/ui/input';
+import { Label } from '@/app/_shared/ui/label';
+import { Textarea } from '@/app/_shared/ui/textarea';
+import { toast } from 'sonner';
 import { ProfileDialog } from './ProfileDialog';
 import { getMyProfile } from '@/app/_actions/users/update-profile';
+import { createDevAlert, getActiveDevAlerts, type DevAlertDTO } from '@/app/_actions/dev-alerts';
 
 interface Profile {
   id: string; name: string; email: string; telefone: string;
   cpf: string; role: string; image: string | null; createdAt: string;
   sector: { id: string; name: string; color: string } | null;
+}
+
+// Só o setor de desenvolvimento vê/pode usar o "Criar Alerta" (a server
+// action valida de novo — isto aqui é só para esconder o item do menu).
+function isDevSector(sectorName?: string | null) {
+  const n = (sectorName ?? '').toLowerCase();
+  return n.includes('desenvolv') || n === 'dev' || n === 'ti';
+}
+
+// Marca pop-ups já vistos neste navegador (por usuário seria overkill: o
+// aviso é do tipo "dê F5", vale por sessão de tela).
+const SEEN_KEY = 'dev-alerts-seen';
+function getSeenIds(): string[] {
+  try { return JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]'); } catch { return []; }
+}
+function markSeen(id: string) {
+  const seen = [id, ...getSeenIds()].slice(0, 50);
+  localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+}
+
+/**
+ * Listener global dos pop-ups do dev: consulta os alertas ativos a cada 30s
+ * e mostra o primeiro ainda não visto como modal. Montado junto do UserMenu,
+ * então cobre toda a área logada da equipe.
+ */
+function DevAlertPopup() {
+  const [queue, setQueue] = useState<DevAlertDTO[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const alerts = await getActiveDevAlerts();
+        if (!alive) return;
+        const seen = getSeenIds();
+        setQueue(alerts.filter((a) => !seen.includes(a.id)));
+      } catch {}
+    }
+    poll();
+    const interval = setInterval(poll, 30_000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
+
+  const current = queue[0] ?? null;
+  function dismiss() {
+    if (!current) return;
+    markSeen(current.id);
+    setQueue((prev) => prev.slice(1));
+  }
+
+  return (
+    <Dialog open={!!current} onOpenChange={(open) => { if (!open) dismiss(); }}>
+      <DialogContent className="max-w-md border-2 border-amber-300 dark:border-amber-700">
+        {current && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">
+                  <Megaphone className="h-5 w-5" />
+                </span>
+                {current.title || 'Aviso da equipe de desenvolvimento'}
+              </DialogTitle>
+              <DialogDescription className="sr-only">Aviso urgente do time de desenvolvimento</DialogDescription>
+            </DialogHeader>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-zinc-200">
+              {current.message}
+            </p>
+            <DialogFooter className="flex items-center gap-2 sm:justify-between">
+              <span className="text-[11px] text-gray-400">
+                por {current.authorName} · {new Date(current.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <Button onClick={dismiss} className="bg-amber-500 text-white hover:bg-amber-600">
+                Entendi
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Diálogo do dev para disparar um pop-up ou notificação para a equipe. */
+function CreateAlertDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [type, setType] = useState<'popup' | 'notification'>('popup');
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function handleSend() {
+    if (!message.trim()) { toast.error('Escreva o conteúdo do alerta.'); return; }
+    setSending(true);
+    try {
+      const result = await createDevAlert({ type, title, message });
+      toast.success(
+        type === 'popup'
+          ? 'Pop-up disparado! Quem estiver online vê em até 30 segundos.'
+          : `Notificação enviada para ${result.recipients ?? 0} membros da equipe.`,
+      );
+      setTitle(''); setMessage('');
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Falha ao enviar o alerta.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const typeOptions = [
+    {
+      key: 'popup' as const,
+      icon: MonitorUp,
+      label: 'Pop-up na tela',
+      hint: 'Modal urgente para quem está online agora (ex.: "dê F5, saiu atualização"). Vale por 2h.',
+      active: 'border-amber-400 bg-amber-50 dark:border-amber-600 dark:bg-amber-950/30',
+      iconColor: 'text-amber-500',
+    },
+    {
+      key: 'notification' as const,
+      icon: BellRing,
+      label: 'Notificação no sino',
+      hint: 'Vai para o sino de todos os membros da equipe, como uma notificação comum.',
+      active: 'border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950/30',
+      iconColor: 'text-blue-500',
+    },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Megaphone className="h-5 w-5 text-amber-500" /> Criar alerta para a equipe
+          </DialogTitle>
+          <DialogDescription>
+            Aviso do desenvolvimento para todo mundo — escolha como ele chega.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3">
+          {typeOptions.map((opt) => {
+            const Icon = opt.icon;
+            const selected = type === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setType(opt.key)}
+                className={`rounded-xl border-2 p-3 text-left transition-colors ${
+                  selected ? opt.active : 'border-gray-200 hover:border-gray-300 dark:border-zinc-700 dark:hover:border-zinc-600'
+                }`}
+              >
+                <Icon className={`mb-1.5 h-5 w-5 ${opt.iconColor}`} />
+                <p className="text-sm font-bold text-gray-800 dark:text-zinc-100">{opt.label}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-zinc-400">{opt.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="dev-alert-title">Título (opcional)</Label>
+            <Input
+              id="dev-alert-title"
+              placeholder="Ex.: Atualização no sistema"
+              value={title}
+              maxLength={80}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="dev-alert-message">Mensagem</Label>
+            <Textarea
+              id="dev-alert-message"
+              placeholder="Ex.: Acabamos de subir uma atualização — aperte F5 para recarregar a página."
+              value={message}
+              maxLength={1000}
+              rows={4}
+              onChange={(e) => setMessage(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={sending}>Cancelar</Button>
+          <Button onClick={handleSend} disabled={sending || !message.trim()}>
+            {sending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+            {type === 'popup' ? 'Disparar pop-up' : 'Enviar notificação'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function initials(name?: string | null) {
@@ -37,6 +241,7 @@ function initials(name?: string | null) {
 export function UserMenu() {
   const { data: session } = useSession();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
@@ -140,6 +345,15 @@ export function UserMenu() {
               <Settings className="h-4 w-4 text-gray-500" />
               <span className="font-medium">Editar meus dados</span>
             </DropdownMenuItem>
+            {isDevSector(profile?.sector?.name) && (
+              <DropdownMenuItem
+                onClick={() => setAlertOpen(true)}
+                className="cursor-pointer py-2"
+              >
+                <Megaphone className="h-4 w-4 text-amber-500" />
+                <span className="font-medium">Criar Alerta</span>
+              </DropdownMenuItem>
+            )}
 
             <DropdownMenuSeparator />
 
@@ -155,6 +369,10 @@ export function UserMenu() {
       </DropdownMenu>
 
       <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} />
+      <CreateAlertDialog open={alertOpen} onClose={() => setAlertOpen(false)} />
+      {/* Pop-ups do dev: montado aqui porque o UserMenu está presente em toda
+          a área logada da equipe — qualquer um online recebe o aviso. */}
+      <DevAlertPopup />
     </>
   );
 }

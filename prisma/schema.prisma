@@ -120,6 +120,24 @@ model Sector {
   @@map("sectors")
 }
 
+// Aviso urgente do time de DESENVOLVIMENTO para a equipe online (ex.: "dê F5,
+// saiu atualização"). type="popup" aparece como modal para quem estiver com o
+// painel aberto (poll no UserMenu); expira em poucas horas para quem logar
+// depois não ver aviso velho. type="notification" nem passa por aqui — vira
+// Notification comum no sino.
+model DevAlert {
+  id         String   @id @default(cuid())
+  title      String?
+  message    String
+  authorId   String
+  authorName String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([expiresAt])
+  @@map("dev_alerts")
+}
+
 model ChatMessage {
   id             String         @id @default(cuid())
   body           String
