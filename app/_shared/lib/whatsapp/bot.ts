@@ -6,6 +6,7 @@ import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
   whatsappChannelId,
@@ -389,6 +390,9 @@ async function qualifyToQueue(contactId: string, contactLabel: string, reason: s
   await tagAsQualified(conversation.id);
   await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}`);
   await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId);
+  // Devolve pra Meta (API de Conversões) que este lead qualificou — otimiza
+  // as campanhas por qualidade. Fire-and-forget, nunca quebra o fluxo.
+  void reportLeadStageToMeta(contactId, "qualificado");
 }
 
 /** Cliente NÃO elegível: encerra o ticket como "não qualificada". */
@@ -399,6 +403,7 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
     // futura conversa comece do zero.
     data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, botMemory: null, botState: null, urgent: false, queuedAt: null, queueAlertAt: null },
   });
+  void reportLeadStageToMeta(contactId, "nao_qualificado");
 }
 
 /**

@@ -218,7 +218,19 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
   try {
     const contact = await findOrCreateContactByPhone(input.phone, input.clientName);
     if (!contact) return { sent: false, via: null, reason: "telefone do card inválido" };
-    if (contact.optedOut) return { sent: false, via: null, reason: "contato pediu para não receber mensagens" };
+    if (contact.optedOut) {
+      await logWhatsAppEvent({
+        action: "wa_text",
+        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: contato pediu para não receber mensagens (opt-out)`,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        metadata: { source: input.source, automated: true, skipped: true, reason: "opt-out" },
+      });
+      return { sent: false, via: null, reason: "contato pediu para não receber mensagens" };
+    }
 
     // Cap de frequência: já houve proativa há menos de SYSTEM_COOLDOWN_MS?
     // Pula (o card avançando várias etapas de uma vez não vira rajada).
@@ -251,6 +263,16 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       const body = input.text + OPT_OUT_FOOTER;
       const result = await sendText(contact.phone, body);
       if (!result.waMessageId) {
+        await logWhatsAppEvent({
+          action: "wa_text",
+          message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: a Meta rejeitou o envio (${result.error ?? "sem detalhe"})`,
+          authorId: input.authorId,
+          authorName: input.authorName,
+          contactId: contact.id,
+          contactName: contact.name,
+          contactPhone: contact.phone,
+          metadata: { source: input.source, automated: true, skipped: true, reason: "meta rejeitou" },
+        });
         return { sent: false, via: "text", reason: result.error ?? "Meta rejeitou o envio" };
       }
       await persistSystemMessage(contact, result.waMessageId, body, input.source);
@@ -294,13 +316,23 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
         contactId: contact.id,
         contactName: contact.name,
         contactPhone: contact.phone,
-        metadata: { source: input.source, automated: true, skipped: true },
+        metadata: { source: input.source, automated: true, skipped: true, reason: "sem template" },
       });
       return { sent: false, via: null, reason: "janela de 24h expirada e nenhum template configurado" };
     }
 
     const template = await db.whatsAppTemplate.findUnique({ where: { name: input.templateName } });
     if (!template) {
+      await logWhatsAppEvent({
+        action: "wa_text",
+        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: template "${input.templateName}" não cadastrado (sincronize com a Meta)`,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        metadata: { source: input.source, automated: true, skipped: true, reason: "sem template" },
+      });
       return { sent: false, via: "template", reason: `template "${input.templateName}" não cadastrado (sincronize com a Meta)` };
     }
     const vars = (input.templateVars ?? []).slice(0, template.bodyVars);
@@ -308,6 +340,16 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
 
     const result = await sendTemplate(contact.phone, template.name, vars, template.language);
     if (!result.waMessageId) {
+      await logWhatsAppEvent({
+        action: "wa_text",
+        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: a Meta rejeitou o template "${template.name}" (${result.error ?? "sem detalhe"})`,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        metadata: { source: input.source, automated: true, skipped: true, reason: "meta rejeitou" },
+      });
       return { sent: false, via: "template", reason: result.error ?? "Meta rejeitou o template" };
     }
 

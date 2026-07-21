@@ -633,7 +633,8 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
     "cmqp5w7hd000dl404atfj5mrd",
     "cmazuwrcj0000iav499hqf5ij",
     "cmqp55x1b0007l404d00r4gy8",
-    "cmqp57px0000bl404oewmkgxn"
+    "cmqp57px0000bl404oewmkgxn", 
+    "cmpwucq210001jv041oc9twsr" // daniel
   ];
 
   const session = useSession().data;

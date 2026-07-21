@@ -65,6 +65,26 @@ export interface IncomingWaMessage {
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
   // Presente quando o cliente RESPONDE (quote) uma mensagem.
   context?: { id?: string };
+  // Presente quando a conversa começou por um anúncio Click-to-WhatsApp
+  // (Facebook/Instagram). Base da atribuição de origem do lead.
+  referral?: {
+    source_url?: string;
+    source_type?: string; // ad | post | page
+    source_id?: string;
+    headline?: string;
+    body?: string;
+    media_type?: string;
+    ctwa_clid?: string;
+  };
+}
+
+// Facebook e Instagram usam o mesmo objeto referral; a plataforma é deduzida
+// pela URL de origem do clique.
+function detectAdPlatform(sourceUrl?: string): string {
+  const url = (sourceUrl ?? "").toLowerCase();
+  if (url.includes("instagram.com") || url.includes("ig.me")) return "instagram";
+  if (url.includes("facebook.com") || url.includes("fb.me") || url.includes("fb.com")) return "facebook";
+  return "meta";
 }
 
 function extractBody(msg: IncomingWaMessage): string | null {
@@ -118,6 +138,24 @@ export async function ingestIncomingMessage(
     await db.whatsAppContact.update({
       where: { id: contact.id },
       data: { optedInAt: new Date(), optInSource: "inbound" },
+    });
+  }
+
+  // Atribuição first-touch: a Meta manda `referral` na 1ª mensagem vinda de um
+  // anúncio Click-to-WhatsApp. Grava uma única vez e nunca sobrescreve — se o
+  // mesmo contato clicar em outro anúncio depois, a origem continua a original.
+  if (msg.referral && !contact.adReferral) {
+    await db.whatsAppContact.update({
+      where: { id: contact.id },
+      data: {
+        adPlatform: detectAdPlatform(msg.referral.source_url),
+        adSourceType: msg.referral.source_type ?? null,
+        adSourceId: msg.referral.source_id ?? null,
+        adSourceUrl: msg.referral.source_url ?? null,
+        adHeadline: msg.referral.headline ?? null,
+        ctwaClid: msg.referral.ctwa_clid ?? null,
+        adReferral: msg.referral,
+      },
     });
   }
 

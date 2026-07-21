@@ -8,6 +8,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { CLOSE_CATEGORY_LABELS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
+import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
 // Fila e atribuição de conversas de WhatsApp (estilo Botconversa):
 // bot → queued (handoff) → human (atendente assume) → closed.
@@ -233,6 +234,9 @@ export async function closeConversation(
       contactPhone: before.contact?.phone,
       metadata: { qualified, closeCategory, by: 'atendente' },
     });
+    // Devolve pra Meta o desfecho decidido pelo atendente (qualificado /
+    // não qualificado). Fire-and-forget; outras categorias são ignoradas.
+    void reportLeadStageToMeta(before.contactId, closeCategory);
   }
 }
 

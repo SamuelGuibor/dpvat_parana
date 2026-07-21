@@ -463,6 +463,20 @@ model WhatsAppContact {
   // Documentos pessoais anexados na ficha antes do contato virar cliente:
   // [{ key, name, uploadedAt }]. Migram para Document real no "Adicionar cliente".
   draftDocuments Json?
+  // Atribuição de origem (Click-to-WhatsApp ads): preenchido na PRIMEIRA
+  // mensagem que chega com objeto `referral` da Meta e nunca sobrescrito
+  // (first touch). adPlatform é derivado da source_url (facebook | instagram).
+  adPlatform     String?
+  adSourceType   String? // ad | post | page
+  adSourceId     String? // ID do anúncio/post na Meta
+  adSourceUrl    String?
+  adHeadline     String?
+  ctwaClid       String? // click id p/ API de Conversões
+  adReferral     Json? // payload cru do referral, para auditoria
+  // Último estágio do funil reportado à API de Conversões da Meta (dedupe:
+  // não reenvia o mesmo estágio pro mesmo lead). Ex.: LeadQualificado.
+  metaLeadStage   String?
+  metaLeadStageAt DateTime?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   conversation   WhatsAppConversation?

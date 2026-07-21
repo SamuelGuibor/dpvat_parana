@@ -121,9 +121,10 @@ export default function Page() {
   const kanban = activeTab === 'kanban';
 
   const ALLOWED_ARCHIVE_USERS = [
-    "cmazo6j870000ia0gw5ppb486",
+    "cmazo6j870000ia0gw5ppb486", // eu 
     "cmqp5w7hd000dl404atfj5mrd",
     "cmazuwrcj0000iav499hqf5ij",
+    "cmpwucq210001jv041oc9twsr" //daniel
   ];
 
   const canViewArchived = ALLOWED_ARCHIVE_USERS.includes(session?.user?.id ?? "");

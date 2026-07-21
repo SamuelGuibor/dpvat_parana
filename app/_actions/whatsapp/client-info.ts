@@ -7,6 +7,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { createLog } from '@/app/_shared/lib/log';
 import { summarizeConversationToCard } from '@/app/_shared/lib/whatsapp/assist';
 import { hashPassword } from '@/app/_shared/lib/password';
+import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
 // Ficha do cliente dentro do atendimento de WhatsApp.
 //
@@ -196,6 +197,8 @@ export async function addClientFromConversation(contactId: string, input: Client
     });
     // Vinculou ao cadastro existente → resumo da conversa no card.
     await summarizeConversationToCard(contactId, { userId: existing.id }, me);
+    // Vincular a um card também conta como lead qualificado pra Meta.
+    void reportLeadStageToMeta(contactId, 'qualificado');
     return saveClientInfo(contactId, input);
   }
 
@@ -240,6 +243,10 @@ export async function addClientFromConversation(contactId: string, input: Client
   // Card recém-criado a partir da conversa → resumo automático do histórico
   // como primeiro comentário (best-effort).
   await summarizeConversationToCard(contactId, { userId: user.id }, me);
+
+  // Entrou no kanban = lead qualificado de fato → devolve pra Meta (API de
+  // Conversões). O dedupe evita duplicar se a IA/atendente já reportou.
+  void reportLeadStageToMeta(contactId, 'qualificado');
 
   return getClientInfo(contactId);
 }

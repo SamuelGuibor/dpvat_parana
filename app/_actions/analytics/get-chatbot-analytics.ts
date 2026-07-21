@@ -71,6 +71,24 @@ export interface ChatbotAnalytics {
       avgFirstResponseMin: number | null; // média assumir → 1ª resposta (min)
     }[];
   };
+  // Atribuição de origem dos leads (Click-to-WhatsApp): contatos novos no
+  // período agrupados por plataforma e por anúncio. "organic" = chegou sem
+  // referral (link direto, indicação, busca...).
+  adOrigins: {
+    byPlatform: Record<string, number>; // facebook | instagram | meta | organic
+    byAd: { platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number }[];
+    totalNewContacts: number;
+  };
+  // Avisos AUTOMÁTICOS ao cliente (progresso do card + automações): entregas
+  // e falhas no período. Ficam FORA da atividade/estatística da equipe — o
+  // "autor" do log é só quem moveu o card, não quem mandou mensagem.
+  autoNotify: {
+    sent: number;
+    failed: number;
+    silenceAlerts: number; // clientes com N avisos seguidos sem resposta
+    byReason: Record<string, number>; // sem-opt-in | cooldown | sem-template | opt-out | meta-rejeitou | outro
+    failures: { id: string; at: string; contactName: string | null; authorName: string; reason: string; source: string }[];
+  };
   activity: ChatbotActivityItem[];
   // Saúde da conta: avisos oficiais da Meta no período (violação, restrição,
   // qualidade do número, templates). Vazio = conta sem ocorrências.
@@ -137,7 +155,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 29); monthAgo.setHours(0, 0, 0, 0);
   const costSince = since < monthAgo ? since : monthAgo;
 
-  const [logs, humanMessages] = await Promise.all([
+  const [logs, humanMessages, newContacts] = await Promise.all([
     db.log.findMany({
       where: { action: { startsWith: 'wa_' }, createdAt: { gte: costSince } },
       orderBy: { createdAt: 'desc' },
@@ -149,7 +167,37 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
       orderBy: { createdAt: 'asc' },
       select: { contactId: true, authorId: true, createdAt: true },
     }),
+    // Contatos novos do período — base da atribuição de origem (CTWA ads).
+    // Só contatos que MANDARAM mensagem (optInSource=inbound): os avisos de
+    // progresso do kanban criam contatos "fantasma" a partir do telefone do
+    // card, e esses não são leads (o cliente nunca escreveu).
+    db.whatsAppContact.findMany({
+      where: { createdAt: { gte: since }, optInSource: 'inbound' },
+      select: { adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true },
+    }),
   ]);
+
+  // Agrupa origem dos leads: por plataforma e por anúncio individual.
+  const adOrigins = {
+    byPlatform: {} as Record<string, number>,
+    byAd: [] as { platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number }[],
+    totalNewContacts: newContacts.length,
+  };
+  const adKeyMap = new Map<string, (typeof adOrigins.byAd)[number]>();
+  for (const c of newContacts) {
+    const platform = c.adPlatform ?? 'organic';
+    adOrigins.byPlatform[platform] = (adOrigins.byPlatform[platform] ?? 0) + 1;
+    if (!c.adPlatform) continue;
+    const key = c.adSourceId ?? c.adHeadline ?? c.adSourceUrl ?? 'desconhecido';
+    let entry = adKeyMap.get(key);
+    if (!entry) {
+      entry = { platform, headline: c.adHeadline, sourceId: c.adSourceId, sourceUrl: c.adSourceUrl, count: 0 };
+      adKeyMap.set(key, entry);
+      adOrigins.byAd.push(entry);
+    }
+    entry.count += 1;
+  }
+  adOrigins.byAd.sort((a, b) => b.count - a.count);
 
   // Índice authorId:contactId → timestamps das mensagens (já em ordem asc).
   const msgTimes = new Map<string, number[]>();
@@ -179,6 +227,28 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
 
   const cost = { weekUSD: 0, monthUSD: 0, weekTokens: 0, monthTokens: 0, model: null as string | null };
   const closeCategories: Record<string, number> = {};
+
+  const autoNotify = {
+    sent: 0,
+    failed: 0,
+    silenceAlerts: 0,
+    byReason: {} as Record<string, number>,
+    failures: [] as { id: string; at: string; contactName: string | null; authorName: string; reason: string; source: string }[],
+  };
+  // Normaliza o motivo da falha: logs novos têm metadata.reason; os antigos
+  // (antes do reason existir em todos os casos) caem no parse da mensagem.
+  function failReasonOf(meta: any, message: string): string {
+    const raw = String(meta.reason ?? '');
+    if (raw === 'sem opt-in') return 'sem-opt-in';
+    if (raw === 'cooldown') return 'cooldown';
+    if (raw === 'sem template') return 'sem-template';
+    if (raw === 'opt-out') return 'opt-out';
+    if (raw === 'meta rejeitou') return 'meta-rejeitou';
+    if (message.includes('sem opt-in')) return 'sem-opt-in';
+    if (message.includes('intervalo mínimo')) return 'cooldown';
+    if (message.includes('nenhum template')) return 'sem-template';
+    return 'outro';
+  }
 
   // Desempenho por atendente (chaveado por authorId).
   const teamStats = new Map<string, {
@@ -262,6 +332,29 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
           qualifyDurations.push(meta.durationMs);
         }
       }
+    } else if (meta.automated === true) {
+      // Aviso AUTOMÁTICO (progresso do card/automação): não é ação do
+      // atendente — o authorName é só quem moveu o card. Vai pro painel
+      // próprio de entregas/falhas, fora do feed e das estatísticas da equipe.
+      if (typeof meta.unansweredCount === 'number') {
+        autoNotify.silenceAlerts += 1;
+      } else if (meta.skipped === true) {
+        autoNotify.failed += 1;
+        const reason = failReasonOf(meta, l.message);
+        autoNotify.byReason[reason] = (autoNotify.byReason[reason] ?? 0) + 1;
+        if (autoNotify.failures.length < 100) {
+          autoNotify.failures.push({
+            id: l.id,
+            at: l.createdAt.toISOString(),
+            contactName: meta.contactName ?? null,
+            authorName: l.authorName,
+            reason,
+            source: String(meta.source ?? ''),
+          });
+        }
+      } else {
+        autoNotify.sent += 1;
+      }
     } else {
       // Ações de atendentes → feed com todos os logs do filtro ativo (a UI rola).
       if (activity.length < 500) {
@@ -328,5 +421,5 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     .filter((s) => s.assumed || s.closed || s.messages)
     .sort((a, b) => b.messages - a.messages);
 
-  return { periodDays, bot, cost, closeCategories, team: { attendants }, activity, accountEvents };
+  return { periodDays, bot, cost, closeCategories, team: { attendants }, adOrigins, autoNotify, activity, accountEvents };
 }
