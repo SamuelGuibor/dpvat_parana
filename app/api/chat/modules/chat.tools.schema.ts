@@ -51,7 +51,7 @@ export const toolDefinitions: ToolDefinitionWithAccess[] = [
 ];
 
 export function getToolsForRole(role: string): FunctionDeclaration[] {
-  const isAdmin = role === "ADMIN";
+  const isAdmin = role?.startsWith("ADMIN") ?? false;
   return toolDefinitions
     .filter((t) => !t.adminOnly || isAdmin)
     .map(({ adminOnly, ...tool }) => tool);

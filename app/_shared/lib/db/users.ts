@@ -3,6 +3,8 @@ import { db } from "@/app/_shared/lib/prisma";
 const userBasicSelect = {
   id: true,
   name: true,
+  cpf: true,
+  telefone: true,
   role: true,
   roleFixed: true,
   labelId: true,
@@ -61,9 +63,17 @@ const userFullSelect = {
 export async function fetchUsers(options?: { role?: string }) {
   return db.user.findMany({
     orderBy: { createdAt: "asc" },
+    // Sem role específico, devolve só CARDS DE CLIENTE ativos: membros da
+    // equipe (ADMIN*), GHOST e arquivados eram descartados no client de
+    // qualquer forma — filtrar no banco corta o payload que viajava a cada
+    // tick de polling (o histórico de arquivados cresce para sempre).
     where: options?.role
       ? { role: options.role }
-      : { role: { not: 'GHOST' } },
+      : {
+          role: { not: "GHOST" },
+          NOT: { role: { startsWith: "ADMIN" } },
+          archiveStatus: null,
+        },
     select: userBasicSelect,
   });
 }

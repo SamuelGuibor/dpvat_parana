@@ -67,10 +67,11 @@ export function Contact() {
   useEffect(() => {
     if (state.success) {
       toast.success('Enviado com sucesso', {className: 'bg-green-600 text-white border border-green-700 rounded-xl'});
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
-    } 
+      // Limpa o formulário no lugar do window.location.reload() — a página
+      // inteira piscava e voltava ao topo só para resetar os campos.
+      formRef.current?.reset();
+      setValue("");
+    }
   }, [state]);
   return (
     <section id="contato" className="py-20 bg-gray-50">
@@ -230,14 +231,13 @@ export function Contact() {
             <div className="bg-blue-900 text-white p-8 rounded-lg">
               <h4 className="text-2xl mb-4">Horário de Atendimento</h4>
               <div className="space-y-2">
-                <p>Segunda a Sabádo: 9h às 18h</p>
-                <p>Sábados: 9h às 18h</p>
+                <p>Segunda a Sábado: 9h às 18h</p>
               </div>
             </div>
 
             <div className="p-8 rounded-lg">
               <Link target="_blank" href='https://www.google.com/maps/place/PARAN%C3%81+SEGUROS+%7C+Resgate+DPVAT+%7C+INSS+%7C+RCF+%7C+Seguros/@-25.4499356,-49.3043702,17z/data=!4m6!3m5!1s0x94dce3b97d8af1ed:0x31b528852e233c24!8m2!3d-25.450018!4d-49.3028896!16s%2Fg%2F11bv30kx9_?entry=ttu&g_ep=EgoyMDI1MTIwOS4wIKXMDSoKLDEwMDc5MjA2OUgBUAM%3D'>
-                <Image src={'/maps.png'} width={500} height={200} alt='andress' />
+                <Image src={'/maps.png'} width={500} height={200} alt='Endereço da Paraná Seguros no Google Maps' />
               </Link>     
             </div>
 

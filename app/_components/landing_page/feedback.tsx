@@ -83,7 +83,7 @@ export function Testimonials() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-16">
-          <h1 className="text-blue-600 mb-4 text-xl font-bold">Depoimentos</h1>
+          <h2 className="text-blue-600 mb-4 text-xl font-bold">Depoimentos</h2>
           <p className="text-gray-600 max-w-2xl mx-auto">
             Veja o que nossos clientes dizem sobre nossos serviços. Avaliações reais de pessoas que confiaram em nosso trabalho.
           </p>

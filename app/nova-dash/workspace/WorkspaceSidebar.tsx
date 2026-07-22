@@ -55,8 +55,40 @@ export function WorkspaceSidebar({ active, onChange, isManager, chatUnread, what
     },
   ];
 
+  // Todos os itens achatados para a barra horizontal do mobile.
+  const flatItems = groups.flatMap((g) => g.items);
+
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-gray-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <>
+      {/* Mobile: barra horizontal compacta com scroll lateral (a sidebar de
+          240px roubava a tela inteira do celular). */}
+      <nav className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-gray-200 bg-white px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
+        {flatItems.map(({ key, label, icon: Icon, badge }) => {
+          const isActive = active === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onChange(key)}
+              className={`relative flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${
+                isActive
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/20'
+                  : 'bg-gray-100 text-gray-600 dark:bg-zinc-800 dark:text-zinc-300'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+              {badge ? (
+                <span className={`grid h-4 min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold ${isActive ? 'bg-white text-blue-700' : 'bg-red-600 text-white'}`}>
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Desktop: sidebar completa de sempre */}
+      <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-gray-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:flex">
       <div className="border-b border-gray-100 px-5 py-4 dark:border-zinc-800">
         <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Espaço de Trabalho</p>
       </div>
@@ -106,5 +138,6 @@ export function WorkspaceSidebar({ active, onChange, isManager, chatUnread, what
         ))}
       </nav>
     </aside>
+    </>
   );
 }

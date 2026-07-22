@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { MentionsInput, Mention } from 'react-mentions';
-import { Hash, MessageSquare, Plus, Reply, X, Users, Lock, Pencil, Trash2, Check, Ban, Megaphone } from 'lucide-react';
+import { Hash, MessageSquare, Plus, Reply, X, Users, Lock, Pencil, Trash2, Check, Ban, Megaphone, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
@@ -81,6 +81,13 @@ export function Chat() {
   const { channels, refreshChannels } = useMyChannels();
 
   const [activeChannel, setActiveChannel] = useState<string>(GENERAL_CHANNEL);
+  // Mobile: lista de canais e conversa alternam em tela cheia (no desktop as
+  // duas colunas convivem e este estado é ignorado).
+  const [mobileView, setMobileView] = useState<'list' | 'thread'>('thread');
+  const openChannel = (ch: string) => {
+    setActiveChannel(ch);
+    setMobileView('thread');
+  };
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [channelInfoOpen, setChannelInfoOpen] = useState(false);
@@ -232,19 +239,19 @@ export function Chat() {
   return (
     <div className="flex h-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       {/* ---------- Lista de conversas ---------- */}
-      <aside className="flex w-[300px] shrink-0 flex-col border-r border-gray-100 bg-gray-50/50 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <aside className={`${mobileView === 'list' ? 'flex' : 'hidden'} w-full shrink-0 flex-col border-r border-gray-100 bg-gray-50/50 dark:border-zinc-800 dark:bg-zinc-950/40 md:flex md:w-[300px]`}>
         <div className="flex items-center justify-between px-4 pb-1 pt-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Canais</span>
           <button onClick={() => setNewChannelOpen(true)} title="Novo canal" className="grid h-5 w-5 place-items-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-zinc-800">
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
-        <ConversationButton active={activeChannel === GENERAL_CHANNEL} onClick={() => setActiveChannel(GENERAL_CHANNEL)} icon={<Hash className="h-4 w-4" />} label="Geral" badge={unread[GENERAL_CHANNEL]} />
+        <ConversationButton active={activeChannel === GENERAL_CHANNEL} onClick={() => openChannel(GENERAL_CHANNEL)} icon={<Hash className="h-4 w-4" />} label="Geral" badge={unread[GENERAL_CHANNEL]} />
         {channels.map((c) => (
           <ConversationButton
             key={c.id}
             active={activeChannel === c.id}
-            onClick={() => setActiveChannel(c.id)}
+            onClick={() => openChannel(c.id)}
             icon={c.announceOnly ? <Megaphone className="h-3.5 w-3.5 text-amber-500" /> : <Lock className="h-3.5 w-3.5" />}
             label={c.name}
             badge={unread[c.id]}
@@ -256,15 +263,23 @@ export function Chat() {
           {others.map((m) => {
             const ch = dmChannelId(meId, m.id);
             return (
-              <ConversationButton key={m.id} active={activeChannel === ch} onClick={() => setActiveChannel(ch)} icon={<PresenceAvatar member={m} />} label={m.name} badge={unread[ch]} />
+              <ConversationButton key={m.id} active={activeChannel === ch} onClick={() => openChannel(ch)} icon={<PresenceAvatar member={m} />} label={m.name} badge={unread[ch]} />
             );
           })}
         </div>
       </aside>
 
       {/* ---------- Thread + composer ---------- */}
-      <section className="flex min-w-0 flex-1 flex-col bg-gray-50/30 dark:bg-zinc-950/20">
-        <header className="flex items-center gap-2 border-b border-gray-100 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+      <section className={`${mobileView === 'thread' ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col bg-gray-50/30 dark:bg-zinc-950/20 md:flex`}>
+        <header className="flex items-center gap-2 border-b border-gray-100 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900 md:px-5">
+          {/* Voltar para a lista de canais (só no celular) */}
+          <button
+            onClick={() => setMobileView('list')}
+            title="Ver canais e conversas"
+            className="-ml-1 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:hidden"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
           {activeChannel === GENERAL_CHANNEL ? <Hash className="h-4 w-4 text-blue-500" />
             : activeCustom ? (activeCustom.announceOnly ? <Megaphone className="h-4 w-4 text-amber-500" /> : <Lock className="h-4 w-4 text-blue-500" />)
               : activeMember ? <PresenceAvatar member={activeMember} /> : null}

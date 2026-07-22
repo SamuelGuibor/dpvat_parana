@@ -9,6 +9,7 @@ import {
 } from "@/app/_shared/lib/whatsapp/service";
 import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
 import { handleAccountEvent } from "@/app/_shared/lib/whatsapp/account-events";
+import { reportCriticalError } from "@/app/_shared/lib/report-error";
 
 // Webhook da WhatsApp Cloud API (Meta oficial).
 //
@@ -126,9 +127,10 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (err) {
-    // Loga mas responde 200 mesmo assim: a Meta faria retry e o dedup segura,
-    // mas retry infinito de um payload problemático só gera ruído.
-    console.error("[WHATSAPP WEBHOOK] Erro ao processar evento:", err);
+    // Responde 200 mesmo assim: a Meta faria retry e o dedup segura, mas
+    // retry infinito de um payload problemático só gera ruído. O erro vai
+    // para o Discord — antes era só console.error efêmero na Vercel.
+    await reportCriticalError("WHATSAPP WEBHOOK", err);
   }
 
   return NextResponse.json({ ok: true });

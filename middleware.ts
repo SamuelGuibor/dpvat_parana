@@ -38,6 +38,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth", // NextAuth + login legado (rate-limited na rota)
   "/api/whatsapp/webhook", // assinatura HMAC da Meta
   "/api/whatsapp/cron", // CRON_SECRET
+  "/api/afastamentos/check", // GET: CRON_SECRET; POST: sessão (validados na rota)
   "/api/botconversa/contratado", // shared secret (validado na rota)
   "/api/discord/trello", // shared secret (validado na rota)
 ];
@@ -46,7 +47,7 @@ const PUBLIC_API_PREFIXES = [
 const PUBLIC_GET_APIS = ["/api/process-status", "/api/user-status", "/api/documents"];
 
 /** Páginas públicas cujo fluxo legítimo usa server actions anônimas. */
-const PUBLIC_ACTION_PAGES = ["/area-do-cliente", "/status", "/documents"];
+const PUBLIC_ACTION_PAGES = ["/area-do-cliente", "/status", "/documents", "/login/recuperar-senha"];
 
 function matchesPrefix(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));

@@ -3,7 +3,7 @@
 /* eslint-disable no-unused-vars */
 export const dynamic = "force-dynamic";
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
@@ -32,29 +32,27 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { CardDialog } from './CardDialog';
 import { cn } from '@/app/_shared/lib/utils';
-import { getUsers } from '@/app/_actions/users/get-user';
-import { getProcess } from '@/app/_actions/process/get-process';
 import { CreateNewCard } from '@/app/nova-dash/_components/create-newcard';
 import { differenceInDays } from 'date-fns';
 import { updateKanbanStatus } from '@/app/_actions/cards/update-kanban';
 import { reorderCards } from '@/app/_actions/cards/reorder-cards';
-import useSWR from 'swr';
-import { getLabels } from '../_actions/labels/get-labels';
 import { deleteCard } from '../_actions/cards/delete-card';
 import { createUser } from '../_actions/users/create-user';
+import { findDuplicateClient, type DuplicateHit } from '../_actions/users/find-duplicate';
+import { searchArchivedCards, type ArchivedSearchHit } from '../_actions/cards/search-archived';
+import { maskCpf, isValidCpf, onlyDigits } from '@/app/_shared/utils/format';
 import { setArchiveStatus, type ArchiveStatus } from '../_actions/cards/archive-card';
 import { toast } from "sonner";
 import {
   ArchiveX,
+  ArrowRightLeft,
   FileX,
   FolderX,
   PhoneOff,
   Send,
   UserX,
 } from "lucide-react";
-import { useSession } from 'next-auth/react';
-
-const fetcher = (url: string) => fetch(url).then(res => res.json())
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 
 // Intervalo de sincronização do board (tempo real "near real-time" via polling).
 const KANBAN_POLL_MS = 7000;
@@ -71,17 +69,6 @@ function hexToRgba(hex: string, alpha: number): string {
   if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return `rgba(59, 130, 246, ${alpha})`;
   const n = parseInt(h, 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
-export function useComments({ userId, processId }: { userId?: string; processId?: string }) {
-  const params = new URLSearchParams();
-  if (userId) params.append('userId', userId);
-  if (processId) params.append('processId', processId);
-  const query = params.toString() ? `/api/comments?${params.toString()}` : '/api/comments';
-  return useSWR(query, fetcher, {
-    refreshInterval: 5000,
-    revalidateOnFocus: true,
-  });
 }
 
 export interface KanbanCard {
@@ -248,6 +235,8 @@ const defaultServiceStyle = { bgColor: '#f3f4f6', textColor: '#374151' };
 interface Item {
   id: string
   name: string
+  cpf?: string | null
+  telefone?: string | null
   type?: string
   labelId?: string | null
   label?: Label | null
@@ -475,6 +464,8 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
   const [email, setEmail] = useState('');
   const [labelId, setLabelId] = useState('');
   const [saving, setSaving] = useState(false);
+  // Duplicado encontrado (mesmo CPF): mostra aviso e exige confirmação.
+  const [duplicate, setDuplicate] = useState<DuplicateHit | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -483,14 +474,11 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
       setPassword('');
       setEmail('');
       setLabelId('');
+      setDuplicate(null);
     }
   }, [open]);
 
-  async function handle() {
-    if (!name.trim() || !cpf.trim() || !password.trim()) {
-      toast.error('Nome, CPF e senha são obrigatórios.');
-      return;
-    }
+  async function doCreate() {
     setSaving(true);
     try {
       await createUser({
@@ -504,11 +492,37 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
       toast.success('Cliente criado com sucesso!');
       setOpen(false);
       onCreated();
-    } catch {
-      toast.error('Erro ao criar cliente.');
+    } catch (err) {
+      console.error('Erro ao criar cliente:', err);
+      toast.error('Erro ao criar cliente. Tente novamente.');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handle() {
+    if (!name.trim() || !cpf.trim() || !password.trim()) {
+      toast.error('Nome, CPF e senha são obrigatórios.');
+      return;
+    }
+    if (!isValidCpf(cpf)) {
+      toast.error('CPF inválido — confira os dígitos.');
+      return;
+    }
+    setSaving(true);
+    try {
+      // Antes de criar, avisa se já existe cliente com esse CPF (evita o mesmo
+      // acidentado com dois cards seguindo fluxos diferentes).
+      const dup = await findDuplicateClient({ cpf });
+      if (dup) {
+        setDuplicate(dup);
+        setSaving(false);
+        return;
+      }
+    } catch {
+      // Se a checagem falhar, segue o fluxo normal (não bloqueia a criação).
+    }
+    await doCreate();
   }
 
   return (
@@ -543,7 +557,13 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
               </div>
               <div className="space-y-1.5">
                 <UILabel className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">CPF *</UILabel>
-                <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50" />
+                <Input
+                  value={cpf}
+                  inputMode="numeric"
+                  onChange={(e) => { setCpf(maskCpf(e.target.value)); setDuplicate(null); }}
+                  placeholder="000.000.000-00"
+                  className="h-11 rounded-xl bg-gray-50 dark:bg-zinc-950/50"
+                />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -574,12 +594,33 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
             </div>
           </div>
 
+          {duplicate && (
+            <div className="mx-6 mb-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+              <p className="font-semibold">Já existe um cliente com este CPF:</p>
+              <p className="mt-1">
+                {duplicate.name}
+                {duplicate.cardNumber != null && <> — card #{duplicate.cardNumber}</>}
+                {duplicate.archiveStatus && <> (arquivado)</>}
+              </p>
+              <p className="mt-1 text-xs">
+                Confira na busca do quadro antes de criar de novo — ou confirme abaixo para criar mesmo assim.
+              </p>
+            </div>
+          )}
+
           <DialogFooter className="flex flex-row gap-3 p-6 pt-0">
             <Button variant="secondary" className="flex-1 h-11 rounded-xl" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
-            <Button onClick={handle} disabled={saving} className="flex-1 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <User className="w-4 h-4 mr-2" />}
-              Criar
-            </Button>
+            {duplicate ? (
+              <Button onClick={doCreate} disabled={saving} className="flex-1 h-11 rounded-xl bg-amber-600 hover:bg-amber-700">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <User className="w-4 h-4 mr-2" />}
+                Criar mesmo assim
+              </Button>
+            ) : (
+              <Button onClick={handle} disabled={saving} className="flex-1 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <User className="w-4 h-4 mr-2" />}
+                Criar
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -600,9 +641,13 @@ interface DraggableCardProps {
   // Soltar um card em cima deste: insere o arrastado ANTES deste card
   // (reordenação dentro da coluna ou posição exata vindo de outra coluna).
   onCardDrop: (cardId: string, sourceColumnId: string, targetColumnId: string, beforeCardId: string) => void;
+  // Alternativa ao drag-and-drop (essencial no touch, onde o HTML5Backend
+  // não funciona): menu "Mover para" com as colunas do board.
+  moveTargets: { id: string; title: string }[];
+  onMoveTo: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
 }
 
-const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete, onArchive, onCardDrop }) => {
+const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete, onArchive, onCardDrop, moveTargets, onMoveTo }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
     item: { cardId: card.id, sourceColumnId: columnId },
@@ -628,18 +673,11 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const ALLOWED_ARCHIVE_USERS = [
-    "cmazo6j870000ia0gw5ppb486",
-    "cmqp5w7hd000dl404atfj5mrd",
-    "cmazuwrcj0000iav499hqf5ij",
-    "cmqp55x1b0007l404d00r4gy8",
-    "cmqp57px0000bl404oewmkgxn", 
-    "cmpwucq210001jv041oc9twsr" // daniel
-  ];
 
-  const session = useSession().data;
-
-  const canArchive = ALLOWED_ARCHIVE_USERS.includes(session?.user?.id ?? "");
+  // Permissões vêm do cargo + overrides do ADMIN++ (PermissionsProvider).
+  const { perms } = usePermissions();
+  const canArchive = perms.archive_cards;
+  const canDelete = perms.delete_cards;
 
   async function handleDelete() {
     setDeleting(true);
@@ -774,7 +812,9 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                   );
                 })()}
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+              {/* No touch não existe hover — os botões ficam sempre visíveis
+                  no mobile e continuam aparecendo só no hover no desktop. */}
+              <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200">
                 <Button
                   size="icon"
                   variant="secondary"
@@ -783,6 +823,33 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 >
                   <Edit className="w-3.5 h-3.5" />
                 </Button>
+
+                {/* Mover sem arrastar (única forma no celular) */}
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      title="Mover para outra coluna"
+                      className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-indigo-50 hover:text-indigo-600"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-72 w-60 overflow-y-auto">
+                    <DropdownMenuLabel className="text-xs text-gray-400">Mover para a coluna</DropdownMenuLabel>
+                    {moveTargets.filter((t) => t.id !== columnId).map((t) => (
+                      <DropdownMenuItem
+                        key={t.id}
+                        onSelect={(e) => { e.preventDefault(); onMoveTo(card.id, columnId, t.id); }}
+                        className="cursor-pointer text-sm"
+                      >
+                        {t.title}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 {canArchive && (
                   <DropdownMenu modal={true}>
@@ -806,7 +873,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 dark:focus:bg-emerald-950/40"
                       >
                         <DollarSign className="w-4 h-4 mr-2" />
-                        Pagos CCS
+                        APTOS CCS
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -814,7 +881,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 dark:focus:bg-emerald-950/40"
                       >
                         <DollarSign className="w-4 h-4 mr-2" />
-                        Pagos UNI
+                        APTOS UNI
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator />
@@ -826,7 +893,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-blue-600 focus:text-blue-600 focus:bg-blue-50 dark:focus:bg-blue-950/40"
                       >
                         <Send className="w-4 h-4 mr-2" />
-                        Enviados Taynára
+                        ENVIADOS TAYNARA
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -834,7 +901,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-blue-600 focus:text-blue-600 focus:bg-blue-50 dark:focus:bg-blue-950/40"
                       >
                         <Send className="w-4 h-4 mr-2" />
-                        Enviados Evelyn
+                        ENVIADOS EVELYN
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -842,7 +909,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-blue-600 focus:text-blue-600 focus:bg-blue-50 dark:focus:bg-blue-950/40"
                       >
                         <Send className="w-4 h-4 mr-2" />
-                        Enviados Joinville
+                        ENVIADOS JOINVILLE
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator />
@@ -854,7 +921,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950/40"
                       >
                         <FolderX className="w-4 h-4 mr-2" />
-                        Pastas Negadas CCS
+                        PASTAS NEGADAS CCS
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -862,7 +929,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950/40"
                       >
                         <FolderX className="w-4 h-4 mr-2" />
-                        Pastas Negadas UNI
+                        PASTAS NEGADAS UNI
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator />
@@ -874,7 +941,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40"
                       >
                         <PhoneOff className="w-4 h-4 mr-2" />
-                        Perdeu Contato - Definitivo
+                        PERDEU CONTATO - DEFINITIVO
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -882,7 +949,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-orange-600 focus:text-orange-600 focus:bg-orange-50 dark:focus:bg-orange-950/40"
                       >
                         <FileX className="w-4 h-4 mr-2" />
-                        Não Assinaram Procuração
+                        NÃO ASSINARAM PROCURAÇÃO
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -890,7 +957,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-zinc-600 focus:text-zinc-700 focus:bg-zinc-100 dark:focus:bg-zinc-800"
                       >
                         <ArchiveX className="w-4 h-4 mr-2" />
-                        Descartados Análise Interna
+                        DESCARTADOS ANÁLISE INTERNA
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -898,7 +965,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:focus:bg-rose-950/40"
                       >
                         <UserX className="w-4 h-4 mr-2" />
-                        Desistiram Expressamente
+                        DESISTIRAM EXPRESSAMENTE
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
@@ -906,24 +973,26 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                         className="cursor-pointer text-indigo-600 focus:text-indigo-600 focus:bg-indigo-50 dark:focus:bg-indigo-950/40"
                       >
                         <RotateCcw className="w-4 h-4 mr-2" />
-                        Voltar um Dia
+                        VOLTAR UM DIA
                       </DropdownMenuItem>
                     </DropdownMenuContent>
 
                   </DropdownMenu>
                 )}
 
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmDelete(true);
-                  }}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
+                {canDelete && (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete(true);
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -960,6 +1029,8 @@ const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
     prev.onDelete === next.onDelete &&
     prev.onArchive === next.onArchive &&
     prev.onCardDrop === next.onCardDrop &&
+    prev.onMoveTo === next.onMoveTo &&
+    prev.moveTargets === next.moveTargets &&
     a.id === b.id &&
     a.title === b.title &&
     a.description === b.description &&
@@ -994,15 +1065,19 @@ interface DroppableColumnProps {
   onLabelDelete: (id: string) => Promise<void>;
   isCollapsed: boolean;
   toggleCollapse: () => void;
+  moveTargets: { id: string; title: string }[];
+  onMoveTo: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
 }
 
 const DroppableColumn: React.FC<DroppableColumnProps> = ({
   column, index, onDrop, onCardDrop, onColumnReorder, onCardClick, onQuickAction, onDelete, onArchive,
-  onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse,
+  onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse, moveTargets, onMoveTo,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [confirmDeleteLabel, setConfirmDeleteLabel] = useState(false);
+  // Editar/excluir coluna são permissões individuais (concedidas pelo ADMIN++).
+  const { perms: colPerms } = usePermissions();
   const [deletingLabel, setDeletingLabel] = useState(false);
 
   // Auto-scroll da lista de cards ao arrastar perto da borda superior/inferior
@@ -1112,6 +1187,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="end" className="w-48">
+                {colPerms.edit_columns && (
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
@@ -1122,6 +1198,8 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   <Edit className="w-4 h-4 mr-2" />
                   Editar Coluna
                 </DropdownMenuItem>
+                )}
+                {colPerms.delete_columns && (
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
@@ -1132,6 +1210,12 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   <Trash2 className="w-4 h-4 mr-2" />
                   Excluir Coluna
                 </DropdownMenuItem>
+                )}
+                {!colPerms.edit_columns && !colPerms.delete_columns && (
+                  <DropdownMenuItem disabled className="text-xs text-gray-400">
+                    Sem permissão para alterar colunas
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -1143,7 +1227,9 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   return (
     <>
       <div ref={ref} className={cn(
-        "flex-shrink-0 w-[450px] rounded-2xl flex flex-col h-full transition-all duration-300 border shadow-sm",
+        // No celular a coluna ocupa ~88% da tela (uma por vez, com scroll
+        // lateral); no desktop mantém os 450px de sempre.
+        "flex-shrink-0 w-[min(88vw,450px)] rounded-2xl flex flex-col h-full transition-all duration-300 border shadow-sm",
         isDraggingColumn && "opacity-40",
         isOver && "border-blue-400 ring-2 ring-blue-100"
       )}
@@ -1175,6 +1261,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="end" className="w-48">
+                {colPerms.edit_columns && (
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
@@ -1185,6 +1272,8 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   <Edit className="w-4 h-4 mr-2" />
                   Editar Coluna
                 </DropdownMenuItem>
+                )}
+                {colPerms.delete_columns && (
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
@@ -1195,6 +1284,12 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                   <Trash2 className="w-4 h-4 mr-2" />
                   Excluir Coluna
                 </DropdownMenuItem>
+                )}
+                {!colPerms.edit_columns && !colPerms.delete_columns && (
+                  <DropdownMenuItem disabled className="text-xs text-gray-400">
+                    Sem permissão para alterar colunas
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 dark:text-zinc-100" onClick={toggleCollapse}>
@@ -1214,6 +1309,8 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
               onDelete={onDelete}
               onArchive={onArchive}
               onCardDrop={onCardDrop}
+              moveTargets={moveTargets}
+              onMoveTo={onMoveTo}
             />
           ))}
           {column.cards.length === 0 && (
@@ -1300,7 +1397,11 @@ export const KanbanBoard: React.FC = () => {
       filtered = filtered.filter((item) => {
         const nameHit = item.name.toLowerCase().includes(q);
         const numberHit = qDigits.length > 0 && item.cardNumber != null && String(item.cardNumber).includes(qDigits);
-        return nameHit || numberHit;
+        // Busca também por CPF e telefone (dígitos): "cliente ligou informando
+        // o CPF" deixa de exigir procurar pelo nome.
+        const cpfHit = qDigits.length >= 4 && onlyDigits(item.cpf).includes(qDigits);
+        const phoneHit = qDigits.length >= 4 && onlyDigits(item.telefone).includes(qDigits);
+        return nameHit || numberHit || cpfHit || phoneHit;
       });
     }
     if (serviceFilter !== 'Todos') {
@@ -1310,6 +1411,7 @@ export const KanbanBoard: React.FC = () => {
   }, [items, debouncedQuery, serviceFilter]);
   const [isLoading, setIsLoading] = useState(true);
   const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
+  const { perms: boardPerms } = usePermissions();
   const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>(() => {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY) || '{}'); } catch { return {}; }
@@ -1411,11 +1513,46 @@ export const KanbanBoard: React.FC = () => {
     return () => window.removeEventListener('open-kanban-card', handleOpenCard);
   }, [items]);
 
+  // Pedido de abertura vindo da busca global quando o board ainda não estava
+  // montado (troca de aba): o sinal fica no sessionStorage até os items chegarem.
+  useEffect(() => {
+    if (!items.length) return;
+    try {
+      const raw = sessionStorage.getItem('kanban-open-card');
+      if (!raw) return;
+      const { id, isProcess } = JSON.parse(raw) as { id: string; isProcess: boolean };
+      const item = items.find((i) => i.id === id && !!i.isProcess === isProcess);
+      if (item) {
+        sessionStorage.removeItem('kanban-open-card');
+        openCardFromItem(item);
+      }
+    } catch {
+      sessionStorage.removeItem('kanban-open-card');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
   const searchMatches = React.useMemo(() => {
     const q = debouncedQuery.trim();
     if (!q) return [];
     return filteredItems.slice(0, 8);
   }, [filteredItems, debouncedQuery]);
+
+  // A busca também consulta os ARQUIVADOS (nome/nº/CPF/telefone) — o cliente
+  // pode já ter passado pelo escritório; mostrar a divisão evita card duplicado.
+  const [archivedMatches, setArchivedMatches] = useState<ArchivedSearchHit[]>([]);
+  useEffect(() => {
+    const q = debouncedQuery.trim();
+    if (q.length < 2) {
+      setArchivedMatches([]);
+      return;
+    }
+    let alive = true;
+    searchArchivedCards(q)
+      .then((hits) => { if (alive) setArchivedMatches(hits); })
+      .catch(() => { if (alive) setArchivedMatches([]); });
+    return () => { alive = false; };
+  }, [debouncedQuery]);
 
   function openCardFromItem(item: Item) {
     const bucket = item.isProcess ? counts.processes : counts.users;
@@ -1462,31 +1599,37 @@ export const KanbanBoard: React.FC = () => {
   // a identidade de labels/items/counts/tags e re-renderizava o board inteiro.
   const lastSigRef = useRef({ labels: '', items: '', counts: '', tags: '' });
 
+  // Estados de erro visíveis: falha no load inicial (tela com retry) e perda
+  // de conexão durante o polling (banner discreto com dados desatualizados).
+  const [loadError, setLoadError] = useState(false);
+  const [connLost, setConnLost] = useState(false);
+  const pollFailsRef = useRef(0);
+
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const [labelsData, usersData, processesData] = await Promise.all([
-        getLabels(),
-        getUsers('basic'),
-        getProcess('basic'),
-      ]);
+      setLoadError(false);
+      // UMA requisição agregada por tick (antes eram 5: labels + users +
+      // processes + counts + tags, cada uma com sessão/queries próprias).
+      const res = await fetch('/api/board-state', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`board-state HTTP ${res.status}`);
+      const data = await res.json();
 
+      const labelsData = data.labels ?? [];
       const labelsSig = JSON.stringify(labelsData);
       if (labelsSig !== lastSigRef.current.labels) {
         lastSigRef.current.labels = labelsSig;
         setLabels(labelsData);
       }
 
-      const users = Array.isArray(usersData)
-        ? usersData
-          .filter(u => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST' && !u.archiveStatus)
-          .map(u => ({ ...u, isProcess: false, ownerId: u.id }))
-        : [];
-      const processes = Array.isArray(processesData)
-        ? processesData
-          .filter(p => !p.archiveStatus)
-          .map(p => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }))
-        : [];
+      // O servidor já devolve só cards de cliente ativos (filtro no banco);
+      // os filtros aqui são só cinto de segurança.
+      const users = (Array.isArray(data.users) ? data.users : [])
+        .filter((u: Item & { role?: string }) => !u.role?.startsWith('ADMIN') && u.role !== 'GHOST' && !u.archiveStatus)
+        .map((u: Item) => ({ ...u, isProcess: false, ownerId: u.id }));
+      const processes = (Array.isArray(data.processes) ? data.processes : [])
+        .filter((p: Item) => !p.archiveStatus)
+        .map((p: Item & { observacao?: string }) => ({ ...p, obs: p.observacao, isProcess: true, ownerId: p.userId }));
       const combined = [...users, ...processes];
       const itemsSig = JSON.stringify(combined);
       if (itemsSig !== lastSigRef.current.items) {
@@ -1494,41 +1637,33 @@ export const KanbanBoard: React.FC = () => {
         setItems(combined);
       }
 
-      // Contagens (comentários/anexos) e tags: mudam sem os items mudarem,
-      // então sempre refaz a busca — mas só aplica no estado se o payload
-      // mudou (senão todo card re-renderizava a cada tick).
-      if (combined.length === 0) {
-        setCounts({ users: {}, processes: {} });
-        setCardTags({ users: {}, processes: {} });
-      } else {
-        const body = JSON.stringify({
-          userIds: users.map((u) => u.id),
-          processIds: processes.map((p) => p.id),
-        });
-        const headers = { 'Content-Type': 'application/json' };
-        const [countsRes, tagsRes] = await Promise.all([
-          fetch('/api/card-counts', { method: 'POST', headers, body }),
-          fetch('/api/card-tags/lookup', { method: 'POST', headers, body }),
-        ]);
-        if (countsRes.ok) {
-          const data = await countsRes.json();
-          const sig = JSON.stringify(data);
-          if (sig !== lastSigRef.current.counts) {
-            lastSigRef.current.counts = sig;
-            setCounts(data);
-          }
-        }
-        if (tagsRes.ok) {
-          const tagsData = await tagsRes.json();
-          const sig = JSON.stringify(tagsData);
-          if (sig !== lastSigRef.current.tags) {
-            lastSigRef.current.tags = sig;
-            setCardTags({ users: tagsData.users ?? {}, processes: tagsData.processes ?? {} });
-          }
-        }
+      // Counts e tags mudam sem os items mudarem — só aplica no estado se o
+      // payload mudou (senão todo card re-renderizava a cada tick).
+      const countsData = data.counts ?? { users: {}, processes: {} };
+      const countsSig = JSON.stringify(countsData);
+      if (countsSig !== lastSigRef.current.counts) {
+        lastSigRef.current.counts = countsSig;
+        setCounts(countsData);
       }
+      const tagsData = data.tags ?? { users: {}, processes: {} };
+      const tagsSig = JSON.stringify(tagsData);
+      if (tagsSig !== lastSigRef.current.tags) {
+        lastSigRef.current.tags = tagsSig;
+        setCardTags({ users: tagsData.users ?? {}, processes: tagsData.processes ?? {} });
+      }
+      pollFailsRef.current = 0;
+      setConnLost(false);
     } catch (err) {
-      console.error(err);
+      // Antes o erro era engolido (só console) e o board ficava com dados
+      // velhos sem avisar. Agora: falha no load inicial vira tela de erro com
+      // "Tentar novamente"; falhas repetidas do polling viram aviso de conexão.
+      console.error('[KANBAN] Falha ao sincronizar o board:', err);
+      if (!silent) {
+        setLoadError(true);
+      } else {
+        pollFailsRef.current++;
+        if (pollFailsRef.current >= 3) setConnLost(true);
+      }
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -1536,15 +1671,9 @@ export const KanbanBoard: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [refreshKey, fetchData]);
 
-  // Verifica afastamentos vencidos e gera notificações (idempotente no servidor).
-  useEffect(() => {
-    const check = () => {
-      fetch('/api/afastamentos/check', { method: 'POST' }).catch(() => { });
-    };
-    check();
-    const interval = setInterval(check, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  // A verificação de afastamentos vencidos agora roda no cron da Vercel
+  // (vercel.json → /api/afastamentos/check). Antes cada aba aberta disparava
+  // esse job de sistema a cada 60s no navegador.
 
   // Polling: mantém o board sincronizado entre múltiplas sessões sem F5.
   useEffect(() => {
@@ -1769,6 +1898,18 @@ export const KanbanBoard: React.FC = () => {
     moveCard(cardId, sourceColumnId, targetColumnId, null);
   }, [moveCard]);
 
+  // "Mover para" pelo menu do card — caminho sem drag (touch/acessibilidade).
+  const handleMoveTo = useCallback((cardId: string, sourceColumnId: string, targetColumnId: string) => {
+    if (sourceColumnId === targetColumnId) return;
+    moveCard(cardId, sourceColumnId, targetColumnId, null);
+  }, [moveCard]);
+
+  // Lista estável de destinos para o menu (id + nome das colunas).
+  const moveTargets = useMemo(
+    () => labels.map((l: Label) => ({ id: l.id, title: l.name })),
+    [labels],
+  );
+
   // Drop em cima de um card: insere o arrastado logo acima dele.
   const handleCardDrop = useCallback((cardId: string, sourceColumnId: string, targetColumnId: string, beforeCardId: string) => {
     moveCard(cardId, sourceColumnId, targetColumnId, beforeCardId);
@@ -1805,9 +1946,25 @@ export const KanbanBoard: React.FC = () => {
     if (selectedIdRef.current === cardId) setSelectedCard(null);
   }, []);
 
+  const ARCHIVE_LABELS: Record<ArchiveStatus, string> = useMemo(() => ({
+    pagos_ccs: "APTOS CCS",
+    pagos_uni: "APTOS UNI",
+    enviados_taynara: "ENVIADOS TAYNARA",
+    enviados_evelyn: "ENVIADOS EVELYN",
+    enviados_joinville: "ENVIADOS JOINVILLE",
+    pastas_negadas_ccs: "PASTAS NEGADAS CCS",
+    pastas_negadas_uni: "PASTAS NEGADAS UNI",
+    perdeu_contato_definitivo: "PERDEU CONTATO - DEFINITIVO",
+    nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
+    descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
+    desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
+    voltar_um_dia: "VOLTAR UM DIA",
+  }), []);
+
   // Arquiva um card (pago / não qualificado / arquivado): remove do board de forma
-  // otimista e persiste. Se falhar, recarrega para o card reaparecer.
-  const handleArchiveCard = useCallback((cardId: string, status: ArchiveStatus) => {
+  // otimista e persiste. Se falhar, recarrega para o card reaparecer. O toast de
+  // sucesso traz "Desfazer" — arquivar deixou de ser um clique sem volta.
+  const performArchive = useCallback((cardId: string, status: ArchiveStatus) => {
     const item = items.find((i) => i.id === cardId);
     if (!item) return;
     const isProcess = !!item.isProcess;
@@ -1819,30 +1976,49 @@ export const KanbanBoard: React.FC = () => {
     setItems((prev) => prev.filter((i) => i.id !== cardId));
     if (selectedIdRef.current === cardId) setSelectedCard(null);
 
-    const labels: Record<ArchiveStatus, string> = {
-      pagos_ccs: "PAGOS CCS",
-      pagos_uni: "PAGOS UNI",
-      enviados_taynara: "ENVIADOS TAYNARA",
-      enviados_evelyn: "ENVIADOS EVELYN",
-      enviados_joinville: "ENVIADOS JOINVILLE",
-      pastas_negadas_ccs: "PASTAS NEGADAS CCS",
-      pastas_negadas_uni: "PASTAS NEGADAS UNI",
-      perdeu_contato_definitivo: "PERDEU CONTATO - DEFINITIVO",
-      nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
-      descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
-      desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
-      voltar_um_dia: "VOLTAR UM DIA",
-    };
-
     setArchiveStatus({ id: cardId, isProcess, status })
-      .then(() => toast.success(labels[status]))
+      .then(() =>
+        toast.success(`Card arquivado: ${ARCHIVE_LABELS[status]}`, {
+          duration: 8000,
+          action: {
+            label: "Desfazer",
+            onClick: () => {
+              setArchiveStatus({ id: cardId, isProcess, status: null })
+                .then(() => {
+                  toast.success("Arquivamento desfeito — o card voltou ao board.");
+                  setRefreshKey((k) => k + 1);
+                })
+                .catch((err) => {
+                  console.error("Erro ao desfazer arquivamento:", err);
+                  toast.error("Não foi possível desfazer. Restaure pela aba Arquivados.");
+                });
+            },
+          },
+        })
+      )
       .catch((err) => {
         console.error('Erro ao arquivar:', err);
-        toast.error('Erro ao arquivar card');
+        toast.error(err?.message || 'Erro ao arquivar card');
         setRefreshKey((k) => k + 1);
       })
       .finally(() => { pendingMutationsRef.current--; });
-  }, [items]);
+  }, [items, ARCHIVE_LABELS]);
+
+  // Status "definitivos" (encerram a relação com o cliente) pedem confirmação;
+  // os demais arquivam direto (e sempre há o Desfazer no toast).
+  const [confirmArchive, setConfirmArchive] = useState<{ cardId: string; status: ArchiveStatus } | null>(null);
+  const DESTRUCTIVE_ARCHIVE: ArchiveStatus[] = useMemo(
+    () => ["perdeu_contato_definitivo", "desistiram_expressamente", "descartados_analise_interna"],
+    []
+  );
+
+  const handleArchiveCard = useCallback((cardId: string, status: ArchiveStatus) => {
+    if (DESTRUCTIVE_ARCHIVE.includes(status)) {
+      setConfirmArchive({ cardId, status });
+      return;
+    }
+    performArchive(cardId, status);
+  }, [DESTRUCTIVE_ARCHIVE, performArchive]);
 
   const toggleCollapse = (colId: string) => {
     setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
@@ -1893,8 +2069,8 @@ export const KanbanBoard: React.FC = () => {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="px-6 bg-[#f8fafc] min-h-screen">
-        <div ref={boardTopRef} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-3 bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
+      <div className="px-2 md:px-6 bg-[#f8fafc] min-h-screen">
+        <div ref={boardTopRef} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-6 mb-3 bg-white dark:bg-zinc-900 p-3 md:p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
           <div className="flex flex-col md:flex-row flex-1 gap-4">
             <div ref={searchBoxRef} className="relative flex items-center flex-1">
               <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4 z-10" />
@@ -1908,7 +2084,7 @@ export const KanbanBoard: React.FC = () => {
               />
               {searchOpen && searchQuery.trim() && (
                 <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
-                  {searchMatches.length === 0 ? (
+                  {searchMatches.length === 0 && archivedMatches.length === 0 ? (
                     <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-zinc-400">
                       Nenhum card encontrado
                     </div>
@@ -1962,6 +2138,34 @@ export const KanbanBoard: React.FC = () => {
                           </li>
                         );
                       })}
+
+                      {/* Cards já ARQUIVADOS que batem com a busca — evita
+                          criar card duplicado de quem já passou pelo escritório. */}
+                      {archivedMatches.length > 0 && (
+                        <li className="bg-amber-50/60 px-4 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                          Já arquivados
+                        </li>
+                      )}
+                      {archivedMatches.map((hit) => (
+                        <li
+                          key={`arch-${hit.isProcess ? 'p' : 'u'}-${hit.id}`}
+                          title="Card arquivado — veja na aba Arquivados"
+                          className="flex items-center gap-3 bg-amber-50/40 px-4 py-2.5 dark:bg-amber-950/20"
+                        >
+                          <div className="shrink-0 rounded-lg bg-amber-100 px-2 py-1 font-mono text-base font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            {hit.cardNumber != null ? `#${hit.cardNumber}` : '—'}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-gray-800 dark:text-zinc-100">
+                              {hit.name}
+                            </span>
+                            <span className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800 bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300">
+                              {hit.division}
+                            </span>
+                          </div>
+                          <Archive className="h-4 w-4 shrink-0 text-amber-500" />
+                        </li>
+                      ))}
                     </ul>
                   )}
                 </div>
@@ -1980,7 +2184,8 @@ export const KanbanBoard: React.FC = () => {
             </Select>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Ações quebram linha no mobile em vez de estourar a largura. */}
+          <div className="flex flex-wrap items-center gap-2 md:gap-3 shrink-0">
             <div className="h-10 w-[1px] bg-gray-100 dark:bg-zinc-800 mx-2 hidden lg:block" />
             <button
               onClick={toggleAllColumns}
@@ -1990,29 +2195,55 @@ export const KanbanBoard: React.FC = () => {
               {allColumnsCollapsed ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
               <span className="hidden sm:inline">{allColumnsCollapsed ? 'Expandir todas' : 'Minimizar todas'}</span>
             </button>
-            <button
-              onClick={() => setAutomationsPanelOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition-colors"
-              title="Automações"
-            >
-              <Zap className="w-4 h-4" />
-              <span className="hidden sm:inline">Automações</span>
-            </button>
-            <CreateLabelButton onCreate={createLabel} />
+            {boardPerms.manage_automations && (
+              <button
+                onClick={() => setAutomationsPanelOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition-colors"
+                title="Automações"
+              >
+                <Zap className="w-4 h-4" />
+                <span className="hidden sm:inline">Automações</span>
+              </button>
+            )}
+            {boardPerms.create_columns && <CreateLabelButton onCreate={createLabel} />}
             <CreatePerson labels={labels} onCreated={() => setRefreshKey((k) => k + 1)} />
             <CreateNewCard />
           </div>
         </div>
 
+        {connLost && !isLoading && !loadError && (
+          <div className="mb-2 flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+            <span>Sem conexão com o servidor — os dados podem estar desatualizados.</span>
+            <button onClick={() => fetchData(true)} className="font-semibold underline hover:no-underline">
+              Reconectar
+            </button>
+          </div>
+        )}
+
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
-            <div className="relative">
-              <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-4 h-4 bg-white dark:bg-zinc-900 rounded-full" />
+          // Skeleton de colunas: mantém a silhueta do board durante o load
+          // inicial (em vez de um spinner genérico no vazio).
+          <div className="flex gap-4 overflow-hidden px-1 pt-2">
+            {Array.from({ length: 4 }).map((_, col) => (
+              <div key={col} className="w-[min(88vw,450px)] shrink-0 space-y-3">
+                <div className="h-10 rounded-xl bg-gray-200/70 dark:bg-zinc-800 animate-pulse" />
+                {Array.from({ length: 3 }).map((__, row) => (
+                  <div key={row} className="h-28 rounded-xl bg-gray-100 dark:bg-zinc-900 animate-pulse" />
+                ))}
               </div>
-            </div>
-            <p className="font-black text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-widest animate-pulse">Sincronizando Workflow...</p>
+            ))}
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-[50vh] gap-4 text-center">
+            <p className="text-sm font-semibold text-gray-700 dark:text-zinc-200">
+              Não foi possível carregar o quadro.
+            </p>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
+              Verifique sua conexão e tente novamente.
+            </p>
+            <Button onClick={() => fetchData()} className="gap-2">
+              <RotateCcw className="w-4 h-4" /> Tentar novamente
+            </Button>
           </div>
         ) : (
           <div className="relative">
@@ -2060,6 +2291,8 @@ export const KanbanBoard: React.FC = () => {
                       onLabelDelete={deleteLabel}
                       isCollapsed={collapsedColumns[column.id] || false}
                       toggleCollapse={() => toggleCollapse(column.id)}
+                      moveTargets={moveTargets}
+                      onMoveTo={handleMoveTo}
                     />
                   ))}
                 </div>
@@ -2086,6 +2319,36 @@ export const KanbanBoard: React.FC = () => {
           onClose={() => setAutomationsPanelOpen(false)}
           labels={labels}
         />
+
+        <Dialog open={!!confirmArchive} onOpenChange={(o) => { if (!o) setConfirmArchive(null); }}>
+          <DialogContent className="max-w-md rounded-xl">
+            <DialogHeader>
+              <DialogTitle>Confirmar arquivamento</DialogTitle>
+              <DialogDescription>
+                Arquivar{' '}
+                <strong>{items.find((i) => i.id === confirmArchive?.cardId)?.name ?? 'este card'}</strong>{' '}
+                como{' '}
+                <strong>{confirmArchive ? ARCHIVE_LABELS[confirmArchive.status] : ''}</strong>?
+                O card sai do board (dá para restaurar pela aba Arquivados).
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-row gap-3">
+              <Button variant="secondary" className="flex-1" onClick={() => setConfirmArchive(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={() => {
+                  if (confirmArchive) performArchive(confirmArchive.cardId, confirmArchive.status);
+                  setConfirmArchive(null);
+                }}
+              >
+                Arquivar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DndProvider>
   );

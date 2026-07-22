@@ -61,7 +61,7 @@ export function ManagerDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-8xl px-6 py-8">
+    <div className="mx-auto max-w-8xl px-3 py-4 md:px-6 md:py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">

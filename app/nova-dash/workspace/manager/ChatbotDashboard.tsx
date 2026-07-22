@@ -186,7 +186,7 @@ export function ChatbotDashboard() {
   );
 
   return (
-    <div className="mx-auto max-w-8xl px-6 pb-12">
+    <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
       <div className="mb-6 flex items-center justify-between border-t border-gray-200 pt-8 dark:border-zinc-800">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">

@@ -55,7 +55,7 @@ const NODES: NodeDef[] = [
   { id: 'kb_timer',      c: 'kanban', name: 'timer_por_coluna',    desc: 'Cada card mostra há quantos dias está na coluna; estourou o limite, o badge fica vermelho — e o cron passa a notificar a equipe.' },
   { id: 'kb_tags',       c: 'kanban', novo: true, name: 'tags_de_card',        desc: 'Tags livres com cor, criadas e gerenciadas dentro do card; aparecem ao lado do serviço no quadro com overflow "+N".' },
   { id: 'kb_busca',      c: 'kanban', name: 'busca_e_filtros',     desc: 'Busca por nome ou nº do cartão e filtro por serviço, com colunas vazias escondidas durante a busca.' },
-  { id: 'kb_arquivo',    c: 'kanban', name: 'arquivamento',        desc: 'Pagos CCS/UNI, enviados, pastas negadas, desistências… cada desfecho vira um arquivo consultável fora do quadro.' },
+  { id: 'kb_arquivo',    c: 'kanban', name: 'arquivamento',        desc: 'APTOS CCS/UNI, enviados, pastas negadas, desistências… cada desfecho vira um arquivo consultável fora do quadro.' },
   { id: 'kb_checklist',  c: 'kanban', name: 'checklist_admin',     desc: 'Checklist interno por card com seções (comercial, ADM, médico) e o checklist previdenciário na aba Arquivos.' },
   { id: 'kb_prontuario', c: 'kanban', name: 'fluxo_prontuario',    desc: 'Solicitação e acompanhamento de prontuário médico integrados às etapas do processo.' },
   { id: 'kb_afast',      c: 'kanban', name: 'afastamentos',        desc: 'Data de afastamento no card com aviso automático quando vence.' },

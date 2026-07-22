@@ -1,8 +1,8 @@
 "use server";
 
 import { db } from "@/app/_shared/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/_shared/lib/auth";
+import { requirePermission } from "@/app/_shared/lib/permissions-server";
+import { isTeamRole } from "@/app/_shared/lib/permissions";
 
 interface UpdateUserData {
   id: string;
@@ -10,42 +10,34 @@ interface UpdateUserData {
 }
 
 export async function UpdateRole(data: UpdateUserData) {
-  const session = await getServerSession(authOptions);
+  // 🚨 REGRA DE OURO: só o Super Admin (ADMIN++) altera cargos.
+  await requirePermission("manage_team");
 
-  if (!session?.user?.email) {
-    throw new Error("Usuário não autenticado.");
+  if (!data.role || !isTeamRole(data.role)) {
+    throw new Error("Cargo inválido. Use ADMIN, ADMIN+ ou ADMIN++.");
   }
 
-  // 🔐 Usuário que está tentando alterar
-  const sessionUser = await db.user.findUnique({
-    where: { email: session.user.email },
-    select: { role: true },
-  });
-
-  if (!sessionUser) {
-    throw new Error("Usuário da sessão não encontrado.");
-  }
-
-  // // 🚨 REGRA DE OURO
-  // if (sessionUser.role !== "ADMIN++") {
-  //   throw new Error("Você não tem permissão para alterar cargos.");
-  // }
-
-  // 🔎 Usuário que será alterado
   const targetUser = await db.user.findUnique({
     where: { id: data.id },
-    select: { role: true },
+    select: { id: true, role: true },
   });
 
   if (!targetUser) {
     throw new Error("Usuário alvo não encontrado.");
   }
 
+  // Nunca deixar o sistema sem nenhum ADMIN++ (ninguém mais conseguiria
+  // gerenciar cargos/permissões).
+  if (targetUser.role === "ADMIN++" && data.role !== "ADMIN++") {
+    const superAdmins = await db.user.count({ where: { role: "ADMIN++" } });
+    if (superAdmins <= 1) {
+      throw new Error("Este é o último Super Admin — promova outro ADMIN++ antes de rebaixá-lo.");
+    }
+  }
+
   const updatedUser = await db.user.update({
     where: { id: data.id },
-    data: {
-      role: data.role,
-    },
+    data: { role: data.role },
   });
 
   return {

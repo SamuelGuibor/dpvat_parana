@@ -41,7 +41,9 @@ import {
     Star,
     Check,
     X,
-    User
+    User,
+    KeyRound,
+    Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
@@ -50,7 +52,18 @@ import { getAdmins } from "@/app/_actions/team/get-team";
 import { UpdateRole } from "@/app/_actions/team/update-team";
 import { createUser } from "@/app/_actions/users/create-user";
 import { deleteAdmin } from "@/app/_actions/users/delete-user";
-import { cp } from "fs";
+import { setUserPermissions } from "@/app/_actions/team/permissions";
+import {
+    PERMISSION_DEFS,
+    diffFromDefaults,
+    parseOverrides,
+    resolvePermissions,
+    isTeamRole,
+    type PermissionMap,
+    type TeamRole,
+} from "@/app/_shared/lib/permissions";
+import { usePermissions } from "@/app/nova-dash/_components/PermissionsProvider";
+import { Checkbox } from "@/app/_shared/ui/checkbox";
 
 interface CardDialogProps {
     open: boolean;
@@ -65,6 +78,8 @@ type Member = {
     role: string;
     avatar?: string;
     joinedAt?: string;
+    /** Overrides de permissão gravados no banco (JSON parcial) — null = padrão do cargo. */
+    permissions?: unknown;
 };
 
 const ROLES = [
@@ -78,6 +93,10 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [showAddForm, setShowAddForm] = useState(false);
+    // Só o ADMIN++ gerencia cargos/permissões; os demais só visualizam a equipe.
+    const { perms: myPerms } = usePermissions();
+    const canManage = myPerms.manage_team;
+    const [permTarget, setPermTarget] = useState<Member | null>(null);
 
     const [newMember, setNewMember] = useState({
         name: "",
@@ -99,6 +118,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                     cpf: item.cpf || "",
                     email: item.email || "",
                     role: item.role,
+                    permissions: item.permissions ?? null,
                     avatar: (item.name || "SN")
                         .split(" ")
                         .map((n: string) => n[0])
@@ -230,7 +250,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="max-w-[1400px] max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogContent className="max-w-[1400px] max-h-[90vh] overflow-hidden flex flex-col max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4">
                 <DialogHeader>
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -244,13 +264,15 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                 </DialogDescription>
                             </div>
                         </div>
-                        <Button
-                            onClick={() => setShowAddForm(!showAddForm)}
-                            className="bg-gradient-to-r from-blue-600 to-purple-600"
-                        >
-                            <UserPlus className="w-4 h-4 mr-2" />
-                            Adicionar Admin
-                        </Button>
+                        {canManage && (
+                            <Button
+                                onClick={() => setShowAddForm(!showAddForm)}
+                                className="bg-gradient-to-r from-blue-600 to-purple-600"
+                            >
+                                <UserPlus className="w-4 h-4 mr-2" />
+                                Adicionar Admin
+                            </Button>
+                        )}
                     </div>
                 </DialogHeader>
 
@@ -429,6 +451,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                         <TableCell>{member.email}</TableCell>
                                         <TableCell>
                                             <Select value={member.role}
+                                                disabled={!canManage}
                                                 onValueChange={(value) => handleRoleChange(member.id, value)}>
                                                 <SelectTrigger>
                                                     <SelectValue>
@@ -449,9 +472,27 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                         </TableCell>
 
                                         <TableCell>
-                                            <button onClick={() => handleDeleteMember(member.id)}>
-                                                <Trash2 className="text-red-500 w-4 h-4" />
-                                            </button>
+                                            <div className="flex items-center gap-3">
+                                                {canManage && (
+                                                    member.role === "ADMIN++" ? (
+                                                        <Badge className="bg-purple-100 text-purple-700 border border-purple-300">Acesso total</Badge>
+                                                    ) : (
+                                                        <button
+                                                            title="Editar permissões"
+                                                            onClick={() => setPermTarget(member)}
+                                                            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                                                        >
+                                                            <KeyRound className="w-4 h-4" />
+                                                            Permissões
+                                                        </button>
+                                                    )
+                                                )}
+                                                {canManage && (
+                                                    <button onClick={() => handleDeleteMember(member.id)} title="Remover da equipe">
+                                                        <Trash2 className="text-red-500 w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 );
@@ -463,10 +504,101 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                 {/* ACTIONS */}
                 <div className="flex justify-end gap-2 mt-4">
                     <Button variant="outline" onClick={onClose}>
-                        Cancelar
+                        {canManage ? "Cancelar" : "Fechar"}
                     </Button>
-                    <Button onClick={handleSave} disabled={loading}>
-                        {loading ? "Salvando..." : "Salvar"}
+                    {canManage && (
+                        <Button onClick={handleSave} disabled={loading}>
+                            {loading ? "Salvando..." : "Salvar"}
+                        </Button>
+                    )}
+                </div>
+
+                {permTarget && (
+                    <PermissionsEditorDialog
+                        member={permTarget}
+                        onClose={() => setPermTarget(null)}
+                        onSaved={(id, overrides) =>
+                            setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, permissions: overrides } : m)))
+                        }
+                    />
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// Editor de permissões individuais: mostra o mapa resolvido (padrão do cargo
+// + overrides) e grava só o que difere do padrão. ADMIN++ não passa por aqui
+// (tem acesso total sempre).
+function PermissionsEditorDialog({
+    member,
+    onClose,
+    onSaved,
+}: {
+    member: Member;
+    onClose: () => void;
+    onSaved: (id: string, overrides: unknown) => void;
+}) {
+    const role: TeamRole = isTeamRole(member.role) ? member.role : "ADMIN";
+    const [edited, setEdited] = useState<PermissionMap>(() =>
+        resolvePermissions(role, parseOverrides(member.permissions)),
+    );
+    const [saving, setSaving] = useState(false);
+
+    const editableDefs = PERMISSION_DEFS.filter((d) => d.key !== "manage_team");
+
+    async function handleSavePermissions() {
+        setSaving(true);
+        try {
+            const overrides = diffFromDefaults(role, edited);
+            await setUserPermissions(member.id, overrides);
+            onSaved(member.id, overrides);
+            toast.success(`Permissões de ${member.name} atualizadas!`);
+            onClose();
+        } catch (err: any) {
+            console.error(err);
+            toast.error(err?.message || "Erro ao salvar permissões");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <KeyRound className="w-5 h-5 text-blue-600" />
+                        Permissões — {member.name}
+                    </DialogTitle>
+                    <DialogDescription>
+                        Cargo {role}. Marque o que este membro pode ver e fazer; o padrão do
+                        cargo é aplicado quando nada é alterado.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="flex flex-col gap-3 py-2">
+                    {editableDefs.map((def) => (
+                        <label key={def.key} className="flex items-start gap-3 cursor-pointer rounded-lg border p-3 hover:bg-gray-50">
+                            <Checkbox
+                                checked={edited[def.key]}
+                                onCheckedChange={(v) =>
+                                    setEdited((prev) => ({ ...prev, [def.key]: v === true }))
+                                }
+                                className="mt-0.5"
+                            />
+                            <span>
+                                <span className="block text-sm font-medium">{def.label}</span>
+                                <span className="block text-xs text-gray-500">{def.description}</span>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+
+                <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
+                    <Button onClick={handleSavePermissions} disabled={saving}>
+                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar permissões"}
                     </Button>
                 </div>
             </DialogContent>

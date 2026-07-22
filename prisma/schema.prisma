@@ -86,6 +86,9 @@ model User {
   archiveStatus       String?
   archivedAt          DateTime?
   boardOrder          Int?
+  permissions         Json?
+  // Progresso do tutorial de onboarding: { dash: { step, done }, client: { step, done } }
+  onboarding          Json?
   sectorId            String?
   sector              Sector?        @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
   accounts            Account[]
@@ -136,6 +139,21 @@ model DevAlert {
 
   @@index([expiresAt])
   @@map("dev_alerts")
+}
+
+// Código de recuperação de senha da área do cliente (enviado por SMS/WhatsApp
+// ao telefone cadastrado). Um código por vez por usuário; expira em minutos.
+model PasswordResetCode {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([expiresAt])
+  @@map("password_reset_codes")
 }
 
 model ChatMessage {
@@ -455,7 +473,22 @@ model Log {
 
   @@index([userId])
   @@index([processId])
+  @@index([action, createdAt])
   @@map("logs")
+}
+
+// Meta mensal do escritório (ex.: contratos fechados no mês) — alimenta o
+// card "Meta do mês" da Gestão Estratégica. month no formato "YYYY-MM".
+model Goal {
+  id        String   @id @default(cuid())
+  month     String
+  metric    String   @default("contratos")
+  target    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([month, metric])
+  @@map("goals")
 }
 
 // ============ WhatsApp Cloud API (Meta oficial) ============

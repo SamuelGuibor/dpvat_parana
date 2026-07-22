@@ -69,7 +69,11 @@ function DevAlertPopup() {
       } catch {}
     }
     poll();
-    const interval = setInterval(poll, 30_000);
+    // Aba em background não consulta (alerta aparece quando a pessoa voltar).
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      poll();
+    }, 30_000);
     return () => { alive = false; clearInterval(interval); };
   }, []);
 

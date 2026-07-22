@@ -3,6 +3,10 @@
     {
       "path": "/api/whatsapp/cron",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/afastamentos/check",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

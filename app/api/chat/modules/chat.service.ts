@@ -19,7 +19,7 @@ const SENSITIVE_FIELDS = [
 ];
 
 function filterSensitiveData(data: any, userRole: string): any {
-  if (userRole === "ADMIN") return data;
+  if (userRole?.startsWith("ADMIN")) return data;
 
   if (Array.isArray(data)) {
     return data.map((item: any) => filterSensitiveData(item, userRole));
@@ -58,7 +58,7 @@ export async function handleChat(
   userName: string,
   userRole: string
 ) {
-  const isAdmin = userRole === "ADMIN";
+  const isAdmin = userRole?.startsWith("ADMIN") ?? false;
   const toolExecutors = createToolExecutors(userRole);
   const allowedTools = getToolsForRole(userRole);
 
@@ -118,7 +118,7 @@ export async function handleChat(
     const { name, args } = functionCall;
 
     const toolDef = toolDefinitions.find((t) => t.name === name);
-    if (toolDef?.adminOnly && userRole !== "ADMIN") {
+    if (toolDef?.adminOnly && !userRole?.startsWith("ADMIN")) {
       result = await chat.sendMessage([
         {
           functionResponse: {

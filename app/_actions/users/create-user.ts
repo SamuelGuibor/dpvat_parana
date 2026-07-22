@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { createLog } from "../../_shared/lib/log";
 import { hashPassword } from "../../_shared/lib/password";
+import { requirePermission } from "../../_shared/lib/permissions-server";
 
 interface CreateUserProps {
   name: string;
@@ -22,9 +23,16 @@ async function nextCardNumber(): Promise<number> {
 }
 
 export const createUser = async ({ name, cpf, password, email, labelId, role, senha_inss }: CreateUserProps) => {
+  // CPF entra no banco SEM máscara (só dígitos) — a UI formata na exibição.
+  cpf = (cpf ?? "").replace(/\D/g, "");
   const finalEmail = email?.trim() || `${cpf}@inserir-email.com`;
 
   const isAdmin = role === 'ADMIN' || role === 'ADMIN+' || role === 'ADMIN++';
+
+  // Criar um MEMBRO DA EQUIPE (role ADMIN*) é gestão de equipe — só ADMIN++.
+  // Criar card de cliente continua aberto a toda a equipe.
+  if (isAdmin) await requirePermission("manage_team");
+
   const finalLabelId = isAdmin ? null : (
     labelId || (
       await db.label.findFirst({ orderBy: { order: "asc" }, select: { id: true } })

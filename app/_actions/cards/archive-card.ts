@@ -1,10 +1,9 @@
 "use server";
 
 import { db } from "../../_shared/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../_shared/lib/auth";
 import { unstable_noStore as noStore } from "next/cache";
 import { createLog } from "../../_shared/lib/log";
+import { requirePermission } from "../../_shared/lib/permissions-server";
 
 // Estados possíveis de arquivamento. null = card ativo no board.
 export type ArchiveStatus =
@@ -22,8 +21,8 @@ export type ArchiveStatus =
   | "voltar_um_dia";
 
 const ARCHIVE_LABELS: Record<ArchiveStatus, string> = {
-  pagos_ccs: "PAGOS CCS",
-  pagos_uni: "PAGOS UNI",
+  pagos_ccs: "APTOS CCS",
+  pagos_uni: "APTOS UNI",
   enviados_taynara: "ENVIADOS TAYNARA",
   enviados_evelyn: "ENVIADOS EVELYN",
   enviados_joinville: "ENVIADOS JOINVILLE",
@@ -45,8 +44,7 @@ interface SetArchiveStatusProps {
 // Arquiva (status != null) ou desarquiva (status = null) um card.
 // Mantém o labelId para que ao desarquivar o card volte para a coluna original.
 export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStatusProps) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Não autenticado");
+  const ctx = await requirePermission("archive_cards");
 
   const data = {
     archiveStatus: status,
@@ -64,8 +62,8 @@ export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStat
     message: status
       ? `arquivou o card como "${ARCHIVE_LABELS[status]}"`
       : "desarquivou o card",
-    authorId: session.user.id,
-    authorName: session.user.name ?? "Usuário",
+    authorId: ctx.userId,
+    authorName: ctx.name ?? "Usuário",
     userId: isProcess ? null : id,
     processId: isProcess ? id : null,
     metadata: {
@@ -137,8 +135,7 @@ const archivedProcessSelect = {
 // Retorna todos os cards (usuários + processos) que estão arquivados/pagos/não qualificados.
 export async function getArchivedCards(): Promise<ArchivedCard[]> {
   noStore();
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Usuário não autenticado.");
+  await requirePermission("view_archived");
 
   const [users, processes] = await Promise.all([
     db.user.findMany({

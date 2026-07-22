@@ -8,7 +8,7 @@ import {
 } from '@/app/_shared/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
-import { Link, Trash2 } from 'lucide-react';
+import { Link, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { getUsers } from '@/app/_actions/users/get-user';
@@ -30,6 +30,7 @@ import { DeleteConfirmDialog } from './card-dialog/DeleteConfirmDialog';
 import { getLabels } from "@/app/_actions/labels/get-labels";
 import { RoteirosTab } from './card-dialog/ScriptTab';
 import { LogsTab } from './card-dialog/LogsTab';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 
 interface CardDialogProps {
   card: ExtendedKanbanCard;
@@ -56,6 +57,8 @@ export const CardDialog: React.FC<CardDialogProps> = ({
 }) => {
   const [editedCard, setEditedCard] = useState<ExtendedKanbanCard>(card);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [savingCard, setSavingCard] = useState(false);
+  const { perms } = usePermissions();
   const [labels, setLabels] = useState<any[]>([]);
 
   // ===== Rascunho automático (recupera preenchimento em caso de fechamento
@@ -104,13 +107,19 @@ export const CardDialog: React.FC<CardDialogProps> = ({
       try {
         const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
         const data = await res.json();
-        if (data.erro) return;
+        if (data.erro) {
+          toast.warning('CEP não encontrado — confira o número ou preencha o endereço manualmente.');
+          return;
+        }
         setEditedCard((p) => ({
           ...p,
           ...(data.logradouro ? { rua: data.logradouro } : {}),
           ...(data.bairro ? { bairro: data.bairro } : {}),
         }));
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        console.error('[CEP] Falha na consulta ViaCEP:', err);
+        toast.warning('Não foi possível consultar o CEP agora — preencha o endereço manualmente.');
+      }
     })();
   }, [editedCard.cep]);
 
@@ -195,6 +204,8 @@ export const CardDialog: React.FC<CardDialogProps> = ({
   }
 
   async function handleSave() {
+    if (savingCard) return;
+    setSavingCard(true);
     try {
       const labelChanged = editedCard.labelId !== card.labelId && !!editedCard.labelId;
 
@@ -235,6 +246,8 @@ export const CardDialog: React.FC<CardDialogProps> = ({
     } catch (err: any) {
       console.error(err);
       toast.error('Não foi possível salvar: ' + err.message);
+    } finally {
+      setSavingCard(false);
     }
   }
 
@@ -253,7 +266,12 @@ export const CardDialog: React.FC<CardDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleDismiss(); }}>
-      <DialogContent className="max-w-7xl h-[90%] overflow-y-auto flex flex-col" autoFocus={false}>
+      {/* Desktop: classes originais intactas. Só NO CELULAR (max-sm) o dialog
+          vira tela cheia — centralizado ele quebrava com as abas largas. */}
+      <DialogContent
+        className="max-w-7xl h-[90%] overflow-y-auto flex flex-col max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4"
+        autoFocus={false}
+      >
         <DialogHeader>
           <DialogTitle>{editedCard.title}</DialogTitle>
           <a href="/nova-dash/instructions" className="absolute text-blue-600 hover:text-blue-500 right-12 font-semibold" target="_blank" rel="noopener noreferrer">
@@ -320,13 +338,18 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         </Tabs>
 
         <div className="flex justify-between items-center gap-2 mt-4 pt-4 border-t">
-          <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setConfirmDelete(true)}>
-            <Trash2 className="w-4 h-4 mr-2" />
-            Excluir
-          </Button>
+          {perms.delete_cards ? (
+            <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Excluir
+            </Button>
+          ) : <span />}
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleCancel}>Cancelar</Button>
-            <Button onClick={handleSave}>Salvar Alterações</Button>
+            <Button variant="outline" onClick={handleCancel} disabled={savingCard}>Cancelar</Button>
+            <Button onClick={handleSave} disabled={savingCard}>
+              {savingCard ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {savingCard ? 'Salvando…' : 'Salvar Alterações'}
+            </Button>
           </div>
         </div>
       </DialogContent>

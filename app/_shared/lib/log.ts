@@ -10,6 +10,8 @@ export type LogAction =
   | "document_remove"
   | "comment_add"
   | "create"
+  | "password_view"  // equipe visualizou a senha de acesso do cliente (auditoria)
+  | "password_set"   // equipe redefiniu a senha de acesso do cliente
   | "dev_commit"     // commit de desenvolvimento (atividade do dev, via git)
   // WhatsApp (auditoria do atendimento):
   | "wa_assign"      // atendente assumiu / atribuiu a conversa

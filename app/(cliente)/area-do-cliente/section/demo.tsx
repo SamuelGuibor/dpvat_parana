@@ -9,6 +9,7 @@ import { AiOutlineCar } from "react-icons/ai";
 import { IoDocumentsOutline } from "react-icons/io5";
 import { getStatusProcess } from "@/app/_actions/process/get-status-process";
 import { getStatus } from "@/app/_actions/users/get-status-user";
+import { ClientTour, START_CLIENT_TOUR_EVENT } from "./client-tour";
 
 interface UserProcess {
   id: string;
@@ -116,6 +117,9 @@ function BentoDemo() {
 
   return (
     <div className="mx-auto max-w-5xl">
+      {/* Tour de onboarding do cliente (abre sozinho na 1ª visita). */}
+      <ClientTour />
+
       {/* Saudação */}
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
@@ -124,10 +128,17 @@ function BentoDemo() {
         <p className="mt-1 text-sm text-gray-500">
           Acompanhe seus processos e acesse seus documentos em um só lugar.
         </p>
+        <button
+          onClick={() => window.dispatchEvent(new Event(START_CLIENT_TOUR_EVENT))}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+        >
+          <FaRegQuestionCircle className="h-3.5 w-3.5" />
+          Ver tutorial
+        </button>
       </div>
 
       {/* Meus Processos */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="client-processos">
         <div className="mb-4 flex items-center gap-2">
           <AiOutlineCar className="h-5 w-5 text-blue-600" />
           <h2 className="text-lg font-semibold text-gray-800">Meus Processos</h2>
@@ -192,7 +203,7 @@ function BentoDemo() {
       </section>
 
       {/* Acesso rápido */}
-      <section>
+      <section data-tour="client-links">
         <h2 className="mb-4 text-lg font-semibold text-gray-800">Acesso rápido</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           {quickLinks.map((q) => (

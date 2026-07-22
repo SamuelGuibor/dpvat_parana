@@ -38,8 +38,19 @@ export function useNotifications() {
 
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 60_000);
-    return () => clearInterval(interval);
+    // Aba em background não consulta; ao voltar o foco, atualiza na hora.
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      loadNotifications();
+    }, 60_000);
+    const onWake = () => {
+      if (document.visibilityState === "visible") loadNotifications();
+    };
+    document.addEventListener("visibilitychange", onWake);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onWake);
+    };
   }, [loadNotifications]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;

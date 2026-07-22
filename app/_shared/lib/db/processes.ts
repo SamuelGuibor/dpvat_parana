@@ -3,6 +3,8 @@ import { db } from "@/app/_shared/lib/prisma";
 const processBasicSelect = {
   id: true,
   name: true,
+  cpf: true,
+  telefone: true,
   userId: true,
   type: true,
   role: true,
@@ -63,7 +65,13 @@ const processFullSelect = {
 };
 
 export async function fetchProcesses() {
-  return db.process.findMany({ orderBy: { createdAt: "asc" }, select: processBasicSelect });
+  // Arquivados nunca são renderizados no board — filtra no banco em vez de
+  // trafegar o histórico inteiro a cada tick de polling.
+  return db.process.findMany({
+    orderBy: { createdAt: "asc" },
+    where: { archiveStatus: null },
+    select: processBasicSelect,
+  });
 }
 
 export async function fetchProcessById(id: string, fields: "basic" | "full" = "basic") {

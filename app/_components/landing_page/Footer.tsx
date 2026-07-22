@@ -39,13 +39,31 @@ export function Footer() {
           <div>
             <h4 className="text-white mb-4">Redes Sociais</h4>
             <div className="flex gap-4">
-              <a href="#" className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors">
+              <a
+                href="https://www.facebook.com/paranadpvat"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook da Paraná Seguros"
+                className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors"
+              >
                 <Facebook className="w-5 h-5" />
               </a>
-              <a href="#" className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors">
+              <a
+                href="https://www.instagram.com/paranasegurospr"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram da Paraná Seguros"
+                className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors"
+              >
                 <Instagram className="w-5 h-5" />
               </a>
-              <a href="#" className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors">
+              <a
+                href="https://www.linkedin.com/company/paran%C3%A1-seguros-e-previd%C3%AAncia/"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="LinkedIn da Paraná Seguros"
+                className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors"
+              >
                 <Linkedin className="w-5 h-5" />
               </a>
             </div>
@@ -53,7 +71,7 @@ export function Footer() {
         </div>
 
         <div className="border-t border-gray-800 pt-8 text-sm text-center">
-          <p>&copy; 2025 Paraná Seguros. Todos os direitos reservados.</p>
+          <p>&copy; {new Date().getFullYear()} Paraná Seguros. Todos os direitos reservados.</p>
           <p className="mt-2">
             Paraná Consultoria em Seguros 
             CNPJ:  48.270.397/0001-68

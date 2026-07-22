@@ -25,16 +25,39 @@ async function convContact(conversationId: string) {
 }
 
 async function requireTeamMember(): Promise<{ id: string; name: string }> {
+  // Role e nome já vêm no JWT da sessão — o findUnique extra por chamada era
+  // uma query redundante em TODO poll do inbox.
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Usuário não autenticado.');
-  const user = await db.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, name: true, role: true },
-  });
-  if (!user || !TEAM_ROLES.includes(user.role)) {
+  if (!TEAM_ROLES.includes(session.user.role ?? '')) {
     throw new Error('Sem permissão para o atendimento de WhatsApp.');
   }
-  return { id: user.id, name: user.name ?? 'Atendente' };
+  return { id: session.user.id, name: session.user.name ?? 'Atendente' };
+}
+
+/**
+ * Contagem leve de conversas não lidas para o badge das abas. Não hidrata
+ * contato/tags/preview — o poll do badge rodava a query mais pesada do app
+ * (200 conversas + 3 includes) a cada 15s só para exibir um número.
+ */
+export async function countWhatsAppUnread(): Promise<number> {
+  await requireTeamMember();
+  const rows = await db.whatsAppConversation.findMany({
+    where: { status: { not: 'closed' } },
+    select: {
+      lastMessageAt: true,
+      lastReadAt: true,
+      reads: { orderBy: { lastReadAt: 'desc' }, take: 1, select: { lastReadAt: true } },
+    },
+    take: 500,
+  });
+  return rows.filter((c) => {
+    const anyReadAt = c.reads[0]?.lastReadAt ?? null;
+    const effectiveReadAt = anyReadAt && c.lastReadAt
+      ? (anyReadAt > c.lastReadAt ? anyReadAt : c.lastReadAt)
+      : anyReadAt ?? c.lastReadAt;
+    return !effectiveReadAt || c.lastMessageAt > effectiveReadAt;
+  }).length;
 }
 
 export interface WhatsAppConversationDTO {
@@ -140,11 +163,11 @@ export interface AttendantDTO {
   name: string;
 }
 
-/** Atendentes com role ADMIN — popula o filtro de "Com outros atendentes". */
+/** Atendentes da equipe (role ADMIN*) — popula o filtro de "Com outros atendentes". */
 export async function listWhatsAppAttendants(): Promise<AttendantDTO[]> {
   await requireTeamMember();
   const users = await db.user.findMany({
-    where: { role: 'ADMIN' },
+    where: { role: { in: TEAM_ROLES } },
     select: { id: true, name: true },
     orderBy: { name: 'asc' },
   });

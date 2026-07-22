@@ -36,7 +36,11 @@ export function usePresence() {
 
   useEffect(() => {
     beat();
-    const id = setInterval(beat, HEARTBEAT_MS);
+    // Aba em background não bate heartbeat (o onWake abaixo recupera ao voltar).
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      beat();
+    }, HEARTBEAT_MS);
 
     const onWake = () => {
       if (document.visibilityState === 'visible') beat();

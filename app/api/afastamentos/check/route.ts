@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/_shared/lib/auth";
 import { db } from "@/app/_shared/lib/prisma";
+
+export const dynamic = "force-dynamic";
 
 function fmt(date: Date): string {
   return date.toISOString().slice(0, 10).split("-").reverse().join("/");
@@ -12,15 +14,14 @@ function fmt(date: Date): string {
  * Verifica afastamentos vencidos (afastadoAte <= agora) que ainda não foram
  * notificados e gera uma notificação para cada admin. O flag afastadoNotificado
  * garante que cada vencimento gere notificação uma única vez (é resetado quando
- * a data de afastamento é alterada). Idempotente: pode ser chamado em loop.
+ * a data de afastamento é alterada). Idempotente.
+ *
+ * Antes este job rodava num setInterval de 60s NO NAVEGADOR de cada usuário
+ * (N abas = N execuções/min). Agora roda no cron da Vercel (GET com
+ * CRON_SECRET, agendado no vercel.json); o POST com sessão continua para
+ * disparo manual.
  */
-export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  }
-
-  try {
+async function runCheck() {
     const now = new Date();
 
     // Card arquivado não gera notificação de vencimento — o caso já foi
@@ -80,6 +81,37 @@ export async function POST() {
     ]);
 
     return NextResponse.json({ created: admins.length * vencidos.length, vencidos: vencidos.length });
+}
+
+function isCronAuthorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const auth = req.headers.get("authorization");
+  if (auth === `Bearer ${secret}`) return true;
+  return req.nextUrl.searchParams.get("secret") === secret;
+}
+
+/** Vercel Cron (GET + CRON_SECRET). */
+export async function GET(req: NextRequest) {
+  if (!isCronAuthorized(req)) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+  try {
+    return await runCheck();
+  } catch (error: any) {
+    console.error("[AFASTAMENTOS CHECK]", error);
+    return NextResponse.json({ error: "Erro ao verificar afastamentos" }, { status: 500 });
+  }
+}
+
+/** Disparo manual por um usuário logado da equipe. */
+export async function POST() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+  try {
+    return await runCheck();
   } catch (error: any) {
     console.error("[AFASTAMENTOS CHECK]", error);
     return NextResponse.json({ error: "Erro ao verificar afastamentos" }, { status: 500 });

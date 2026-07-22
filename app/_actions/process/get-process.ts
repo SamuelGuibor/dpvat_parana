@@ -53,6 +53,8 @@ function mapProcess(process: any, fields: "basic" | "full"): ProcessGet {
   return {
     id: process.id,
     name: process.name || "Sem nome",
+    cpf: process.cpf || "",
+    telefone: process.telefone || "",
     status: process.status || undefined,
     userId: process.userId,
     labelId: process.labelId ?? null,

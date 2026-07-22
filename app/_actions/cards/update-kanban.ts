@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { runAutomations } from "../../_shared/lib/automation-executor";
 import { createLog } from "../../_shared/lib/log";
+import { reportCriticalError } from "../../_shared/lib/report-error";
 
 interface UpdateKanbanStatusProps {
   id: string;
@@ -72,7 +73,7 @@ export async function updateKanbanStatus({
     newLabelId: label.id,
     authorId: session.user.id,
     authorName: session.user.name ?? "Usuário",
-  }).catch((err) => console.error("[AUTOMATION] Erro ao disparar:", err));
+  }).catch((err) => reportCriticalError("AUTOMATION", err));
 
   // Sem revalidatePath aqui: /nova-dash é 100% client e sincroniza por
   // polling; revalidar a rota re-renderizava a página inteira a cada drop.

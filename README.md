@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Paraná Seguros — Site + CRM
 
-## Getting Started
+Sistema completo do escritório Paraná Seguros (indenizações DPVAT e benefícios
+do INSS): site institucional, área do cliente e CRM interno da equipe.
 
-First, run the development server:
+## Módulos
+
+| Rota | O que é |
+| --- | --- |
+| `/` (`app/(site)`) | Site institucional: landing, blog, FAQ, equipe, contato (GA/Pixel/RD Station só aqui) |
+| `/area-do-cliente`, `/status` (`app/(cliente)`) | Área do cliente: acompanhamento do processo por CPF |
+| `/login` + `/login/recuperar-senha` | Login (CPF+senha) e recuperação de senha via código SMS/WhatsApp |
+| `/nova-dash` (`app/nova-dash`) | CRM da equipe: kanban de leads, automações, inbox WhatsApp, chat interno, dashboard estratégico, tickets |
+
+Código compartilhado em `app/_shared` (libs, hooks, UI shadcn), server actions
+em `app/_actions`, rotas de API em `app/api`, schema Prisma em `prisma/`.
+
+## Dependências externas
+
+- **PostgreSQL (Neon)** — banco principal (`DATABASE_URL`).
+- **AWS S3** — documentos, avatares e mídia do WhatsApp (URLs pré-assinadas).
+- **WhatsApp Cloud API (Meta)** — inbox de atendimento + avisos automáticos; webhook em `/api/whatsapp/webhook` (HMAC).
+- **Chatbot WhatsApp** — projeto separado em `D:\Chatbot_whatsapp` (qualificação de leads por IA); tem restart próprio.
+- **docx-converter** — microserviço separado em `D:\docx-converter` (roteiros com IA e DOCX→PDF); não roda dentro do Next.
+- **Chat relay (Railway)** — SSE do chat interno/inbox (`CHAT_RELAY_*`); sem ele o chat cai para polling.
+- **Vercel Pro** — deploy + crons (`vercel.json`): `/api/whatsapp/cron` (15 min) e `/api/afastamentos/check` (30 min), autenticados por `CRON_SECRET`.
+- **Discord** — notificações internas e alertas de erro crítico (`app/_shared/lib/report-error.ts`).
+- **Twilio (opcional)** — SMS do "esqueci minha senha"; sem credenciais o código vai por WhatsApp.
+
+## Rodando localmente
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env   # preencha as variáveis (ver comentários no arquivo)
+npx prisma generate
+npm run dev            # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Migrations: `npx prisma migrate dev --name <nome>` (aplica direto no banco da
+`DATABASE_URL` — cuidado com produção).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Comandos
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Comando | O que faz |
+| --- | --- |
+| `npm run dev` | Servidor de desenvolvimento |
+| `npm run build` / `npm start` | Build e execução de produção |
+| `npm run lint` | ESLint |
+| `npm test` | Testes unitários (Vitest) |
+| `npx tsc --noEmit` | Type-check |
 
-## Learn More
+CI (GitHub Actions, `.github/workflows/ci.yml`): type-check + lint + testes em
+todo push/PR.
 
-To learn more about Next.js, take a look at the following resources:
+## Permissões da equipe
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Três cargos: `ADMIN` < `ADMIN+` < `ADMIN++` (Super Admin). O ADMIN++ gerencia
+cargos e permissões individuais pela tela **Equipe** do CRM (o que cada um pode
+ver/fazer: Arquivados, arquivar/excluir cards, Tickets, Automações, Visão do
+Gestor). Fonte única: `app/_shared/lib/permissions.ts`; validação no servidor
+via `requirePermission()` (`permissions-server.ts`).

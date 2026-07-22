@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import {
   listWhatsAppConversations,
+  countWhatsAppUnread,
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
 
@@ -106,8 +107,16 @@ export function useWhatsAppMessages(contactId: string | null) {
   return { messages, mutate, isLoading, loadOlder, hasMore, loadingOlder };
 }
 
-/** Total de conversas não lidas (badge da sidebar do workspace). */
+/**
+ * Total de conversas não lidas (badge das abas). Usa a action de CONTAGEM
+ * leve em vez de hidratar as 200 conversas — o badge montava a query mais
+ * pesada do app a cada 15s mesmo com o inbox fechado.
+ */
 export function useWhatsAppUnread() {
-  const { conversations } = useWhatsAppConversations();
-  return conversations.filter((c) => c.unread && c.status !== 'closed').length;
+  const { data } = useSWR<number>(
+    'whatsapp-unread-count',
+    () => countWhatsAppUnread(),
+    { refreshInterval: 30_000, revalidateOnFocus: true, shouldRetryOnError: false },
+  );
+  return data ?? 0;
 }

@@ -1,26 +1,58 @@
-/* eslint-disable @next/next/no-img-element */
-/* eslint-disable jsx-a11y/alt-text */
 import type { Metadata } from "next";
 import "./globals.css";
 import { Mulish } from "next/font/google";
 import AuthProvider from "./_shared/providers/auth";
 import { Toaster } from "./_shared/ui/sonner";
-import Script from "next/script";
 import { NotificationsProvider } from "./store/provider";
-// import { ChatBot } from "./_components/chatbot";
 
 const mulish = Mulish({
   subsets: ["latin-ext"],
 });
 
+// Metadata única via API do Next (antes havia tags manuais no <head> DUPLICANDO
+// e contradizendo este export — título/description/canonical divergentes no HTML
+// final). Os scripts de marketing (GA/Pixel/RD Station) vivem no layout do
+// (site): a equipe navegando no CRM não deve poluir o Analytics/Pixel.
 export const metadata: Metadata = {
-  title: "Paraná Seguros",
+  metadataBase: new URL("https://www.segurosparana.com.br"),
+  title: {
+    default: "Paraná Seguros - Indenização Rápida e Segura",
+    template: "%s | Paraná Seguros",
+  },
   description:
-    "Paraná Seguros - Soluções de seguros para proteção e tranquilidade.",
+    "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná. Atendemos vítimas de acidentes com rapidez e transparência.",
   authors: [{ name: "Paraná Seguros" }],
   keywords:
-    "seguros, seguro de vida, seguros para empresas, proteção, Paraná Seguros, seguros automotivos, seguros residenciais, seguros empresariais, seguro saúde, consultoria em seguros, planos de seguros, seguros no Paraná, seguros personalizados, proteção de bens, seguros acessíveis, consultoria de riscos, seguros de viagens, seguro de imóvel, seguros de responsabilidade civil, previdência privada, seguro de carro, seguro empresarial, melhores seguros de vida, seguro mais barato, proteção financeira, gestão de riscos",
-  robots: "index, follow",
+    "DPVAT Paraná, seguro DPVAT, indenização DPVAT, auxílio-acidente INSS, benefício INSS, indenização acidente de trânsito, Paraná Seguros, Curitiba DPVAT, advogado acidente de trânsito Paraná",
+  robots: "index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "Paraná Seguros - Indenização Rápida e Segura",
+    description:
+      "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná. Atendimento rápido e transparente.",
+    url: "https://www.segurosparana.com.br/",
+    siteName: "Paraná Seguros",
+    images: [
+      {
+        url: "https://www.segurosparana.com.br/paranaseguros.png",
+        width: 1200,
+        height: 630,
+        alt: "Paraná Seguros - Indenização de Acidentes de Trânsito",
+      },
+    ],
+    locale: "pt_BR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Paraná Seguros - Indenização Rápida de Acidentes de Trânsito",
+    description:
+      "Garantimos sua indenização de acidentes de trânsito com rapidez e transparência no Paraná. Entre em contato hoje!",
+    images: ["https://www.segurosparana.com.br/paranaseguros.png"],
+  },
+  other: {
+    "facebook-domain-verification": "1rkpryx50xubl50ps6z82tb2is9887",
+  },
 };
 
 export default function RootLayout({
@@ -28,136 +60,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-
   return (
     <html lang="pt-BR">
-      <head>
-        <Script
-          async
-          src="https://www.googletagmanager.com/gtag/js?id=G-4ETETM1CP7"
-        />
-
-        <Script id="gtag-init">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'G-4ETETM1CP7');
-          `}
-        </Script>
-
-        <title>Paraná Seguros - Indenização Rápida e Segura</title>
-        <meta name="facebook-domain-verification" content="1rkpryx50xubl50ps6z82tb2is9887" />
-        <meta
-          name="description"
-          content="Especialistas em indenizações de acidentes de trânsito no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em todo o Paraná."
-        />
-        <meta
-          name="keywords"
-          content="DPVAT Paraná,seguro DPVAT,indenização DPVAT,Paraná Seguros,Curitiba DPVAT,Ponta Grossa DPVAT,Maringá DPVAT"
-        />
-        <link rel="canonical" href="https://www.segurosparana.com.br/" />
-        <meta
-          property="og:title"
-          content="Paraná Seguros - Indenização Rápida e Segura com DPVAT"
-        />
-        <meta
-          property="og:description"
-          content="Especialistas em indenizações de Acidentes de Transito no Paraná. Atendemos vítimas de acidentes de trânsito com rapidez e transparência em todo o Paraná."
-        />
-        <meta property="og:url" content="https://www.segurosparana.com.br/" />
-        <meta property="og:site_name" content="Paraná Seguros" />
-        <meta
-          property="og:image"
-          content="https://www.segurosparana.com.br/paranaseguros.png"
-        />
-        <meta
-          property="og:image:secure_url"
-          content="https://www.segurosparana.com.br/paranaseguros.png"
-        />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta
-          property="og:image:alt"
-          content="Paraná Seguros - Indenização de Acidentes de Transito"
-        />
-        <meta property="og:locale" content="pt_BR" />
-        <meta property="og:type" content="website" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta
-          name="twitter:title"
-          content="Paraná Seguros - Indenização Rápida de Acidentes de Transito"
-        />
-        <meta
-          name="twitter:description"
-          content="Garantimos sua indenização de Acidentes de Transito com rapidez e transparência no Paraná. Entre em contato hoje!"
-        />
-        <meta
-          name="twitter:image"
-          content="https://www.segurosparana.com.br/paranaseguros.png"
-        />
-        <meta
-          name="robots"
-          content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1"
-        />
-
-        <Script id="facebook-pixel" strategy="afterInteractive">
-          {`
-            !function(f,b,e,v,n,t,s)
-            {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-            n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-            if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-            n.queue=[];t=b.createElement(e);t.async=!0;
-            t.src=v;s=b.getElementsByTagName(e)[0];
-            s.parentNode.insertBefore(t,s)}(window, document,'script',
-            'https://connect.facebook.net/en_US/fbevents.js');
-
-            fbq('init', '874771071591185');
-            fbq('track', 'PageView');
-          `}
-        </Script>
-
-
-      </head>
       <body className={`${mulish.className} antialiased`}>
         <AuthProvider><NotificationsProvider>{children}</NotificationsProvider></AuthProvider>
-        {/* <ChatBot /> */}
         <Toaster />
-        <script type="text/javascript" async
-          src="https://d335luupugsy2.cloudfront.net/js/loader-scripts/549d8d30-be36-4f81-860f-9377b7717532-loader.js" >
-        </script>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "Organization",
-              name: "Paraná Seguros",
-              url: "https://www.segurosparana.com.br/",
-              logo: "https://www.segurosparana.com.br/paranaseguros.png",
-              contactPoint: {
-                "@type": "ContactPoint",
-                contactType: "Customer Service",
-                telephone: "+55 41 0000-0000",
-                areaServed: "BR",
-                availableLanguage: "Portuguese",
-              },
-              sameAs: [
-                "https://www.facebook.com/paranadpvat/",
-                "https://www.instagram.com/paranadpvat/",
-              ],
-            }),
-          }}
-        />
-
-        <noscript>
-          <img
-            height="1"
-            width="1"
-            style={{ display: "none" }}
-            src="https://www.facebook.com/tr?id=874771071591185&ev=PageView&noscript=1"
-          />
-        </noscript>
       </body>
     </html>
   );

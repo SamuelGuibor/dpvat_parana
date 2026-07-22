@@ -6,6 +6,7 @@ import { authOptions } from "../../_shared/lib/auth";
 import { createLog, diffFields, CARD_FIELD_LABELS, buildUpdateMessage } from "../../_shared/lib/log";
 import { notifyStatusProgress } from "../../_shared/lib/whatsapp/status-notify";
 import { getStatusLabel } from "../../nova-dash/card-dialog/constants";
+import { stripFormat } from "../../_shared/utils/format";
 
 interface UpdateProcessData {
   id: string;
@@ -47,6 +48,14 @@ interface UpdateProcessData {
 }
 
 export async function updateProcess(data: UpdateProcessData) {
+  // O banco guarda CPF/telefone/CEP SEM máscara (só dígitos) — a UI formata
+  // na exibição. Normaliza antes do update e do diff de log.
+  data.cpf = stripFormat(data.cpf);
+  data.cpf_res = stripFormat(data.cpf_res);
+  data.telefone = stripFormat(data.telefone);
+  data.telefone_secundario = stripFormat(data.telefone_secundario);
+  data.cep = stripFormat(data.cep);
+
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {

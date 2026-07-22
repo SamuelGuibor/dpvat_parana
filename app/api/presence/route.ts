@@ -8,10 +8,10 @@ import { authOptions } from '@/app/_shared/lib/auth';
 const ONLINE_WINDOW_MS = 90_000;
 
 async function buildList(currentUserId?: string) {
-  // A "equipe" é exatamente quem tem role ADMIN — os mesmos que têm acesso
+  // A "equipe" é quem tem role ADMIN* — os mesmos que têm acesso
   // à dashboard (ver a checagem em nova-dash/page.tsx).
   const admins = await db.user.findMany({
-    where: { role: 'ADMIN' },
+    where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } },
     select: { id: true, name: true, image: true, role: true, lastSeenAt: true },
   });
 

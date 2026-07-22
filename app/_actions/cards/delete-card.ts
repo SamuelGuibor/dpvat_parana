@@ -1,9 +1,8 @@
 "use server";
 
 import { db } from "../../_shared/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../_shared/lib/auth";
 import { revalidatePath } from "next/cache";
+import { requirePermission } from "../../_shared/lib/permissions-server";
 
 export async function deleteCard({
   id,
@@ -12,8 +11,7 @@ export async function deleteCard({
   id: string;
   isProcess: boolean;
 }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Não autenticado.");
+  await requirePermission("delete_cards");
 
   if (isProcess) {
     await db.process.delete({ where: { id } });

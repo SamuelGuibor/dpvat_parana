@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
@@ -27,16 +27,25 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { useWhatsAppUnread } from '@/app/_shared/hooks/use-whatsapp';
+import { PermissionsProvider, usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import { GlobalSearch } from '@/app/nova-dash/_components/GlobalSearch';
+import { isTeamRole } from '@/app/_shared/lib/permissions';
+import { DashboardTour, START_DASH_TOUR_EVENT } from '@/app/nova-dash/_components/DashboardTour';
 export const dynamic = "force-dynamic";
 
-type Theme = 'light' | 'dark';
-
 export default function Page() {
+  return (
+    <PermissionsProvider>
+      <PageInner />
+    </PermissionsProvider>
+  );
+}
+
+function PageInner() {
   const [activeTab, setActiveTab] = useState('kanban');
   const [open, setOpen] = useState(false);
   const { isDark: darkReaderOn } = useDarkMode();
-  const [theme, setTheme] = useState<Theme>('light');
-  const [mounted, setMounted] = useState(false);
+  const { perms } = usePermissions();
   const { data: session, status } = useSession();
   const router = useRouter();
   const { unread } = useUnread();
@@ -45,26 +54,15 @@ export default function Page() {
   const whatsappUnread = useWhatsAppUnread();
   const workspaceUnread = chatUnread + whatsappUnread;
 
-  // Carrega tema persistido no primeiro mount
+  // O dark mode oficial é o Dark Reader (DarkModeToggle). Este era um toggle
+  // legado que aplicava `.dark` no <html> por cima — se um usuário tivesse
+  // 'nova-dash-theme'='dark' salvo de versão antiga, as classes dark: do
+  // Tailwind ativavam E o Dark Reader invertia por cima (cores duplamente
+  // invertidas). Removemos o sistema legado e limpamos a chave antiga.
   useEffect(() => {
-    const stored = (typeof window !== 'undefined'
-      ? localStorage.getItem('nova-dash-theme')
-      : null) as Theme | null;
-    const prefersDark = typeof window !== 'undefined'
-      && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    const initial: Theme = stored ?? 'light';
-    setTheme(initial);
-    setMounted(true);
+    document.documentElement.classList.remove('dark');
+    try { localStorage.removeItem('nova-dash-theme'); } catch { /* noop */ }
   }, []);
-
-  // Aplica/remove a classe `dark` no <html> e persiste
-  useEffect(() => {
-    if (!mounted) return;
-    const root = document.documentElement;
-    if (theme === 'dark') root.classList.add('dark');
-    else root.classList.remove('dark');
-    localStorage.setItem('nova-dash-theme', theme);
-  }, [theme, mounted]);
 
   useEffect(() => {
     function handleOpenCard() {
@@ -89,11 +87,7 @@ export default function Page() {
     }
   }, [status, router]);
 
-  function toggleTheme() {
-    setTheme((t) => (t === 'light' ? 'dark' : 'light'));
-  }
-
-  const isDark = theme === 'dark';
+  const isDark = false;
 
   // Enquanto a sessão é resolvida, mantém a tela estável (sem flash de "deslogado").
   if (status === 'loading') {
@@ -109,7 +103,7 @@ export default function Page() {
 
 
   if (status === 'unauthenticated') return null;
-  if (session?.user?.role !== 'ADMIN') {
+  if (!isTeamRole(session?.user?.role)) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
         <p className="text-sm opacity-70">Acesso restrito a administradores.</p>
@@ -120,77 +114,87 @@ export default function Page() {
   const isWorkspace = activeTab === 'meu-espaco';
   const kanban = activeTab === 'kanban';
 
-  const ALLOWED_ARCHIVE_USERS = [
-    "cmazo6j870000ia0gw5ppb486", // eu 
-    "cmqp5w7hd000dl404atfj5mrd",
-    "cmazuwrcj0000iav499hqf5ij",
-    "cmpwucq210001jv041oc9twsr" //daniel
-  ];
-
-  const canViewArchived = ALLOWED_ARCHIVE_USERS.includes(session?.user?.id ?? "");
-
-  const ALLOWED_TICKETS_USERS = [
-    "cmazo6j870000ia0gw5ppb486",
-    "cmazuwrcj0000iav499hqf5ij",
-    "cmpwucq210001jv041oc9twsr",
-    "cmqp5w7hd000dl404atfj5mrd"
-  ];
-
-  const canViewTickets = ALLOWED_TICKETS_USERS.includes(session?.user?.id ?? "");
+  // Permissões vêm do servidor (cargo + overrides do ADMIN++) via
+  // PermissionsProvider — nada mais de listas de IDs hardcoded aqui.
+  const canViewArchived = perms.view_archived;
+  const canViewTickets = perms.view_tickets;
 
   // Kanban + Espaço de Trabalho são fixos; Arquivados e Tickets Dev entram
   // conforme a permissão. Classes literais para o Tailwind não perder o JIT.
+  // Mobile: as abas viram uma linha com scroll lateral; o grid só vale no md+.
   const visibleTabs = 2 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
   const tabsGridCols =
-    visibleTabs === 4 ? "grid-cols-4" : visibleTabs === 3 ? "grid-cols-3" : "grid-cols-2";
+    visibleTabs === 4 ? "md:grid-cols-4" : visibleTabs === 3 ? "md:grid-cols-3" : "md:grid-cols-2";
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
       <header className={`shrink-0 z-50 border-b ${
         isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'
       }`}>
-        <div className="px-6">
-          <div className="flex items-center justify-between">
-            <Link href='/' className="flex items-center">
+        <div className="px-3 md:px-6">
+          <div className="flex items-center justify-between gap-2">
+            <Link href='/' className="flex shrink-0 items-center">
               <Image
                 src={darkReaderOn ? '/logo_text_white.png' : '/paranaseguros.png'}
                 width={200}
                 height={200}
                 alt="Logo"
+                className="h-auto w-[140px] md:w-[200px]"
               />
             </Link>
-            <div className="flex items-center gap-3">
-              <DarkModeToggle />
+            <div className="flex items-center gap-1.5 md:gap-3">
+              {/* Rever o tutorial de onboarding a qualquer momento. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Rever tutorial"
+                aria-label="Rever tutorial"
+                onClick={() => window.dispatchEvent(new Event(START_DASH_TOUR_EVENT))}
+              >
+                <HelpCircle className="h-5 w-5 text-gray-500" />
+              </Button>
+              <span data-tour="dark-mode" className="inline-flex">
+                <DarkModeToggle />
+              </span>
 
-              <TeamPresence isDark={isDark} onOpenTeam={() => setOpen(true)} />
+              {/* Presença da equipe é larga demais para o celular. */}
+              <div className="hidden md:block">
+                <TeamPresence isDark={isDark} onOpenTeam={() => setOpen(true)} />
+              </div>
 
               <Team open={open} onClose={() => setOpen(false)} />
 
               <div className="flex items-center gap-2 pl-1 ml-1 border-l border-gray-200 dark:border-zinc-700">
-                <NotificationDropdown />
-                <UserMenu />
+                <span data-tour="notifications" className="inline-flex">
+                  <NotificationDropdown />
+                </span>
+                <span data-tour="user-menu" className="inline-flex">
+                  <UserMenu />
+                </span>
               </div>
 
             </div>
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="px-3 md:px-6">
           <TabsList
-              className={`grid w-full max-w-4xl ${tabsGridCols} ${
+              data-tour="tabs"
+              className={`flex w-full gap-1 overflow-x-auto md:grid md:max-w-4xl md:overflow-visible ${tabsGridCols} ${
                 isDark ? "bg-zinc-800 text-zinc-300" : ""
               }`}
             >
             {/* <TabsTrigger
               value="dashboard"
-              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+              className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
             >
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard Estratégico
             </TabsTrigger> */}
             <TabsTrigger
               value="kanban"
-              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+              data-tour="tab-kanban"
+              className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
             >
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
@@ -198,7 +202,7 @@ export default function Page() {
             {canViewArchived && (
               <TabsTrigger
                 value="arquivados"
-                className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+                className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
               >
                 <Archive className="w-4 h-4 mr-2" />
                 Arquivados
@@ -207,7 +211,7 @@ export default function Page() {
             {canViewTickets && (
               <TabsTrigger
                 value="tickets-dev"
-                className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+                className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
               >
                 <Ticket className="w-4 h-4 mr-2" />
                 Tickets Dev
@@ -215,7 +219,8 @@ export default function Page() {
             )}
             <TabsTrigger
               value="meu-espaco"
-              className={`relative ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+              data-tour="tab-workspace"
+              className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
             >
               <UserCircle className="w-4 h-4 mr-2" />
               Espaço de Trabalho
@@ -227,7 +232,7 @@ export default function Page() {
             </TabsTrigger>
             {/* <TabsTrigger
               value="ponto"
-              className={isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}
+              className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
             >
               <Clock className="w-4 h-4 mr-2" />
               Controle de Ponto
@@ -235,6 +240,16 @@ export default function Page() {
           </TabsList>
         </Tabs>
       </header>
+
+      {/* Tour de onboarding: abre sozinho na 1ª visita e retoma do passo salvo. */}
+      <DashboardTour onNavigate={setActiveTab} />
+
+      {/* Busca global (Ctrl+K): cards por nome/nº/CPF/telefone + navegação. */}
+      <GlobalSearch
+        onNavigate={setActiveTab}
+        canViewArchived={canViewArchived}
+        canViewTickets={canViewTickets}
+      />
 
       <main className={`flex min-h-0 flex-1 flex-col ${isWorkspace ? 'overflow-hidden' : 'overflow-y-auto'} ${isDark ? 'bg-zinc-950' : ''}`}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1">

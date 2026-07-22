@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/_shared/lib/auth";
 import { db } from "@/app/_shared/lib/prisma";
+import { getSessionPermissions } from "@/app/_shared/lib/permissions-server";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-
   // Clientes também têm sessão (middleware só exige login): tickets são
-  // internos, então a lista fica restrita à equipe.
-  if (!session?.user?.id || !session.user.role?.startsWith("ADMIN")) {
+  // internos, então a lista fica restrita a quem tem a permissão da aba.
+  const ctx = await getSessionPermissions();
+  if (!ctx?.permissions.view_tickets) {
     return NextResponse.json([], { status: 401 });
   }
 

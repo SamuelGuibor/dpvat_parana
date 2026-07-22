@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
-  Bot, Check, CheckCheck, AlertCircle, MessageCircle, Paperclip,
+  ArrowLeft, Bot, Check, CheckCheck, AlertCircle, MessageCircle, Paperclip,
   UserRound, Undo2, Archive, Headset, Inbox as InboxIcon, Search, X,
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
@@ -413,10 +413,13 @@ export function WhatsAppInbox() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden rounded-2xl border border-[#dce8e1] bg-[#dce8e1] shadow-sm dark:border-zinc-800 whatsapp-darkreader">
+    <div className="flex h-full overflow-hidden rounded-none border border-[#dce8e1] bg-[#dce8e1] shadow-sm dark:border-zinc-800 whatsapp-darkreader sm:rounded-2xl">
       {confirmDialog}
-      {/* ---------- Lista de conversas ---------- */}
-      <aside className="flex w-[320px] shrink-0 flex-col border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader">
+      {/* ---------- Lista de conversas ----------
+          Mobile: padrão WhatsApp — mostra a LISTA em tela cheia; ao abrir uma
+          conversa, a lista some e a thread ocupa tudo (botão voltar no header).
+          Desktop (md+): lista e thread lado a lado como sempre. */}
+      <aside className={`${activeContactId ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] shrink-0 flex-col border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader`}>
         {/* Cabeçalho fixo: título + busca + tags (não rola com a lista) */}
         <div className="shrink-0 border-b border-[#16362c] bg-[#1f3d33]/95 px-3 pb-3 pt-3 backdrop-blur dark:border-zinc-800 whatsapp-darkreader">
           <div className="mb-2 flex items-center gap-2 px-1">
@@ -551,7 +554,7 @@ export function WhatsAppInbox() {
       </aside>
 
       {/* ---------- Thread ---------- */}
-      <section className="flex min-w-0 flex-1 flex-col bg-[#dce8e1] dark:bg-zinc-950/20">
+      <section className={`${activeContactId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col bg-[#dce8e1] dark:bg-zinc-950/20`}>
         {!active ? (
           <div className="flex h-full flex-col items-center justify-center text-gray-400">
             <MessageCircle className="mb-2 h-10 w-10 opacity-30" />
@@ -559,7 +562,15 @@ export function WhatsAppInbox() {
           </div>
         ) : (
           <>
-            <header className="flex items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <header className="flex items-center gap-3 border-b border-gray-100 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900 md:px-5">
+              {/* Voltar para a lista (só no celular) */}
+              <button
+                onClick={() => setActiveContactId(null)}
+                title="Voltar para as conversas"
+                className="-ml-1 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:hidden"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
               <Avatar className="h-8 w-8 border border-gray-100 dark:border-zinc-800">
                 <AvatarFallback className="bg-emerald-100 text-[11px] font-bold text-emerald-700">
                   {initials(active.contactName ?? active.contactPhone)}
@@ -593,7 +604,7 @@ export function WhatsAppInbox() {
                   <AlertTriangle className="h-3 w-3" /> Urgente
                 </span>
               )}
-              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_CHIP[active.status] ?? ''}`}>
+              <span className={`hidden rounded-full px-2 py-0.5 text-xs font-semibold sm:inline ${STATUS_CHIP[active.status] ?? ''}`}>
                 {STATUS_LABEL[active.status] ?? active.status}
                 {active.status === 'closed' && (active.qualified ? ' · Qualificada' : ' · Não qualificada')}
               </span>
@@ -601,8 +612,8 @@ export function WhatsAppInbox() {
               {/* Tags da conversa */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    <TagIcon className="h-3.5 w-3.5" /> Tags
+                  <button title="Tags" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    <TagIcon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Tags</span>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
@@ -637,8 +648,8 @@ export function WhatsAppInbox() {
               {active.status !== 'closed' ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                      <Archive className="h-3.5 w-3.5" /> Encerrar <ChevronDown className="h-3 w-3" />
+                    <button title="Encerrar conversa" className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      <Archive className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span> <ChevronDown className="h-3 w-3" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -882,7 +893,7 @@ function ThreadMessageRow({
       ref={setRowRef}
       className={`group flex items-end gap-2 rounded-xl transition-colors duration-700 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-0.5' : 'mt-2'} ${highlighted ? 'bg-amber-100/70 dark:bg-amber-900/30' : ''}`}
     >
-      <div className={`flex max-w-[72%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
+      <div className={`flex max-w-[85%] flex-col md:max-w-[72%] ${mine ? 'items-end' : 'items-start'}`}>
         {mine && !grouped && (
           <span className="mb-0.5 flex items-center gap-1 px-1 text-sm font-bold text-gray-500 dark:text-zinc-400">
             {msg.sentByBot ? <><Bot className="h-3 w-3" /> Bot</> : <><UserRound className="h-3 w-3" /> {msg.authorName ?? 'Atendente'}</>}
@@ -1216,9 +1227,11 @@ function HeaderButton({ icon: Icon, label, onClick }: { icon: React.ElementType;
   return (
     <button
       onClick={onClick}
+      title={label}
       className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
     >
-      <Icon className="h-3.5 w-3.5" /> {label}
+      {/* No celular o rótulo some (só ícone) para o header não estourar. */}
+      <Icon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

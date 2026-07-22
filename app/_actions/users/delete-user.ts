@@ -1,15 +1,11 @@
 "use server";
 
 import { db } from "@/app/_shared/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/_shared/lib/auth";
+import { requirePermission } from "@/app/_shared/lib/permissions-server";
 
 export async function deleteAdmin(id: string) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.email) {
-    throw new Error("Usuário não autenticado");
-  }
+  // Remover membro da equipe é gestão de equipe — só ADMIN++.
+  const ctx = await requirePermission("manage_team");
 
   // 🔍 Verifica se o usuário existe
   const user = await db.user.findUnique({
@@ -20,9 +16,16 @@ export async function deleteAdmin(id: string) {
     throw new Error("Administrador não encontrado");
   }
 
-  // 🔥 (Opcional nível senior) evitar deletar a si mesmo
-  if (user.email === session.user.email) {
+  // 🔥 evitar deletar a si mesmo
+  if (user.email === ctx.email) {
     throw new Error("Você não pode se remover");
+  }
+
+  if (user.role === "ADMIN++") {
+    const superAdmins = await db.user.count({ where: { role: "ADMIN++" } });
+    if (superAdmins <= 1) {
+      throw new Error("Este é o último Super Admin — promova outro ADMIN++ antes de removê-lo.");
+    }
   }
 
   // 🗑️ Deleta

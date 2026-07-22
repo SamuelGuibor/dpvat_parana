@@ -20,6 +20,7 @@ const Sidebar = () => {
     <>
       {/* Botão do menu no mobile */}
       <button
+        data-tour="client-menu"
         className="md:hidden fixed top-4 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-md ring-1 ring-slate-200 active:scale-95"
         onClick={toggleSidebar}
         aria-label={isOpen ? "Fechar menu" : "Abrir menu"}
@@ -29,6 +30,7 @@ const Sidebar = () => {
 
       {/* Sidebar */}
       <aside
+        data-tour="client-sidebar"
         className={`fixed inset-y-0 left-0 z-40 flex h-screen w-72 max-w-[80%] transform flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out md:relative md:w-64 md:max-w-none md:translate-x-0 ${
           isOpen ? "translate-x-0 shadow-xl" : "-translate-x-full"
         }`}

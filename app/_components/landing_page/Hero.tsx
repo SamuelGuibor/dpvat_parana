@@ -14,9 +14,9 @@ export function Hero() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <h2 className="text-4xl lg:text-5xl mb-6">
+            <h1 className="text-4xl lg:text-5xl mb-6">
               Receba a Indenização que Você Merece
-            </h2>
+            </h1>
             <p className="text-xl mb-8 text-blue-100">
               Especialistas em DPVAT, Auxílio-Acidente INSS e recuperação de danos causados por acidentes de trânsito. Sua justiça é nossa missão.
             </p>
@@ -31,7 +31,8 @@ export function Hero() {
             </div>
           </div>
           <div className="hidden lg:block">
-            <Image src='/img1.2.png' width={700} height={200} alt='' className='rounded-xl'/>
+            {/* priority + sizes: esta é a imagem LCP da landing. */}
+            <Image src='/img1.2.png' width={700} height={200} priority sizes="(min-width: 1024px) 700px, 0px" alt='Atendimento da Paraná Seguros a vítimas de acidente de trânsito' className='rounded-xl'/>
             {/* <ImageWithFallback 
               src="https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGNvbnN1bHRhdGlvbiUyMG9mZmljZXxlbnwxfHx8fDE3NjU5Nzk5NjR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
               alt="Consultoria jurídica"

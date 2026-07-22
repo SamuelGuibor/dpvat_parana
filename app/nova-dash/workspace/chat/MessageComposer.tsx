@@ -102,6 +102,10 @@ export function MessageComposer({ members, disabled, placeholder, onSend, onTypi
       await onSend(text, file);
       setValue('');
       clearFile();
+    } catch (err) {
+      // O texto continua no composer — só avisamos que não foi.
+      console.error('[CHAT] Falha ao enviar mensagem:', err);
+      toast.error('A mensagem não foi enviada. Verifique a conexão e tente de novo.');
     } finally {
       setSending(false);
     }

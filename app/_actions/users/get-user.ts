@@ -53,6 +53,8 @@ function mapUser(user: any, fields: "basic" | "full"): UserData {
   return {
     id: user.id,
     name: user.name || "Sem nome",
+    cpf: user.cpf || "",
+    telefone: user.telefone || "",
     status: user.status || undefined,
     labelId: user.labelId ?? null,
     label: user.label ?? null,

@@ -3,6 +3,7 @@ import React, { useState, useMemo, useDeferredValue, useCallback, useEffect } fr
 import { Badge } from '@/app/_shared/ui/badge';
 import { Calendar, Phone, User, Clock, Trash2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatPhone } from '@/app/_shared/utils/format';
 import { ScrollArea, ScrollBar } from '@/app/_shared/ui/scroll-area';
 import { FixedSizeList as List } from 'react-window';
 
@@ -163,12 +164,12 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
                 throw new Error("Erro ao deletar");
             }
 
-            toast.success("Item removido com sucesso 🗑️");
+            toast.success("Item removido com sucesso");
 
             setItems(prev => prev.filter(item => item.id !== id));
         } catch (err) {
             console.error(err);
-            toast.error("Erro ao remover ❌");
+            toast.error("Erro ao remover o item");
         }
     }, []);
 
@@ -182,10 +183,10 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h3 className="text-xl font-bold">Fluxo de Eventos Rápidos</h3>
-                    <p className="text-sm text-gray-500 dark:text-zinc-400">Acompanhamento de 8 etapas</p>
+                    <p className="text-sm text-gray-500 dark:text-zinc-400">Acompanhamento de {STAGES.length} etapas</p>
                 </div>
                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                    8 Colunas
+                    {STAGES.length} Colunas
                 </Badge>
             </div>
 
@@ -325,7 +326,7 @@ const KanbanCard = React.memo(function KanbanCard({
                 <div className="flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 p-2 rounded-lg border border-green-200/50 shadow-sm">
                     <div className="flex items-center gap-2 text-[11px] text-green-700 font-bold">
                         <Phone className="w-3 h-3" />
-                        <span>{item.telefone}</span>
+                        <span>{formatPhone(item.telefone)}</span>
                     </div>
                     <button
                         onClick={() => copyPhone(item.telefone)}

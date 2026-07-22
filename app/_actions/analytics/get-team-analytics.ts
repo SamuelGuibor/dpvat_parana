@@ -3,7 +3,7 @@
 import { db } from '@/app/_shared/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
-import { isManager } from '@/app/_shared/lib/managers';
+import { getSessionPermissions } from '@/app/_shared/lib/permissions-server';
 import { DEV_COMMIT_ACTION, devCommitFiles } from '@/app/_shared/lib/dev-activity';
 
 // Mesma janela do heartbeat de presença (api/presence/route.ts).
@@ -56,7 +56,8 @@ function localBucket(date: Date): { day: number; hour: number } {
 export async function getTeamAnalytics(range: DateRangeInput): Promise<TeamAnalytics> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
-  if (!isManager(session.user.email)) throw new Error('Acesso restrito a gestores.');
+  const perms = await getSessionPermissions();
+  if (!perms?.permissions.manager_dashboard) throw new Error('Acesso restrito a gestores.');
 
   const from = new Date(range.from);
   const to = new Date(range.to);

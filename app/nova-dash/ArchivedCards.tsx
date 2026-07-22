@@ -29,7 +29,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   iconBg: string;
 }> = {
   pagos_ccs: {
-    label: 'Pagos CCS',
+    label: 'APTOS CCS',
     icon: DollarSign,
     bar: 'bg-emerald-500',
     chipBg: 'bg-emerald-50 dark:bg-emerald-950/40',
@@ -40,7 +40,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   pagos_uni: {
-    label: 'Pagos UNI',
+    label: 'APTOS UNI',
     icon: DollarSign,
     bar: 'bg-green-500',
     chipBg: 'bg-green-50 dark:bg-green-950/40',
@@ -51,7 +51,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   enviados_taynara: {
-    label: 'Enviados Taynára',
+    label: 'ENVIADOS TAYNARA',
     icon: Archive,
     bar: 'bg-blue-500',
     chipBg: 'bg-blue-50 dark:bg-blue-950/40',
@@ -62,7 +62,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   enviados_evelyn: {
-    label: 'Enviados Evelyn',
+    label: 'ENVIADOS EVELYN',
     icon: Archive,
     bar: 'bg-sky-500',
     chipBg: 'bg-sky-50 dark:bg-sky-950/40',
@@ -73,7 +73,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   enviados_joinville: {
-    label: 'Enviados Joinville',
+    label: 'ENVIADOS JOINVILLE',
     icon: Archive,
     bar: 'bg-cyan-500',
     chipBg: 'bg-cyan-50 dark:bg-cyan-950/40',
@@ -84,7 +84,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   pastas_negadas_ccs: {
-    label: 'Pastas Negadas CCS',
+    label: 'PASTAS NEGADAS CCS',
     icon: XCircle,
     bar: 'bg-amber-500',
     chipBg: 'bg-amber-50 dark:bg-amber-950/40',
@@ -95,7 +95,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   pastas_negadas_uni: {
-    label: 'Pastas Negadas UNI',
+    label: 'PASTAS NEGADAS UNI',
     icon: XCircle,
     bar: 'bg-orange-500',
     chipBg: 'bg-orange-50 dark:bg-orange-950/40',
@@ -106,7 +106,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   perdeu_contato_definitivo: {
-    label: 'Perdeu Contato',
+    label: 'PERDEU CONTATO',
     icon: XCircle,
     bar: 'bg-red-500',
     chipBg: 'bg-red-50 dark:bg-red-950/40',
@@ -117,7 +117,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   nao_assinaram_procuracao: {
-    label: 'Não Assinaram Procuração',
+    label: 'NÃO ASSINARAM PROCURAÇÃO',
     icon: XCircle,
     bar: 'bg-rose-500',
     chipBg: 'bg-rose-50 dark:bg-rose-950/40',
@@ -128,7 +128,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   descartados_analise_interna: {
-    label: 'Descartados',
+    label: 'DESCARTADOS',
     icon: Archive,
     bar: 'bg-slate-500',
     chipBg: 'bg-slate-100 dark:bg-zinc-800',
@@ -139,7 +139,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   desistiram_expressamente: {
-    label: 'Desistiram',
+    label: 'DESISTIRAM',
     icon: XCircle,
     bar: 'bg-purple-500',
     chipBg: 'bg-purple-50 dark:bg-purple-950/40',
@@ -150,7 +150,7 @@ const STATUS_CONFIG: Record<ArchiveStatus, {
   },
 
   voltar_um_dia: {
-    label: 'Voltar um dia',
+    label: 'VOLTAR UM DIA',
     icon: RotateCcw,
     bar: 'bg-indigo-500',
     chipBg: 'bg-indigo-50 dark:bg-indigo-950/40',
@@ -284,7 +284,7 @@ export const ArchivedCards: React.FC = () => {
     label: string;
     icon: React.ElementType | null;
   }[] = [
-      { key: "all", label: "Todos", icon: Inbox },
+      { key: "all", label: "TODOS", icon: Inbox },
 
       { key: "pagos_ccs", label: STATUS_CONFIG.pagos_ccs.label, icon: DollarSign },
       { key: "pagos_uni", label: STATUS_CONFIG.pagos_uni.label, icon: DollarSign },

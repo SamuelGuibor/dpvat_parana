@@ -24,6 +24,7 @@ export async function getAdmins() {
       fixed: true,
       roleFixed: true,
       createdAt: true,
+      permissions: true,
     },
   });
 
@@ -36,5 +37,6 @@ export async function getAdmins() {
     fixed: user.fixed ?? false,
     roleFixed: user.roleFixed || "",
     createdAt: user.createdAt,
+    permissions: user.permissions ?? null,
   }));
 }

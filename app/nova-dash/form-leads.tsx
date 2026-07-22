@@ -10,7 +10,8 @@ import { DeleteContact } from "@/app/_actions/contacts/delete-contact";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/_shared/ui/card';
 import { Badge } from '@/app/_shared/ui/badge';
-import { Trash2, Phone, User, FileText, Search, UserPlus } from 'lucide-react';
+import { Trash2, Phone, User, FileText, Search, UserPlus, Download } from 'lucide-react';
+import { formatPhone } from '@/app/_shared/utils/format';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -70,6 +71,31 @@ export const LeadsTable: React.FC = () => {
     loadLeads();
   };
 
+  // Exporta os leads (respeitando a busca ativa) para CSV que abre direto no
+  // Excel — antes nenhum dado do CRM era exportável.
+  const exportCsv = () => {
+    if (filteredLeads.length === 0) {
+      toast.error('Nenhum lead para exportar.');
+      return;
+    }
+    const esc = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['Nome', 'Telefone', 'Descrição', 'Data'].join(';'),
+      ...filteredLeads.map((l) =>
+        [esc(l.nome), esc(formatPhone(l.telefone)), esc(l.descricao), esc(formatDate(l.createdAt))].join(';')
+      ),
+    ];
+    // BOM para o Excel abrir com acentuação correta.
+    const blob = new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`${filteredLeads.length} lead(s) exportado(s).`);
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
 
@@ -114,9 +140,19 @@ export const LeadsTable: React.FC = () => {
               </CardDescription>
             </div>
 
-            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 w-fit">
-              {filteredLeads.length} Lead{filteredLeads.length !== 1 ? 's' : ''}
-            </Badge>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={exportCsv}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                title="Exportar leads para Excel/CSV"
+              >
+                <Download className="h-4 w-4" />
+                Exportar CSV
+              </button>
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 w-fit">
+                {filteredLeads.length} Lead{filteredLeads.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
           </div>
 
           {/* Busca */}

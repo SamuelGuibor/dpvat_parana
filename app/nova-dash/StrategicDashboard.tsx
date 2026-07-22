@@ -1,39 +1,27 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
-/* eslint-disable no-unused-vars */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/_shared/ui/card';
-import { Badge } from '@/app/_shared/ui/badge';
 import { Button } from '@/app/_shared/ui/button';
 import {
-  TrendingUp, TrendingDown, Users, CheckCircle, XCircle,
-  Clock, AlertTriangle, Target, Activity, Mail, MessageSquare,
-  Zap, Bell,
-  Loader2
+  Loader2, RotateCcw, Square, Target, Pencil, Check,
+  PlayCircle, MessageCircleQuestion, Files, UserX, UserMinus, UserCheck,
 } from 'lucide-react';
-import { ScrollArea } from '@/app/_shared/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
-import { TbXboxX } from "react-icons/tb";
-import { CiPause1 } from "react-icons/ci";
-import { FaPersonCircleQuestion } from "react-icons/fa6";
-import { FaPersonCircleExclamation } from "react-icons/fa6";
-import { FaPersonCircleXmark } from "react-icons/fa6";
-import { FaPersonCircleCheck } from "react-icons/fa6";
-import { LuAlignHorizontalJustifyStart } from "react-icons/lu";
-import { count } from 'console';
-import { FaSquare } from "react-icons/fa";
+import { toast } from 'sonner';
 import { MiniKanban } from '@/app/nova-dash/minikanban'
-
-import { IoDocuments } from "react-icons/io5";
 import { LeadsTable } from './form-leads';
 import { CalendarTab } from './CalendarTab';
 import { DateFilter, getDefaultDateRange, type DateRange } from './DateFilter';
+import {
+  getFunnelAnalytics, getMonthGoal, setMonthGoal,
+  type FunnelAnalytics,
+} from '@/app/_actions/analytics/get-funnel-analytics';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 
 type Counts = {
   contratado?: number;
@@ -50,101 +38,198 @@ function buildDateParams(range: DateRange): string {
   return `from=${range.from.toISOString()}&to=${range.to.toISOString()}`;
 }
 
-const BotIAControl: React.FC = () => {
-  const [acao, setAcao] = useState<'pausar' | 'reativar'>('pausar');
-  const [numero, setNumero] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [resultado, setResultado] = useState<{ tipo: 'sucesso' | 'erro'; msg: string } | null>(null);
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
-  async function handleEnviar() {
-    if (!numero.trim()) return;
-    setLoading(true);
-    setResultado(null);
+// Card "Meta do mês": contratos fechados vs meta definida pelo gestor (model
+// Goal no banco) — substitui o antigo alerta mock "Meta mensal atingida em 85%".
+function MonthGoalCard({ contratado, loading }: { contratado: number; loading: boolean }) {
+  const { perms } = usePermissions();
+  const month = currentMonthKey();
+  const [target, setTarget] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getMonthGoal(month).then((g) => setTarget(g.target)).catch(() => { });
+  }, [month]);
+
+  async function save() {
+    const value = parseInt(draft, 10);
+    if (Number.isNaN(value) || value < 0) {
+      toast.error('Informe um número válido.');
+      return;
+    }
+    setSaving(true);
     try {
-      const res = await fetch(`http://localhost:3333/bot/${acao}/${numero.trim()}`, { method: 'POST' });
-      if (res.ok) {
-        setResultado({ tipo: 'sucesso', msg: `Bot ${acao === 'pausar' ? 'pausado' : 'reativado'} para ${numero} com sucesso.` });
-        setNumero('');
-      } else {
-        setResultado({ tipo: 'erro', msg: `Erro ao ${acao} o bot. Status: ${res.status}` });
-      }
-    } catch {
-      setResultado({ tipo: 'erro', msg: 'Não foi possível conectar ao servidor do bot.' });
+      const g = await setMonthGoal(month, value);
+      setTarget(g.target);
+      setEditing(false);
+      toast.success('Meta do mês atualizada!');
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao salvar a meta');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
+  const pct = target && target > 0 ? Math.min(100, Math.round((contratado / target) * 100)) : null;
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[40vh]">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            Controle do Bot WhatsApp
-          </CardTitle>
-          <CardDescription>Pause ou reative o bot para um número específico</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-zinc-300">Ação</label>
-            <select
-              value={acao}
-              onChange={e => setAcao(e.target.value as 'pausar' | 'reativar')}
-              className="w-full border border-gray-300 dark:border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="pausar">Pausar bot</option>
-              <option value="reativar">Reativar bot</option>
-            </select>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-md">Meta do mês (contratos)</CardTitle>
+        <Target className="text-purple-600" size={28} />
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="h-[60px] flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
           </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-zinc-300">Número do cliente</label>
+        ) : editing ? (
+          <div className="flex items-center gap-2">
             <input
-              type="text"
-              placeholder="Ex: 5541999999999"
-              value={numero}
-              onChange={e => setNumero(e.target.value)}
-              className="w-full border border-gray-300 dark:border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              type="number"
+              min={0}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="w-24 rounded-md border border-gray-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+              placeholder="Meta"
+              autoFocus
             />
+            <Button size="sm" onClick={save} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={saving}>Cancelar</Button>
           </div>
-
-          <Button
-            onClick={handleEnviar}
-            disabled={loading || !numero.trim()}
-            className={`w-full ${acao === 'pausar' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            ) : acao === 'pausar' ? (
-              <CiPause1 className="w-4 h-4 mr-2" />
-            ) : (
-              <Zap className="w-4 h-4 mr-2" />
-            )}
-            {loading ? 'Enviando...' : acao === 'pausar' ? 'Pausar bot' : 'Reativar bot'}
-          </Button>
-
-          {resultado && (
-            <div className={`text-sm rounded-md px-3 py-2 ${resultado.tipo === 'sucesso' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-              {resultado.msg}
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <div className="text-4xl font-bold text-purple-600">
+                {contratado}
+                <span className="text-lg text-gray-400 font-semibold"> / {target ?? '—'}</span>
+              </div>
+              {perms.manager_dashboard && (
+                <button
+                  onClick={() => { setDraft(String(target ?? '')); setEditing(true); }}
+                  className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                  title="Definir meta do mês"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> {target == null ? 'Definir meta' : 'Editar'}
+                </button>
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+            {pct != null ? (
+              <div>
+                <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-zinc-800">
+                  <div
+                    className={`h-2 rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-purple-500'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">{pct}% da meta do mês</p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-zinc-400">
+                Nenhuma meta definida para este mês.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
-};
+}
+
+// Funil real do kanban: entradas por coluna + tempo médio na etapa, calculado
+// dos logs de movimentação — nada de dados fictícios.
+function KanbanFunnel({ range }: { range: DateRange }) {
+  const [data, setData] = useState<FunnelAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
+    getFunnelAnalytics(range.from.toISOString(), range.to.toISOString())
+      .then(setData)
+      .catch((err) => {
+        console.error('[FUNNEL]', err);
+        setError(true);
+      })
+      .finally(() => setLoading(false));
+  }, [range]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Fluxo do Kanban no período</CardTitle>
+        <CardDescription>
+          Quantos cards entraram em cada coluna e quanto tempo (médio) ficam na etapa — calculado
+          dos registros reais de movimentação.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex h-[300px] items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
+        ) : error ? (
+          <div className="flex h-[200px] flex-col items-center justify-center gap-3 text-sm text-gray-500">
+            <p>Não foi possível carregar o fluxo do kanban.</p>
+            <Button size="sm" variant="outline" onClick={load}>
+              <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+            </Button>
+          </div>
+        ) : !data || data.stages.length === 0 ? (
+          <p className="py-10 text-center text-sm text-gray-500">
+            Nenhuma movimentação de card registrada no período selecionado.
+          </p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={Math.max(220, data.stages.length * 34)}>
+              <BarChart data={data.stages} layout="vertical" margin={{ left: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis dataKey="column" type="category" width={220} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value: any, name: any) => [value, name === 'entries' ? 'Cards que entraram' : name]}
+                />
+                <Bar dataKey="entries" fill="#3b82f6" name="Cards que entraram" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2">
+              {data.stages.filter((s) => s.avgDaysBeforeLeaving != null).slice(0, 8).map((s) => (
+                <p key={s.column} className="text-xs text-gray-500 dark:text-zinc-400">
+                  <span className="font-semibold text-gray-700 dark:text-zinc-200">{s.column}:</span>{' '}
+                  {s.avgDaysBeforeLeaving} dia(s) em média na etapa
+                </p>
+              ))}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export const StrategicDashboard: React.FC = () => {
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const [counts, setCounts] = useState<Counts>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [kanbanItems, setKanbanItems] = useState([])
 
   const fetchAllData = useCallback(async (range: DateRange) => {
     setLoading(true);
     try {
+      setLoadError(false);
       const params = buildDateParams(range);
 
       const [countsRes, monthRes, kanbanRes] = await Promise.all([
@@ -152,6 +237,9 @@ export const StrategicDashboard: React.FC = () => {
         fetch(`/api/botconversa/monthly?${params}`, { cache: 'no-store' }),
         fetch(`/api/botconversa/get-kanban?${params}`, { cache: 'no-store' }),
       ]);
+      if (!countsRes.ok || !monthRes.ok || !kanbanRes.ok) {
+        throw new Error('Falha ao buscar métricas');
+      }
 
       const [countsData, monthData, kanbanData] = await Promise.all([
         countsRes.json(),
@@ -162,6 +250,11 @@ export const StrategicDashboard: React.FC = () => {
       setCounts(countsData);
       setMonthlyData(monthData);
       setKanbanItems(kanbanData);
+    } catch (err) {
+      // Antes uma falha aqui deixava os KPIs em ZERO como se fosse dado real —
+      // o gestor podia tomar decisão com base em zero falso.
+      console.error('[DASHBOARD] Falha ao carregar métricas:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -177,16 +270,6 @@ export const StrategicDashboard: React.FC = () => {
 
   const currentMonthIndex = new Date().getMonth();
   const contratadoMesAtual = monthlyData[currentMonthIndex]?.aprovados ?? 0;
-
-
-  const performanceData = [
-    { name: 'João Silva', processos: 89, taxa: 94, tempo: 3.2 },
-    { name: 'Maria Santos', processos: 76, taxa: 97, tempo: 2.8 },
-    { name: 'Pedro Oliveira', processos: 82, taxa: 91, tempo: 3.5 },
-    { name: 'Ana Costa', processos: 71, taxa: 95, tempo: 3.0 },
-    { name: 'Carlos Lima', processos: 64, taxa: 88, tempo: 4.1 },
-    { name: 'Julia Ferreira', processos: 78, taxa: 93, tempo: 3.3 },
-  ];
 
   const soma_indeferidos = (counts.nao_contratado ?? 0) + (counts.nao_qualificado ?? 0);
   const soma_analise = (counts.em_conversa ?? 0) + (counts.em_honorario ?? 0) + (counts.enviou_documentos ?? 0)
@@ -213,199 +296,60 @@ export const StrategicDashboard: React.FC = () => {
     return `${name}: ${(percent * 100).toFixed(0)}%`;
   };
 
-
-  const leadsData = [
-    { week: 'Sem 1', leads: 34, conversao: 12 },
-    { week: 'Sem 2', leads: 42, conversao: 18 },
-    { week: 'Sem 3', leads: 38, conversao: 15 },
-    { week: 'Sem 4', leads: 51, conversao: 22 },
+  const kpis: { title: string; value: number | undefined; color: string; icon: React.ReactNode }[] = [
+    { title: 'Iniciados', value: counts.iniciado, color: 'text-gray-900 dark:text-zinc-100', icon: <PlayCircle className="text-gray-700 dark:text-zinc-300" size={28} /> },
+    { title: 'Em conversa - Explicação', value: counts.em_conversa, color: 'text-blue-600', icon: <MessageCircleQuestion className="text-blue-600" size={28} /> },
+    { title: 'Enviada Lista Documentos', value: counts.enviou_documentos, color: 'text-blue-600', icon: <Files className="text-blue-600" size={28} /> },
+    { title: 'Não Contratado', value: counts.nao_contratado, color: 'text-red-600', icon: <UserX className="text-red-600" size={28} /> },
+    { title: 'Não Qualificado', value: counts.nao_qualificado, color: 'text-[#8a0303]', icon: <UserMinus className="text-[#8a0303]" size={28} /> },
+    { title: 'Contratado', value: counts.contratado, color: 'text-green-600', icon: <UserCheck className="text-green-600" size={28} /> },
   ];
-
-  const alerts = [
-    { id: 1, type: 'urgent', title: 'Processo #1234 está parado há 5 dias', priority: 'high' },
-    { id: 2, type: 'warning', title: '12 processos próximos do prazo', priority: 'medium' },
-    { id: 3, type: 'info', title: 'Meta mensal atingida em 85%', priority: 'low' },
-    { id: 4, type: 'urgent', title: 'Cliente VIP aguardando resposta', priority: 'high' },
-  ];
-
-  const getAlertIcon = (type: string) => {
-    switch (type) {
-      case 'urgent': return <AlertTriangle className="w-5 h-5 text-red-600" />;
-      case 'warning': return <Clock className="w-5 h-5 text-yellow-600" />;
-      default: return <Bell className="w-5 h-5 text-blue-600" />;
-    }
-  };
-
-  const totalProcessos = statusDistribution.reduce((acc, item) => acc + item.value, 0);
-  const taxaAprovacao = totalProcessos > 0 ? ((statusDistribution[0].value / totalProcessos) * 100).toFixed(1) : '0.0';
-  const taxaRejeicao = totalProcessos > 0 ? ((statusDistribution[1].value / totalProcessos) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl">Gestão Estratégica</h2>
-          <p className="text-gray-500 dark:text-zinc-400">Visão completa de processos, performance e integrações</p>
+          <p className="text-gray-500 dark:text-zinc-400">Visão completa de processos, funil e metas</p>
         </div>
         <DateFilter value={dateRange} onChange={handleDateChange} />
       </div>
 
+      {loadError && (
+        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          <span>Não foi possível carregar as métricas — os números abaixo podem estar incompletos.</span>
+          <Button size="sm" variant="outline" onClick={() => fetchAllData(dateRange)}>
+            <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+          </Button>
+        </div>
+      )}
+
       {/* KPIs Principais */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-md">Iniciados</CardTitle>
-            <LuAlignHorizontalJustifyStart className=" text-black" size={32} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold">{counts.iniciado ?? 0}</div>
-            )}
-          </CardContent>
-        </Card>
+        {kpis.map((kpi) => (
+          <Card key={kpi.title}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-md">{kpi.title}</CardTitle>
+              {kpi.icon}
+            </CardHeader>
+            <CardContent className="h-[60px] flex items-center justify-center">
+              {loading ? (
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
+              ) : (
+                <div className={`text-6xl font-bold ${kpi.color}`}>{kpi.value ?? 0}</div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
 
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Em conversa - Explicação</CardTitle>
-            <FaPersonCircleQuestion className="text-blue-600" size={30} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-blue-600">
-                {counts.em_conversa ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Em Negociação - Honorários</CardTitle>
-            <FaPersonCircleQuestion className="text-blue-600" size={30} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-blue-600">
-                {counts.em_honorario ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card> */}
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Enviada Lista Documentos</CardTitle>
-            <IoDocuments className="text-blue-600" size={30} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-blue-600">
-                {counts.enviou_documentos ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Não Responde</CardTitle>
-            <TbXboxX className=" text-orange-600" size={32} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-orange-600">
-                {counts.aguardando ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card> */}
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Não Contratado</CardTitle>
-            <FaPersonCircleXmark className="text-red-600" size={32} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-red-600">
-                {counts.nao_contratado ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Não Qualificado</CardTitle>
-            <FaPersonCircleExclamation className="text-[#8a0303]" size={32} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-[#8a0303]">
-                {counts.nao_qualificado ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Contratado</CardTitle>
-            <FaPersonCircleCheck className="text-green-600" size={32} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-green-600">
-                {counts.contratado ?? 0}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* <Card>
-         <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-md">Contratado <span className='font-bold'>(Mês Atual)</span></CardTitle>
-            <FaPersonCircleCheck className="text-green-600" size={32} />
-          </CardHeader>
-          <CardContent className="h-[60px] flex items-center justify-center">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-            ) : (
-              <div className="text-6xl font-bold text-green-600">
-                {contratadoMesAtual}
-              </div>
-            )}
-          </CardContent> 
-        </Card> */}
-
+        <MonthGoalCard contratado={contratadoMesAtual} loading={loading} />
       </div>
 
       <Tabs defaultValue="analytics" className="space-y-4">
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="form-leads">Leads</TabsTrigger>
-          {/* <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="leads">Leads</TabsTrigger> */}
-          {/* <TabsTrigger value="integrations">Integrações</TabsTrigger> */}
           <TabsTrigger value="calendario">Calendário</TabsTrigger>
-          {/* <TabsTrigger value="botIA">Bot IA</TabsTrigger> */}
         </TabsList>
 
         <TabsContent value="analytics" className="space-y-4">
@@ -440,28 +384,27 @@ export const StrategicDashboard: React.FC = () => {
               </CardHeader>
               <div className="relative space-y-1 text-sm left-5">
                 <div className="flex items-center gap-2">
-                  <FaSquare className="w-3 h-3 text-[#f59e0b]" />
+                  <Square className="h-3 w-3 fill-[#f59e0b] text-[#f59e0b]" />
                   <span>Iniciado</span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <FaSquare className="w-3 h-3 text-[#3b82f6]" />
+                  <Square className="h-3 w-3 fill-[#3b82f6] text-[#3b82f6]" />
                   <span>Em conversa | Envio Documentos</span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <FaSquare className="w-3 h-3 text-[#ef4444]" />
+                  <Square className="h-3 w-3 fill-[#ef4444] text-[#ef4444]" />
                   <span>Não Qualificado | Não contratado</span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <FaSquare className="w-3 h-3 text-[#10b981]" />
+                  <Square className="h-3 w-3 fill-[#10b981] text-[#10b981]" />
                   <span>Contratado</span>
                 </div>
               </div>
 
               <CardContent>
-
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
@@ -485,166 +428,17 @@ export const StrategicDashboard: React.FC = () => {
             </Card>
           </div>
 
+          <KanbanFunnel range={dateRange} />
+
           <MiniKanban data={kanbanItems} />
         </TabsContent>
 
-        {/* <TabsContent value="performance" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Performance por Pessoa</CardTitle>
-              <CardDescription>Análise individual de produtividade e qualidade</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={performanceData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="name" type="category" width={120} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="processos" fill="#3b82f6" name="Processos" />
-                  <Bar dataKey="taxa" fill="#10b981" name="Taxa de Aprovação %" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {performanceData.slice(0, 3).map((person, idx) => (
-              <Card key={idx}>
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <Users className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{person.name}</CardTitle>
-                      <CardDescription>Analista</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500 dark:text-zinc-400">Processos</span>
-                    <span className="font-semibold">{person.processos}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500 dark:text-zinc-400">Taxa Aprovação</span>
-                    <Badge variant="outline" className="bg-green-50 text-green-700">
-                      {person.taxa}%
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500 dark:text-zinc-400">Tempo Médio</span>
-                    <span className="font-semibold">{person.tempo} dias</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>*/}
-
-
         <TabsContent value="form-leads" className="space-y-4">
-            <LeadsTable />
-
-
-        </TabsContent>
-
-        <TabsContent value="integrations" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Email Integration */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <Mail className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Email / Gmail</CardTitle>
-                    <CardDescription>Automações de email</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  📧 Enviar Email Rápido
-                </Button>
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  📊 Ver Estatísticas
-                </Button>
-                {/* <div className="pt-2 text-sm text-gray-500 dark:text-zinc-400">
-                  <p>153 emails enviados hoje</p>
-                  <p className="text-green-600">Taxa de abertura: 68%</p>
-                </div> */}
-              </CardContent>
-            </Card>
-
-            {/* WhatsApp Integration */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                    <MessageSquare className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">WhatsApp</CardTitle>
-                    <CardDescription>Mensagens instantâneas</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start bg-green-50" size="sm">
-                  💬 Enviar Mensagem
-                </Button>
-                {/* <Button variant="outline" className="w-full justify-start" size="sm">
-                  🤖 Configurar Bot
-                </Button> */}
-                {/* <div className="pt-2 text-sm text-gray-500 dark:text-zinc-400">
-                  <p>89 mensagens enviadas hoje</p>
-                  <p className="text-green-600">Taxa de resposta: 92%</p>
-                </div> */}
-              </CardContent>
-            </Card>
-
-            {/* Zapier Integration */}
-            {/* <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-orange-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Zapier</CardTitle>
-                    <CardDescription>Automações avançadas</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  ⚡ Criar Zap
-                </Button>
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  🔗 Ver Webhooks
-                </Button>
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  📋 Zaps Ativos
-                </Button>
-                <div className="pt-2 text-sm text-gray-500 dark:text-zinc-400">
-                  <p>12 automações ativas</p>
-                  <p className="text-green-600">342 execuções hoje</p>
-                </div>
-              </CardContent>
-            </Card> */}
-          </div>
+          <LeadsTable />
         </TabsContent>
 
         <TabsContent value="calendario">
-            <CalendarTab />
-        </TabsContent>
-
-        <TabsContent value="botIA" className="space-y-4">
-            <BotIAControl />
+          <CalendarTab />
         </TabsContent>
       </Tabs>
     </div>
