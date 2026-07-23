@@ -383,11 +383,26 @@ async function tagAsQualified(conversationId: string): Promise<void> {
 
 /** Lead QUALIFICADO: fila de espera + tag "Qualificada" + aviso pra equipe. */
 async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
+  // Já era qualificado antes (lead voltando)? Então NÃO é uma nova qualificação:
+  // não reposta a nota de "lead novo", não re-notifica a equipe como lead
+  // inédito e não redispara o evento pra Meta — só garante que voltou pra fila.
+  const existing = await db.whatsAppConversation.findUnique({
+    where: { contactId },
+    select: { qualified: true },
+  });
+  const alreadyQualified = existing?.qualified === true;
+
   const conversation = await db.whatsAppConversation.update({
     where: { contactId },
     data: { status: "queued", assignedToId: null, qualified: true, botFailCount: 0, closeCategory: "qualificado", queuedAt: new Date(), queueAlertAt: null },
   });
   await tagAsQualified(conversation.id);
+
+  if (alreadyQualified) {
+    await postInternalNote(contactId, `🤖 Lead qualificado retornou ao atendimento — ${reason}`);
+    return;
+  }
+
   await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}`);
   await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId);
   // Devolve pra Meta (API de Conversões) que este lead qualificou — otimiza
@@ -413,9 +428,24 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
  * começar do zero.
  */
 async function resolveAndClose(contactId: string, category: string = "perguntas"): Promise<void> {
+  // Se o contato JÁ era qualificado (ex.: qualificado que voltou só pra tirar
+  // uma dúvida), não rebaixa o desfecho nem apaga a ficha — preserva qualified
+  // e a memória para uma eventual retomada. Caso normal reseta para começar do
+  // zero na próxima conversa.
+  const existing = await db.whatsAppConversation.findUnique({
+    where: { contactId },
+    select: { qualified: true },
+  });
+  const keepContext = existing?.qualified === true;
   await db.whatsAppConversation.update({
     where: { contactId },
-    data: { status: "closed", assignedToId: null, qualified: null, closeCategory: category, botFailCount: 0, botMemory: null, botState: null, urgent: false, queuedAt: null, queueAlertAt: null },
+    data: {
+      status: "closed", assignedToId: null,
+      qualified: keepContext ? true : null,
+      closeCategory: category, botFailCount: 0,
+      ...(keepContext ? {} : { botMemory: null, botState: null }),
+      urgent: false, queuedAt: null, queueAlertAt: null,
+    },
   });
 }
 
@@ -632,7 +662,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   try {
     const conversation = await db.whatsAppConversation.findUnique({
       where: { contactId },
-      select: { id: true, status: true, botMemory: true, botState: true, botFailCount: true },
+      select: { id: true, status: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true },
     });
 
     // Durante o debounce um atendente pode ter assumido/encerrado a conversa —
@@ -728,6 +758,14 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       memory: conversation?.botMemory ?? null,
       state: conversation?.botState ?? null,
       failCount: conversation?.botFailCount ?? 0,
+      // Desfecho anterior deste contato (sobrevive ao fechamento). Quando
+      // qualified=true, o cérebro NÃO deve refazer a triagem: é um lead já
+      // qualificado voltando — retomar contrato, tirar dúvida ou (se for
+      // acidente diferente) oferecer nova qualificação.
+      priorOutcome: {
+        qualified: conversation?.qualified ?? null,
+        closeCategory: conversation?.closeCategory ?? null,
+      },
       business: businessHours(),
     };
 
@@ -877,7 +915,14 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         await resolveAndClose(contactId, decision.closeCategory ?? "perguntas");
         break;
       default:
-        break; // continue: só seguiu a conversa
+        // "continue" SEM nenhuma resposta = a IA se perdeu e não devolveu
+        // texto. Antes isso deixava o cliente no vácuo (bot mudo, ainda em modo
+        // bot, ninguém avisado). Agora joga pra fila humana com o motivo, pra um
+        // atendente assumir na hora em vez de o cliente ficar sem resposta.
+        if (outgoing.length === 0) {
+          await handoffToQueue(contactId, contactLabel, "IA devolveu resposta vazia (sem texto para enviar ao cliente)");
+        }
+        break; // continue com resposta: só seguiu a conversa
     }
 
     // ---- Auditoria/métricas da IA -----------------------------------------

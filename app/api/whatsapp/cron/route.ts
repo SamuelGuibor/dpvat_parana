@@ -186,8 +186,11 @@ export async function GET(req: NextRequest) {
         data: {
           status: 'closed',
           assignedToId: null,
-          botMemory: null,
-          botState: null,
+          // Lead QUALIFICADO: preserva a ficha (botMemory/botState) para que, se
+          // ele voltar a escrever, o bot retome de onde parou (fechamento de
+          // contrato) em vez de recomeçar a triagem do zero. Não-qualificado
+          // continua zerando, para uma futura conversa começar limpa.
+          ...(conv.qualified ? {} : { botMemory: null, botState: null }),
           botFailCount: 0,
           botNudge30At: null,
           botNudge24At: null,
