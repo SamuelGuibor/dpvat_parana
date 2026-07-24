@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { MySpace } from '@/app/nova-dash/MySpace';
 import { Chat } from './chat/Chat';
 import { WhatsAppInbox } from './whatsapp/WhatsAppInbox';
+import { AIReview } from './whatsapp/AIReview';
+import { countPendingReviews } from '@/app/_actions/whatsapp/reviews';
 import { ManagerDashboard } from './manager/ManagerDashboard';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
@@ -23,7 +25,25 @@ export function Workspace() {
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
   const whatsappUnread = useWhatsAppUnread();
 
+  const canReviewAi = !permsLoading && perms.review_ai;
+
   const [section, setSection] = useState<WorkspaceSection>('meu-espaco');
+
+  // Badge da Revisão da IA: contagem leve, só para quem tem a permissão.
+  // Sem polling agressivo — a fila só cresce quando um atendimento encerra.
+  const [reviewPending, setReviewPending] = useState(0);
+  useEffect(() => {
+    if (!canReviewAi) return;
+    let alive = true;
+    const tick = () => {
+      countPendingReviews()
+        .then((n) => alive && setReviewPending(n))
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 120_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [canReviewAi, section]);
 
   // Notificação de WhatsApp clicada → troca pra seção do inbox. Se o clique
   // aconteceu antes deste componente montar, o sinal fica no sessionStorage.
@@ -36,18 +56,22 @@ export function Workspace() {
     return () => window.removeEventListener('open-whatsapp-conversation', openWhatsApp);
   }, []);
 
-  // Guarda extra: se não é gestor e cair em "gestao", volta para o início.
-  const effective: WorkspaceSection = section === 'gestao' && !manager ? 'meu-espaco' : section;
+  // Guarda extra: sem a permissão, cair numa seção restrita volta para o início.
+  const effective: WorkspaceSection =
+    (section === 'gestao' && !manager) || (section === 'revisao-ia' && !canReviewAi)
+      ? 'meu-espaco'
+      : section;
 
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} chatUnread={chatUnread} whatsappUnread={whatsappUnread} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} chatUnread={chatUnread} whatsappUnread={whatsappUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
         {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
         {/* No celular o inbox ocupa a tela inteira (sem moldura de 16px). */}
         {effective === 'whatsapp' && <div className="h-full p-0 sm:p-4"><WhatsAppInbox /></div>}
+        {effective === 'revisao-ia' && <div className="h-full p-2 sm:p-4"><AIReview /></div>}
         {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
       </div>

@@ -6,6 +6,7 @@ import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { captureConversation } from "./brain";
 import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
@@ -412,6 +413,11 @@ async function qualifyToQueue(contactId: string, contactLabel: string, reason: s
 
 /** Cliente NÃO elegível: encerra o ticket como "não qualificada". */
 async function disqualifyAndClose(contactId: string): Promise<void> {
+  // Cérebro: snapshot ANTES do update (que zera botMemory/botState logo abaixo).
+  await captureConversation(contactId, "bot_disqualify", {
+    closeCategory: "nao_qualificado",
+    qualified: false,
+  });
   await db.whatsAppConversation.update({
     where: { contactId },
     // Encerrou como não qualificada: reseta a memória do cliente para que uma
@@ -437,6 +443,11 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
     select: { qualified: true },
   });
   const keepContext = existing?.qualified === true;
+  // Cérebro: snapshot antes de qualquer reset de ficha.
+  await captureConversation(contactId, "bot_resolve", {
+    closeCategory: category,
+    qualified: keepContext ? true : null,
+  });
   await db.whatsAppConversation.update({
     where: { contactId },
     data: {

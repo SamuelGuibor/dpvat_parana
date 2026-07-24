@@ -8,6 +8,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { CLOSE_CATEGORY_LABELS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
+import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
 // Fila e atribuição de conversas de WhatsApp (estilo Botconversa):
@@ -239,6 +240,9 @@ export async function closeConversation(
   const closeCategory = cat in QUALIFIED_BY_CATEGORY ? cat : 'nao_qualificado';
   const qualified = QUALIFIED_BY_CATEGORY[closeCategory];
   const label = CLOSE_CATEGORY_LABELS[closeCategory] ?? closeCategory;
+
+  // Cérebro: snapshot ANTES do update (que zera botMemory/botState abaixo).
+  if (before) await captureConversation(before.contactId, 'manual', { closeCategory, qualified });
 
   await db.whatsAppConversation.update({
     where: { id: conversationId },

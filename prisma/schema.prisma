@@ -674,6 +674,131 @@ model WhatsAppFlow {
   @@map("whatsapp_flows")
 }
 
+// CÉREBRO DA IA — fila de revisão humana dos atendimentos encerrados.
+//
+// Toda conversa encerrada vira um SNAPSHOT imutável no S3 (thread completa +
+// ficha + desfecho) e uma linha aqui, que é o ÍNDICE: permite listar, filtrar e
+// ordenar a fila sem ler o S3. O julgamento humano (aprovado/reprovado + o que
+// faltou) é o que, mais tarde, será destilado no playbook injetado no prompt do
+// bot — ver app/_shared/lib/whatsapp/brain.ts.
+model WhatsAppReview {
+  id             String    @id @default(cuid())
+  contactId      String
+  conversationId String?
+  // Ponteiro para o snapshot imutável no S3 (fonte da verdade do conteúdo).
+  s3Key          String    @unique
+  // ---- Metadados copiados do snapshot (para filtrar/ordenar sem ler o S3) ---
+  contactName    String?
+  contactPhone   String
+  closeCategory  String?
+  qualified      Boolean?
+  // Como o atendimento terminou: bot_disqualify | bot_resolve | cron_silencio |
+  // manual. Diz se quem decidiu foi a IA ou um humano.
+  closedReason   String
+  messageCount   Int       @default(0)
+  // false = um atendente assumiu em algum momento (a conversa não é 100% da IA).
+  botOnly        Boolean   @default(true)
+  // ---- Julgamento humano ---------------------------------------------------
+  status         String    @default("pendente") // pendente | revisado
+  verdict        String? // aprovado | parcial | reprovado
+  comment        String? // o que faltou / por que estava correto
+  errorTags      String[]  @default([])
+  // "Era assim que devia ter respondido" — o campo mais valioso para treino.
+  correctReply   String?
+  reviewerId     String?
+  reviewerName   String?
+  reviewedAt     DateTime?
+  // ---- Lição destilada (passo A do cérebro) --------------------------------
+  // Extraída pela IA logo após o julgamento: o comentário livre do supervisor
+  // vira uma regra curta e generalizável. Vazia/nula é resultado LEGÍTIMO —
+  // aprovação sem nada notável não deve virar regra (encheria o playbook de
+  // obviedade). O supervisor pode corrigir o texto na tela.
+  lesson         String?
+  // Etapas da conversa em que a lição se aplica (triagem_seguro, coleta_cpf...).
+  // É por aqui que a busca de exemplos por estado vai funcionar, sem embeddings.
+  lessonStates   String[]  @default([])
+  // Seção do playbook: QUALIFICACAO | CONTEXTO | TOM | INFORMACAO |
+  // ENCAMINHAMENTO | RITMO | OUTRO.
+  lessonSection  String?
+  // true quando o humano reescreveu a lição — sinal de que a extração errou,
+  // útil para calibrar o prompt de destilação depois.
+  lessonEdited   Boolean   @default(false)
+  // ---- Autonomia futura ----------------------------------------------------
+  // Pré-veredito sugerido pela própria IA (fase 5). Nulo enquanto a revisão for
+  // 100% manual — o humano continua sendo quem decide.
+  aiSuggestedVerdict String?
+  aiSuggestedReason  String?
+  // Marca quando esta review já foi absorvida por uma versão do playbook.
+  distilledAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([contactId])
+  @@index([distilledAt])
+  @@map("whatsapp_reviews")
+}
+
+// PLAYBOOK — camada 3 do cérebro: as regras destiladas que entram no system
+// prompt do bot em TODA conversa.
+//
+// Versionado e imutável: cada consolidação cria uma versão nova em "rascunho",
+// o supervisor compara com a publicada e decide. Nada vai pro prompt sem
+// aprovação humana (decisão do Samuel, 23/07/2026).
+//
+// Por que versionar em vez de sobrescrever: publicar um playbook novo invalida
+// o cache de prompt da Anthropic (o bloco deixa de ser byte-a-byte idêntico).
+// Versão explícita permite publicar em lote, uma vez por dia, em vez de a cada
+// revisão salva — e permite voltar atrás se uma versão piorar o bot.
+model WhatsAppPlaybook {
+  id          String    @id @default(cuid())
+  version     Int       @unique
+  // sections: [{ name, rules: [{ text, weight, states[] }] }]
+  sections    Json
+  rulesCount  Int       @default(0)
+  // Resumo do que mudou em relação à versão anterior (escrito pela IA).
+  changeNote  String?
+  status      String    @default("rascunho") // rascunho | publicado | descartado
+  // Quantas reviews sustentam esta versão.
+  reviewCount Int       @default(0)
+  publishedAt DateTime?
+  publishedBy String?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, version])
+  @@map("whatsapp_playbooks")
+}
+
+// INSTRUÇÕES BASE do bot — o que era o STATIC_SYSTEM_PROMPT hardcoded no
+// bot.js, agora estruturado em seções editáveis pela tela.
+//
+// Diferença para WhatsAppPlaybook: aqui é o que VOCÊ escreve (identidade,
+// roteiro, regras de negócio); lá é o que a IA APRENDE das suas revisões. Os
+// dois entram no system prompt, em blocos separados, e são versionados do
+// mesmo jeito — rascunho → publicado → S3 → microserviço.
+//
+// O microserviço mantém o texto hardcoded como FALLBACK: se este registro
+// sumir ou a rota falhar, o bot continua atendendo com o prompt original em
+// vez de ficar sem instrução nenhuma.
+model WhatsAppInstructions {
+  id          String    @id @default(cuid())
+  version     Int       @unique
+  // Texto de abertura, antes da primeira seção (identidade e tom do bot).
+  intro       String
+  // sections: [{ id, title, content, order, enabled }]
+  sections    Json
+  status      String    @default("rascunho") // rascunho | publicado | descartado
+  changeNote  String?
+  charCount   Int       @default(0)
+  publishedAt DateTime?
+  publishedBy String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, version])
+  @@map("whatsapp_instructions")
+}
+
 model WhatsAppTemplate {
   id          String  @id @default(cuid())
   name        String  @unique // nome aprovado na Meta

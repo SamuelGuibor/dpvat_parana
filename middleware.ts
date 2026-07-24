@@ -38,6 +38,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth", // NextAuth + login legado (rate-limited na rota)
   "/api/whatsapp/webhook", // assinatura HMAC da Meta
   "/api/whatsapp/cron", // CRON_SECRET
+  "/api/whatsapp/brain-prompt", // CHATBOT_SECRET (o microserviço busca o prompt aqui)
   "/api/afastamentos/check", // GET: CRON_SECRET; POST: sessão (validados na rota)
   "/api/botconversa/contratado", // shared secret (validado na rota)
   "/api/discord/trello", // shared secret (validado na rota)

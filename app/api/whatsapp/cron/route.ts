@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
+import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
 
@@ -181,6 +182,8 @@ export async function GET(req: NextRequest) {
         // Falha no envio não trava o encerramento.
         console.error('[WHATSAPP CRON] Despedida não entregue (encerrando mesmo assim):', conv.contactId, err);
       }
+      // Cérebro: snapshot ANTES do update (que pode zerar botMemory/botState).
+      await captureConversation(conv.contactId, 'cron_silencio');
       await db.whatsAppConversation.update({
         where: { id: conv.id },
         data: {

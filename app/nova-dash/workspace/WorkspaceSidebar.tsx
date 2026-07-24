@@ -1,16 +1,19 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, MessageCircle } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, MessageCircle, Brain } from 'lucide-react';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'whatsapp' | 'gestao' | 'dashboard';
+export type WorkspaceSection = 'meu-espaco' | 'chat' | 'whatsapp' | 'revisao-ia' | 'gestao' | 'dashboard';
 
 interface Props {
   active: WorkspaceSection;
   onChange: (section: WorkspaceSection) => void;
   isManager: boolean;
+  /** Permissão review_ai — hoje só o ADMIN++ enxerga a Revisão da IA. */
+  canReviewAi: boolean;
   chatUnread: number;
   whatsappUnread: number;
+  reviewPending: number;
 }
 
 interface Item {
@@ -26,7 +29,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, chatUnread, whatsappUnread }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, chatUnread, whatsappUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -51,6 +54,10 @@ export function WorkspaceSidebar({ active, onChange, isManager, chatUnread, what
       items: [
         { key: 'chat', label: 'Chat geral', desc: 'Conversas e canais', icon: MessagesSquare, badge: chatUnread },
         { key: 'whatsapp', label: 'WhatsApp', desc: 'Atendimento a clientes', icon: MessageCircle, badge: whatsappUnread },
+        // Curadoria do cérebro da IA — restrita a quem tem review_ai.
+        ...(canReviewAi
+          ? [{ key: 'revisao-ia' as const, label: 'Revisão da IA', desc: 'Treinar o bot', icon: Brain, badge: reviewPending }]
+          : []),
       ],
     },
   ];

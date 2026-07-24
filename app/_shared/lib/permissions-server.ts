@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
 import { db } from "./prisma";
 import { isManager } from "./managers";
+import { isAiReviewer } from "./ai-review-access";
 import {
   isTeamRole,
   resolvePermissions,
@@ -35,6 +36,12 @@ export async function getSessionPermissions(): Promise<SessionPermissions | null
   const permissions = resolvePermissions(user.role, user.permissions);
   if (!permissions.manager_dashboard && isManager(user.email)) {
     permissions.manager_dashboard = true;
+  }
+  // Revisão da IA: trava temporária por e-mail POR CIMA da permissão — hoje a
+  // curadoria do cérebro é de uma pessoa só, e há mais de um ADMIN++ na equipe.
+  // Só restringe; nunca concede. Ver ai-review-access.ts para liberar depois.
+  if (permissions.review_ai && !isAiReviewer(user.email)) {
+    permissions.review_ai = false;
   }
 
   return {

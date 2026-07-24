@@ -63,6 +63,12 @@ export const PERMISSION_DEFS = [
     description: "Acessa a Visão do Gestor (métricas da equipe) no Espaço de Trabalho.",
   },
   {
+    key: "review_ai",
+    label: "Revisão da IA",
+    description:
+      "Julga os atendimentos encerrados do WhatsApp (aprovar/reprovar) — alimenta o cérebro do bot.",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -90,6 +96,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     edit_columns: true,
     delete_columns: true,
     manager_dashboard: false,
+    review_ai: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -102,6 +109,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     edit_columns: true,
     delete_columns: true,
     manager_dashboard: false,
+    // Revisão da IA nasce exclusiva do ADMIN++ (a curadoria do cérebro é
+    // manual nos primeiros meses). Concedível ao ADMIN+ por override.
+    review_ai: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -114,6 +124,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     edit_columns: true,
     delete_columns: true,
     manager_dashboard: true,
+    review_ai: true,
     manage_team: true,
   },
 };

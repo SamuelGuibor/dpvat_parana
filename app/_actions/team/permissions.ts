@@ -15,6 +15,7 @@ import {
   type PermissionOverrides,
 } from "@/app/_shared/lib/permissions";
 import { isManager } from "@/app/_shared/lib/managers";
+import { isAiReviewer } from "@/app/_shared/lib/ai-review-access";
 
 export interface MyPermissions {
   userId: string;
@@ -51,6 +52,9 @@ export async function getTeamPermissions(): Promise<TeamMemberPermissions[]> {
   return members.map((m) => {
     const resolved = resolvePermissions(m.role, m.permissions);
     if (!resolved.manager_dashboard && isManager(m.email)) resolved.manager_dashboard = true;
+    // Espelha a trava de getSessionPermissions: sem isto a tela mostraria
+    // "Revisão da IA" ligada para os outros ADMIN++, que na prática não entram.
+    if (resolved.review_ai && !isAiReviewer(m.email)) resolved.review_ai = false;
     return {
       id: m.id,
       name: m.name,
