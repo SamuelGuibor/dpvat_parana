@@ -34,6 +34,16 @@ let playbookCache: {
 } | null = null;
 const PLAYBOOK_CACHE_MS = 5 * 60_000;
 
+/**
+ * Derruba o cache na hora em que o playbook publicado muda (publish, edição ou
+ * exclusão de regra) — sem isto, eventos gravados na janela de até 5min usavam
+ * a numeração/texto antigos. Vale só para a instância atual do serverless; as
+ * demais expiram pelo TTL, e o matching por texto nas métricas cobre o resto.
+ */
+export function invalidatePlaybookCache(): void {
+  playbookCache = null;
+}
+
 async function getPublishedRules(): Promise<{ version: number | null; rules: Map<string, { text: string; section: string }> }> {
   if (playbookCache && Date.now() - playbookCache.fetchedAt < PLAYBOOK_CACHE_MS) {
     return playbookCache;
@@ -86,6 +96,36 @@ export async function recordAppliedRules(args: {
     if (rows.length) await db.whatsAppRuleEvent.createMany({ data: rows });
   } catch (err) {
     console.error('[WA RULES] Falha ao registrar regras aplicadas (telemetria, seguindo):', err);
+  }
+}
+
+/**
+ * Registra uma INTERVENÇÃO DE CÓDIGO: momentos em que uma trava do app
+ * sobrescreve a decisão da IA (ex.: loop "não entendi 2x" → especialista).
+ * Aparece na dash separada das regras — o que o código faz NÃO conta como
+ * "playbook funcionando", e sem esse registro a intervenção fica invisível
+ * (regra fantasma: o comportamento parece da IA, mas não foi dela).
+ */
+export async function recordCodeIntervention(args: {
+  contactId: string;
+  contactName: string | null;
+  botState: string | null;
+  action: string;
+  detail: string;
+}): Promise<void> {
+  try {
+    await db.whatsAppRuleEvent.create({
+      data: {
+        kind: 'code',
+        contactId: args.contactId,
+        contactName: args.contactName,
+        botState: args.botState,
+        action: args.action,
+        detail: args.detail.slice(0, 500),
+      },
+    });
+  } catch (err) {
+    console.error('[WA RULES] Falha ao registrar intervenção de código (telemetria, seguindo):', err);
   }
 }
 

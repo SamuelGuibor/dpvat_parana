@@ -262,6 +262,21 @@ export function RuleMetricsPanel() {
           </div>
         </div>
       )}
+
+      {/* Travas de código que sobrescreveram a IA */}
+      {data.code.recent.length > 0 && (
+        <div className="mt-5">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400">
+            <AlertTriangle className="h-3 w-3" /> Intervenções de código — a IA NÃO decidiu ({data.code.last7d} nos 7d, {data.code.total} no total)
+          </p>
+          <p className="mb-1.5 text-[10px] text-gray-400 dark:text-zinc-500">
+            Travas do app que sobrescrevem a decisão da IA (ex.: &quot;não entendi 2x&quot; → especialista). Não contam como regra do playbook — se algo aqui parecer coincidir com uma regra sua, é o código agindo antes dela.
+          </p>
+          <div className="space-y-1.5">
+            {data.code.recent.map((e, i) => <EventRow key={i} e={e} />)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

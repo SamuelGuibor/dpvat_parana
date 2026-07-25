@@ -761,6 +761,11 @@ model WhatsAppPlaybook {
   status      String    @default("rascunho") // rascunho | publicado | descartado
   // Quantas reviews sustentam esta versão.
   reviewCount Int       @default(0)
+  // IDs das WhatsAppReview cujas lições ENTRARAM nesta consolidação. O publish
+  // marca distilledAt SÓ nesta lista — antes marcava todas as pendentes, e
+  // lições além do teto de 200 (ou revisadas entre gerar o rascunho e aprovar)
+  // eram dadas como absorvidas sem nunca entrar em playbook nenhum.
+  reviewIds   String[]  @default([])
   publishedAt DateTime?
   publishedBy String?
   createdAt   DateTime  @default(now())

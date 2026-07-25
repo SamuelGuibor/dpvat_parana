@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@/app/_shared/lib/prisma';
 import { readSnapshot } from './brain';
+import { invalidatePlaybookCache } from './rule-events';
 
 // CÉREBRO — camada 3: transformar julgamentos humanos em regras que entram no
 // prompt do bot.
@@ -231,6 +232,11 @@ export async function buildPlaybookDraft(): Promise<{
       changeNote: out.changeNote,
       status: 'rascunho',
       reviewCount: pending.length,
+      // Trava de escopo do publish: só ESTAS lições serão marcadas como
+      // absorvidas quando esta versão for publicada. Lições revisadas depois
+      // deste momento (ou além do teto de 200) ficam pendentes para a próxima
+      // consolidação, em vez de serem descartadas em silêncio.
+      reviewIds: pending.map((p) => p.id),
     },
     select: { id: true, version: true, rulesCount: true },
   });
@@ -299,6 +305,10 @@ export async function publishPlaybook(
     }),
   );
 
+  // O conteúdo publicado mudou (publish novo OU regra editada/excluída):
+  // derruba o cache local de numeração das métricas na hora.
+  invalidatePlaybookCache();
+
   // Republicação só reescreve o arquivo: o status já é "publicado" e as lições
   // já foram marcadas quando esta versão entrou no ar.
   if (republish) return;
@@ -314,8 +324,20 @@ export async function publishPlaybook(
   });
 
   // 3. Marca as lições absorvidas — não entram na próxima consolidação.
-  await db.whatsAppReview.updateMany({
-    where: { distilledAt: null, lesson: { not: null }, status: 'revisado' },
-    data: { distilledAt: new Date() },
-  });
+  // SÓ as que de fato entraram neste rascunho (draft.reviewIds): antes o filtro
+  // era "todas as pendentes", o que dava distilledAt a lições além do teto de
+  // 200 e às revisadas entre gerar o rascunho e publicar — perdidas sem nunca
+  // entrar em playbook nenhum. Rascunhos antigos (pré-coluna) têm a lista
+  // vazia; para eles mantém o comportamento antigo, documentadamente impreciso.
+  if (draft.reviewIds.length > 0) {
+    await db.whatsAppReview.updateMany({
+      where: { id: { in: draft.reviewIds }, distilledAt: null },
+      data: { distilledAt: new Date() },
+    });
+  } else {
+    await db.whatsAppReview.updateMany({
+      where: { distilledAt: null, lesson: { not: null }, status: 'revisado' },
+      data: { distilledAt: new Date() },
+    });
+  }
 }

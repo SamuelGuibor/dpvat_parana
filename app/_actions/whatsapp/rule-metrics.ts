@@ -58,6 +58,13 @@ export interface FollowupMetrics {
   recent: RuleEventItem[];
 }
 
+/** Travas de código que sobrescreveram a decisão da IA (kind="code"). */
+export interface CodeInterventionMetrics {
+  total: number;
+  last7d: number;
+  recent: RuleEventItem[];
+}
+
 export interface RuleMetricsPayload {
   playbookVersion: number | null;
   publishedAt: string | null;
@@ -70,6 +77,7 @@ export interface RuleMetricsPayload {
   rulesNeverUsed: number;
   rules: RuleMetric[];
   followup: FollowupMetrics;
+  code: CodeInterventionMetrics;
 }
 
 export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
@@ -79,7 +87,7 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
   const d7 = new Date(now - 7 * 24 * 60 * 60_000);
   const d30 = new Date(now - 30 * 24 * 60 * 60_000);
 
-  const [published, ruleEvents, followupEvents] = await Promise.all([
+  const [published, ruleEvents, followupEvents, codeEvents] = await Promise.all([
     db.whatsAppPlaybook.findFirst({
       where: { status: 'publicado' },
       orderBy: { version: 'desc' },
@@ -97,6 +105,15 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
     }),
     db.whatsAppRuleEvent.findMany({
       where: { kind: 'followup' },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      select: {
+        contactId: true, contactName: true, botState: true, action: true,
+        detail: true, createdAt: true,
+      },
+    }),
+    db.whatsAppRuleEvent.findMany({
+      where: { kind: 'code' },
       orderBy: { createdAt: 'desc' },
       take: 500,
       select: {
@@ -149,11 +166,14 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
   const byRule = new Map<string, Agg>();
 
   for (const e of ruleEvents) {
-    const currentVersion = e.playbookVersion === (published?.version ?? null);
+    // Confia no ruleId SÓ quando o texto-snapshot do evento ainda é o texto da
+    // regra que ocupa aquele ID hoje. Editar/excluir regra publicada RENUMERA
+    // R1..Rn sem mudar a versão — o critério antigo (comparar versão) atribuía
+    // o histórico das regras seguintes à regra errada. Texto divergente →
+    // agrupa pelo snapshot; regras renumeradas são reencontradas pelo texto no
+    // merge logo abaixo.
     const matchesText = ruleDefs.find((d) => d.ruleId === e.ruleId)?.text === e.ruleText;
-    // Chave: ID quando o evento é da versão vigente (ou o texto ainda confere);
-    // caso contrário agrupa pelo próprio texto do snapshot.
-    const key = currentVersion || matchesText ? (e.ruleId ?? '?') : `txt:${e.ruleText ?? '?'}`;
+    const key = matchesText && e.ruleId ? e.ruleId : `txt:${e.ruleText ?? '?'}`;
     const agg = byRule.get(key) ?? emptyAgg();
     agg.usesTotal++;
     if (e.createdAt >= d7) agg.uses7d++;
@@ -174,8 +194,30 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
     byRule.set(key, agg);
   }
 
+  // Reencontra pelo TEXTO o histórico de eventos gravados antes de uma
+  // renumeração (o snapshot ruleText é a identidade estável da regra).
+  const mergeAgg = (a: Agg, b: Agg | undefined): Agg => {
+    if (!b) return a;
+    const actions = { ...a.actions };
+    for (const [k, v] of Object.entries(b.actions)) actions[k] = (actions[k] ?? 0) + v;
+    return {
+      usesTotal: a.usesTotal + b.usesTotal,
+      uses7d: a.uses7d + b.uses7d,
+      uses30d: a.uses30d + b.uses30d,
+      contacts: new Set([...a.contacts, ...b.contacts]),
+      lastUsedAt:
+        !a.lastUsedAt ? b.lastUsedAt
+        : !b.lastUsedAt ? a.lastUsedAt
+        : a.lastUsedAt > b.lastUsedAt ? a.lastUsedAt : b.lastUsedAt,
+      actions,
+      recent: [...a.recent, ...b.recent]
+        .sort((x, y) => y.createdAt.localeCompare(x.createdAt))
+        .slice(0, RECENT_EVENTS_PER_RULE),
+    };
+  };
+
   const rules: RuleMetric[] = ruleDefs.map((def) => {
-    const agg = byRule.get(def.ruleId) ?? emptyAgg();
+    const agg = mergeAgg(byRule.get(def.ruleId) ?? emptyAgg(), byRule.get(`txt:${def.text}`));
     return {
       ruleId: def.ruleId,
       text: def.text,
@@ -230,5 +272,17 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
     rulesNeverUsed: rules.filter((r) => r.usesTotal === 0).length,
     rules,
     followup,
+    code: {
+      total: codeEvents.length,
+      last7d: codeEvents.filter((e) => e.createdAt >= d7).length,
+      recent: codeEvents.slice(0, 12).map((e) => ({
+        contactId: e.contactId,
+        contactName: e.contactName,
+        botState: e.botState,
+        action: e.action,
+        detail: e.detail,
+        createdAt: e.createdAt.toISOString(),
+      })),
+    },
   };
 }

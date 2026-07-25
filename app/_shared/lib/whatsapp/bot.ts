@@ -7,7 +7,7 @@ import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { captureConversation } from "./brain";
-import { recordAppliedRules } from "./rule-events";
+import { recordAppliedRules, recordCodeIntervention } from "./rule-events";
 import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
@@ -127,6 +127,10 @@ interface BotDecision {
   // IDs das regras do playbook (R1, R2...) que a IA declarou terem influenciado
   // esta resposta. Vira WhatsAppRuleEvent — telemetria da aba Métricas.
   appliedRules?: string[];
+  // Silêncio DELIBERADO: a IA declarou que encerrar sem mensagem é o correto
+  // (ex.: agradecimento pós-despedida). Sem esta flag, desfecho terminal com
+  // reply vazio é tratado como falha da IA e recebe texto de fallback.
+  silent?: boolean;
   // Tokens gastos na chamada ao Claude (o microserviço devolve; alimenta o
   // custo semanal/mensal no dashboard do chatbot).
   usage?: BotUsage | null;
@@ -468,6 +472,33 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
   });
 }
 
+/**
+ * Rede de segurança contra DESFECHO MUDO: a IA encerrou/transferiu sem devolver
+ * nenhum texto e sem declarar silêncio deliberado (silent) — o cliente acabou
+ * de falar e ficaria sem resposta alguma. Envia um fallback mínimo e registra
+ * a intervenção em Métricas (kind="code"). Best-effort: falha no envio não
+ * pode travar o encerramento que vem em seguida.
+ */
+async function sendMutedFallback(
+  contactId: string,
+  message: { contactPhone: string; contactName: string | null },
+  text: string,
+  reason: string,
+): Promise<void> {
+  try {
+    await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text));
+  } catch (err) {
+    console.error("[WHATSAPP BOT] Fallback anti-mudez não entregue (seguindo com o desfecho):", contactId, err);
+  }
+  await recordCodeIntervention({
+    contactId,
+    contactName: message.contactName,
+    botState: null,
+    action: "fallback_texto",
+    detail: `Rede de segurança: ${reason} — a IA encerrou sem mensagem e sem silent=true; texto mínimo enviado pelo código.`,
+  });
+}
+
 /** Só as notificações do handoff (sem mexer no status — já foi atualizado). */
 async function handoffNotifyOnly(contactLabel: string, reason: string, contactId?: string): Promise<void> {
   try {
@@ -799,6 +830,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     }
 
     // ---- Loop de "não entendi": 2 tentativas → especialista -------------
+    // ATENÇÃO: isto é uma TRAVA DE CÓDIGO que sobrescreve a decisão da IA —
+    // dispara antes de qualquer regra do playbook e por isso é registrada em
+    // Métricas como intervenção de código (kind="code"), não como regra.
     let failCount = conversation?.botFailCount ?? 0;
     if (!decision.understood) {
       failCount += 1;
@@ -810,6 +844,13 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
           reply: "Para te atender melhor, vou encaminhar você para um de nossos especialistas, tá bom?",
           replies: [],
         };
+        await recordCodeIntervention({
+          contactId,
+          contactName: message.contactName,
+          botState: decision.state || null,
+          action: "handoff",
+          detail: 'Trava de código: "não entendi" 2x seguidas → transferência automática com texto fixo (a IA não escolheu isso).',
+        });
       }
     } else {
       failCount = 0;
@@ -822,29 +863,48 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         action: "handoff",
         handoffReason: decision.handoffReason ?? "urgência detectada",
       };
+      await recordCodeIntervention({
+        contactId,
+        contactName: message.contactName,
+        botState: decision.state || null,
+        action: "handoff",
+        detail: "Trava de código: IA sinalizou urgência em action=continue → promovida a transferência automática.",
+      });
     }
 
     // ---- Opt-out identificado pela IA (com contexto) ----------------------
-    // A IA leu a conversa e concluiu que o cliente quer PARAR de receber
-    // mensagens. Envia a despedida da própria IA, marca optedOut e encerra —
-    // NÃO segue o roteiro nem outras ações. (Diferente do regex do webhook,
-    // aqui há contexto: "vou sair mas já volto" não vira descadastro.)
+    // MUDANÇA 25/07/2026 (caso "nah, acho que me confundi" → optedOut=true →
+    // silêncio eterno): a IA NÃO marca mais optedOut sozinha. Falso positivo
+    // aqui é irreversível e invisível — o contato some sem despedida, nunca
+    // reabre e nem entra na fila de revisão. Agora o sinal da IA vira um PEDIDO
+    // DE CONFIRMAÇÃO: encerramos a conversa normalmente (com snapshot pro
+    // cérebro e ficha preservada) e ensinamos o comando SAIR — só o comando
+    // exato (regex do service.ts, exigência da Meta) descadastra de verdade.
     if (decision.optOut) {
       const bye = decision.reply?.trim();
-      if (bye) {
-        await sendBotReply(contactId, message.contactPhone, message.contactName, bye, humanDelay(bye));
+      const confirm = "Se você preferir não receber mais nenhuma mensagem nossa, é só responder SAIR, tá bom? 😊";
+      const text = bye ? `${bye}\n\n${confirm}` : confirm;
+      try {
+        await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text));
+      } catch (err) {
+        console.error("[WHATSAPP BOT] Confirmação de opt-out não entregue (encerrando mesmo assim):", contactId, err);
       }
-      await db.whatsAppContact.update({ where: { id: contactId }, data: { optedOut: true } });
+      // Cérebro: opt-out era o ÚNICO desfecho sem snapshot — casos de fricção
+      // (cliente irritado) são justamente os mais valiosos pra revisão.
+      await captureConversation(contactId, "bot_disqualify", {
+        closeCategory: "nao_qualificado",
+        qualified: false,
+      });
       await db.whatsAppConversation.update({
         where: { contactId },
         data: {
           status: "closed", assignedToId: null, closeCategory: "nao_qualificado", qualified: false,
-          botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
+          botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
         },
       });
       await logWhatsAppEvent({
         action: "wa_bot",
-        message: "IA: descadastro (cliente pediu para parar de receber mensagens)",
+        message: "IA: possível descadastro — confirmação com comando SAIR enviada (optedOut NÃO marcado)",
         authorId: "whatsapp-bot",
         authorName: "🤖 Bot WhatsApp",
         contactId,
@@ -908,12 +968,40 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         break;
       }
       case "qualify":
+        // Qualificar sem nenhum texto deixaria o lead no vácuo até um humano
+        // assumir — garante ao menos a ponte pro atendente.
+        if (outgoing.length === 0) {
+          await sendMutedFallback(
+            contactId, message,
+            "Perfeito! Vou te passar para um de nossos atendentes dar sequência, tá bom? Já já alguém fala com você 😊",
+            "qualify sem texto",
+          );
+        }
         await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
         break;
       case "disqualify":
+        // Encerrar MUDO só quando a IA declarou silêncio deliberado (silent) —
+        // ex.: agradecimento pós-despedida. Vazio sem a flag = falha da IA:
+        // manda uma despedida mínima pra não abandonar o cliente falando.
+        if (outgoing.length === 0 && !decision.silent) {
+          await sendMutedFallback(
+            contactId, message,
+            "Obrigado pelo contato! Qualquer coisa é só mandar uma mensagem por aqui, tá bom? 😊",
+            "disqualify sem texto e sem silent",
+          );
+        }
         await disqualifyAndClose(contactId);
         break;
       case "handoff":
+        // Transferência sem texto: o cliente ficaria esperando sem saber que um
+        // humano vai assumir — avisa antes de enfileirar.
+        if (outgoing.length === 0 && !decision.silent) {
+          await sendMutedFallback(
+            contactId, message,
+            "Vou te passar para um de nossos atendentes, só um instante, tá bom?",
+            "handoff sem texto",
+          );
+        }
         await handoffToQueue(
           contactId, contactLabel,
           decision.handoffReason ?? "transferido pelo bot",
@@ -923,7 +1011,15 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         break;
       case "resolve":
         // Assunto resolvido pelo próprio bot (dúvida/status). Encerra como
-        // "perguntas" (ou a categoria que a IA indicar).
+        // "perguntas" (ou a categoria que a IA indicar). Mesmo guard de
+        // silêncio do disqualify.
+        if (outgoing.length === 0 && !decision.silent) {
+          await sendMutedFallback(
+            contactId, message,
+            "Certo! Se precisar de mais alguma coisa é só mandar uma mensagem por aqui 😊",
+            "resolve sem texto e sem silent",
+          );
+        }
         await resolveAndClose(contactId, decision.closeCategory ?? "perguntas");
         break;
       default:

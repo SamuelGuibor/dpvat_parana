@@ -3,6 +3,7 @@ import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
+import { captureConversation } from "./brain";
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
@@ -307,6 +308,13 @@ export async function ingestIncomingMessage(
       }
     }
     await db.whatsAppContact.update({ where: { id: contact.id }, data: { optedOut: true } });
+    // Cérebro: era o único desfecho que encerrava SEM snapshot — a conversa de
+    // quem se descadastra (fricção/abandono) é justamente a mais valiosa de
+    // revisar. Captura ANTES do update, que zera a ficha logo abaixo.
+    await captureConversation(contact.id, "manual", {
+      closeCategory: "nao_qualificado",
+      qualified: false,
+    });
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: { status: "closed", assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
