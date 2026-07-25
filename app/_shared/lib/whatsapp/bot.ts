@@ -688,27 +688,20 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     }
 
     // ---- Mídia ----------------------------------------------------------
-    // Áudio: a IA escuta (URL pré-assinada do S3 → Gemini multimodal).
-    // Imagem/vídeo/documento: conferência é papel de humano → fila.
+    // TUDO vai pra IA com URL pré-assinada: áudio é transcrito (Gemini) e
+    // imagem/PDF o Claude LÊ direto (visão). O que fazer com o arquivo —
+    // confirmar recebimento, validar, pedir o próximo, transferir com resumo —
+    // é regido pelas INSTRUÇÕES editáveis + playbook, não mais por atalho de
+    // código (decisão de 25/07/2026; antes, qualquer arquivo não-áudio
+    // transferia pra fila na hora, atropelando as regras aprendidas).
     let media: { url: string; mimeType: string } | null = null;
-    if (message.mediaKey) {
-      if (message.mediaType?.startsWith("audio/")) {
-        const url = await getSignedUrl(
-          s3,
-          new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: message.mediaKey }),
-          { expiresIn: 600 },
-        );
-        media = { url, mimeType: message.mediaType };
-      } else {
-        // Recebeu documento/foto (ex: RG na coleta de dados) → humano confere.
-        await sendBotReply(
-          contactId, message.contactPhone, message.contactName,
-          "Recebi seu arquivo! Vou passar para um de nossos atendentes conferir e já te retorno, tá bom?",
-          humanDelay("x".repeat(60)),
-        );
-        await handoffToQueue(contactId, contactLabel, "cliente enviou documento/imagem para conferência");
-        return;
-      }
+    if (message.mediaKey && message.mediaType) {
+      const url = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: message.mediaKey }),
+        { expiresIn: 600 },
+      );
+      media = { url, mimeType: message.mediaType };
     }
 
     // ---- Lote da rajada ---------------------------------------------------
