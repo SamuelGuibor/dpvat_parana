@@ -37,6 +37,10 @@ export interface PlaybookRule {
   text: string;
   weight: number;
   states: string[];
+  // Proveniência: IDs das WhatsAppReview cujas lições sustentam esta regra.
+  // É o que permite, na dash de métricas, abrir a conversa/revisão de origem
+  // de cada regra aplicada. Ausente em regras antigas (pré-rastreabilidade).
+  sourceReviewIds?: string[];
 }
 export interface PlaybookSection {
   name: string;
@@ -171,7 +175,12 @@ export async function buildPlaybookDraft(): Promise<{
   });
 
   const out = await callBrain<{
-    sections: PlaybookSection[];
+    // sourceIndexes: números 1-based da lista de lições enviada — a IA devolve,
+    // por regra, quais lições novas a sustentam. Traduzimos de volta pra IDs de
+    // review logo abaixo.
+    sections: (Omit<PlaybookSection, 'rules'> & {
+      rules: (PlaybookRule & { sourceIndexes?: number[] })[];
+    })[];
     rulesCount: number;
     changeNote: string;
   }>('/consolidate-playbook', {
@@ -184,6 +193,30 @@ export async function buildPlaybookDraft(): Promise<{
     maxRules: MAX_RULES,
   });
 
+  // ---- Proveniência regra → reviews ----------------------------------------
+  // A IA cita as lições novas por número; regras reaproveitadas do manual atual
+  // herdam a proveniência da versão anterior por casamento de texto (best-effort
+  // — se a redação mudou muito, a herança se perde, mas as lições novas nunca).
+  const prevProvenance = new Map<string, string[]>();
+  if (published) {
+    for (const s of (published.sections as unknown as PlaybookSection[]) ?? []) {
+      for (const r of s.rules ?? []) {
+        if (r.sourceReviewIds?.length) prevProvenance.set(r.text.trim(), r.sourceReviewIds);
+      }
+    }
+  }
+  const sections: PlaybookSection[] = (out.sections ?? []).map((s) => ({
+    name: s.name,
+    rules: (s.rules ?? []).map(({ sourceIndexes, ...rule }) => {
+      const fromLessons = (sourceIndexes ?? [])
+        .map((i) => pending[i - 1]?.id)
+        .filter((id): id is string => !!id);
+      const inherited = prevProvenance.get(rule.text.trim()) ?? [];
+      const sourceReviewIds = [...new Set([...inherited, ...fromLessons])];
+      return { ...rule, ...(sourceReviewIds.length ? { sourceReviewIds } : {}) };
+    }),
+  }));
+
   const last = await db.whatsAppPlaybook.findFirst({
     orderBy: { version: 'desc' },
     select: { version: true },
@@ -193,7 +226,7 @@ export async function buildPlaybookDraft(): Promise<{
   const draft = await db.whatsAppPlaybook.create({
     data: {
       version,
-      sections: out.sections as object,
+      sections: sections as unknown as object,
       rulesCount: out.rulesCount,
       changeNote: out.changeNote,
       status: 'rascunho',

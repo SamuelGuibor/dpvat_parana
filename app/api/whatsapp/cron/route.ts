@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
+import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
 
@@ -98,6 +99,108 @@ async function buildFarewell(contactId: string, contactName: string | null): Pro
   }
 }
 
+// Heurística local de fecho: usada SÓ como fallback quando a IA está fora, pra
+// não voltar a re-pingar uma despedida óbvia. A decisão "de verdade" é a da IA
+// (decideFollowup); isto é só a rede de segurança.
+function looksLikeFarewell(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  if (/\b(boa noite|bom dia|boa tarde)\b/.test(t) && /(amanh|depois|descanse|deus|abra[çc]|at[eé] mais|falamos|conversamos)/.test(t)) return true;
+  if (/(at[eé] amanh|falamos amanh|conversamos amanh|converso com voc[eê] amanh|fica com deus|com deus|descanse|durma bem|bom descanso|nos falamos)/.test(t)) return true;
+  // "te envio amanhã", "aguardo ... amanhã", "amanhã cedo" → retorno combinado.
+  if (/amanh/.test(t) && /(envio|mando|te envio|aguardo|cedo|manh[aã]|retorno|falo)/.test(t)) return true;
+  return false;
+}
+
+/**
+ * Decisão CONTEXTUAL de follow-up: pergunta ao microserviço da IA se, dado o
+ * estado da conversa, ainda cabe cutucar o cliente ("nudge") ou se ela já teve
+ * um fecho natural e deve encerrar em silêncio ("close"). Qualquer falha (IA
+ * fora, timeout, endpoint sem deploy) cai numa heurística local — nunca trava
+ * a rodada do cron.
+ */
+async function decideFollowup(
+  contactId: string,
+  contactName: string | null,
+  lastBotText: string | null,
+): Promise<{ action: 'nudge' | 'close'; message: string; reason: string }> {
+  const localFallback = (): { action: 'nudge' | 'close'; message: string; reason: string } =>
+    looksLikeFarewell(lastBotText)
+      ? { action: 'close', message: '', reason: 'heurística local: última mensagem do bot já era despedida' }
+      : { action: 'nudge', message: '', reason: 'heurística local: IA indisponível' };
+
+  if (!CHATBOT_URL || !CHATBOT_SECRET) return localFallback();
+  try {
+    const [history, conv] = await Promise.all([
+      db.whatsAppMessage.findMany({
+        where: { contactId, internal: false, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { direction: true, sentByBot: true, body: true },
+      }),
+      db.whatsAppConversation.findUnique({
+        where: { contactId },
+        select: { botMemory: true, botState: true },
+      }),
+    ]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(`${CHATBOT_URL}/followup-decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHATBOT_SECRET },
+        body: JSON.stringify({
+          contact: { name: contactName },
+          memory: conv?.botMemory ?? null,
+          state: conv?.botState ?? null,
+          history: history
+            .reverse()
+            .filter((h) => h.body)
+            .map((h) => ({ role: h.direction === 'in' ? 'client' : h.sentByBot ? 'bot' : 'agent', text: h.body })),
+        }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`followup-decision HTTP ${res.status}`);
+      const data = await res.json();
+      const action = data?.action === 'close' ? 'close' : 'nudge';
+      // No close a message também pode vir: frase única e suave de fecho quando
+      // o bot ainda não tinha se despedido (vazia = silêncio total).
+      return { action, message: String(data?.message ?? '').trim(), reason: String(data?.reason ?? '').trim() };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    console.warn('[WHATSAPP CRON] Decisão de follow-up por IA indisponível (heurística local):', err);
+    return localFallback();
+  }
+}
+
+/**
+ * Encerra a conversa por inatividade: snapshot pro cérebro ANTES do update (que
+ * pode zerar botMemory/botState) e reset dos marcadores. Lead QUALIFICADO
+ * preserva a ficha (retoma de onde parou se voltar a escrever); não-qualificado
+ * zera pra começar limpo numa próxima conversa. Compartilhado pela fase 1
+ * (decisão "close" da IA) e pela fase 2 (silêncio após o cutucão).
+ */
+async function finalizeClose(conv: { id: string; contactId: string; qualified: boolean | null }): Promise<void> {
+  await captureConversation(conv.contactId, 'cron_silencio');
+  await db.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: {
+      status: 'closed',
+      assignedToId: null,
+      ...(conv.qualified ? {} : { botMemory: null, botState: null }),
+      botFailCount: 0,
+      botNudge30At: null,
+      botNudge24At: null,
+      urgent: false,
+      queuedAt: null,
+      queueAlertAt: null,
+    },
+  });
+}
+
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -132,7 +235,7 @@ export async function GET(req: NextRequest) {
       const last = await db.whatsAppMessage.findFirst({
         where: { contactId: conv.contactId, internal: false, deletedAt: null },
         orderBy: { createdAt: 'desc' },
-        select: { direction: true, sentByBot: true },
+        select: { direction: true, sentByBot: true, body: true },
       });
       if (!last || last.direction !== 'out' || !last.sentByBot) {
         // Marca mesmo assim pra não reavaliar essa conversa a cada rodada.
@@ -146,7 +249,34 @@ export async function GET(req: NextRequest) {
         await db.whatsAppConversation.update({ where: { id: conv.id }, data: { botNudge30At: new Date() } });
         continue;
       }
-      await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, NUDGE_30MIN);
+      // A IA lê a conversa e decide: cutucar (há pendência real) ou encerrar em
+      // silêncio (o bot já se despediu / o cliente combinou retorno). Evita o
+      // "Você precisa de mais alguma coisa?" reabrindo uma conversa já fechada.
+      const decision = await decideFollowup(conv.contactId, conv.contact.name, last.body);
+      // Telemetria (aba Métricas da Revisão da IA): registra que a IA leu o
+      // contexto e decidiu — best-effort, nunca trava o cron.
+      await recordFollowupDecision({
+        contactId: conv.contactId,
+        contactName: conv.contact.name,
+        botState: conv.botState ?? null,
+        action: decision.action,
+        detail: decision.reason || null,
+      });
+      if (decision.action === 'close') {
+        // Fecho suave opcional: a IA só o preenche quando NINGUÉM se despediu
+        // ainda — se o bot já disse "boa noite", encerra em silêncio total.
+        if (decision.message) {
+          try {
+            await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, decision.message);
+          } catch (err) {
+            console.error('[WHATSAPP CRON] Fecho suave não entregue (encerrando mesmo assim):', conv.contactId, err);
+          }
+        }
+        await finalizeClose(conv);
+        results.closed++;
+        continue;
+      }
+      await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, decision.message || NUDGE_30MIN);
       await db.whatsAppConversation.update({ where: { id: conv.id }, data: { botNudge30At: new Date() } });
       results.nudged30++;
     } catch (err) {
@@ -182,26 +312,7 @@ export async function GET(req: NextRequest) {
         // Falha no envio não trava o encerramento.
         console.error('[WHATSAPP CRON] Despedida não entregue (encerrando mesmo assim):', conv.contactId, err);
       }
-      // Cérebro: snapshot ANTES do update (que pode zerar botMemory/botState).
-      await captureConversation(conv.contactId, 'cron_silencio');
-      await db.whatsAppConversation.update({
-        where: { id: conv.id },
-        data: {
-          status: 'closed',
-          assignedToId: null,
-          // Lead QUALIFICADO: preserva a ficha (botMemory/botState) para que, se
-          // ele voltar a escrever, o bot retome de onde parou (fechamento de
-          // contrato) em vez de recomeçar a triagem do zero. Não-qualificado
-          // continua zerando, para uma futura conversa começar limpa.
-          ...(conv.qualified ? {} : { botMemory: null, botState: null }),
-          botFailCount: 0,
-          botNudge30At: null,
-          botNudge24At: null,
-          urgent: false,
-          queuedAt: null,
-          queueAlertAt: null,
-        },
-      });
+      await finalizeClose(conv);
       results.closed++;
     } catch (err) {
       console.error('[WHATSAPP CRON] Falha ao encerrar por inatividade:', conv.contactId, err);

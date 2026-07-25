@@ -769,6 +769,38 @@ model WhatsAppPlaybook {
   @@map("whatsapp_playbooks")
 }
 
+// EVENTOS DE REGRA — telemetria do playbook: uma linha cada vez que a IA
+// declara que uma regra aprendida influenciou a resposta (kind="rule"), ou que
+// o cron decidiu contextualmente cutucar/encerrar uma conversa silenciosa
+// (kind="followup"). Alimenta a aba "Métricas" da Revisão da IA: quais regras
+// realmente trabalham, em quais conversas, com que resultado.
+//
+// ruleText/section são SNAPSHOT no momento do uso — o playbook é versionado e a
+// numeração R1..Rn muda a cada publicação, então o evento guarda o texto que
+// valia na hora, não um ponteiro que apodrece.
+model WhatsAppRuleEvent {
+  id              String   @id @default(cuid())
+  kind            String   @default("rule") // rule | followup
+  // kind="rule": ID da regra na versão vigente (R1, R2...). Nulo em followup.
+  ruleId          String?
+  ruleText        String?
+  section         String?
+  playbookVersion Int?
+  contactId       String
+  contactName     String?
+  botState        String?
+  // kind="rule": ação da decisão (continue/qualify/...). kind="followup": nudge | close.
+  action          String?
+  // kind="rule": trecho da resposta enviada. kind="followup": motivo da decisão da IA.
+  detail          String?
+  createdAt       DateTime @default(now())
+
+  @@index([kind, createdAt])
+  @@index([ruleId, createdAt])
+  @@index([contactId])
+  @@map("whatsapp_rule_events")
+}
+
 // INSTRUÇÕES BASE do bot — o que era o STATIC_SYSTEM_PROMPT hardcoded no
 // bot.js, agora estruturado em seções editáveis pela tela.
 //

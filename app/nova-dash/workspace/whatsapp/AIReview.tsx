@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Bot, User, StickyNote, CheckCircle2, XCircle, AlertTriangle, Loader2,
   Inbox, RefreshCw, Brain, Clock, MessageSquare, BookOpen, Lightbulb,
-  Pencil, Check, X, FileText,
+  Pencil, Check, X, FileText, BarChart3,
 } from 'lucide-react';
 import {
   listReviews, getReview, submitReview, updateLesson,
@@ -12,6 +12,7 @@ import {
 } from '@/app/_actions/whatsapp/reviews';
 import { PlaybookPanel } from './PlaybookPanel';
 import { InstructionsPanel } from './InstructionsPanel';
+import { RuleMetricsPanel } from './RuleMetricsPanel';
 import {
   REVIEW_ERROR_TAGS, VERDICT_HINTS, CLOSED_REASON_LABELS,
   type ReviewVerdict,
@@ -61,7 +62,7 @@ export function AIReview() {
   const [tags, setTags] = useState<string[]>([]);
   const [correctReply, setCorrectReply] = useState('');
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<'fila' | 'playbook' | 'instrucoes'>('fila');
+  const [tab, setTab] = useState<'fila' | 'playbook' | 'instrucoes' | 'metricas'>('fila');
 
   // "A IA entendeu assim" — lição destilada logo após salvar, editável na hora.
   // Fica sobre a conversa que acabou de ser julgada, não sobre a próxima.
@@ -174,6 +175,7 @@ export function AIReview() {
         {([
           ['fila', 'Fila de revisão', Brain],
           ['playbook', 'Aprendido', BookOpen],
+          ['metricas', 'Métricas', BarChart3],
           ['instrucoes', 'Instruções', FileText],
         ] as [typeof tab, string, React.ElementType][]).map(([key, label, Icon]) => (
           <button
@@ -250,6 +252,8 @@ export function AIReview() {
 
       {tab === 'playbook' ? (
         <PlaybookPanel />
+      ) : tab === 'metricas' ? (
+        <RuleMetricsPanel />
       ) : tab === 'instrucoes' ? (
         <InstructionsPanel />
       ) : (

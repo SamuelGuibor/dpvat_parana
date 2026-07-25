@@ -7,6 +7,7 @@ import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { captureConversation } from "./brain";
+import { recordAppliedRules } from "./rule-events";
 import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
@@ -123,6 +124,9 @@ interface BotDecision {
   // A IA identificou (pelo contexto) que o cliente quer PARAR de receber
   // mensagens. Diferente de disqualify: aqui marcamos optedOut no contato.
   optOut?: boolean;
+  // IDs das regras do playbook (R1, R2...) que a IA declarou terem influenciado
+  // esta resposta. Vira WhatsAppRuleEvent — telemetria da aba Métricas.
+  appliedRules?: string[];
   // Tokens gastos na chamada ao Claude (o microserviço devolve; alimenta o
   // custo semanal/mensal no dashboard do chatbot).
   usage?: BotUsage | null;
@@ -969,6 +973,18 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         durationMs,
         usage: decision.usage ?? undefined,
       },
+    });
+
+    // ---- Telemetria do playbook ---------------------------------------------
+    // Regras aprendidas que a IA declarou ter aplicado nesta resposta → aba
+    // "Métricas" da Revisão da IA. Best-effort: nunca derruba o fluxo.
+    await recordAppliedRules({
+      appliedRules: decision.appliedRules,
+      contactId,
+      contactName: message.contactName,
+      botState: decision.state || null,
+      action: decision.action,
+      replyText: outgoing[0] ?? null,
     });
   } catch (err) {
     // Erro em QUALQUER ponto → fila de distribuição direto, SEM mensagem de
