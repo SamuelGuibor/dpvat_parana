@@ -1072,6 +1072,11 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         flowName: decision.action === "send_flow" ? decision.flowName ?? undefined : undefined,
         durationMs,
         usage: decision.usage ?? undefined,
+        // Diagnóstico: o que o micro devolveu em appliedRules. `undefined` no
+        // metadata = o campo NEM VEIO na resposta (micro rodando código antigo,
+        // sem o campo no schema); [] = veio e a IA não citou regra nenhuma.
+        appliedRules: decision.appliedRules,
+        hasAppliedRulesField: "appliedRules" in decision,
       },
     });
 
