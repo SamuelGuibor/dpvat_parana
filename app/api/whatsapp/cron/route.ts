@@ -177,11 +177,12 @@ async function decideFollowup(
 }
 
 /**
- * Encerra a conversa por inatividade: snapshot pro cérebro ANTES do update (que
- * pode zerar botMemory/botState) e reset dos marcadores. Lead QUALIFICADO
- * preserva a ficha (retoma de onde parou se voltar a escrever); não-qualificado
- * zera pra começar limpo numa próxima conversa. Compartilhado pela fase 1
- * (decisão "close" da IA) e pela fase 2 (silêncio após o cutucão).
+ * Encerra a conversa por inatividade: snapshot pro cérebro antes do update e
+ * reset dos marcadores. A ficha (botMemory/botState) é PRESERVADA em todos os
+ * desfechos (25/07/2026): se o cliente escrever de novo, a reabertura vem com
+ * contexto e a IA não recomeça a triagem — a limpeza, se couber, acontece na
+ * reabertura por idade (service.ts). Compartilhado pela fase 1 (decisão
+ * "close" da IA) e pela fase 2 (silêncio após o cutucão).
  */
 async function finalizeClose(conv: { id: string; contactId: string; qualified: boolean | null }): Promise<void> {
   await captureConversation(conv.contactId, 'cron_silencio');
@@ -190,7 +191,6 @@ async function finalizeClose(conv: { id: string; contactId: string; qualified: b
     data: {
       status: 'closed',
       assignedToId: null,
-      ...(conv.qualified ? {} : { botMemory: null, botState: null }),
       botFailCount: 0,
       botNudge30At: null,
       botNudge24At: null,

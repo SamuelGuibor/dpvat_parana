@@ -424,18 +424,21 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
   });
   await db.whatsAppConversation.update({
     where: { contactId },
-    // Encerrou como não qualificada: reseta a memória do cliente para que uma
-    // futura conversa comece do zero.
-    data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, botMemory: null, botState: null, urgent: false, queuedAt: null, queueAlertAt: null },
+    // A ficha (botMemory/botState) é PRESERVADA de propósito (25/07/2026): se o
+    // cliente mandar um "obrigado"/"Bgdooo" logo depois, a reabertura vem com
+    // contexto e a IA responde curto em vez de recomeçar a triagem do zero
+    // (caso Luiz: 4 ciclos de saudação→triagem→despedida na mesma tarde). A
+    // limpeza acontece na REABERTURA, se a conversa estiver velha (service.ts).
+    data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null },
   });
   void reportLeadStageToMeta(contactId, "nao_qualificado");
 }
 
 /**
  * Assunto RESOLVIDO pelo próprio bot (ex.: cliente cadastrado só tirou uma
- * dúvida / consultou status e não precisa de mais nada). Encerra sem qualificar,
- * na categoria "perguntas" — reseta memória/estado para a próxima conversa
- * começar do zero.
+ * dúvida / consultou status e não precisa de mais nada). Encerra sem
+ * qualificar, na categoria "perguntas". A ficha é preservada — a limpeza, se
+ * couber, acontece na reabertura (janela de validade no service.ts).
  */
 async function resolveAndClose(contactId: string, category: string = "perguntas"): Promise<void> {
   // Se o contato JÁ era qualificado (ex.: qualificado que voltou só pra tirar
@@ -458,7 +461,8 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
       status: "closed", assignedToId: null,
       qualified: keepContext ? true : null,
       closeCategory: category, botFailCount: 0,
-      ...(keepContext ? {} : { botMemory: null, botState: null }),
+      // Ficha preservada em TODOS os desfechos (25/07/2026) — ver comentário no
+      // disqualifyAndClose. A limpeza é na reabertura, por idade (service.ts).
       urgent: false, queuedAt: null, queueAlertAt: null,
     },
   });

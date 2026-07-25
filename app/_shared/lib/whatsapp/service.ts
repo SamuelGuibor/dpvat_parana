@@ -13,6 +13,11 @@ import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMA
 // Mesma convenção de equipe do chat interno (chat-access.ts / api/presence).
 const TEAM_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
 
+// Validade da ficha do bot entre conversas: reabertura dentro desta janela
+// mantém botMemory/botState (a IA lembra do contato); além dela, conversa
+// não-qualificada recomeça limpa. Qualificado nunca expira.
+const STALE_CONTEXT_MS = 7 * 24 * 60 * 60_000;
+
 export function whatsappChannelId(contactId: string): string {
   return `whatsapp:${contactId}`;
 }
@@ -182,10 +187,31 @@ export async function ingestIncomingMessage(
   // Conversa encerrada + cliente mandou mensagem de novo → reabre (volta pro
   // bot, sem atendente). NÃO reabre se o contato está em opt-out: quem pediu
   // silêncio não deve voltar a receber respostas automáticas.
+  //
+  // FICHA COM VALIDADE (25/07/2026): os encerramentos preservam botMemory/
+  // botState (antes zeravam — e um "obrigado" pós-despedida reabria a conversa
+  // com a IA amnésica, recomeçando a triagem em loop). A limpeza acontece AQUI,
+  // na reabertura, e só quando a conversa anterior é velha: recente (<7 dias) →
+  // a IA volta sabendo com quem fala; velha e não-qualificada → começa limpa.
+  // Qualificado nunca perde a ficha (retoma o fechamento de onde parou).
   if (conversation.status === "closed" && !contact.optedOut && !wantsOptOut) {
+    let staleContext = false;
+    if (!conversation.qualified && (conversation.botMemory || conversation.botState)) {
+      // A mensagem atual ainda não foi gravada — a mais recente do banco é a
+      // última atividade da conversa anterior.
+      const lastMsg = await db.whatsAppMessage.findFirst({
+        where: { contactId: contact.id, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+      staleContext = !lastMsg || Date.now() - lastMsg.createdAt.getTime() > STALE_CONTEXT_MS;
+    }
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
-      data: { status: "bot", assignedToId: null, lastReadAt: null },
+      data: {
+        status: "bot", assignedToId: null, lastReadAt: null,
+        ...(staleContext ? { botMemory: null, botState: null } : {}),
+      },
     });
   }
 
