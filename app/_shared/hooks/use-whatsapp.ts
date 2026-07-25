@@ -50,16 +50,21 @@ export function useWhatsAppConversations() {
 const OLDER_PAGE_SIZE = 30;
 
 /**
- * Mensagens de uma conversa. As MAIS RECENTES vêm por SWR (polling 15s + SSE
+ * Mensagens de uma conversa. As MAIS RECENTES vêm por SWR (polling 5s + SSE
  * chama mutate ao chegar algo). As ANTIGAS são carregadas sob demanda em blocos
  * (loadOlder) e acumuladas no client — economiza busca no banco e mantém a
  * thread leve, sem puxar toda a conversa de uma vez.
+ *
+ * Polling de 5s SÓ aqui (thread ABERTA — uma por vez, rota leve por contactId):
+ * é a rede de segurança quando o SSE do relay cai; 15s deixava a conversa
+ * visivelmente atrasada. A LISTA de conversas continua em 15s — é a query
+ * pesada, e o SSE já a atualiza via refreshConversations no evento.
  */
 export function useWhatsAppMessages(contactId: string | null) {
   const { data, mutate, isLoading } = useSWR<{ messages: WhatsAppThreadMessage[]; hasMore?: boolean }>(
     contactId ? `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}&limit=50` : null,
     fetcher,
-    { refreshInterval: 15_000, revalidateOnFocus: true },
+    { refreshInterval: 5_000, revalidateOnFocus: true },
   );
 
   const recent = useMemo(() => data?.messages ?? [], [data]);

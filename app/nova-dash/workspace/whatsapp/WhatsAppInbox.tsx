@@ -131,14 +131,15 @@ export function WhatsAppInbox() {
   // sempre fixas no topo) — reduz a lista de grupos empilhados pra 1 por vez.
   // As 3 últimas espelham CLOSE_CATEGORY_LABELS (categorias de encerramento);
   // "qualified"/"unqualified" continuam com nome próprio por compatibilidade.
+  // `dot` = bolinha de cor da categoria nos chips (leitura rápida do status).
   const TABS = [
-    { key: 'qualified', label: 'Qualificadas' },
-    { key: 'bot', label: 'Com o bot' },
-    { key: 'unqualified', label: 'Não qualificadas' },
-    { key: 'others', label: 'Outros atendentes' },
-    { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas },
-    { key: 'novo_acidente', label: CLOSE_CATEGORY_LABELS.novo_acidente },
-    { key: 'transferido', label: CLOSE_CATEGORY_LABELS.transferido },
+    { key: 'qualified', label: 'Qualificadas', dot: 'bg-emerald-400' },
+    { key: 'bot', label: 'Com o bot', dot: 'bg-violet-400' },
+    { key: 'unqualified', label: 'Não qualificadas', dot: 'bg-gray-400' },
+    { key: 'others', label: 'Outros atendentes', dot: 'bg-sky-400' },
+    { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas, dot: 'bg-blue-400' },
+    { key: 'novo_acidente', label: CLOSE_CATEGORY_LABELS.novo_acidente, dot: 'bg-amber-400' },
+    { key: 'transferido', label: CLOSE_CATEGORY_LABELS.transferido, dot: 'bg-fuchsia-400' },
   ] as const;
   type TabKey = (typeof TABS)[number]['key'];
   const [activeTab, setActiveTab] = useState<TabKey>('others');
@@ -502,23 +503,46 @@ export function WhatsAppInbox() {
 
           {/* Aba com o resto das categorias — uma lista por vez.
               Gruda no topo da área rolável (sticky) pra ficar sempre acessível. */}
-          <div className="sticky top-0 z-10 mt-3 flex gap-1 overflow-x-auto border-y border-[#14332a] bg-[#1f3d33]/95 px-3 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold transition-colors ${
-                  activeTab === tab.key
-                    ? 'bg-[#1d9e75] text-white'
-                    : 'bg-[#2e5749] text-[#cfe6db] hover:bg-[#366b58]'
-                }`}
+          {/* Seletor de categoria: dropdown ÚNICO (compacto, sem scroll lateral,
+              uma linha só) que abre como LISTA VERTICAL — cada categoria numa
+              linha com bolinha de cor e contador alinhado à direita. */}
+          <div className="sticky top-0 z-10 mt-3 border-y border-[#14332a] bg-[#1f3d33]/95 px-3 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex w-full items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#366b58]">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${TABS.find((t) => t.key === activeTab)!.dot}`} />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {TABS.find((t) => t.key === activeTab)!.label}
+                  </span>
+                  <span className="rounded-full bg-[#1d9e75] px-2 py-0.5 text-[11px] font-bold tabular-nums text-white">
+                    {tabItems[activeTab].length}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-[#8fbcac]" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-[var(--radix-dropdown-menu-trigger-width)] border-[#3a6b58] bg-[#24483c] p-1"
               >
-                {tab.label}
-                <span className={`rounded-full px-1.5 text-[11px] font-bold ${activeTab === tab.key ? 'bg-white/20' : 'bg-[#1a4034]'}`}>
-                  {tabItems[tab.key].length}
-                </span>
-              </button>
-            ))}
+                {TABS.map((tab) => (
+                  <DropdownMenuItem
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-[13px] font-semibold focus:bg-[#366b58] focus:text-white ${
+                      activeTab === tab.key ? 'bg-[#1d9e75] text-white focus:bg-[#1d9e75]' : 'text-[#cfe6db]'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tab.dot}`} />
+                    <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                      activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-[#1a4034] text-[#9fd6bd]'
+                    }`}>
+                      {tabItems[tab.key].length}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {activeTab === 'others' && attendants.length > 0 && (
