@@ -694,13 +694,20 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   // mensagens picadas viram UMA chamada ao Claude, e não 3 respostas fora de
   // ordem.
   await sleep(BURST_DEBOUNCE_MS);
+  // Desempate determinístico: duas mensagens gravadas no MESMO milissegundo
+  // (dois webhooks concorrentes) não se enxergavam como "mais nova" com o `gt`
+  // estrito — as DUAS invocações prosseguiam e o cliente recebia resposta
+  // dupla. Em empate de createdAt, o maior id (cuid ~monotônico) vence.
   const newerInbound = await db.whatsAppMessage.findFirst({
     where: {
       contactId,
       direction: "in",
       deletedAt: null,
       id: { not: message.id },
-      createdAt: { gt: new Date(message.createdAt) },
+      OR: [
+        { createdAt: { gt: new Date(message.createdAt) } },
+        { createdAt: new Date(message.createdAt), id: { gt: message.id } },
+      ],
     },
     select: { id: true },
   });

@@ -218,6 +218,14 @@ export async function buildPlaybookDraft(): Promise<{
     }),
   }));
 
+  // Invariante: no máximo 1 rascunho. Gerar um novo rascunho descarta o
+  // anterior não publicado — antes ele ficava órfão (a tela só mostra o mais
+  // novo), invisível para sempre e queimando um número de versão.
+  await db.whatsAppPlaybook.updateMany({
+    where: { status: 'rascunho' },
+    data: { status: 'descartado' },
+  });
+
   const last = await db.whatsAppPlaybook.findFirst({
     orderBy: { version: 'desc' },
     select: { version: true },
@@ -295,15 +303,19 @@ export async function publishPlaybook(
       ContentType: 'application/json',
     }),
   );
-  // Cópia versionada, para auditoria e rollback.
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET_NAME,
-      Key: `whatsapp-brain/playbook/v${draft.version}.json`,
-      Body: body,
-      ContentType: 'application/json',
-    }),
-  );
+  // Cópia versionada, para auditoria e rollback. Na REPUBLICAÇÃO (edição
+  // manual de regra) o arquivo NÃO é reescrito: v{n}.json guarda a versão
+  // como foi publicada originalmente — sobrescrever mataria o rollback.
+  if (!republish) {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET_NAME,
+        Key: `whatsapp-brain/playbook/v${draft.version}.json`,
+        Body: body,
+        ContentType: 'application/json',
+      }),
+    );
+  }
 
   // O conteúdo publicado mudou (publish novo OU regra editada/excluída):
   // derruba o cache local de numeração das métricas na hora.

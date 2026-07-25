@@ -349,17 +349,20 @@ async function notifyIncomingMessage(
   mediaType: string | null,
 ): Promise<void> {
   if (conversation.status !== "queued" && conversation.status !== "human") return;
-  if (conversation.status === "human" && !conversation.assignedToId) return;
 
   try {
-    const recipientIds = conversation.status === "human"
+    // "human" SEM dono era buraco negro: retornava em silêncio e nem bot nem
+    // humano agiam (qualquer limpeza que zere assignedToId mantendo o status
+    // prendia a conversa). Agora é tratado como fila: avisa a equipe inteira.
+    const owned = conversation.status === "human" && !!conversation.assignedToId;
+    const recipientIds = owned
       ? [conversation.assignedToId as string]
       : await whatsappRecipients();
     if (!recipientIds.length) return;
 
     const label = contact.name ?? `+${contact.phone}`;
     const preview = body ? body.slice(0, 80) : mediaType ? "📎 Anexo" : "mensagem";
-    const message = conversation.status === "human"
+    const message = owned
       ? `${label} respondeu: ${preview}`
       : `${label} está aguardando na fila: ${preview}`;
 

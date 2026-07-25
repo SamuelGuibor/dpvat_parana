@@ -30,6 +30,10 @@ const s3 = new S3Client({
 
 const BUCKET = process.env.AWS_S3_BUCKET_NAME;
 const PREFIX = 'whatsapp-brain/conversas';
+// Ciclos reabre-fecha dentro desta janela ANEXAM ao snapshot/review pendente
+// anterior em vez de criar outra entrada na fila (o "caso Luiz": 4 reviews da
+// mesma tarde para a mesma conversa picada).
+const MERGE_WINDOW_MS = 6 * 60 * 60_000;
 
 /** Motivo do encerramento — quem tomou a decisão. */
 export type ClosedReason = 'bot_disqualify' | 'bot_resolve' | 'cron_silencio' | 'manual';
@@ -153,7 +157,7 @@ export async function captureConversation(
     const last = await db.whatsAppReview.findFirst({
       where: { contactId },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, createdAt: true },
+      select: { id: true, createdAt: true, status: true, s3Key: true },
     });
     if (last && conversation?.lastMessageAt && last.createdAt >= conversation.lastMessageAt) {
       return null;
@@ -264,6 +268,55 @@ export async function captureConversation(
         durationMs: first && lastMsg ? lastMsg.getTime() - first.getTime() : null,
       },
     };
+
+    // ---- Merge de ciclos reabre-fecha ---------------------------------------
+    // Se a review anterior deste contato ainda está PENDENTE e é recente, os
+    // turnos novos são ANEXADOS ao mesmo snapshot/review em vez de criar outra
+    // entrada na fila. Review já revisada nunca é alterada — o julgamento
+    // humano vale sobre o transcript que o humano viu.
+    if (last && last.status === 'pendente' && Date.now() - last.createdAt.getTime() < MERGE_WINDOW_MS) {
+      const prev = await readSnapshot(last.s3Key);
+      if (prev) {
+        const mergedTurns = [...prev.messages, ...turns];
+        const merged: ConversationSnapshot = {
+          ...snapshot,
+          messages: mergedTurns,
+          stats: {
+            total: mergedTurns.length,
+            fromClient: mergedTurns.filter((t) => t.role === 'client').length,
+            fromBot: mergedTurns.filter((t) => t.role === 'bot').length,
+            fromAgent: mergedTurns.filter((t) => t.role === 'agent').length,
+            durationMs: mergedTurns.length >= 2
+              ? new Date(mergedTurns[mergedTurns.length - 1].at).getTime() - new Date(mergedTurns[0].at).getTime()
+              : null,
+          },
+        };
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: last.s3Key,
+            Body: JSON.stringify(merged, null, 2),
+            ContentType: 'application/json',
+          }),
+        );
+        await db.whatsAppReview.update({
+          where: { id: last.id },
+          data: {
+            closeCategory,
+            qualified,
+            closedReason,
+            messageCount: mergedTurns.length,
+            botOnly: merged.stats.fromAgent === 0,
+            // Marca "capturado até agora": o corte da próxima captura é
+            // createdAt > review.createdAt — sem o bump, os turnos recém-
+            // anexados entrariam duplicados no ciclo seguinte.
+            createdAt: new Date(),
+          },
+        });
+        return last.id;
+      }
+      // Snapshot anterior ilegível → segue o fluxo normal e cria review nova.
+    }
 
     // Chave determinística por captura: contato + instante. Ordena sozinha e
     // nunca colide (o timestamp é do momento da captura).

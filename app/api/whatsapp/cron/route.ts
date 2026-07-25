@@ -35,6 +35,7 @@ const NUDGE_AFTER_MS = 30 * 60_000; // 30min sem resposta → pergunta
 const CLOSE_AFTER_MS = 10 * 60_000; // +10min sem resposta → encerra
 const QUEUE_SLA_MS = 10 * 60_000;   // 10min na fila sem atendente → alerta
 const QUEUE_REALERT_MS = 60 * 60_000; // repete o alerta a cada 1h
+const HUMAN_SLA_MS = 30 * 60_000;   // 30min sem resposta do atendente → cobra o dono
 // Mensagem "sent" que nunca virou "delivered": quando um número BLOQUEIA a
 // empresa a Meta nem manda status "failed" — a mensagem só fica travada no
 // tique único. 12h+ nesse estado → alerta de verificação pra equipe.
@@ -381,6 +382,68 @@ export async function GET(req: NextRequest) {
         console.error('[WHATSAPP CRON] Falha no alerta de fila:', conv.contactId, err);
         results.errors++;
       }
+    }
+  }
+
+  // ---- 3b. SLA de atendimento HUMANO ----------------------------------------
+  // Conversa em "human" onde o CLIENTE mandou a última mensagem e o atendente
+  // está calado há 30min+ → re-alerta o dono; sem dono (buraco negro) ou
+  // esperando há 2h+, escala pra equipe inteira. Antes não existia NENHUM SLA
+  // pra "human": se o dono sumisse, o cliente esperava indefinidamente e
+  // ninguém mais ficava sabendo. Debounce via queueAlertAt (re-alerta a cada
+  // 1h), campo livre neste status.
+  const humanStalled = await db.whatsAppConversation.findMany({
+    where: {
+      status: 'human',
+      lastMessageAt: { lte: new Date(now - HUMAN_SLA_MS) },
+      OR: [
+        { queueAlertAt: null },
+        { queueAlertAt: { lte: new Date(now - QUEUE_REALERT_MS) } },
+      ],
+    },
+    include: { contact: true },
+    take: 25,
+  });
+
+  for (const conv of humanStalled) {
+    try {
+      // Só cobra se quem falou por último foi o CLIENTE (atendente calado).
+      const last = await db.whatsAppMessage.findFirst({
+        where: { contactId: conv.contactId, internal: false, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { direction: true },
+      });
+      if (!last || last.direction !== 'in') continue;
+
+      const label = conv.contact.name ?? `+${conv.contact.phone}`;
+      const waitingMin = conv.lastMessageAt ? Math.round((now - conv.lastMessageAt.getTime()) / 60_000) : 0;
+      const escalate = !conv.assignedToId || waitingMin >= 120;
+      const recipients = escalate
+        ? await whatsappRecipients().catch(() => [] as string[])
+        : [conv.assignedToId as string];
+
+      for (const id of recipients) {
+        await db.notification.create({
+          data: {
+            recipientId: id,
+            authorId: 'whatsapp-bot',
+            authorName: '🤖 Bot WhatsApp',
+            targetName: label,
+            message: escalate
+              ? `⏰ WhatsApp: ${label} está há ${waitingMin} min SEM RESPOSTA no atendimento humano${conv.assignedToId ? '' : ' (conversa sem dono!)'} — alguém precisa assumir.`
+              : `⏰ WhatsApp: ${label} aguarda sua resposta há ${waitingMin} min.`,
+            contactId: conv.contactId,
+          },
+        });
+      }
+      await db.whatsAppConversation.update({
+        where: { id: conv.id },
+        data: { queueAlertAt: new Date() },
+      });
+      results.queueAlerts++;
+    } catch (err) {
+      console.error('[WHATSAPP CRON] Falha no SLA de atendimento humano:', conv.contactId, err);
+      results.errors++;
     }
   }
 
