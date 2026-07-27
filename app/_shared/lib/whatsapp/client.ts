@@ -178,8 +178,9 @@ async function uploadMediaFromUrl(link: string, mimeType: string, filename: stri
 
 /**
  * Áudio como MENSAGEM DE VOZ (ogg/opus): baixa do link (presigned S3), sobe
- * no /media da Meta e envia por id. Se o upload falhar, cai no envio por link
- * (chega como player de áudio comum — melhor do que não chegar).
+ * no /media da Meta e envia por id com `voice: true` — é ESSE flag que faz a
+ * Meta renderizar a bolha de voz (forma de onda/PTT) em vez do player de
+ * arquivo. Se o upload falhar, tenta por link mantendo o flag.
  */
 export async function sendVoiceNote(
   phone: string,
@@ -188,11 +189,10 @@ export async function sendVoiceNote(
   replyToWaId?: string,
 ): Promise<SendResult> {
   const mediaId = await uploadMediaFromUrl(link, "audio/ogg", filename);
-  if (!mediaId) return sendMedia(phone, "audio", link, undefined, undefined, replyToWaId);
   return postMessage({
     to: phone,
     type: "audio",
-    audio: { id: mediaId },
+    audio: { ...(mediaId ? { id: mediaId } : { link }), voice: true },
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
   });
 }
