@@ -3,7 +3,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
-import { sendText, sendMedia } from "./client";
+import { sendText, sendMedia, sendVoiceNote } from "./client";
 import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 
 // Execução de um fluxo pré-setado (WhatsAppFlow) do lado do SERVIDOR — usada
@@ -133,7 +133,10 @@ export async function runFlowForContact(
         { expiresIn: 3600 },
       );
       const kind = step.kind as "image" | "video" | "audio" | "document";
-      const res = await sendMedia(contact.phone, kind, link, step.body?.trim() || undefined, step.fileName ?? undefined);
+      // Áudio ogg/opus vai como mensagem de voz (PTT); os demais, por link.
+      const res = kind === "audio" && (step.mediaType ?? "").includes("ogg")
+        ? await sendVoiceNote(contact.phone, link, step.fileName ?? undefined)
+        : await sendMedia(contact.phone, kind, link, step.body?.trim() || undefined, step.fileName ?? undefined);
       if (res.waMessageId) {
         await persistAndBroadcast(contact, res.waMessageId, step.body?.trim() || null, step.mediaKey, step.mediaType ?? null);
         sentAny = true;

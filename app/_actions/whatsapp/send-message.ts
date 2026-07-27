@@ -6,7 +6,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
-import { sendText, sendMedia } from '@/app/_shared/lib/whatsapp/client';
+import { sendText, sendMedia, sendVoiceNote } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import {
   whatsappChannelId,
@@ -287,7 +287,10 @@ export async function sendWhatsAppMedia({ contactId, key, mimeType, fileName, ca
   );
 
   const replyTo = await resolveReply(contactId, replyToId);
-  const result = await sendMedia(contact.phone, kind, link, caption?.trim() || undefined, fileName, replyTo?.waMessageId ?? undefined);
+  // Áudio ogg/opus vai como mensagem de voz (PTT); os demais anexos, por link.
+  const result = kind === 'audio' && mimeType.includes('ogg')
+    ? await sendVoiceNote(contact.phone, link, fileName, replyTo?.waMessageId ?? undefined)
+    : await sendMedia(contact.phone, kind, link, caption?.trim() || undefined, fileName, replyTo?.waMessageId ?? undefined);
   if (!result.waMessageId) {
     throw new Error(result.error ?? 'Falha ao enviar o anexo pela WhatsApp API.');
   }

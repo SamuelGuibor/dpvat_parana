@@ -117,7 +117,8 @@ export function sendText(phone: string, body: string, replyToWaId?: string): Pro
 /**
  * Mídia por URL pública (usamos presigned GET do S3): a Meta baixa o arquivo
  * e entrega ao cliente. Também só funciona dentro da janela de 24h.
- * Áudio .ogg (opus) aparece como mensagem de voz; mp3/aac como player de áudio.
+ * ATENÇÃO: áudio por link SEMPRE chega como player de arquivo — para chegar
+ * como mensagem de voz (PTT) use sendVoiceNote (upload + envio por media id).
  */
 export function sendMedia(
   phone: string,
@@ -134,6 +135,64 @@ export function sendMedia(
     to: phone,
     type: kind,
     [kind]: media,
+    ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
+  });
+}
+
+/**
+ * Sobe um binário no endpoint /media da Meta e retorna o media id.
+ * Necessário para MENSAGEM DE VOZ: áudio ogg/opus enviado por `link` chega
+ * como player de arquivo genérico; enviado por media `id` chega como voz
+ * (bolha com forma de onda, "PTT"). A Meta só renderiza voz nesse caminho.
+ */
+async function uploadMediaFromUrl(link: string, mimeType: string, filename: string): Promise<string | null> {
+  if (!isWhatsAppConfigured()) return null;
+  try {
+    const bin = await fetch(link, { cache: "no-store" });
+    if (!bin.ok) {
+      console.error(`[WHATSAPP] Falha ao baixar mídia para upload (HTTP ${bin.status}).`);
+      return null;
+    }
+    const buf = await bin.arrayBuffer();
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", mimeType);
+    form.append("file", new Blob([buf], { type: mimeType }), filename);
+    const res = await fetch(`${GRAPH_BASE}/${PHONE_NUMBER_ID}/media`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      body: form,
+      cache: "no-store",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.error("[WHATSAPP] Erro no upload de mídia:", data?.error?.message ?? `HTTP ${res.status}`);
+      return null;
+    }
+    return data?.id ?? null;
+  } catch (err) {
+    console.error("[WHATSAPP] Falha de rede no upload de mídia:", err);
+    return null;
+  }
+}
+
+/**
+ * Áudio como MENSAGEM DE VOZ (ogg/opus): baixa do link (presigned S3), sobe
+ * no /media da Meta e envia por id. Se o upload falhar, cai no envio por link
+ * (chega como player de áudio comum — melhor do que não chegar).
+ */
+export async function sendVoiceNote(
+  phone: string,
+  link: string,
+  filename = "audio.ogg",
+  replyToWaId?: string,
+): Promise<SendResult> {
+  const mediaId = await uploadMediaFromUrl(link, "audio/ogg", filename);
+  if (!mediaId) return sendMedia(phone, "audio", link, undefined, undefined, replyToWaId);
+  return postMessage({
+    to: phone,
+    type: "audio",
+    audio: { id: mediaId },
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
   });
 }
