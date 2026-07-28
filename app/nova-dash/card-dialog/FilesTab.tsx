@@ -343,6 +343,10 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                             <Input
                               value={editedName}
                               onChange={(e) => setEditedName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && savingId !== doc.id) saveName(doc.id);
+                                if (e.key === 'Escape') setEditingId(null);
+                              }}
                               className="h-8 text-sm rounded-r-none border-r-0 flex-1"
                               autoFocus
                               placeholder="Nome do arquivo"

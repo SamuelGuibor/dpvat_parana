@@ -135,6 +135,10 @@ export function WhatsAppInbox() {
   const TABS = [
     { key: 'qualified', label: 'Qualificadas', dot: 'bg-emerald-400' },
     { key: 'bot', label: 'Com o bot', dot: 'bg-violet-400' },
+    // Ciclo de recuperação (28/07/2026): cliente sumiu na triagem e o cron
+    // está provocando (até 3 tentativas). Esgotou → cai em "Sem resposta".
+    { key: 'standby', label: 'Em recuperação', dot: 'bg-orange-400' },
+    { key: 'sem_resposta', label: 'Sem resposta', dot: 'bg-rose-400' },
     { key: 'unqualified', label: 'Não qualificadas', dot: 'bg-gray-400' },
     { key: 'others', label: 'Outros atendentes', dot: 'bg-sky-400' },
     { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas, dot: 'bg-blue-400' },
@@ -262,6 +266,8 @@ export function WhatsAppInbox() {
       others: filtered.filter((c) => c.status === 'human' && c.assignedToId !== meId
         && (attendantFilter === 'all' || c.assignedToId === attendantFilter)),
       bot: filtered.filter((c) => c.status === 'bot'),
+      standby: filtered.filter((c) => c.status === 'standby'),
+      sem_resposta: byCategory('sem_resposta'),
       qualified: closed.filter((c) => c.closeCategory === 'qualificado' || (!c.closeCategory && c.qualified === true)),
       unqualified: closed.filter((c) => c.closeCategory === 'nao_qualificado' || (!c.closeCategory && c.qualified !== true)),
       perguntas: byCategory('perguntas'),
@@ -271,7 +277,8 @@ export function WhatsAppInbox() {
   }, [filtered, meId, attendantFilter]);
 
   const tabItems: Record<TabKey, WhatsAppConversationDTO[]> = {
-    others: groups.others, bot: groups.bot, unqualified: groups.unqualified, qualified: groups.qualified,
+    others: groups.others, bot: groups.bot, standby: groups.standby, sem_resposta: groups.sem_resposta,
+    unqualified: groups.unqualified, qualified: groups.qualified,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
   };
 
@@ -663,7 +670,7 @@ export function WhatsAppInbox() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {(active.status === 'queued' || active.status === 'bot' || (active.status === 'human' && active.assignedToId !== meId)) && (
+              {(active.status === 'queued' || active.status === 'bot' || active.status === 'standby' || (active.status === 'human' && active.assignedToId !== meId)) && (
                 <HeaderButton icon={Headset} label="Assumir" onClick={() => runAction(() => assumeConversation(active.id), 'Conversa assumida.')} />
               )}
               {active.status === 'human' && (

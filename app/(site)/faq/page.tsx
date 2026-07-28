@@ -22,8 +22,8 @@ const AreaCliente = () => {
           <FaChevronLeft className="w-4 h-4" />
           Voltar para a Pagina anterior
         </Button>
-        <h2 className="text-2xl font-semibold">FAQ Aréa do Cliente</h2>
-        <p className="text-sm font-semibold text-slate-500">Verifique o que você pode fazer por aqui.</p>
+        <h2 className="text-2xl font-semibold">Ajuda &amp; FAQ</h2>
+        <p className="text-sm font-semibold text-slate-500">Suas dúvidas sobre direitos, benefícios e o andamento do processo.</p>
         <Feature />
       </div>
     </div>

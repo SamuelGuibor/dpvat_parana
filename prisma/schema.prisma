@@ -539,15 +539,25 @@ model WhatsAppContact {
 model WhatsAppConversation {
   id              String                     @id @default(cuid())
   contactId       String                     @unique
-  status          String                     @default("bot") // bot | queued | human | closed
+  // "standby" (28/07/2026): cliente sumiu no meio da triagem — em vez de
+  // fechar, entra no ciclo de recuperação (até 3 provocações em ~3 dias).
+  status          String                     @default("bot") // bot | queued | human | standby | closed
   assignedToId    String?
   // Só relevante quando status="closed": null/false = não qualificada
   // (default), true = qualificada. Decidido no botão de encerrar ou pela IA.
   qualified       Boolean?
   // Desfecho do atendimento (categoria de encerramento decidida pela IA ou
   // pelo atendente): qualificado | nao_qualificado | perguntas | novo_acidente
-  // | transferido. Null enquanto em andamento.
+  // | transferido | sem_resposta (esgotou o ciclo de recuperação sem retorno).
+  // Null enquanto em andamento.
   closeCategory   String?
+  // Ciclo de RECUPERAÇÃO (status "standby"): provocações enviadas pelo cron
+  // pra resgatar quem sumiu no meio da triagem. O contador NÃO zera quando o
+  // cliente responde (pausa e retoma se ele sumir de novo); só zera no
+  // desfecho real (qualificou/encerrou). Máx. 3 tentativas.
+  recoveryAttempts Int                       @default(0)
+  recoveryNextAt   DateTime? // quando o cron pode disparar a próxima provocação
+  recoveryOutcome  String? // recuperado | esgotado | opt_out (último desfecho do ciclo)
   // Cérebro da IA (persistido por conversa; o microserviço é stateless):
   botMemory       String? // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
   botState        String? // etapa da conversa (triagem_seguro, coleta_cpf...)
@@ -785,8 +795,9 @@ model WhatsAppPlaybook {
 // valia na hora, não um ponteiro que apodrece.
 model WhatsAppRuleEvent {
   id              String   @id @default(cuid())
-  kind            String   @default("rule") // rule | followup
-  // kind="rule": ID da regra na versão vigente (R1, R2...). Nulo em followup.
+  kind            String   @default("rule") // rule | followup | recovery
+  // kind="rule": ID da regra na versão vigente (R1, R2...). kind="recovery":
+  // marcador da tentativa (T1, T2, T3). Nulo em followup.
   ruleId          String?
   ruleText        String?
   section         String?
@@ -794,7 +805,8 @@ model WhatsAppRuleEvent {
   contactId       String
   contactName     String?
   botState        String?
-  // kind="rule": ação da decisão (continue/qualify/...). kind="followup": nudge | close.
+  // kind="rule": ação da decisão (continue/qualify/...). kind="followup":
+  // nudge | close. kind="recovery": attempt | recovered | exhausted | opt_out.
   action          String?
   // kind="rule": trecho da resposta enviada. kind="followup": motivo da decisão da IA.
   detail          String?

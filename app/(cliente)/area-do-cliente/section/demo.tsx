@@ -6,7 +6,6 @@ import { useSession } from "next-auth/react";
 import { FaArrowRight, FaRegQuestionCircle } from "react-icons/fa";
 import { PiHouseBold } from "react-icons/pi";
 import { AiOutlineCar } from "react-icons/ai";
-import { IoDocumentsOutline } from "react-icons/io5";
 import { getStatusProcess } from "@/app/_actions/process/get-status-process";
 import { getStatus } from "@/app/_actions/users/get-status-user";
 import { ClientTour, START_CLIENT_TOUR_EVENT } from "./client-tour";
@@ -33,12 +32,6 @@ interface StatusEntry {
 }
 
 const quickLinks = [
-  {
-    href: "/documents",
-    name: "Documentos",
-    description: "Veja os arquivos do seu processo.",
-    Icon: IoDocumentsOutline,
-  },
   {
     href: "/faq",
     name: "Dúvidas (FAQ)",
@@ -126,7 +119,7 @@ function BentoDemo() {
           Olá, {firstName} 👋
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Acompanhe seus processos e acesse seus documentos em um só lugar.
+          Acompanhe o andamento dos seus processos em um só lugar.
         </p>
         <button
           onClick={() => window.dispatchEvent(new Event(START_CLIENT_TOUR_EVENT))}
@@ -205,7 +198,7 @@ function BentoDemo() {
       {/* Acesso rápido */}
       <section data-tour="client-links">
         <h2 className="mb-4 text-lg font-semibold text-gray-800">Acesso rápido</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           {quickLinks.map((q) => (
             <Link
               key={q.name}

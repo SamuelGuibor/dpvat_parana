@@ -182,7 +182,8 @@ export async function assumeConversation(conversationId: string): Promise<void> 
   await db.whatsAppConversation.update({
     where: { id: conversationId },
     // Assumiu: some o selo de urgência e zeram os marcadores de SLA da fila.
-    data: { status: 'human', assignedToId: me.id, qualified: null, urgent: false, queuedAt: null, queueAlertAt: null },
+    // recoveryNextAt nulo: atendente assumiu → o ciclo de recuperação para.
+    data: { status: 'human', assignedToId: me.id, qualified: null, urgent: false, queuedAt: null, queueAlertAt: null, recoveryNextAt: null },
   });
   if (before) {
     // "Assumir" reabre quando estava encerrada; senão é uma atribuição normal.
@@ -248,7 +249,8 @@ export async function closeConversation(
     where: { id: conversationId },
     // Ticket encerrado: zera a memória/estado do bot para que uma futura
     // conversa desse cliente comece do zero.
-    data: { status: 'closed', assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null },
+    // Desfecho real → ciclo de recuperação zerado por completo.
+    data: { status: 'closed', assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
   if (before) {
     await logWhatsAppEvent({

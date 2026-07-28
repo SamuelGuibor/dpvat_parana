@@ -433,7 +433,7 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
     // contexto e a IA responde curto em vez de recomeçar a triagem do zero
     // (caso Luiz: 4 ciclos de saudação→triagem→despedida na mesma tarde). A
     // limpeza acontece na REABERTURA, se a conversa estiver velha (service.ts).
-    data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null },
+    data: { status: "closed", assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
   void reportLeadStageToMeta(contactId, "nao_qualificado");
 }
@@ -468,6 +468,8 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
       // Ficha preservada em TODOS os desfechos (25/07/2026) — ver comentário no
       // disqualifyAndClose. A limpeza é na reabertura, por idade (service.ts).
       urgent: false, queuedAt: null, queueAlertAt: null,
+      // Desfecho real → ciclo de recuperação zerado.
+      recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
     },
   });
 }
@@ -907,6 +909,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         data: {
           status: "closed", assignedToId: null, closeCategory: "nao_qualificado", qualified: false,
           botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
+          recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
         },
       });
       await logWhatsAppEvent({

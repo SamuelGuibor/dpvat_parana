@@ -4,6 +4,7 @@ import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
+import { recordRecoveryEvent } from "./rule-events";
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
@@ -211,9 +212,39 @@ export async function ingestIncomingMessage(
       where: { id: conversation.id },
       data: {
         status: "bot", assignedToId: null, lastReadAt: null,
+        // Conversa nova de verdade → ciclo de recuperação zerado.
+        recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
         ...(staleContext ? { botMemory: null, botState: null } : {}),
       },
     });
+  }
+
+  // Cliente respondeu durante o STANDBY (ciclo de recuperação) → RESGATADO:
+  // volta pro bot com a ficha intacta e a IA retoma de onde parou. O contador
+  // de tentativas NÃO zera — se ele sumir de novo, o ciclo continua da
+  // tentativa em que estava (máx. 3 no total). Telemetria: "recovered" com a
+  // tentativa que o trouxe de volta (aba Métricas da Revisão da IA).
+  if (conversation.status === "standby" && !contact.optedOut && !wantsOptOut) {
+    const rescuedAt = conversation.recoveryAttempts;
+    conversation = await db.whatsAppConversation.update({
+      where: { id: conversation.id },
+      data: {
+        status: "bot", assignedToId: null, lastReadAt: null,
+        recoveryNextAt: null, recoveryOutcome: "recuperado",
+      },
+    });
+    // Só conta como "recuperado" se alguma provocação já tinha saído — quem
+    // voltou antes da 1ª tentativa voltou sozinho, não por mérito do ciclo.
+    if (rescuedAt > 0) {
+      await recordRecoveryEvent({
+        contactId: contact.id,
+        contactName: contact.name,
+        botState: conversation.botState,
+        action: "recovered",
+        attempt: rescuedAt,
+        detail: `cliente respondeu após a tentativa ${rescuedAt}`,
+      });
+    }
   }
 
   if (existing) {

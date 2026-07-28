@@ -56,7 +56,7 @@ export function ClientTour() {
       emoji: '⚡',
       title: 'Acesso rápido',
       description:
-        'Atalhos para o que você mais usa: seus Documentos (arquivos do processo), a página de Dúvidas (FAQ) e o Início do site.',
+        'Atalhos para o que você mais usa: a página de Dúvidas (FAQ) e o Início do site.',
       placement: 'top',
     },
     // O passo do menu só faz sentido no celular (no desktop a barra lateral já está aberta).
@@ -66,7 +66,7 @@ export function ClientTour() {
           emoji: '📱',
           title: 'Menu de navegação',
           description:
-            'Toque aqui para abrir o menu e navegar entre Início, Área do cliente, Documentos e Ajuda.',
+            'Toque aqui para abrir o menu e navegar entre Início, Área do cliente e Ajuda.',
           placement: 'bottom' as const,
         }]
       : [{
@@ -74,7 +74,7 @@ export function ClientTour() {
           emoji: '🧭',
           title: 'Menu de navegação',
           description:
-            'Use este menu para navegar entre Início, Área do cliente, Documentos e Ajuda & FAQ.',
+            'Use este menu para navegar entre Início, Área do cliente e Ajuda & FAQ.',
           placement: 'right' as const,
         }]),
     {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Loader2, RefreshCw, BarChart3, ChevronDown, ChevronRight, Clock,
   MessageSquare, Users, Moon, BellRing, Lightbulb, AlertTriangle, Bot,
+  LifeBuoy,
 } from 'lucide-react';
 import {
   getRuleMetrics,
@@ -36,6 +37,13 @@ const ACTION_LABELS: Record<string, string> = {
   resolve: 'resolveu',
   nudge: 'cutucou',
   close: 'encerrou em silêncio',
+  // Ciclo de recuperação (standby)
+  'attempt T1': 'provocação 1',
+  'attempt T2': 'provocação 2',
+  'attempt T3': 'provocação 3 (última)',
+  recovered: 'cliente voltou',
+  exhausted: 'esgotou sem resposta',
+  opt_out: 'pediu pra sair',
 };
 
 function StatCard({ icon: Icon, label, value, hint, tone = 'indigo' }: {
@@ -260,6 +268,40 @@ export function RuleMetricsPanel() {
           <div className="space-y-1.5">
             {data.followup.recent.map((e, i) => <EventRow key={i} e={e} />)}
           </div>
+        </div>
+      )}
+
+      {/* Ciclo de RECUPERAÇÃO (standby): provocações pra resgatar quem sumiu */}
+      {(data.recovery.attemptsSent > 0 || data.recovery.recent.length > 0) && (
+        <div className="mt-5">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+            <LifeBuoy className="h-3 w-3" /> Recuperação de clientes (standby)
+          </p>
+          <p className="mb-2 text-[10px] text-gray-400 dark:text-zinc-500">
+            Quem sumiu no meio da triagem recebe até 3 provocações em ~3 dias (janela de 24h aberta → texto da IA; fechada → template aprovado). Aqui: quantos foram provocados, quantos voltaram e quantos pediram pra sair.
+          </p>
+          <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <StatCard icon={BellRing} label="Clientes provocados" value={data.recovery.notified}
+              hint={`${data.recovery.attemptsSent} envios · ${data.recovery.attempts7d} nos 7d`} />
+            <StatCard icon={LifeBuoy} label="Recuperados" value={data.recovery.recovered} tone="emerald"
+              hint={`${data.recovery.recoveredQualified} qualificaram`} />
+            <StatCard icon={Moon} label="Sem resposta (esgotou)" value={data.recovery.exhausted} tone="amber" hint="3 tentativas sem retorno" />
+            <StatCard icon={AlertTriangle} label="Pediram pra sair" value={data.recovery.optOut} tone="rose" hint="opt-out durante o ciclo" />
+          </div>
+          {/* Taxa por tentativa: qual provocação traz gente de volta */}
+          <div className="mb-3 flex flex-wrap gap-2 text-[10px] text-gray-500 dark:text-zinc-400">
+            {data.recovery.byAttempt.map((a) => (
+              <span key={a.attempt} className="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-zinc-800">
+                {a.attempt.replace('T', 'Tentativa ')}: {a.sent} enviadas · {a.recovered} voltaram
+                {a.sent > 0 ? ` (${Math.round((a.recovered / a.sent) * 100)}%)` : ''}
+              </span>
+            ))}
+          </div>
+          {data.recovery.recent.length > 0 && (
+            <div className="space-y-1.5">
+              {data.recovery.recent.map((e, i) => <EventRow key={i} e={e} />)}
+            </div>
+          )}
         </div>
       )}
 

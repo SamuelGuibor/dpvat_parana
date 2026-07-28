@@ -65,6 +65,27 @@ export interface CodeInterventionMetrics {
   recent: RuleEventItem[];
 }
 
+/**
+ * Ciclo de RECUPERAÇÃO (kind="recovery"): provocações do cron pra resgatar
+ * quem sumiu na triagem. attempt/recovered/exhausted/opt_out; a tentativa
+ * (T1..T3) vem em ruleId — daí a taxa de resgate POR tentativa.
+ */
+export interface RecoveryMetrics {
+  // Contatos distintos que receberam ao menos uma provocação.
+  notified: number;
+  attemptsSent: number;
+  attempts7d: number;
+  // Contatos que responderam depois de uma provocação…
+  recovered: number;
+  // …e destes, quantos terminaram QUALIFICADOS (a métrica que paga a conta).
+  recoveredQualified: number;
+  optOut: number;
+  exhausted: number;
+  // Por tentativa: quantas provocações Tn saíram e quantas trouxeram resposta.
+  byAttempt: { attempt: string; sent: number; recovered: number }[];
+  recent: RuleEventItem[];
+}
+
 export interface RuleMetricsPayload {
   playbookVersion: number | null;
   publishedAt: string | null;
@@ -78,6 +99,7 @@ export interface RuleMetricsPayload {
   rules: RuleMetric[];
   followup: FollowupMetrics;
   code: CodeInterventionMetrics;
+  recovery: RecoveryMetrics;
 }
 
 export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
@@ -87,7 +109,7 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
   const d7 = new Date(now - 7 * 24 * 60 * 60_000);
   const d30 = new Date(now - 30 * 24 * 60 * 60_000);
 
-  const [published, ruleEvents, followupEvents, codeEvents] = await Promise.all([
+  const [published, ruleEvents, followupEvents, codeEvents, recoveryEvents] = await Promise.all([
     db.whatsAppPlaybook.findFirst({
       where: { status: 'publicado' },
       orderBy: { version: 'desc' },
@@ -119,6 +141,15 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
       select: {
         contactId: true, contactName: true, botState: true, action: true,
         detail: true, createdAt: true,
+      },
+    }),
+    db.whatsAppRuleEvent.findMany({
+      where: { kind: 'recovery' },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+      select: {
+        ruleId: true, contactId: true, contactName: true, botState: true,
+        action: true, detail: true, createdAt: true,
       },
     }),
   ]);
@@ -261,6 +292,43 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
     })),
   };
 
+  // ---- Ciclo de recuperação ---------------------------------------------------
+  const attempts = recoveryEvents.filter((e) => e.action === 'attempt');
+  const recoveredEvents = recoveryEvents.filter((e) => e.action === 'recovered');
+  const recoveredContacts = [...new Set(recoveredEvents.map((e) => e.contactId))];
+  // Dos resgatados, quantos terminaram qualificados (na conversa atual).
+  const recoveredQualified = recoveredContacts.length
+    ? await db.whatsAppConversation.count({
+        where: {
+          contactId: { in: recoveredContacts },
+          OR: [{ closeCategory: 'qualificado' }, { qualified: true }],
+        },
+      })
+    : 0;
+  const byAttempt = ['T1', 'T2', 'T3'].map((attempt) => ({
+    attempt,
+    sent: attempts.filter((e) => e.ruleId === attempt).length,
+    recovered: recoveredEvents.filter((e) => e.ruleId === attempt).length,
+  }));
+  const recovery: RecoveryMetrics = {
+    notified: new Set(attempts.map((e) => e.contactId)).size,
+    attemptsSent: attempts.length,
+    attempts7d: attempts.filter((e) => e.createdAt >= d7).length,
+    recovered: recoveredContacts.length,
+    recoveredQualified,
+    optOut: recoveryEvents.filter((e) => e.action === 'opt_out').length,
+    exhausted: recoveryEvents.filter((e) => e.action === 'exhausted').length,
+    byAttempt,
+    recent: recoveryEvents.slice(0, 12).map((e) => ({
+      contactId: e.contactId,
+      contactName: e.contactName,
+      botState: e.botState,
+      action: e.action === 'attempt' && e.ruleId ? `${e.action} ${e.ruleId}` : e.action,
+      detail: e.detail,
+      createdAt: e.createdAt.toISOString(),
+    })),
+  };
+
   return {
     playbookVersion: published?.version ?? null,
     publishedAt: published?.publishedAt ? published.publishedAt.toISOString() : null,
@@ -284,5 +352,6 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
         createdAt: e.createdAt.toISOString(),
       })),
     },
+    recovery,
   };
 }

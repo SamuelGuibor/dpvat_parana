@@ -9,7 +9,6 @@ import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/app/_shared/ui/avatar";
 import { AiOutlineCar } from "react-icons/ai";
 import { RxAvatar } from "react-icons/rx";
-import { IoDocumentsOutline } from "react-icons/io5";
 import { MdInsertChartOutlined } from "react-icons/md";
 import { useSession, signOut } from "next-auth/react";
 import { cn } from "@/app/_shared/lib/utils";
@@ -40,12 +39,10 @@ export function Header() {
         { href: "/area-do-cliente", label: "Área do Cliente", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
         { href: "/nova-dash", label: "Dashboard", icon: <MdInsertChartOutlined style={{ width: 22, height: 22 }} /> },
         { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
-        { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
       ]
     : [
         { href: "/area-do-cliente", label: "Área do Cliente", icon: <RxAvatar style={{ width: 22, height: 22 }} /> },
         { href: "/area-do-cliente", label: "Status", icon: <AiOutlineCar style={{ width: 22, height: 22 }} /> },
-        { href: "/documents", label: "Documentos", icon: <IoDocumentsOutline style={{ width: 22, height: 22 }} /> },
       ];
 
   // Links do site para o menu mobile do visitante (mesma nav do desktop, que

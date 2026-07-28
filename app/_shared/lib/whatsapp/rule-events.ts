@@ -130,6 +130,38 @@ export async function recordCodeIntervention(args: {
 }
 
 /**
+ * Registra um evento do CICLO DE RECUPERAÇÃO (status "standby"): provocação
+ * enviada (attempt), cliente que voltou depois de uma provocação (recovered),
+ * ciclo esgotado sem resposta (exhausted) ou pedido de descadastro no meio do
+ * ciclo (opt_out). O nº da tentativa vai em ruleId como "T1".."T3" — é o que
+ * permite medir taxa de resgate POR tentativa na aba Métricas.
+ */
+export async function recordRecoveryEvent(args: {
+  contactId: string;
+  contactName: string | null;
+  botState: string | null;
+  action: 'attempt' | 'recovered' | 'exhausted' | 'opt_out';
+  attempt: number;
+  detail?: string | null;
+}): Promise<void> {
+  try {
+    await db.whatsAppRuleEvent.create({
+      data: {
+        kind: 'recovery',
+        ruleId: `T${args.attempt}`,
+        contactId: args.contactId,
+        contactName: args.contactName,
+        botState: args.botState,
+        action: args.action,
+        detail: args.detail ? args.detail.slice(0, 500) : null,
+      },
+    });
+  } catch (err) {
+    console.error('[WA RULES] Falha ao registrar evento de recuperação (telemetria, seguindo):', err);
+  }
+}
+
+/**
  * Registra a decisão contextual de follow-up do cron (nudge ou close) — aparece
  * na mesma dash, como prova de que a IA "entendeu o contexto" do silêncio.
  */

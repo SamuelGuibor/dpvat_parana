@@ -2,7 +2,9 @@
 import { NextResponse } from "next/server";
 import JSZip from "jszip";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getServerSession } from "next-auth";
 import { db } from "@/app/_shared/lib/prisma";
+import { authOptions } from "@/app/_shared/lib/auth";
 
 // Rota depende de request.url (params da query), então é sempre dinâmica.
 export const dynamic = "force-dynamic";
@@ -49,6 +51,13 @@ function sanitizeFilename(name: string): string {
 
 export async function GET(request: Request) {
   try {
+    // Anexos são material interno da equipe (28/07/2026) — mesma trava de
+    // papel do GET /api/documents.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.role?.startsWith("ADMIN")) {
+      return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     const processId = searchParams.get("processId");

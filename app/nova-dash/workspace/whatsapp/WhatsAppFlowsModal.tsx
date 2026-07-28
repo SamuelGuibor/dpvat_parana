@@ -18,6 +18,7 @@ import {
   type WhatsAppFlowDTO, type WhatsAppFlowStep, type FlowStepKind,
 } from '@/app/_actions/whatsapp/flows';
 import { checkFileForWhatsApp } from './media-rules';
+import { ManagedListSelect } from './ManagedListSelect';
 
 // Gerenciador dos fluxos de mensagens pré-setadas: sequência de passos de
 // texto, imagem, vídeo, áudio ou documento, com delay antes de cada envio.
@@ -130,22 +131,28 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Fluxos existentes */}
-        <div className="flex flex-wrap gap-2">
-          {loading && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
-          {!loading && flows.map((f) => (
-            <span key={f.id} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-base font-semibold ${editing.id === f.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-gray-200 text-gray-600 dark:border-zinc-700 dark:text-zinc-300'}`}>
-              <button onClick={() => setEditing({ id: f.id, name: f.name, description: f.description ?? '', steps: f.steps.length ? f.steps.map((s) => ({ ...s })) : [emptyStep('text', 0)] })}>
-                {f.name} <span className="text-gray-400">({f.steps.length})</span>
-              </button>
-              <button onClick={() => handleDelete(f.id)} title="Excluir fluxo" className="text-gray-400 hover:text-red-500">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </span>
-          ))}
+        {/* Fluxos existentes — lista suspensa: 1 linha, não importa quantos. */}
+        <div className="flex items-center gap-2">
+          <ManagedListSelect
+            items={flows.map((f) => ({
+              id: f.id,
+              title: f.name,
+              subtitle: `${f.steps.length} ${f.steps.length === 1 ? 'passo' : 'passos'}`,
+            }))}
+            selectedId={editing.id ?? null}
+            loading={loading}
+            placeholder="Escolha um fluxo para editar..."
+            emptyText="Nenhum fluxo criado ainda."
+            onSelect={(id) => {
+              const f = flows.find((x) => x.id === id);
+              if (!f) return;
+              setEditing({ id: f.id, name: f.name, description: f.description ?? '', steps: f.steps.length ? f.steps.map((s) => ({ ...s })) : [emptyStep('text', 0)] });
+            }}
+            onDelete={handleDelete}
+          />
           <button
             onClick={() => setEditing(EMPTY)}
-            className={`flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-base font-semibold ${!editing.id ? 'border-emerald-500 text-emerald-700' : 'border-gray-300 text-gray-500 hover:border-gray-400 dark:border-zinc-700 dark:text-zinc-400'}`}
+            className={`flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-dashed px-3.5 text-base font-semibold ${!editing.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-gray-300 text-gray-500 hover:border-gray-400 dark:border-zinc-700 dark:text-zinc-400'}`}
           >
             <Plus className="h-4 w-4" /> Novo fluxo
           </button>

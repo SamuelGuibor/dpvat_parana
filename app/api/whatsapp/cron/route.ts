@@ -3,8 +3,9 @@ import { db } from '@/app/_shared/lib/prisma';
 import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
+import { recordRecoveryEvent } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
-import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
+import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
 
 // Detector de silêncio do bot (rodado pelo Vercel Cron — vercel.json — a cada
 // 15min; o whatsapp-cron.cmd continua servindo pra disparo manual em dev):
@@ -13,9 +14,15 @@ import { isWindowOpen } from '@/app/_shared/lib/whatsapp/outbound';
 //    Se ele responder, o atendimento segue normalmente (o marcador
 //    botNudge30At é zerado pelo service.ts quando chega mensagem).
 // 2. Cliente segue sem responder 10min+ depois do aviso → despedida (gerada
-//    pela IA com base na conversa; texto fixo como fallback) e encerra o
-//    ticket, ZERANDO a memória/estado do bot (qualificado ou não). Os dados
-//    de cadastro do cliente (nome, CPF etc.) continuam na ficha do kanban.
+//    pela IA com base na conversa; texto fixo como fallback). Se a triagem
+//    ficou PENDENTE (não qualificado), a conversa NÃO fecha: entra em
+//    "standby" — o ciclo de RECUPERAÇÃO (fase 2b) manda até 3 provocações em
+//    ~3 dias tentando resgatar o cliente. Qualificado/opt-out fecha como antes.
+// 2b. Ciclo de recuperação: provocações agendadas em recoveryNextAt, só em
+//    horário comercial (7h–21h BRT). Janela de 24h aberta → texto livre
+//    contextual da IA; fechada → template aprovado na Meta
+//    (recuperacao_triagem_1 / recuperacao_triagem_final). Após a 3ª sem
+//    resposta → encerra como closeCategory="sem_resposta".
 // 3. SLA da fila de espera: cliente em "queued" há 10min+ sem atendente →
 //    re-notifica a equipe (Notification + Discord); repete a cada 1h.
 //
@@ -49,6 +56,47 @@ const STUCK_SENT_LOOKBACK_MS = 72 * 60 * 60_000; // ignora histórico antigo
 const OVERDUE_RENOTIFY_MS = 24 * 60 * 60_000;
 const OVERDUE_AUTHOR_ID = 'kanban-overdue';
 const OVERDUE_MAX_CARDS = 60; // teto por rodada (os mais atrasados primeiro)
+
+// ---- Ciclo de RECUPERAÇÃO (status "standby") --------------------------------
+// Até 3 provocações tentando resgatar quem sumiu no meio da triagem. A 1ª sai
+// ~22h depois da última mensagem do CLIENTE (ainda dentro da janela de 24h da
+// Meta → texto livre contextual da IA); as seguintes a cada 24h — se a janela
+// reabriu (cliente interagiu), texto livre; senão, template aprovado.
+const RECOVERY_MAX_ATTEMPTS = 3;
+const RECOVERY_FIRST_AFTER_MS = 22 * 60 * 60_000; // após a última msg do cliente
+const RECOVERY_GAP_MS = 24 * 60 * 60_000;         // entre tentativas
+const RECOVERY_RETRY_MS = 6 * 60 * 60_000;        // re-tenta envios que falharam
+// Templates aprovados na Meta (criados manualmente e sincronizados no CRM):
+//   _1: corpo com {{1}} = primeiro nome.
+//   _final: {{1}} = primeiro nome, {{2}} = pendência ("enviar seus documentos").
+const RECOVERY_TEMPLATE_1 = 'recuperacao_triagem_1';
+const RECOVERY_TEMPLATE_FINAL = 'recuperacao_triagem_final';
+
+// Horário comercial (7h–21h, Brasília): provocação fora disso é adiada pro
+// próximo dia útil de relógio — cutucar às 3h da manhã é convite a denúncia.
+const BRT_OFFSET_MS = -3 * 60 * 60_000;
+const BUSINESS_START_H = 7;
+const BUSINESS_END_H = 21;
+
+/** Devolve o próprio instante se cai no horário comercial BRT; senão, as 7h BRT seguintes. */
+function nextBusinessSlot(ts: number): Date {
+  const wall = new Date(ts + BRT_OFFSET_MS); // relógio de Brasília em campos UTC
+  const h = wall.getUTCHours();
+  if (h >= BUSINESS_START_H && h < BUSINESS_END_H) return new Date(ts);
+  const dayStart = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
+  const addDays = h < BUSINESS_START_H ? 0 : 1;
+  return new Date(dayStart + addDays * 24 * 60 * 60_000 + BUSINESS_START_H * 60 * 60_000 - BRT_OFFSET_MS);
+}
+
+/** Fallback local da pendência ({{2}} do template final) a partir do botState. */
+function pendingFromState(state: string | null): string {
+  const s = (state ?? '').toLowerCase();
+  if (s.includes('doc')) return 'enviar seus documentos';
+  if (s.includes('relato') || s.includes('acidente')) return 'me contar como foi o acidente';
+  if (s.includes('cpf') || s.includes('coleta') || s.includes('cadastro') || s.includes('endereco'))
+    return 'completar seus dados';
+  return 'continuar seu atendimento';
+}
 
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, '') ?? '';
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? '';
@@ -183,9 +231,13 @@ async function decideFollowup(
  * desfechos (25/07/2026): se o cliente escrever de novo, a reabertura vem com
  * contexto e a IA não recomeça a triagem — a limpeza, se couber, acontece na
  * reabertura por idade (service.ts). Compartilhado pela fase 1 (decisão
- * "close" da IA) e pela fase 2 (silêncio após o cutucão).
+ * "close" da IA), pela fase 2 (silêncio após o cutucão, quando não elegível a
+ * standby) e pelos desfechos do ciclo de recuperação (fase 2b).
  */
-async function finalizeClose(conv: { id: string; contactId: string; qualified: boolean | null }): Promise<void> {
+async function finalizeClose(
+  conv: { id: string; contactId: string; qualified: boolean | null },
+  opts?: { closeCategory?: string; recoveryOutcome?: string },
+): Promise<void> {
   await captureConversation(conv.contactId, 'cron_silencio');
   await db.whatsAppConversation.update({
     where: { id: conv.id },
@@ -198,8 +250,115 @@ async function finalizeClose(conv: { id: string; contactId: string; qualified: b
       urgent: false,
       queuedAt: null,
       queueAlertAt: null,
+      recoveryNextAt: null,
+      ...(opts?.closeCategory ? { closeCategory: opts.closeCategory } : {}),
+      ...(opts?.recoveryOutcome ? { recoveryOutcome: opts.recoveryOutcome } : {}),
     },
   });
+}
+
+/**
+ * Entrada no STANDBY (ciclo de recuperação): em vez de fechar a conversa de
+ * quem sumiu com triagem pendente, agenda a 1ª provocação — ~22h depois da
+ * última mensagem do CLIENTE, pra ainda pegar a janela de 24h da Meta (texto
+ * livre contextual). Se o ciclo está sendo RETOMADO (cliente voltou depois de
+ * uma provocação e sumiu de novo), a mesma conta vale: a próxima sai ~22h
+ * depois da última mensagem dele, contador preservado.
+ */
+async function enterStandby(conv: { id: string; contactId: string }): Promise<void> {
+  const lastInbound = await db.whatsAppMessage.findFirst({
+    where: { contactId: conv.contactId, direction: 'in', deletedAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  const base = (lastInbound?.createdAt.getTime() ?? Date.now()) + RECOVERY_FIRST_AFTER_MS;
+  await db.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: {
+      status: 'standby',
+      assignedToId: null,
+      botFailCount: 0,
+      botNudge30At: null,
+      botNudge24At: null,
+      urgent: false,
+      queuedAt: null,
+      queueAlertAt: null,
+      recoveryNextAt: nextBusinessSlot(Math.max(base, Date.now() + 60_000)),
+      recoveryOutcome: null,
+    },
+  });
+}
+
+/**
+ * Provocação CONTEXTUAL: pede à IA o texto da tentativa (usado quando a janela
+ * de 24h está aberta) e a PENDÊNCIA curta ("enviar seus documentos") usada no
+ * {{2}} do template final quando a janela está fechada. Qualquer falha cai em
+ * textos fixos + pendência derivada do botState — o ciclo nunca trava na IA.
+ */
+async function buildRecoveryMessage(
+  contactId: string,
+  contactName: string | null,
+  attempt: number,
+  botState: string | null,
+): Promise<{ message: string; pending: string }> {
+  const first = (contactName ?? '').trim().split(/\s+/)[0] ?? '';
+  const oi = first ? `Oi, ${first}!` : 'Oi!';
+  const fallbackMessages: Record<number, string> = {
+    1: `${oi} Vi que a gente começou seu atendimento sobre o acidente, mas ficou faltando bem pouco pra concluir. Posso continuar de onde paramos? É rapidinho. 😊`,
+    2: `${oi} Ainda dá tempo de dar andamento no seu caso — falta muito pouco pra gente concluir sua análise. É só me responder por aqui que eu continuo na hora. 🙏`,
+    3: `${first ? `${first}, essa` : 'Essa'} é minha última mensagem, tá? Seu atendimento está quase pronto e seria uma pena parar agora que falta tão pouco. Se ainda tiver interesse, é só responder que a gente termina juntos. 🙏`,
+  };
+  const fallback = {
+    message: fallbackMessages[Math.min(attempt, 3)] ?? fallbackMessages[3],
+    pending: pendingFromState(botState),
+  };
+  if (!CHATBOT_URL || !CHATBOT_SECRET) return fallback;
+  try {
+    const [history, conv] = await Promise.all([
+      db.whatsAppMessage.findMany({
+        where: { contactId, internal: false, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { direction: true, sentByBot: true, body: true },
+      }),
+      db.whatsAppConversation.findUnique({
+        where: { contactId },
+        select: { botMemory: true, botState: true },
+      }),
+    ]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const res = await fetch(`${CHATBOT_URL}/recovery-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHATBOT_SECRET },
+        body: JSON.stringify({
+          contact: { name: contactName },
+          memory: conv?.botMemory ?? null,
+          state: conv?.botState ?? null,
+          attempt,
+          maxAttempts: RECOVERY_MAX_ATTEMPTS,
+          history: history
+            .reverse()
+            .filter((h) => h.body)
+            .map((h) => ({ role: h.direction === 'in' ? 'client' : h.sentByBot ? 'bot' : 'agent', text: h.body })),
+        }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`recovery-message HTTP ${res.status}`);
+      const data = await res.json();
+      return {
+        message: String(data?.message ?? '').trim() || fallback.message,
+        pending: String(data?.pending ?? '').trim() || fallback.pending,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    console.warn('[WHATSAPP CRON] Provocação por IA indisponível (usando texto fixo):', err);
+    return fallback;
+  }
 }
 
 function isAuthorized(req: NextRequest): boolean {
@@ -216,7 +375,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const results = { nudged30: 0, closed: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
+  const results = { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   // Última atividade há 30min+, ainda em modo bot, sem aviso pendente.
@@ -288,9 +447,10 @@ export async function GET(req: NextRequest) {
 
   // ---- 2. Encerramento por inatividade -------------------------------------
   // Já levou o aviso há 10min+ e continua sem responder (se tivesse
-  // respondido, botNudge30At teria sido zerado pelo service.ts) → despedida e
-  // encerra, resetando a memória do bot. O desfecho (qualificada ou não) fica
-  // como está no ticket.
+  // respondido, botNudge30At teria sido zerado pelo service.ts) → despedida.
+  // Triagem PENDENTE (não qualificado, sem opt-out, ciclo não esgotado) →
+  // "standby": entra no ciclo de recuperação em vez de fechar. Os demais
+  // fecham como antes.
   const silentAfterNudge = await db.whatsAppConversation.findMany({
     where: {
       status: 'bot',
@@ -313,10 +473,145 @@ export async function GET(req: NextRequest) {
         // Falha no envio não trava o encerramento.
         console.error('[WHATSAPP CRON] Despedida não entregue (encerrando mesmo assim):', conv.contactId, err);
       }
-      await finalizeClose(conv);
-      results.closed++;
+      const recoverable =
+        !conv.qualified && !conv.contact.optedOut && conv.recoveryAttempts < RECOVERY_MAX_ATTEMPTS;
+      if (recoverable) {
+        await enterStandby(conv);
+        results.standby++;
+      } else {
+        await finalizeClose(conv);
+        results.closed++;
+      }
     } catch (err) {
       console.error('[WHATSAPP CRON] Falha ao encerrar por inatividade:', conv.contactId, err);
+      results.errors++;
+    }
+  }
+
+  // ---- 2b. Ciclo de RECUPERAÇÃO (standby) -----------------------------------
+  // Conversas em standby com provocação vencida. Cada rodada: honra opt-out,
+  // esgota após a 3ª tentativa sem resposta, respeita horário comercial e
+  // dispara via sendSystemWhatsApp (janela aberta → texto contextual da IA;
+  // fechada → template aprovado, com nome + pendência nas variáveis).
+  const dueRecovery = await db.whatsAppConversation.findMany({
+    where: {
+      status: 'standby',
+      recoveryNextAt: { not: null, lte: new Date(now) },
+    },
+    include: { contact: true },
+    take: 15,
+  });
+
+  for (const conv of dueRecovery) {
+    try {
+      // Descadastrou no meio do ciclo → encerra sem provocar.
+      if (conv.contact.optedOut) {
+        await recordRecoveryEvent({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'opt_out',
+          attempt: conv.recoveryAttempts,
+          detail: 'contato pediu para não receber mensagens durante o ciclo',
+        });
+        await finalizeClose(conv, { closeCategory: 'sem_resposta', recoveryOutcome: 'opt_out' });
+        results.closed++;
+        continue;
+      }
+      // 3 provocações e mais 24h de silêncio → não há o que fazer.
+      if (conv.recoveryAttempts >= RECOVERY_MAX_ATTEMPTS) {
+        await recordRecoveryEvent({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'exhausted',
+          attempt: conv.recoveryAttempts,
+          detail: 'ciclo completo sem resposta do cliente',
+        });
+        await finalizeClose(conv, { closeCategory: 'sem_resposta', recoveryOutcome: 'esgotado' });
+        results.closed++;
+        continue;
+      }
+      // Fora do horário comercial (9h–20h BRT) → adia pras próximas 9h.
+      const slot = nextBusinessSlot(now);
+      if (slot.getTime() > now) {
+        await db.whatsAppConversation.update({ where: { id: conv.id }, data: { recoveryNextAt: slot } });
+        continue;
+      }
+
+      const attempt = conv.recoveryAttempts + 1;
+      const { message, pending } = await buildRecoveryMessage(
+        conv.contactId,
+        conv.contact.name,
+        attempt,
+        conv.botState,
+      );
+      const firstName = (conv.contact.name ?? '').trim().split(/\s+/)[0] || 'amigo(a)';
+      const isFinal = attempt >= RECOVERY_MAX_ATTEMPTS;
+      const sent = await sendSystemWhatsApp({
+        phone: conv.contact.phone,
+        clientName: conv.contact.name,
+        text: message,
+        templateName: isFinal ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1,
+        templateVars: isFinal ? [firstName, pending] : [firstName],
+        authorId: 'whatsapp-bot',
+        authorName: '🤖 Bot WhatsApp',
+        source: 'recovery',
+      });
+
+      if (sent.sent) {
+        await recordRecoveryEvent({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'attempt',
+          attempt,
+          detail: sent.via === 'template'
+            ? `template ${isFinal ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1}${isFinal ? ` (pendência: ${pending})` : ''}`
+            : `texto livre: ${message.slice(0, 200)}`,
+        });
+        await db.whatsAppConversation.update({
+          where: { id: conv.id },
+          data: {
+            recoveryAttempts: attempt,
+            recoveryNextAt: nextBusinessSlot(now + RECOVERY_GAP_MS),
+          },
+        });
+        results.recoverySent++;
+      } else if (sent.reason?.includes('não receber')) {
+        // Opt-out detectado pelo outbound.
+        await recordRecoveryEvent({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'opt_out',
+          attempt: conv.recoveryAttempts,
+          detail: sent.reason,
+        });
+        await finalizeClose(conv, { closeCategory: 'sem_resposta', recoveryOutcome: 'opt_out' });
+        results.closed++;
+      } else if (sent.reason?.includes('opt-in')) {
+        // Sem opt-in registrado nunca vai poder receber template → esgota já.
+        await recordRecoveryEvent({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'exhausted',
+          attempt: conv.recoveryAttempts,
+          detail: sent.reason,
+        });
+        await finalizeClose(conv, { closeCategory: 'sem_resposta', recoveryOutcome: 'esgotado' });
+        results.closed++;
+      } else {
+        // Cooldown anti-spam, template ainda não sincronizado, Meta rejeitou…
+        // → re-tenta em 6h sem gastar tentativa (fica logado pelo outbound).
+        await db.whatsAppConversation.update({
+          where: { id: conv.id },
+          data: { recoveryNextAt: nextBusinessSlot(now + RECOVERY_RETRY_MS) },
+        });
+      }
+    } catch (err) {
+      console.error('[WHATSAPP CRON] Falha na provocação de recuperação:', conv.contactId, err);
       results.errors++;
     }
   }

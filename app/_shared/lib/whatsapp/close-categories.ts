@@ -9,6 +9,9 @@ export const CLOSE_CATEGORY_LABELS: Record<string, string> = {
   perguntas: 'Perguntas / dúvidas',
   novo_acidente: 'Novo acidente (cadastrado)',
   transferido: 'Transferidos ao atendente',
+  // Desfecho do ciclo de recuperação (status "standby"): 3 provocações do
+  // cron sem nenhuma resposta do cliente.
+  sem_resposta: 'Sem resposta (não recuperado)',
 };
 
 // Opções do menu manual de "Encerrar" (rótulo no singular, na ordem de exibição).
@@ -29,4 +32,5 @@ export const QUALIFIED_BY_CATEGORY: Record<string, boolean | null> = {
   perguntas: null,
   novo_acidente: null,
   transferido: null,
+  sem_resposta: null,
 };

@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Save, Zap } from 'lucide-react';
+import { Loader2, Plus, Save, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
@@ -14,6 +14,7 @@ import {
   listWhatsAppQuickReplies, createWhatsAppQuickReply, updateWhatsAppQuickReply,
   deleteWhatsAppQuickReply, type WhatsAppQuickReplyDTO,
 } from '@/app/_actions/whatsapp/quick-replies';
+import { ManagedListSelect } from './ManagedListSelect';
 
 // Gerenciador de respostas rápidas (snippets) — mesmo desenho do modal de tags.
 
@@ -87,27 +88,28 @@ export function WhatsAppQuickRepliesModal({ open, onOpenChange, onChanged }: Pro
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
-        ) : (
-          <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
-            {items.length === 0 && <p className="text-sm text-gray-400">Nenhuma resposta rápida criada ainda.</p>}
-            {items.map((q) => (
-              <div key={q.id} className="flex items-start gap-2 rounded-lg border border-gray-100 px-2.5 py-1.5 dark:border-zinc-800">
-                <button
-                  onClick={() => { setEditingId(q.id); setTitle(q.title); setBody(q.body); }}
-                  className="min-w-0 flex-1 text-left hover:underline"
-                >
-                  <span className="block truncate text-base font-semibold">{q.title}</span>
-                  <span className="block truncate text-sm text-gray-400">{q.body}</span>
-                </button>
-                <button onClick={() => handleDelete(q.id)} title="Excluir" className="mt-1 text-gray-400 hover:text-red-500">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Lista suspensa — mesmo desenho do gerenciador de fluxos. */}
+        <div className="flex items-center gap-2">
+          <ManagedListSelect
+            items={items.map((q) => ({ id: q.id, title: q.title, subtitle: q.body }))}
+            selectedId={editingId}
+            loading={loading}
+            placeholder="Escolha uma resposta para editar..."
+            emptyText="Nenhuma resposta rápida criada ainda."
+            onSelect={(id) => {
+              const q = items.find((x) => x.id === id);
+              if (!q) return;
+              setEditingId(q.id); setTitle(q.title); setBody(q.body);
+            }}
+            onDelete={handleDelete}
+          />
+          <button
+            onClick={() => { setEditingId(null); setTitle(''); setBody(''); }}
+            className={`flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-dashed px-3.5 text-base font-semibold ${!editingId ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-gray-300 text-gray-500 hover:border-gray-400 dark:border-zinc-700 dark:text-zinc-400'}`}
+          >
+            <Plus className="h-4 w-4" /> Nova
+          </button>
+        </div>
 
         <div className="space-y-2 rounded-xl border border-gray-100 p-3 dark:border-zinc-800">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nome (ex.: Documentos necessários)" className="h-9" />

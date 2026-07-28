@@ -62,6 +62,14 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
+    // Anexos são material de trabalho INTERNO (28/07/2026): a listagem saiu da
+    // área do cliente, e aqui a rota passa a exigir papel de equipe — sem isto
+    // qualquer cliente logado continuaria listando os próprios anexos via API.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.role?.startsWith('ADMIN')) {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const processId = searchParams.get('processId');
