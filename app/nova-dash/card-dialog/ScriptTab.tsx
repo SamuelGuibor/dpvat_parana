@@ -483,6 +483,20 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
         ]);
       }
 
+      // Erro do serviço de IA chega DENTRO do stream como {"error":"..."} —
+      // sem isto o JSON cru aparecia como resposta no chat.
+      if (fullText.trimStart().startsWith('{')) {
+        let streamError: string | null = null;
+        try { streamError = JSON.parse(fullText).error ?? null; } catch { /* não é JSON de erro */ }
+        if (streamError) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: `⚠️ ${streamError}` } : m))
+          );
+          toast.error(streamError);
+          return;
+        }
+      }
+
       toast.success('Processado com sucesso!');
       setSelectedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = '';

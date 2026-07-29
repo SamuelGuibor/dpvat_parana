@@ -80,6 +80,8 @@ export interface WhatsAppConversationDTO {
   lastInboundAt: string | null; // controla a janela de 24h da Meta
   lastMessagePreview: string | null;
   unread: boolean;
+  // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
+  optedOut: boolean;
   tags: { id: string; name: string; color: string }[];
 }
 
@@ -90,7 +92,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     orderBy: { lastMessageAt: 'desc' },
     take: 200,
     include: {
-      contact: { select: { id: true, name: true, phone: true } },
+      contact: { select: { id: true, name: true, phone: true, optedOut: true } },
       tags: { include: { tag: true } },
       // Leitura GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa
       // de contar como não-lida para o resto da equipe.
@@ -154,6 +156,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       lastInboundAt: inboundAt?.toISOString() ?? null,
       lastMessagePreview: last?.direction === 'out' && preview ? `Você: ${preview}` : preview,
       unread: !effectiveReadAt || c.lastMessageAt > effectiveReadAt,
+      optedOut: c.contact.optedOut,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
   });

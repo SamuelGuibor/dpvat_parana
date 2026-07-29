@@ -107,7 +107,9 @@ function extractBody(msg: IncomingWaMessage): string | null {
     case "document":    return msg.document?.caption ?? null;
     case "button":      return msg.button?.text ?? null;
     case "interactive": return msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? null;
-    // Figurinha vira anexo (webp baixado pro S3) — o balão renderiza a imagem.
+    // Áudio e figurinha viram anexo (baixados pro S3) — o balão renderiza o
+    // player/imagem; o corpo fica null MESMO (o bot transcreve o áudio).
+    case "audio":       return null;
     case "sticker":     return null;
     // Tipos sem texto: representação legível pro balão do inbox E pra IA
     // (antes viravam body=null → balão vazio + handoff cego pra fila).

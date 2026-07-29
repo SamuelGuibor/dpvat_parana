@@ -69,6 +69,12 @@ export const PERMISSION_DEFS = [
       "Julga os atendimentos encerrados do WhatsApp (aprovar/reprovar) — alimenta o cérebro do bot.",
   },
   {
+    key: "manage_wa_contacts",
+    label: "Excluir/bloquear contatos (WhatsApp)",
+    description:
+      "Bloqueia números (para de responder) e exclui contatos do WhatsApp com todo o histórico.",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -97,6 +103,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     delete_columns: true,
     manager_dashboard: false,
     review_ai: false,
+    manage_wa_contacts: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -112,6 +119,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Revisão da IA nasce exclusiva do ADMIN++ (a curadoria do cérebro é
     // manual nos primeiros meses). Concedível ao ADMIN+ por override.
     review_ai: false,
+    // Excluir/bloquear contato é destrutivo — nasce exclusivo do ADMIN++,
+    // concedível ao ADMIN+ por override.
+    manage_wa_contacts: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -125,6 +135,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     delete_columns: true,
     manager_dashboard: true,
     review_ai: true,
+    manage_wa_contacts: true,
     manage_team: true,
   },
 };

@@ -9,6 +9,7 @@ import {
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
+  MoreVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -30,6 +31,8 @@ import {
   editWhatsAppMessage, deleteWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
 import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
@@ -74,6 +77,7 @@ const CLOSE_MENU_META: Record<string, { Icon: React.ElementType; color: string }
   perguntas:       { Icon: HelpCircle,    color: 'text-blue-500' },
   novo_acidente:   { Icon: AlertTriangle, color: 'text-amber-500' },
   transferido:     { Icon: Headset,       color: 'text-violet-500' },
+  descartado:      { Icon: Trash2,        color: 'text-red-500' },
 };
 
 function initials(name: string) {
@@ -140,6 +144,7 @@ export function WhatsAppInbox() {
   const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
 
   const { confirm, confirmDialog } = useConfirm();
+  const { perms } = usePermissions();
 
   function reloadTags() {
     listWhatsAppTags().then(setAllTags).catch(() => {});
@@ -163,6 +168,7 @@ export function WhatsAppInbox() {
     { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas, dot: 'bg-blue-400' },
     { key: 'novo_acidente', label: CLOSE_CATEGORY_LABELS.novo_acidente, dot: 'bg-amber-400' },
     { key: 'transferido', label: CLOSE_CATEGORY_LABELS.transferido, dot: 'bg-fuchsia-400' },
+    { key: 'descartado', label: CLOSE_CATEGORY_LABELS.descartado, dot: 'bg-red-400' },
   ] as const;
   type TabKey = (typeof TABS)[number]['key'];
   const [activeTab, setActiveTab] = useState<TabKey>('others');
@@ -292,6 +298,7 @@ export function WhatsAppInbox() {
       perguntas: byCategory('perguntas'),
       novo_acidente: byCategory('novo_acidente'),
       transferido: byCategory('transferido'),
+      descartado: byCategory('descartado'),
     };
   }, [filtered, meId, attendantFilter]);
 
@@ -299,6 +306,7 @@ export function WhatsAppInbox() {
     others: groups.others, bot: groups.bot, standby: groups.standby, sem_resposta: groups.sem_resposta,
     unqualified: groups.unqualified, qualified: groups.qualified,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
+    descartado: groups.descartado,
   };
 
   // Janela de 24h: sem mensagem recebida recente, a Meta só aceita template.
@@ -436,6 +444,44 @@ export function WhatsAppInbox() {
       await mutateMessages();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao apagar.');
+    }
+  }
+
+  // Bloquear/desbloquear/excluir contato — só aparece com a permissão
+  // "manage_wa_contacts" (o servidor valida de novo de qualquer forma).
+  async function handleBlockContact(conv: WhatsAppConversationDTO) {
+    const who = conv.contactName ?? formatPhone(conv.contactPhone);
+    if (conv.optedOut) {
+      if (!(await confirm({
+        title: `Desbloquear ${who}?`,
+        description: 'O contato volta a ser atendido normalmente (bot e mensagens da equipe).',
+        confirmLabel: 'Desbloquear',
+      }))) return;
+      await runAction(() => unblockWhatsAppContact(conv.contactId), 'Contato desbloqueado.');
+      return;
+    }
+    if (!(await confirm({
+      title: `Bloquear ${who}?`,
+      description: 'O bot e as mensagens automáticas param na hora e a conversa é encerrada como "Descartada". O histórico fica guardado e dá pra desbloquear depois.',
+      confirmLabel: 'Bloquear',
+    }))) return;
+    await runAction(() => blockWhatsAppContact(conv.contactId), 'Contato bloqueado.');
+  }
+
+  async function handleDeleteContact(conv: WhatsAppConversationDTO) {
+    const who = conv.contactName ?? formatPhone(conv.contactPhone);
+    if (!(await confirm({
+      title: `Excluir ${who}?`,
+      description: 'Apaga o contato e TODO o histórico de conversa permanentemente. Essa ação não tem volta.',
+      confirmLabel: 'Excluir de vez',
+    }))) return;
+    try {
+      await deleteWhatsAppContact(conv.contactId);
+      setActiveContactId(null);
+      await refreshConversations();
+      toast.success('Contato excluído.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao excluir contato.');
     }
   }
 
@@ -720,6 +766,28 @@ export function WhatsAppInbox() {
                 </DropdownMenu>
               ) : (
                 <HeaderButton icon={Headset} label="Reabrir" onClick={() => runAction(() => assumeConversation(active.id), 'Atendimento reaberto.')} />
+              )}
+
+              {/* Ações destrutivas do contato — exigem manage_wa_contacts */}
+              {perms.manage_wa_contacts && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button title="Mais ações" className="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel className="text-xs text-gray-400">Contato</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => handleBlockContact(active)} className="text-base">
+                      <Ban className={`mr-2 h-3.5 w-3.5 ${active.optedOut ? 'text-emerald-600' : 'text-amber-500'}`} />
+                      {active.optedOut ? 'Desbloquear contato' : 'Bloquear contato'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleDeleteContact(active)} className="text-base text-red-600 focus:text-red-600">
+                      <Trash2 className="mr-2 h-3.5 w-3.5 text-red-500" /> Excluir contato e histórico
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </header>
 

@@ -152,6 +152,55 @@ function isBotConfigured(): boolean {
   return !!CHATBOT_URL && !!CHATBOT_SECRET;
 }
 
+// ---------------------------------------------------------------------------
+// Filtro de sanidade da resposta da IA (29/07/2026, caso Mateus Leandro):
+// a saída estruturada do modelo degenerou e o esqueleto do próprio JSON vazou
+// como itens de `replies` ('replies":[],', 'action":', 'flowNam', 'nenhum'...)
+// — e cada fragmento virou uma mensagem no WhatsApp do cliente. Blocos
+// legítimos de `replies` são sempre frases completas; item que parece
+// fragmento de JSON ou token solto do schema é descartado antes do envio.
+// ---------------------------------------------------------------------------
+const SCHEMA_TOKENS = new Set([
+  "reply", "replies", "action", "flowname", "closecategory", "handoffreason",
+  "lookup", "memory", "state", "intent", "emotion", "urgent", "understood",
+  "confidence", "optout", "appliedrules", "silent", "usage",
+  "continue", "qualify", "disqualify", "handoff", "send_flow", "sendflow",
+  "resolve", "nenhum", "null", "true", "false",
+]);
+
+/** Pontuação estrutural de JSON ('"key":', '[]', começa com {,}:...). */
+function isJsonSkeleton(text: string): boolean {
+  return /"\s*:/.test(text) || /\[\s*\]/.test(text) || /^\s*[{}\[\],:]/.test(text);
+}
+
+/** Item de `replies` que é lixo de JSON, e não um bloco de mensagem real. */
+function looksLikeJsonFragment(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (isJsonSkeleton(t)) return true;
+  // Chave/valor do schema como palavra solta ("handoffReason", "continue").
+  const bare = t.toLowerCase().replace(/[^a-z_]/g, "");
+  if (SCHEMA_TOKENS.has(bare)) return true;
+  // Token solto: sem espaço, curto e sem cara de frase ("flowNam", "nenh").
+  if (!/\s/.test(t) && t.length <= 15 && !/[.!?…]$/.test(t)) return true;
+  return false;
+}
+
+/** Remove fragmentos de JSON vazados pela IA antes de qualquer envio. */
+function sanitizeDecision(d: BotDecision): BotDecision {
+  const rawReplies = Array.isArray(d.replies) ? d.replies : [];
+  const replies = rawReplies.filter((r) => typeof r === "string" && !looksLikeJsonFragment(r));
+  // No `reply` único só o teste estrutural: mensagem curta legítima ("Ok!")
+  // não pode ser descartada por parecer token solto.
+  const reply = typeof d.reply === "string" && d.reply && isJsonSkeleton(d.reply) ? "" : d.reply;
+  if (replies.length !== rawReplies.length || reply !== d.reply) {
+    console.warn(
+      `[WHATSAPP BOT] Resposta da IA continha fragmento(s) de JSON — descartados ${rawReplies.length - replies.length} item(ns) de replies${reply !== d.reply ? " + reply" : ""}.`,
+    );
+  }
+  return { ...d, reply, replies };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -638,7 +687,7 @@ async function callBrainOnce(payload: object, baseUrl: string = CHATBOT_URL): Pr
       cache: "no-store",
     });
     if (!res.ok) throw new Error(`chatbot HTTP ${res.status}`);
-    return (await res.json()) as BotDecision;
+    return sanitizeDecision((await res.json()) as BotDecision);
   } finally {
     clearTimeout(timer);
   }
@@ -652,21 +701,32 @@ async function callBrainOnce(payload: object, baseUrl: string = CHATBOT_URL): Pr
  */
 async function callBrain(payload: object, baseUrl: string = CHATBOT_URL): Promise<BotDecision> {
   let lastErr: unknown;
+  // Erros que NÃO são timeout (refusal do modelo, HTTP 5xx do microserviço)
+  // ganham UMA segunda chance antes de derrubar pra fila humana — a maioria é
+  // transitória (29/07/2026; antes qualquer erro caía na fila direto).
+  let errorRetried = false;
   for (let attempt = 1; attempt <= BOT_MAX_ATTEMPTS; attempt++) {
     try {
       return await callBrainOnce(payload, baseUrl);
     } catch (err) {
       lastErr = err;
       const isTimeout = err instanceof Error && err.name === "AbortError";
-      // Só o timeout é reprocessado — os demais erros não vão melhorar no retry.
-      if (!isTimeout) throw err;
+      if (!isTimeout) {
+        if (errorRetried) throw err;
+        errorRetried = true;
+        console.warn(
+          `[WHATSAPP BOT] Erro do cérebro (${err instanceof Error ? err.message : String(err)}) — retry único antes da fila.`,
+        );
+        await sleep(BOT_RETRY_DELAY_MS);
+        continue;
+      }
       console.warn(
         `[WHATSAPP BOT] Timeout do cérebro (tentativa ${attempt}/${BOT_MAX_ATTEMPTS}).`,
       );
       if (attempt < BOT_MAX_ATTEMPTS) await sleep(BOT_RETRY_DELAY_MS);
     }
   }
-  // 3 tentativas e ainda timeout → propaga (AbortError) pra cair na fila.
+  // Tentativas esgotadas → propaga pra cair na fila.
   throw lastErr;
 }
 
@@ -836,6 +896,25 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       decision = { ...decision, usage: sumUsage(firstUsage, decision.usage) };
       // Segunda passada não pode pedir lookup de novo: rebaixa pra continue.
       if (decision.action === "lookup") decision = { ...decision, action: "continue" };
+    }
+
+    // ---- Retry de resposta vazia (29/07/2026) -----------------------------
+    // "continue" sem NENHUM texto e sem silent = a IA se perdeu. Antes de
+    // jogar pra fila humana (default do switch lá embaixo), refaz UMA chamada
+    // com o mesmo contexto/histórico — na maioria das vezes a segunda vem com
+    // texto. Se vier vazia de novo, o handoff acontece como antes.
+    if (decision.action === "continue" && !decision.silent
+      && !decision.reply?.trim() && !decision.replies?.length) {
+      console.warn(`[WHATSAPP BOT] ${contactId}: IA devolveu resposta vazia — retry único antes do handoff.`);
+      try {
+        const firstUsage = decision.usage;
+        let second = await callBrain(basePayload, brainUrl);
+        // O retry não repete a consulta intermediária: lookup vira continue.
+        if (second.action === "lookup") second = { ...second, action: "continue" };
+        decision = { ...second, usage: sumUsage(firstUsage, second.usage) };
+      } catch {
+        // Mantém a decisão vazia — cai no handoff do default como antes.
+      }
     }
 
     // ---- Loop de "não entendi": 2 tentativas → especialista -------------

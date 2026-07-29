@@ -565,7 +565,7 @@ function PermissionsEditorDialog({
 
     return (
         <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <KeyRound className="w-5 h-5 text-blue-600" />
@@ -577,7 +577,7 @@ function PermissionsEditorDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex flex-col gap-3 py-2">
+                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-2">
                     {editableDefs.map((def) => (
                         <label key={def.key} className="flex items-start gap-3 cursor-pointer rounded-lg border p-3 hover:bg-gray-50">
                             <Checkbox

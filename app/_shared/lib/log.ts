@@ -30,6 +30,7 @@ export type LogAction =
   | "wa_transcribe"  // IA transcreveu um áudio a pedido do atendente
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
+  | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
   | "overdue_alert"; // notificação de card estourado (limite de dias da coluna)
 
 interface CreateLogInput {

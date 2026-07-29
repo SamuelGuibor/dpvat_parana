@@ -220,6 +220,14 @@ export async function addClientFromConversation(contactId: string, input: Client
       role: 'Filtro de Cartões',
       password: await hashPassword('segurosparana1'),
       cardNumber,
+      // Card já nasce na primeira etapa do fluxo (igual ao "criar card"
+      // normal), SEM notificar o cliente — a notificação de progresso só
+      // dispara em MUDANÇA de status (update-users), nunca na criação.
+      // Antes nascia sem etapa e a marcação manual da etapa 1 disparava o
+      // "seu processo avançou para Processo iniciado" indevido.
+      service: 'INSS',
+      status: 'INSS_S1',
+      statusStartedAt: new Date(),
       ...(label && { labelId: label.id }),
     },
   });
