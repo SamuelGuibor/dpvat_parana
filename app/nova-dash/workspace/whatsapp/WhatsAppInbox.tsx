@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Bot, Check, CheckCheck, AlertCircle, MessageCircle, Paperclip,
@@ -81,6 +81,25 @@ function initials(name: string) {
 }
 function timeShort(iso: string) {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+// Rótulo do separador de dia na thread: Hoje / Ontem / dia da semana (< 7 dias)
+// / data completa.
+function dayLabel(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (diffDays === 0) return 'Hoje';
+  if (diffDays === 1) return 'Ontem';
+  if (diffDays < 7) {
+    const weekday = d.toLocaleDateString('pt-BR', { weekday: 'long' });
+    return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  }
+  return d.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+  });
 }
 function formatPhone(phone: string) {
   // 5541999999999 → +55 41 99999-9999 (best-effort, só para exibição)
@@ -723,9 +742,18 @@ export function WhatsAppInbox() {
                 const prev = displayMessages[i - 1];
                 const grouped = prev && prev.direction === msg.direction
                   && new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60_000;
+                const newDay = !prev
+                  || new Date(prev.createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
                 return (
+                  <Fragment key={msg.id}>
+                  {newDay && (
+                    <div className="my-3 flex justify-center">
+                      <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400">
+                        {dayLabel(msg.createdAt)}
+                      </span>
+                    </div>
+                  )}
                   <ThreadMessageRow
-                    key={msg.id}
                     msg={msg}
                     grouped={!!grouped}
                     meId={meId}
@@ -741,6 +769,7 @@ export function WhatsAppInbox() {
                     onDiscard={() => removePending(msg.id)}
                     onJumpToReply={() => jumpToMessage(msg.replyToId)}
                   />
+                  </Fragment>
                 );
               })}
               <div ref={endRef} />

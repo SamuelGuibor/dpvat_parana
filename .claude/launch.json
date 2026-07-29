@@ -15,6 +15,12 @@
       "port": 3005
     },
     {
+      "name": "kalyl",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:\\dev\\kalyl", "--", "-p", "3007"],
+      "port": 3007
+    },
+    {
       "name": "dev-verify",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "-p", "3001"],

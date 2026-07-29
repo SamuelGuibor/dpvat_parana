@@ -70,6 +70,11 @@ export interface IncomingWaMessage {
   sticker?: { id?: string; mime_type?: string };
   button?: { text?: string };
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  // Tipos sem texto — viram uma representação legível no extractBody (antes
+  // caíam como body=null e o inbox mostrava um balão vazio).
+  reaction?: { message_id?: string; emoji?: string };
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
+  contacts?: { name?: { formatted_name?: string }; phones?: { phone?: string }[] }[];
   // Presente quando o cliente RESPONDE (quote) uma mensagem.
   context?: { id?: string };
   // Presente quando a conversa começou por um anúncio Click-to-WhatsApp
@@ -102,7 +107,26 @@ function extractBody(msg: IncomingWaMessage): string | null {
     case "document":    return msg.document?.caption ?? null;
     case "button":      return msg.button?.text ?? null;
     case "interactive": return msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? null;
-    default:            return null;
+    // Figurinha vira anexo (webp baixado pro S3) — o balão renderiza a imagem.
+    case "sticker":     return null;
+    // Tipos sem texto: representação legível pro balão do inbox E pra IA
+    // (antes viravam body=null → balão vazio + handoff cego pra fila).
+    case "reaction":
+      return msg.reaction?.emoji ? `${msg.reaction.emoji} (reação)` : "(reação removida)";
+    case "location": {
+      const loc = msg.location;
+      const label = [loc?.name, loc?.address].filter(Boolean).join(" — ");
+      const coords = loc?.latitude != null && loc?.longitude != null ? ` (${loc.latitude}, ${loc.longitude})` : "";
+      return `📍 Localização recebida${label ? `: ${label}` : ""}${coords}`;
+    }
+    case "contacts": {
+      const list = (msg.contacts ?? [])
+        .map((c) => [c.name?.formatted_name, c.phones?.[0]?.phone].filter(Boolean).join(" "))
+        .filter(Boolean)
+        .join(", ");
+      return `👤 Contato compartilhado${list ? `: ${list}` : ""}`;
+    }
+    default:            return `(mensagem não suportada: ${msg.type ?? "?"})`;
   }
 }
 
@@ -265,11 +289,14 @@ export async function ingestIncomingMessage(
   }
 
   // Cliente respondeu (quote) uma mensagem? Resolve o waMessageId pro nosso id
-  // e guarda um snapshot do texto pro render ficar estável.
+  // e guarda um snapshot do texto pro render ficar estável. Reação aponta a
+  // mensagem reagida do mesmo jeito (reaction.message_id) — o balão da reação
+  // mostra a que mensagem ela se refere.
   let replyTo: { id: string; body: string | null; direction: string } | null = null;
-  if (msg.context?.id) {
+  const quotedWaId = msg.context?.id ?? msg.reaction?.message_id;
+  if (quotedWaId) {
     replyTo = await db.whatsAppMessage.findUnique({
-      where: { waMessageId: msg.context.id },
+      where: { waMessageId: quotedWaId },
       select: { id: true, body: true, direction: true },
     });
   }
