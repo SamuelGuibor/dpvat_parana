@@ -6,6 +6,7 @@ import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
+import { runSignatureReminders } from '@/app/_shared/lib/whatsapp/signature';
 
 // Detector de silêncio do bot (rodado pelo Vercel Cron — vercel.json — a cada
 // 15min; o whatsapp-cron.cmd continua servindo pra disparo manual em dev):
@@ -375,7 +376,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const results = { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
+  const results = { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, signatureReminders: 0, signaturesByPolling: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   // Última atividade há 30min+, ainda em modo bot, sem aviso pendente.
@@ -463,9 +464,21 @@ export async function GET(req: NextRequest) {
   for (const conv of silentAfterNudge) {
     try {
       try {
+        // Só se despede se a ÚLTIMA mensagem da conversa foi do PRÓPRIO BOT
+        // (pergunta pendente). Caso Víctor (28/07): um atendente mandou
+        // mensagens manuais e devolveu pro bot — o botNudge30At antigo ainda
+        // estava armado e o cron despachou uma SEGUNDA despedida no mesmo dia,
+        // em cima das mensagens do atendente. Última mensagem de agente ou do
+        // cliente → encerra/standby em SILÊNCIO.
+        const lastMsg = await db.whatsAppMessage.findFirst({
+          where: { contactId: conv.contactId, internal: false, deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+          select: { direction: true, sentByBot: true },
+        });
+        const botAskedLast = lastMsg?.direction === 'out' && lastMsg.sentByBot;
         // Janela fechada → nem tenta a despedida (evita o erro 131047 na
         // conta); encerra em silêncio.
-        if (await isWindowOpen(conv.contactId)) {
+        if (botAskedLast && (await isWindowOpen(conv.contactId))) {
           const farewell = await buildFarewell(conv.contactId, conv.contact.name);
           await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, farewell);
         }
@@ -548,18 +561,30 @@ export async function GET(req: NextRequest) {
       );
       const firstName = (conv.contact.name ?? '').trim().split(/\s+/)[0] || 'amigo(a)';
       const isFinal = attempt >= RECOVERY_MAX_ATTEMPTS;
+      // Fora da janela de 24h só existem DOIS templates aprovados — e mandar o
+      // MESMO recuperacao_triagem_1 em manhãs seguidas é spam literal (caso
+      // Víctor: T1 e T2 idênticos, palavra por palavra). A partir da 2ª
+      // tentativa o template já é o FINAL; se ele for usado (janela fechada),
+      // o ciclo se encerra logo abaixo. Com janela aberta o texto é o da IA
+      // (varia a cada tentativa) e as 3 tentativas continuam valendo.
+      const useFinalTemplate = attempt >= 2;
       const sent = await sendSystemWhatsApp({
         phone: conv.contact.phone,
         clientName: conv.contact.name,
         text: message,
-        templateName: isFinal ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1,
-        templateVars: isFinal ? [firstName, pending] : [firstName],
+        templateName: useFinalTemplate ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1,
+        templateVars: useFinalTemplate ? [firstName, pending] : [firstName],
         authorId: 'whatsapp-bot',
         authorName: '🤖 Bot WhatsApp',
         source: 'recovery',
       });
 
       if (sent.sent) {
+        // Template FINAL entregue ("essa é minha última mensagem") → não pode
+        // haver outra provocação depois dele: esgota o contador para a próxima
+        // rodada encerrar o ciclo, mesmo que ainda não fosse a 3ª tentativa.
+        const sentFinalTemplate = sent.via === 'template' && useFinalTemplate;
+        const attemptsAfter = sentFinalTemplate ? RECOVERY_MAX_ATTEMPTS : attempt;
         await recordRecoveryEvent({
           contactId: conv.contactId,
           contactName: conv.contact.name,
@@ -567,13 +592,13 @@ export async function GET(req: NextRequest) {
           action: 'attempt',
           attempt,
           detail: sent.via === 'template'
-            ? `template ${isFinal ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1}${isFinal ? ` (pendência: ${pending})` : ''}`
+            ? `template ${useFinalTemplate ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1}${useFinalTemplate ? ` (pendência: ${pending})` : ''}${sentFinalTemplate && !isFinal ? ' — ciclo encerrado antecipadamente (não repetir template)' : ''}`
             : `texto livre: ${message.slice(0, 200)}`,
         });
         await db.whatsAppConversation.update({
           where: { id: conv.id },
           data: {
-            recoveryAttempts: attempt,
+            recoveryAttempts: attemptsAfter,
             recoveryNextAt: nextBusinessSlot(now + RECOVERY_GAP_MS),
           },
         });
@@ -614,6 +639,20 @@ export async function GET(req: NextRequest) {
       console.error('[WHATSAPP CRON] Falha na provocação de recuperação:', conv.contactId, err);
       results.errors++;
     }
+  }
+
+  // ---- 2c. Lembretes de ASSINATURA (ZapSign) --------------------------------
+  // Procuração enviada e não assinada: até 3 lembretes (24h, horário
+  // comercial, janela/template respeitados) + polling do status na ZapSign
+  // como retaguarda do webhook. Esgotou → equipe assume o resgate manual.
+  try {
+    const sig = await runSignatureReminders(now);
+    results.signatureReminders = sig.reminders;
+    results.signaturesByPolling = sig.signedByPolling;
+    results.errors += sig.errors;
+  } catch (err) {
+    console.error('[WHATSAPP CRON] Falha nos lembretes de assinatura:', err);
+    results.errors++;
   }
 
   // ---- 3. SLA da fila de espera ---------------------------------------------

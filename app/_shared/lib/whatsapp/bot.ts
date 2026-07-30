@@ -331,7 +331,7 @@ async function runLookup(kind: string, contactId: string, card: LinkedCard | nul
  * e eventos do bot inline na conversa, pro atendente ter contexto na hora.
  * Best-effort — falha aqui não interrompe o fluxo.
  */
-async function postInternalNote(contactId: string, body: string): Promise<void> {
+export async function postInternalNote(contactId: string, body: string): Promise<void> {
   try {
     const message = await db.whatsAppMessage.create({
       data: { contactId, direction: "out", body, sentByBot: true, internal: true, status: "sent" },
@@ -440,7 +440,7 @@ async function tagAsQualified(conversationId: string): Promise<void> {
 }
 
 /** Lead QUALIFICADO: fila de espera + tag "Qualificada" + aviso pra equipe. */
-async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
+export async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
   // Já era qualificado antes (lead voltando)? Então NÃO é uma nova qualificação:
   // não reposta a nota de "lead novo", não re-notifica a equipe como lead
   // inédito e não redispara o evento pra Meta — só garante que voltou pra fila.
@@ -760,7 +760,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   // (dois webhooks concorrentes) não se enxergavam como "mais nova" com o `gt`
   // estrito — as DUAS invocações prosseguiam e o cliente recebia resposta
   // dupla. Em empate de createdAt, o maior id (cuid ~monotônico) vence.
-  const newerInbound = await db.whatsAppMessage.findFirst({
+  const findNewerInbound = () => db.whatsAppMessage.findFirst({
     where: {
       contactId,
       direction: "in",
@@ -773,7 +773,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     },
     select: { id: true },
   });
-  if (newerInbound) {
+  if (await findNewerInbound()) {
     console.log(`[WHATSAPP BOT] ${contactId}: mensagem mais nova chegou durante o debounce — esta invocação desiste.`);
     return;
   }
@@ -834,10 +834,39 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       .filter(Boolean)
       .join("\n");
 
+    // ---- Mensagem que CRUZOU com a última resposta do bot ------------------
+    // O cliente enviou esta mensagem ANTES (ou no exato instante) de a nossa
+    // última mensagem sair — ele ainda estava respondendo a pergunta ANTERIOR
+    // quando o bot já fez a próxima. Sem aviso, a IA lê a resposta como se
+    // fosse da pergunta mais recente: grava o dado no campo errado e o roteiro
+    // descarrilha. A nota abaixo entra junto com a mensagem pro cérebro.
+    const crossedWithLastOut =
+      !!lastOut && new Date(message.createdAt).getTime() <= lastOut.createdAt.getTime();
+    const crossNote =
+      "[NOTA DO SISTEMA: esta mensagem do cliente CRUZOU com a sua última mensagem — " +
+      "ele a enviou antes de ver a sua pergunta mais recente. Interprete-a como resposta " +
+      "ao que você tinha perguntado ANTES. Registre o dado na pergunta certa da ficha; " +
+      "se ela também já responder a sua última pergunta, NÃO a repita — senão, retome a " +
+      "última pergunta de forma natural, sem soar repetitiva.]";
+
     if (!clientText && !media) {
       // Mensagem sem conteúdo interpretável (sticker etc) → fila.
       await handoffToQueue(contactId, contactLabel, "mensagem sem texto/áudio interpretável");
       return;
+    }
+
+    // ---- Confirmação de dados da procuração (ZapSign) pendente? -----------
+    // Quando o bot acabou de enviar o RESUMO dos dados e está esperando o
+    // "SIM" do cliente, a resposta é tratada por um classificador dedicado
+    // (tolerante a áudio, "ta serto", 👍) — o cérebro normal NÃO roda neste
+    // turno. Import dinâmico: evita ciclo bot.ts ↔ signature.ts.
+    try {
+      const { handleConfirmationReply } = await import("./signature");
+      if (await handleConfirmationReply(contactId, { phone: message.contactPhone, name: message.contactName }, clientText, media)) {
+        return;
+      }
+    } catch (err) {
+      console.error("[WHATSAPP BOT] Intercept de confirmação falhou (seguindo pro cérebro normal):", err);
     }
 
     // ---- Contexto -------------------------------------------------------
@@ -865,7 +894,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
           role: h.direction === "in" ? "client" : h.sentByBot ? "bot" : "agent",
           text: h.body,
         })),
-      message: clientText,
+      message: crossedWithLastOut ? `${clientText}\n\n${crossNote}` : clientText,
       media,
       memory: conversation?.botMemory ?? null,
       state: conversation?.botState ?? null,
@@ -915,6 +944,18 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       } catch {
         // Mantém a decisão vazia — cai no handoff do default como antes.
       }
+    }
+
+    // ---- Corrida pós-cérebro (30/07/2026) ---------------------------------
+    // O debounce só protege ANTES da chamada à IA — mas o cérebro leva vários
+    // segundos, e o cliente pode mandar outra mensagem nesse meio tempo (era o
+    // que gerava resposta dupla e a IA tratando a mensagem nova como resposta
+    // da pergunta errada). Se chegou mensagem mais nova, esta invocação
+    // DESISTE antes de enviar ou persistir qualquer coisa: a invocação da
+    // mensagem nova reprocessa o lote inteiro (burst) com o contexto completo.
+    if (await findNewerInbound()) {
+      console.log(`[WHATSAPP BOT] ${contactId}: mensagem nova chegou enquanto a IA pensava — descartando esta resposta (a invocação mais nova responde o lote).`);
+      return;
     }
 
     // ---- Loop de "não entendi": 2 tentativas → especialista -------------
@@ -1066,7 +1107,29 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
             "qualify sem texto",
           );
         }
-        await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
+        // Procuração automática (ZapSign): extrai os dados do KIT e pede a
+        // CONFIRMAÇÃO ao cliente. "confirming" = a conversa FICA em modo bot
+        // esperando o "sim" (a fila/notificação acontecem depois da
+        // confirmação, em handleConfirmationReply). Qualquer outro desfecho
+        // (desligado, pendência, erro) → fila como sempre. Import dinâmico:
+        // evita ciclo bot.ts↔signature.ts.
+        {
+          let sigOutcome: "confirming" | "queue" = "queue";
+          if (decision.closeCategory === "qualificado" || !decision.closeCategory) {
+            try {
+              const { maybeStartSignatureFlow } = await import("./signature");
+              sigOutcome = await maybeStartSignatureFlow(contactId, {
+                phone: message.contactPhone,
+                name: message.contactName,
+              });
+            } catch (err) {
+              console.error("[WHATSAPP BOT] Fluxo de assinatura falhou (lead segue na fila):", err);
+            }
+          }
+          if (sigOutcome !== "confirming") {
+            await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
+          }
+        }
         break;
       case "disqualify":
         // Encerrar MUDO só quando a IA declarou silêncio deliberado (silent) —

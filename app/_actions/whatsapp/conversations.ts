@@ -211,7 +211,12 @@ export async function returnConversationToBot(conversationId: string): Promise<v
   const before = await convContact(conversationId);
   await db.whatsAppConversation.update({
     where: { id: conversationId },
-    data: { status: 'bot', assignedToId: null, queuedAt: null, queueAlertAt: null },
+    // botNudge30At zerado: um marcador de silêncio antigo (armado antes de o
+    // atendente assumir) fazia o cron despachar DESPEDIDA logo após a
+    // devolução ao bot, por cima das mensagens do atendente (caso Víctor,
+    // 28/07 — 2ª despedida no mesmo dia). Devolveu ao bot = ciclo de silêncio
+    // recomeça do zero.
+    data: { status: 'bot', assignedToId: null, queuedAt: null, queueAlertAt: null, botNudge30At: null, botNudge24At: null },
   });
   if (before) {
     await logWhatsAppEvent({

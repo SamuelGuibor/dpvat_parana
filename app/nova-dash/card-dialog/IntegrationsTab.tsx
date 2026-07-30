@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/app/_shared/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_shared/ui/select';
-import { Mail, MessageCircle } from 'lucide-react';
+import { Mail, MessageCircle, PenLine, Copy, Loader2 } from 'lucide-react';
 import { IoIosDocument } from 'react-icons/io';
 import type { ExtendedKanbanCard } from './types';
 import { toast } from 'sonner';
@@ -58,6 +58,32 @@ function IntegrationCard({
 export function IntegrationsTab({ editedCard, isProcess }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [zapsignLoading, setZapsignLoading] = useState(false);
+  const [zapsignUrl, setZapsignUrl] = useState<string | null>(null);
+
+  async function generateZapSign() {
+    setZapsignLoading(true);
+    try {
+      const res = await fetch('/api/zapsign/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editedCard.id, type: isProcess ? 'process' : 'user' }),
+      });
+      const data: { ok: boolean; signUrl?: string; error?: string; missing?: { label: string; reason: string }[] } =
+        await res.json().catch(() => ({ ok: false, error: `Erro ${res.status}` }));
+
+      if (data.signUrl) setZapsignUrl(data.signUrl);
+      if (data.ok && data.signUrl) {
+        toast.success('Link de assinatura gerado! O acompanhamento (lembretes e webhook) já está ativo.');
+      } else if (data.missing?.length) {
+        toast.error(`${data.error ?? 'Dados incompletos:'}\n${data.missing.map((m) => `• ${m.label}: ${m.reason}`).join('\n')}`, { duration: 12000 });
+      } else {
+        toast.error(data.error ?? 'Falha ao gerar o link na ZapSign.');
+      }
+    } finally {
+      setZapsignLoading(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/procuracao/templates")
@@ -130,6 +156,45 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
             >
               <IoIosDocument className="w-4 h-4 mr-2" /> Gerar Procuração
             </Button>
+          </div>
+        </div>
+
+        <div className="group bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 rounded-2xl p-6 hover:shadow-xl hover:shadow-emerald-100/50 transition-all relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200/20 rounded-full -mr-16 -mt-16 group-hover:scale-125 transition-transform duration-500" />
+          <div className="flex items-center gap-4 mb-4 relative z-10">
+            <div className="w-14 h-14 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200 shrink-0">
+              <PenLine className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h4 className="text-lg font-black text-emerald-950">Gerar Procuração ZapSign</h4>
+              <p className="text-[11px] text-emerald-700/70">
+                Preenche o KIT com os dados do card, valida (CPF, CEP nos Correios) e cria o link de assinatura eletrônica.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-3 relative z-10">
+            <Button
+              onClick={generateZapSign}
+              disabled={zapsignLoading}
+              className="bg-emerald-700 hover:bg-emerald-900 text-white font-bold h-12 rounded-xl shadow-md shadow-emerald-200 transition-all active:scale-95 w-full"
+            >
+              {zapsignLoading
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Gerando documento…</>
+                : <><PenLine className="w-4 h-4 mr-2" /> Gerar Procuração ZapSign</>}
+            </Button>
+            {zapsignUrl && (
+              <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded-lg p-2">
+                <a href={zapsignUrl} target="_blank" rel="noreferrer" className="flex-1 text-xs text-emerald-800 underline truncate">
+                  {zapsignUrl}
+                </a>
+                <Button
+                  size="sm" variant="outline" className="shrink-0 h-8"
+                  onClick={() => { navigator.clipboard.writeText(zapsignUrl); toast.success('Link copiado!'); }}
+                >
+                  <Copy className="w-3.5 h-3.5 mr-1" /> Copiar
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 

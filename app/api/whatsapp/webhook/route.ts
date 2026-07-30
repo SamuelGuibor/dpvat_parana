@@ -26,10 +26,12 @@ import { reportCriticalError } from "@/app/_shared/lib/report-error";
 
 export const dynamic = "force-dynamic";
 
-// 120s: o fluxo do bot inclui o debounce de rajada (~8s) + chamada à IA (com
-// retry) + envio das respostas. No plano Pro o teto é 300s, então 120s aqui é
-// folga real — no Hobby ficava capado em 60s.
-export const maxDuration = 120;
+// 300s (teto do Pro): o fluxo do bot inclui o debounce de rajada (~8s) +
+// chamada à IA (com retry) + envio das respostas E, na qualificação, o fluxo
+// de PROCURAÇÃO automática (extração com visão sobre RG/CNH + DOCX→PDF no
+// LibreOffice frio + ZapSign) — 120s deixava o pipeline de assinatura por um
+// fio de ser morto no meio.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
