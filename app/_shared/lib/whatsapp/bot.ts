@@ -331,7 +331,7 @@ async function runLookup(kind: string, contactId: string, card: LinkedCard | nul
  * e eventos do bot inline na conversa, pro atendente ter contexto na hora.
  * Best-effort — falha aqui não interrompe o fluxo.
  */
-export async function postInternalNote(contactId: string, body: string): Promise<void> {
+async function postInternalNote(contactId: string, body: string): Promise<void> {
   try {
     const message = await db.whatsAppMessage.create({
       data: { contactId, direction: "out", body, sentByBot: true, internal: true, status: "sent" },
@@ -440,7 +440,7 @@ async function tagAsQualified(conversationId: string): Promise<void> {
 }
 
 /** Lead QUALIFICADO: fila de espera + tag "Qualificada" + aviso pra equipe. */
-export async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
+async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
   // Já era qualificado antes (lead voltando)? Então NÃO é uma nova qualificação:
   // não reposta a nota de "lead novo", não re-notifica a equipe como lead
   // inédito e não redispara o evento pra Meta — só garante que voltou pra fila.
@@ -855,20 +855,6 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       return;
     }
 
-    // ---- Confirmação de dados da procuração (ZapSign) pendente? -----------
-    // Quando o bot acabou de enviar o RESUMO dos dados e está esperando o
-    // "SIM" do cliente, a resposta é tratada por um classificador dedicado
-    // (tolerante a áudio, "ta serto", 👍) — o cérebro normal NÃO roda neste
-    // turno. Import dinâmico: evita ciclo bot.ts ↔ signature.ts.
-    try {
-      const { handleConfirmationReply } = await import("./signature");
-      if (await handleConfirmationReply(contactId, { phone: message.contactPhone, name: message.contactName }, clientText, media)) {
-        return;
-      }
-    } catch (err) {
-      console.error("[WHATSAPP BOT] Intercept de confirmação falhou (seguindo pro cérebro normal):", err);
-    }
-
     // ---- Contexto -------------------------------------------------------
     const [history, card, flows] = await Promise.all([
       db.whatsAppMessage.findMany({
@@ -1107,29 +1093,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
             "qualify sem texto",
           );
         }
-        // Procuração automática (ZapSign): extrai os dados do KIT e pede a
-        // CONFIRMAÇÃO ao cliente. "confirming" = a conversa FICA em modo bot
-        // esperando o "sim" (a fila/notificação acontecem depois da
-        // confirmação, em handleConfirmationReply). Qualquer outro desfecho
-        // (desligado, pendência, erro) → fila como sempre. Import dinâmico:
-        // evita ciclo bot.ts↔signature.ts.
-        {
-          let sigOutcome: "confirming" | "queue" = "queue";
-          if (decision.closeCategory === "qualificado" || !decision.closeCategory) {
-            try {
-              const { maybeStartSignatureFlow } = await import("./signature");
-              sigOutcome = await maybeStartSignatureFlow(contactId, {
-                phone: message.contactPhone,
-                name: message.contactName,
-              });
-            } catch (err) {
-              console.error("[WHATSAPP BOT] Fluxo de assinatura falhou (lead segue na fila):", err);
-            }
-          }
-          if (sigOutcome !== "confirming") {
-            await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
-          }
-        }
+        await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
         break;
       case "disqualify":
         // Encerrar MUDO só quando a IA declarou silêncio deliberado (silent) —

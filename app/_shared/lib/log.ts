@@ -31,7 +31,6 @@ export type LogAction =
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
-  | "wa_signature"   // ciclo de assinatura eletrônica da procuração (ZapSign)
   | "overdue_alert"; // notificação de card estourado (limite de dias da coluna)
 
 interface CreateLogInput {

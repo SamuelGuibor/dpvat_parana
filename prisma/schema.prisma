@@ -532,59 +532,8 @@ model WhatsAppContact {
   updatedAt      DateTime              @updatedAt
   conversation   WhatsAppConversation?
   messages       WhatsAppMessage[]
-  signatureRequests WhatsAppSignatureRequest[]
 
   @@map("whatsapp_contacts")
-}
-
-// Procuração/contrato enviado para ASSINATURA ELETRÔNICA (ZapSign).
-// Ciclo: extração dos dados pela IA → PDF do KIT preenchido → doc criado na
-// ZapSign → link enviado ao cliente → lembretes pelo cron → webhook de
-// assinatura → fila humana para VALIDAÇÃO final.
-model WhatsAppSignatureRequest {
-  id             String    @id @default(cuid())
-  contactId      String
-  // Status do ciclo:
-  //   extracao_falhou → IA não conseguiu os dados; foi pra revisão humana.
-  //   confirmando    → dados extraídos; aguardando o CLIENTE confirmar o resumo.
-  //   aguardando     → doc criado, link enviado, esperando assinatura.
-  //   visualizado    → cliente abriu o link (webhook doc_viewed).
-  //   assinado       → assinatura concluída; aguardando validação humana.
-  //   validado       → atendente conferiu tudo (ação manual no inbox).
-  //   recusado / expirado / erro / cancelado
-  status         String    @default("aguardando")
-  // Identificadores na ZapSign:
-  docToken       String?   @unique // token do documento (API)
-  signerToken    String?   // token do signatário
-  signUrl        String?   // link de assinatura enviado ao cliente
-  // Dados extraídos pela IA (campos do KIT + confidence + source por campo) —
-  // auditoria e re-geração; o atendente confere na validação.
-  extracted      Json?
-  // Campos que faltaram/ficaram abaixo da confiança mínima (quando o fluxo
-  // caiu pra revisão humana).
-  missingFields  Json?
-  // Cópias no S3: o PDF gerado (pré-assinatura) e o PDF assinado.
-  pdfKey         String?
-  signedPdfKey   String?
-  // Rodadas de confirmação de dados com o cliente (status "confirmando"):
-  // correções/`não entendi` contam; 2 rodadas sem fechar → atendente.
-  confirmRounds  Int       @default(0)
-  // Lembretes de assinatura (cron): quantos já foram e quando pode o próximo.
-  remindersSent  Int       @default(0)
-  nextReminderAt DateTime?
-  sentAt         DateTime? // quando o link foi enviado ao cliente
-  viewedAt       DateTime?
-  signedAt       DateTime?
-  validatedAt    DateTime? // atendente validou (fim do ciclo)
-  validatedById  String?
-  error          String?   // último erro técnico (criação/envio/webhook)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  contact        WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  @@index([status, nextReminderAt])
-  @@index([contactId, createdAt])
-  @@map("whatsapp_signature_requests")
 }
 
 model WhatsAppConversation {

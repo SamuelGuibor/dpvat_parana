@@ -6,7 +6,6 @@ import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
-import { runSignatureReminders } from '@/app/_shared/lib/whatsapp/signature';
 
 // Detector de silêncio do bot (rodado pelo Vercel Cron — vercel.json — a cada
 // 15min; o whatsapp-cron.cmd continua servindo pra disparo manual em dev):
@@ -376,7 +375,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const results = { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, signatureReminders: 0, signaturesByPolling: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
+  const results = { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   // Última atividade há 30min+, ainda em modo bot, sem aviso pendente.
@@ -639,20 +638,6 @@ export async function GET(req: NextRequest) {
       console.error('[WHATSAPP CRON] Falha na provocação de recuperação:', conv.contactId, err);
       results.errors++;
     }
-  }
-
-  // ---- 2c. Lembretes de ASSINATURA (ZapSign) --------------------------------
-  // Procuração enviada e não assinada: até 3 lembretes (24h, horário
-  // comercial, janela/template respeitados) + polling do status na ZapSign
-  // como retaguarda do webhook. Esgotou → equipe assume o resgate manual.
-  try {
-    const sig = await runSignatureReminders(now);
-    results.signatureReminders = sig.reminders;
-    results.signaturesByPolling = sig.signedByPolling;
-    results.errors += sig.errors;
-  } catch (err) {
-    console.error('[WHATSAPP CRON] Falha nos lembretes de assinatura:', err);
-    results.errors++;
   }
 
   // ---- 3. SLA da fila de espera ---------------------------------------------
