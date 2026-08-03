@@ -78,14 +78,77 @@ const BRT_OFFSET_MS = -3 * 60 * 60_000;
 const BUSINESS_START_H = 7;
 const BUSINESS_END_H = 21;
 
+/** O instante cai dentro do expediente (7h–21h BRT)? */
+function isBusinessHours(ts: number): boolean {
+  const h = new Date(ts + BRT_OFFSET_MS).getUTCHours(); // relógio de Brasília em campos UTC
+  return h >= BUSINESS_START_H && h < BUSINESS_END_H;
+}
+
 /** Devolve o próprio instante se cai no horário comercial BRT; senão, as 7h BRT seguintes. */
 function nextBusinessSlot(ts: number): Date {
-  const wall = new Date(ts + BRT_OFFSET_MS); // relógio de Brasília em campos UTC
-  const h = wall.getUTCHours();
-  if (h >= BUSINESS_START_H && h < BUSINESS_END_H) return new Date(ts);
+  if (isBusinessHours(ts)) return new Date(ts);
+  const wall = new Date(ts + BRT_OFFSET_MS);
   const dayStart = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
-  const addDays = h < BUSINESS_START_H ? 0 : 1;
+  const addDays = wall.getUTCHours() < BUSINESS_START_H ? 0 : 1;
   return new Date(dayStart + addDays * 24 * 60 * 60_000 + BUSINESS_START_H * 60 * 60_000 - BRT_OFFSET_MS);
+}
+
+/**
+ * Minutos DE EXPEDIENTE entre dois instantes — a madrugada não conta. Sem isso
+ * um cliente que escreve 20h55 aparecia às 7h como "há 610 min sem resposta",
+ * como se a equipe o tivesse ignorado a noite toda.
+ */
+function businessMinutesBetween(from: number, to: number): number {
+  if (to <= from) return 0;
+  const DAY_MS = 24 * 60 * 60_000;
+  let total = 0;
+  let cursor = from;
+  while (cursor < to) {
+    const wall = new Date(cursor + BRT_OFFSET_MS);
+    const dayStart = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate()) - BRT_OFFSET_MS;
+    const open = dayStart + BUSINESS_START_H * 60 * 60_000;
+    const close = dayStart + BUSINESS_END_H * 60 * 60_000;
+    const segStart = Math.max(cursor, open);
+    const segEnd = Math.min(to, close);
+    if (segEnd > segStart) total += segEnd - segStart;
+    cursor = dayStart + DAY_MS;
+  }
+  return Math.round(total / 60_000);
+}
+
+// Palavras de FECHO: a última mensagem do cliente ser dessas não é pergunta
+// pendente, é o "tá bom, obrigada" que encerra o assunto. Deliberadamente NÃO
+// inclui "sim"/"isso"/"uhum" — esses são resposta a uma pergunta do atendente e
+// normalmente pedem a próxima fala dele.
+const ACK_WORDS = new Set([
+  'ok', 'okay', 'ta', 'tá', 'bom', 'boa', 'blz', 'beleza', 'certo', 'combinado',
+  'entendi', 'entendido', 'obrigado', 'obrigada', 'obg', 'brigado', 'brigada',
+  'vlw', 'valeu', 'amem', 'amém', 'então', 'entao', 'muito', 'tudo', 'bem',
+  'show', 'perfeito', 'otimo', 'ótimo', 'legal', 'top', 'nada', 'de', 'tchau',
+  'abraço', 'abraco', 'abraços', 'abracos', 'gratidão', 'gratidao', 'dia',
+  'tarde', 'noite', 'deus', 'abençoe', 'abencoe', 'grato', 'grata',
+]);
+
+/**
+ * A última mensagem do cliente encerra o assunto (agradecimento, "tá bom",
+ * figurinha, reação)? Nesse caso não há nada pendente e cobrar o atendente é
+ * ruído. Mídia DE VERDADE nunca é fecho: foto, áudio e documento são o cliente
+ * mandando algo que alguém precisa olhar — só figurinha (image/webp sem
+ * legenda) e reação entram como aceno de fim de papo.
+ */
+function isClosingAck(body: string | null, mediaType: string | null): boolean {
+  const text = (body ?? '').trim();
+  if (/\(rea[çc][ãa]o( removida)?\)$/i.test(text)) return true; // "👍 (reação)"
+  if (!text) return !mediaType || /webp/i.test(mediaType); // figurinha
+  if (mediaType) return false; // legenda em cima de anexo = pendência
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ') // tira pontuação e emoji ("Tá. Bom" → "tá bom")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return true; // só emoji
+  if (words.length > 6) return false; // cabe "tá bom então, Deus abençoe"
+  return words.every((w) => ACK_WORDS.has(w));
 }
 
 /** Fallback local da pendência ({{2}} do template final) a partir do botState. */
@@ -706,23 +769,32 @@ export async function GET(req: NextRequest) {
 
   // ---- 3b. SLA de atendimento HUMANO ----------------------------------------
   // Conversa em "human" onde o CLIENTE mandou a última mensagem e o atendente
-  // está calado há 30min+ → re-alerta o dono; sem dono (buraco negro) ou
-  // esperando há 2h+, escala pra equipe inteira. Antes não existia NENHUM SLA
-  // pra "human": se o dono sumisse, o cliente esperava indefinidamente e
-  // ninguém mais ficava sabendo. Debounce via queueAlertAt (re-alerta a cada
-  // 1h), campo livre neste status.
-  const humanStalled = await db.whatsAppConversation.findMany({
-    where: {
-      status: 'human',
-      lastMessageAt: { lte: new Date(now - HUMAN_SLA_MS) },
-      OR: [
-        { queueAlertAt: null },
-        { queueAlertAt: { lte: new Date(now - QUEUE_REALERT_MS) } },
-      ],
-    },
-    include: { contact: true },
-    take: 25,
-  });
+  // está calado há 30min+ DE EXPEDIENTE → cobra o dono; sem dono (buraco negro)
+  // escala pra equipe na hora, com dono calado há 2h+ escala citando o nome
+  // dele. Antes não existia NENHUM SLA pra "human": se o dono sumisse, o
+  // cliente esperava indefinidamente e ninguém mais ficava sabendo. Debounce
+  // via queueAlertAt (re-alerta a cada 1h), campo livre neste status.
+  //
+  // Três filtros contra falso positivo (31/07 — casos Iracema e Dirceu, ambos
+  // COM dono, cobrados a noite inteira por um "Tá. Bom" e por uma figurinha):
+  //   1. fecho do cliente ("tá bom", "obrigada", reação) não é pendência;
+  //   2. só alerta dentro do expediente e só conta minutos de expediente;
+  //   3. tendo dono, o texto cobra o dono — "alguém precisa assumir" era
+  //      contraditório com a conversa já atribuída.
+  const humanStalled = isBusinessHours(now)
+    ? await db.whatsAppConversation.findMany({
+        where: {
+          status: 'human',
+          lastMessageAt: { lte: new Date(now - HUMAN_SLA_MS) },
+          OR: [
+            { queueAlertAt: null },
+            { queueAlertAt: { lte: new Date(now - QUEUE_REALERT_MS) } },
+          ],
+        },
+        include: { contact: true },
+        take: 25,
+      })
+    : [];
 
   for (const conv of humanStalled) {
     try {
@@ -730,16 +802,37 @@ export async function GET(req: NextRequest) {
       const last = await db.whatsAppMessage.findFirst({
         where: { contactId: conv.contactId, internal: false, deletedAt: null },
         orderBy: { createdAt: 'desc' },
-        select: { direction: true },
+        select: { direction: true, body: true, mediaType: true },
       });
       if (!last || last.direction !== 'in') continue;
+      // "Tá. Bom", "obrigada", figurinha → assunto encerrado, ninguém devendo
+      // resposta. Não marca queueAlertAt: se o cliente voltar com uma pergunta
+      // de verdade, o alerta sai na rodada seguinte sem esperar 1h de debounce.
+      if (isClosingAck(last.body, last.mediaType)) continue;
 
       const label = conv.contact.name ?? `+${conv.contact.phone}`;
-      const waitingMin = conv.lastMessageAt ? Math.round((now - conv.lastMessageAt.getTime()) / 60_000) : 0;
+      const waitingMin = conv.lastMessageAt
+        ? businessMinutesBetween(conv.lastMessageAt.getTime(), now)
+        : 0;
+      // O corte no SQL é em tempo de relógio; o SLA de verdade é em expediente.
+      if (waitingMin < HUMAN_SLA_MS / 60_000) continue;
+
+      const owner = conv.assignedToId
+        ? await db.user.findUnique({ where: { id: conv.assignedToId }, select: { name: true } })
+        : null;
+      const ownerName = owner?.name?.trim() || null;
+      // Sem dono → equipe inteira. Com dono calado há 2h+ → equipe também, mas
+      // dizendo de quem é a conversa (rede de segurança pra dono ausente).
       const escalate = !conv.assignedToId || waitingMin >= 120;
       const recipients = escalate
         ? await whatsappRecipients().catch(() => [] as string[])
         : [conv.assignedToId as string];
+
+      const message = !conv.assignedToId
+        ? `⏰ WhatsApp: ${label} está há ${waitingMin} min SEM RESPOSTA e a conversa está SEM DONO — alguém precisa assumir.`
+        : escalate
+          ? `⏰ WhatsApp: ${label} aguarda resposta de ${ownerName ?? 'o atendente responsável'} há ${waitingMin} min — se não puder atender agora, alguém assuma.`
+          : `⏰ WhatsApp: ${label} aguarda sua resposta há ${waitingMin} min.`;
 
       for (const id of recipients) {
         await db.notification.create({
@@ -748,9 +841,7 @@ export async function GET(req: NextRequest) {
             authorId: 'whatsapp-bot',
             authorName: '🤖 Bot WhatsApp',
             targetName: label,
-            message: escalate
-              ? `⏰ WhatsApp: ${label} está há ${waitingMin} min SEM RESPOSTA no atendimento humano${conv.assignedToId ? '' : ' (conversa sem dono!)'} — alguém precisa assumir.`
-              : `⏰ WhatsApp: ${label} aguarda sua resposta há ${waitingMin} min.`,
+            message,
             contactId: conv.contactId,
           },
         });

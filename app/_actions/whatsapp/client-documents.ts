@@ -99,6 +99,49 @@ export async function confirmClientDocumentUpload(contactId: string, key: string
   return listClientDocuments(contactId);
 }
 
+/**
+ * "Anexar no card": transforma uma mídia recebida/enviada na conversa em
+ * documento da ficha do cliente — sem baixar e subir de novo (o Document passa
+ * a apontar pra mesma chave S3 da mensagem). Contato ainda sem User vinculado
+ * cai no rascunho (draftDocuments) e migra junto quando o card for criado.
+ */
+export async function attachConversationMediaToCard(messageId: string): Promise<ClientDocumentDTO[]> {
+  await requireTeamMember();
+
+  const msg = await db.whatsAppMessage.findUnique({
+    where: { id: messageId },
+    select: { contactId: true, mediaKey: true },
+  });
+  if (!msg?.mediaKey) throw new Error('Esta mensagem não tem anexo.');
+
+  const contact = await db.whatsAppContact.findUnique({ where: { id: msg.contactId } });
+  if (!contact) throw new Error('Contato não encontrado.');
+
+  // Nome amigável a partir da chave S3 (".../{timestamp}-{nome}").
+  const raw = msg.mediaKey.split('/').pop() ?? 'anexo';
+  let name = raw.replace(/^\d{10,}-/, '');
+  try { name = decodeURIComponent(name); } catch { /* mantém como está */ }
+
+  if (contact.userId) {
+    const dup = await db.document.findFirst({
+      where: { userId: contact.userId, key: msg.mediaKey },
+      select: { id: true },
+    });
+    if (!dup) await db.document.create({ data: { userId: contact.userId, key: msg.mediaKey, name } });
+  } else {
+    const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];
+    if (!drafts.some((d) => d.key === msg.mediaKey)) {
+      drafts.push({ key: msg.mediaKey, name, uploadedAt: new Date().toISOString() });
+      await db.whatsAppContact.update({
+        where: { id: msg.contactId },
+        data: { draftDocuments: drafts as unknown as object },
+      });
+    }
+  }
+
+  return listClientDocuments(msg.contactId);
+}
+
 export async function deleteClientDocument(contactId: string, ref: string): Promise<ClientDocumentDTO[]> {
   await requireTeamMember();
   const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });

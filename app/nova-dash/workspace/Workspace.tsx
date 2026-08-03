@@ -4,13 +4,11 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { MySpace } from '@/app/nova-dash/MySpace';
 import { Chat } from './chat/Chat';
-import { WhatsAppInbox } from './whatsapp/WhatsAppInbox';
 import { AIReview } from './whatsapp/AIReview';
 import { countPendingReviews } from '@/app/_actions/whatsapp/reviews';
 import { ManagerDashboard } from './manager/ManagerDashboard';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
-import { useWhatsAppUnread } from '@/app/_shared/hooks/use-whatsapp';
 import { isManager } from '@/app/_shared/lib/managers';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { StrategicDashboard } from '../StrategicDashboard';
@@ -23,7 +21,6 @@ export function Workspace() {
   const manager = permsLoading ? isManager(session?.user?.email) : perms.manager_dashboard;
   const { unread } = useUnread();
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
-  const whatsappUnread = useWhatsAppUnread();
 
   const canReviewAi = !permsLoading && perms.review_ai;
 
@@ -45,16 +42,8 @@ export function Workspace() {
     return () => { alive = false; clearInterval(id); };
   }, [canReviewAi, section]);
 
-  // Notificação de WhatsApp clicada → troca pra seção do inbox. Se o clique
-  // aconteceu antes deste componente montar, o sinal fica no sessionStorage.
-  useEffect(() => {
-    function openWhatsApp() {
-      setSection('whatsapp');
-    }
-    if (sessionStorage.getItem('wa-open-contact')) setSection('whatsapp');
-    window.addEventListener('open-whatsapp-conversation', openWhatsApp);
-    return () => window.removeEventListener('open-whatsapp-conversation', openWhatsApp);
-  }, []);
+  // O WhatsApp saiu do Espaço de Trabalho: agora é aba própria da nova-dash.
+  // A notificação clicada troca a aba lá em page.tsx; nada a fazer aqui.
 
   // Guarda extra: sem a permissão, cair numa seção restrita volta para o início.
   const effective: WorkspaceSection =
@@ -65,12 +54,10 @@ export function Workspace() {
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} chatUnread={chatUnread} whatsappUnread={whatsappUnread} reviewPending={reviewPending} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
         {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
-        {/* No celular o inbox ocupa a tela inteira (sem moldura de 16px). */}
-        {effective === 'whatsapp' && <div className="h-full p-0 sm:p-4"><WhatsAppInbox /></div>}
         {effective === 'revisao-ia' && <div className="h-full p-2 sm:p-4"><AIReview /></div>}
         {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}

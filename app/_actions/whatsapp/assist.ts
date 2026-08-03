@@ -3,7 +3,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { suggestReplyForContact, transcribeMessageAudio } from '@/app/_shared/lib/whatsapp/assist';
+import { suggestReplyForContact, transcribeMessageAudio, summarizeConversationForAgent } from '@/app/_shared/lib/whatsapp/assist';
 
 // Ações de agent-assist do inbox: a IA AJUDA o atendente (sugere resposta,
 // transcreve áudio) — quem decide e envia é sempre o humano.
@@ -39,4 +39,13 @@ export async function suggestWhatsAppReply(contactId: string): Promise<string> {
 export async function transcribeWhatsAppAudio(messageId: string): Promise<string> {
   const me = await requireTeamMember();
   return transcribeMessageAudio(messageId, me);
+}
+
+/**
+ * Resumo da conversa para a aba Copiloto — o texto volta pro atendente na
+ * hora (diferente do resumo automático, que vira comentário no card).
+ */
+export async function summarizeWhatsAppConversation(contactId: string): Promise<string> {
+  const me = await requireTeamMember();
+  return summarizeConversationForAgent(contactId, me);
 }

@@ -79,6 +79,13 @@ export interface WhatsAppConversationDTO {
   lastReadAt: string | null;
   lastInboundAt: string | null; // controla a janela de 24h da Meta
   lastMessagePreview: string | null;
+  // Quem falou por último (para o selinho de atendente na lista): nome do
+  // atendente da última mensagem enviada, ou null se foi o cliente.
+  lastMessageAuthorName: string | null;
+  lastMessageFromBot: boolean;
+  // Provocações do ciclo de recuperação já enviadas (0-3) — exibido quando
+  // status="standby" como "1ª de 3".
+  recoveryAttempts: number;
   unread: boolean;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
@@ -110,7 +117,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       where: { contactId: { in: contactIds } },
       orderBy: { createdAt: 'desc' },
       distinct: ['contactId'],
-      select: { contactId: true, body: true, mediaType: true, direction: true },
+      select: { contactId: true, body: true, mediaType: true, direction: true, sentByBot: true, authorId: true },
     }),
     db.whatsAppMessage.findMany({
       where: { contactId: { in: contactIds }, direction: 'in' },
@@ -124,9 +131,19 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     }),
   ]);
 
+  // Autores das últimas mensagens (selinho "quem atendeu por último" na lista)
+  // que não estejam já cobertos pela query de atendentes atribuídos.
+  const knownIds = new Set(assignees.map((u) => u.id));
+  const extraAuthorIds = [...new Set(
+    lastMessages.map((m) => m.authorId).filter((id): id is string => !!id && !knownIds.has(id)),
+  )];
+  const extraAuthors = extraAuthorIds.length
+    ? await db.user.findMany({ where: { id: { in: extraAuthorIds } }, select: { id: true, name: true } })
+    : [];
+
   const previewByContact = new Map(lastMessages.map((m) => [m.contactId, m]));
   const inboundByContact = new Map(lastInbound.map((m) => [m.contactId, m.createdAt]));
-  const nameById = new Map(assignees.map((u) => [u.id, u.name ?? 'Atendente']));
+  const nameById = new Map([...assignees, ...extraAuthors].map((u) => [u.id, u.name ?? 'Atendente']));
 
   return conversations.map((c) => {
     const last = previewByContact.get(c.contactId);
@@ -155,6 +172,12 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       lastReadAt: effectiveReadAt?.toISOString() ?? null,
       lastInboundAt: inboundAt?.toISOString() ?? null,
       lastMessagePreview: last?.direction === 'out' && preview ? `Você: ${preview}` : preview,
+      lastMessageAuthorName:
+        last?.direction === 'out' && !last.sentByBot && last.authorId
+          ? nameById.get(last.authorId) ?? null
+          : null,
+      lastMessageFromBot: !!last?.sentByBot,
+      recoveryAttempts: c.recoveryAttempts,
       unread: !effectiveReadAt || c.lastMessageAt > effectiveReadAt,
       optedOut: c.contact.optedOut,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),

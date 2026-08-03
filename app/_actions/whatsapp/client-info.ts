@@ -90,6 +90,34 @@ async function findUserByPhone(phone: string): Promise<{ id: string } | null> {
   return withDdd ?? rows[0];
 }
 
+/**
+ * Contato de WhatsApp de um card/User — atalho "Abrir conversa" do CardDialog.
+ * Vínculo direto (contact.userId) ou match por telefone (últimos 8 dígitos).
+ */
+export async function findWhatsAppContactForCard(userId: string): Promise<string | null> {
+  await requireTeamMember();
+
+  const linked = await db.whatsAppContact.findFirst({ where: { userId }, select: { id: true } });
+  if (linked) return linked.id;
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { telefone: true, telefone_secundario: true },
+  });
+  if (!user) return null;
+
+  for (const phone of [user.telefone, user.telefone_secundario]) {
+    const last8 = (phone ?? '').replace(/\D/g, '').slice(-8);
+    if (last8.length < 8) continue;
+    const contact = await db.whatsAppContact.findFirst({
+      where: { phone: { endsWith: last8 } },
+      select: { id: true },
+    });
+    if (contact) return contact.id;
+  }
+  return null;
+}
+
 /** Carrega a ficha: do User vinculado (cadastrado) ou do rascunho da conversa. */
 export async function getClientInfo(contactId: string): Promise<ClientInfoResult> {
   await requireTeamMember();

@@ -3,13 +3,14 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import useSWR from 'swr';
 import {
   ArrowLeft, Bot, Check, CheckCheck, AlertCircle, MessageCircle, Paperclip,
   UserRound, Undo2, Archive, Headset, Inbox as InboxIcon, Search, X,
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
-  MoreVertical,
+  MoreVertical, Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -24,7 +25,7 @@ import {
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead,
-  listWhatsAppAttendants, type WhatsAppConversationDTO, type AttendantDTO,
+  type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
 import {
   sendWhatsAppMessage, sendWhatsAppMedia, getWhatsAppUploadUrl,
@@ -36,7 +37,12 @@ import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider'
 import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
 import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
+import { attachConversationMediaToCard } from '@/app/_actions/whatsapp/client-documents';
+import { getClientInfo } from '@/app/_actions/whatsapp/client-info';
+import { CardDialog } from '@/app/nova-dash/CardDialog';
+import type { ExtendedKanbanCard } from '@/app/nova-dash/card-dialog/types';
 import { WhatsAppComposer } from './WhatsAppComposer';
+import { CopilotPanel } from './CopilotPanel';
 import { ClientInfoModal } from './ClientInfoModal';
 import { WhatsAppTagsModal } from './WhatsAppTagsModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
@@ -72,12 +78,12 @@ const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
 
 // Ícone/cor de cada categoria no menu manual de "Encerrar".
 const CLOSE_MENU_META: Record<string, { Icon: React.ElementType; color: string }> = {
-  qualificado:     { Icon: BadgeCheck,    color: 'text-emerald-600' },
-  nao_qualificado: { Icon: XCircle,       color: 'text-gray-400' },
-  perguntas:       { Icon: HelpCircle,    color: 'text-blue-500' },
-  novo_acidente:   { Icon: AlertTriangle, color: 'text-amber-500' },
-  transferido:     { Icon: Headset,       color: 'text-violet-500' },
-  descartado:      { Icon: Trash2,        color: 'text-red-500' },
+  qualificado: { Icon: BadgeCheck, color: 'text-emerald-600' },
+  nao_qualificado: { Icon: XCircle, color: 'text-gray-400' },
+  perguntas: { Icon: HelpCircle, color: 'text-blue-500' },
+  novo_acidente: { Icon: AlertTriangle, color: 'text-amber-500' },
+  transferido: { Icon: Headset, color: 'text-violet-500' },
+  descartado: { Icon: Trash2, color: 'text-red-500' },
 };
 
 function initials(name: string) {
@@ -115,14 +121,24 @@ const STATUS_LABEL: Record<string, string> = {
   bot: 'Com o bot',
   queued: 'Na fila',
   human: 'Em atendimento',
+  standby: 'Em recuperação',
   closed: 'Encerrada',
 };
 const STATUS_CHIP: Record<string, string> = {
   bot: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   queued: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   human: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  standby: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
   closed: 'bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400',
 };
+
+// Cor determinística do selinho de atendente na lista (por nome).
+const ATTENDANT_BADGE_COLORS = ['bg-emerald-600', 'bg-violet-600', 'bg-amber-600', 'bg-sky-600', 'bg-rose-600'];
+function attendantBadgeColor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return ATTENDANT_BADGE_COLORS[h % ATTENDANT_BADGE_COLORS.length];
+}
 
 export function WhatsAppInbox() {
   const { data: session } = useSession();
@@ -134,8 +150,9 @@ export function WhatsAppInbox() {
 
   const [search, setSearch] = useState('');
   const [clientModalOpen, setClientModalOpen] = useState(false);
-  const [attendants, setAttendants] = useState<AttendantDTO[]>([]);
-  const [attendantFilter, setAttendantFilter] = useState('all');
+  // Coluna Copiloto (lg+) e CardDialog do cliente vinculado.
+  const [copilotOpen, setCopilotOpen] = useState(true);
+  const [cardDialogOpen, setCardDialogOpen] = useState(false);
 
   // Tags livres pra organizar/filtrar conversas.
   const [allTags, setAllTags] = useState<WhatsAppTagDTO[]>([]);
@@ -147,31 +164,24 @@ export function WhatsAppInbox() {
   const { perms } = usePermissions();
 
   function reloadTags() {
-    listWhatsAppTags().then(setAllTags).catch(() => {});
+    listWhatsAppTags().then(setAllTags).catch(() => { });
   }
   useEffect(() => { reloadTags(); }, []);
 
-  // Aba única abaixo de "Fila de espera" / "Meus atendimentos" (que ficam
-  // sempre fixas no topo) — reduz a lista de grupos empilhados pra 1 por vez.
-  // As 3 últimas espelham CLOSE_CATEGORY_LABELS (categorias de encerramento);
-  // "qualified"/"unqualified" continuam com nome próprio por compatibilidade.
-  // `dot` = bolinha de cor da categoria nos chips (leitura rápida do status).
-  const TABS = [
-    { key: 'qualified', label: 'Qualificadas', dot: 'bg-emerald-400' },
-    { key: 'bot', label: 'Com o bot', dot: 'bg-violet-400' },
-    // Ciclo de recuperação (28/07/2026): cliente sumiu na triagem e o cron
-    // está provocando (até 3 tentativas). Esgotou → cai em "Sem resposta".
-    { key: 'standby', label: 'Em recuperação', dot: 'bg-orange-400' },
-    { key: 'sem_resposta', label: 'Sem resposta', dot: 'bg-rose-400' },
-    { key: 'unqualified', label: 'Não qualificadas', dot: 'bg-gray-400' },
-    { key: 'others', label: 'Outros atendentes', dot: 'bg-sky-400' },
-    { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas, dot: 'bg-blue-400' },
-    { key: 'novo_acidente', label: CLOSE_CATEGORY_LABELS.novo_acidente, dot: 'bg-amber-400' },
-    { key: 'transferido', label: CLOSE_CATEGORY_LABELS.transferido, dot: 'bg-fuchsia-400' },
-    { key: 'descartado', label: CLOSE_CATEGORY_LABELS.descartado, dot: 'bg-red-400' },
+  // Sidebar por prioridade: Fila de espera → Conversas ativas → Bot →
+  // Recuperação ficam sempre visíveis; os desfechos (encerradas etc.) moram
+  // atrás de um select único no rodapé — acessíveis, mas fora do caminho.
+  const OTHER_GROUPS = [
+    { key: 'qualified', label: 'Qualificadas' },
+    { key: 'unqualified', label: 'Não qualificadas' },
+    { key: 'sem_resposta', label: 'Sem resposta' },
+    { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas },
+    { key: 'novo_acidente', label: CLOSE_CATEGORY_LABELS.novo_acidente },
+    { key: 'transferido', label: CLOSE_CATEGORY_LABELS.transferido },
+    { key: 'descartado', label: CLOSE_CATEGORY_LABELS.descartado },
   ] as const;
-  type TabKey = (typeof TABS)[number]['key'];
-  const [activeTab, setActiveTab] = useState<TabKey>('others');
+  type OtherKey = (typeof OTHER_GROUPS)[number]['key'];
+  const [otherFilter, setOtherFilter] = useState<'' | OtherKey>('');
 
   // Envio otimista: a mensagem entra na thread como "sending" na hora e o
   // input fica livre; quando a action confirma, o registro real substitui.
@@ -190,10 +200,6 @@ export function WhatsAppInbox() {
     setHighlightId(id);
     setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1500);
   }
-
-  useEffect(() => {
-    listWhatsAppAttendants().then(setAttendants).catch(() => {});
-  }, []);
 
   useEffect(() => {
     setPending([]); setReplyTo(null); setEditTarget(null);
@@ -219,6 +225,28 @@ export function WhatsAppInbox() {
 
   const active = conversations.find((c) => c.contactId === activeContactId) ?? null;
 
+  // Ficha do cliente da conversa aberta: alimenta o Copiloto (aba Ficha /
+  // checklist) e o atalho "Card #N" do cabeçalho.
+  const { data: clientInfo, mutate: mutateClientInfo } = useSWR(
+    activeContactId ? ['wa-client-info', activeContactId] : null,
+    () => getClientInfo(activeContactId!),
+    { revalidateOnFocus: false },
+  );
+
+  useEffect(() => { setCardDialogOpen(false); }, [activeContactId]);
+
+  // Stub mínimo pro CardDialog — ele mesmo recarrega o card completo ao abrir.
+  const cardStub = useMemo<ExtendedKanbanCard | null>(() => {
+    if (!clientInfo?.registered || !clientInfo.userId) return null;
+    return {
+      id: clientInfo.userId,
+      title: clientInfo.fields.name ?? active?.contactName ?? 'Cliente',
+      description: '', assignee: '', timer: 0, comments: [], attachments: [],
+      observations: '', checklistItems: [], createdAt: new Date(), updatedAt: new Date(),
+      isProcess: false, cardNumber: clientInfo.cardNumber,
+    } as ExtendedKanbanCard;
+  }, [clientInfo, active?.contactName]);
+
   // SSE do relay existente: eventos de WhatsApp chegam como canal "whatsapp:*".
   const onStream = useCallback((e: ChatStreamEvent) => {
     const channelId = (e as { channelId?: string }).channelId;
@@ -231,7 +259,7 @@ export function WhatsAppInbox() {
   // Abrir conversa zera o badge de não-lida.
   useEffect(() => {
     if (!active?.unread || !active.id) return;
-    markConversationRead(active.id).then(() => refreshConversations()).catch(() => {});
+    markConversationRead(active.id).then(() => refreshConversations()).catch(() => { });
   }, [active?.id, active?.unread, messages.length, refreshConversations]);
 
   const displayMessages = useMemo(
@@ -287,9 +315,9 @@ export function WhatsAppInbox() {
       // Urgentes (detectados pela IA) primeiro na fila de espera.
       queued: filtered.filter((c) => c.status === 'queued')
         .sort((a, b) => Number(b.urgent) - Number(a.urgent)),
-      mine: filtered.filter((c) => c.status === 'human' && c.assignedToId === meId),
-      others: filtered.filter((c) => c.status === 'human' && c.assignedToId !== meId
-        && (attendantFilter === 'all' || c.assignedToId === attendantFilter)),
+      // Todas as conversas em atendimento humano, de qualquer atendente — o
+      // selinho no avatar diz quem falou por último, sem filtro obrigatório.
+      ativas: filtered.filter((c) => c.status === 'human'),
       bot: filtered.filter((c) => c.status === 'bot'),
       standby: filtered.filter((c) => c.status === 'standby'),
       sem_resposta: byCategory('sem_resposta'),
@@ -300,11 +328,10 @@ export function WhatsAppInbox() {
       transferido: byCategory('transferido'),
       descartado: byCategory('descartado'),
     };
-  }, [filtered, meId, attendantFilter]);
+  }, [filtered]);
 
-  const tabItems: Record<TabKey, WhatsAppConversationDTO[]> = {
-    others: groups.others, bot: groups.bot, standby: groups.standby, sem_resposta: groups.sem_resposta,
-    unqualified: groups.unqualified, qualified: groups.qualified,
+  const otherItems: Record<OtherKey, WhatsAppConversationDTO[]> = {
+    qualified: groups.qualified, unqualified: groups.unqualified, sem_resposta: groups.sem_resposta,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
     descartado: groups.descartado,
   };
@@ -433,6 +460,20 @@ export function WhatsAppInbox() {
     await mutateMessages();
   }
 
+  // "Anexar no card": a mídia da mensagem vira documento da ficha do cliente
+  // (idempotente no servidor). O Copiloto escuta o evento e atualiza a lista.
+  async function handleAttachMedia(msg: WhatsAppThreadMessage) {
+    try {
+      await attachConversationMediaToCard(msg.id);
+      window.dispatchEvent(new Event('wa-docs-changed'));
+      toast.success(clientInfo?.registered
+        ? `Anexado no card${clientInfo.cardNumber ? ` #${clientInfo.cardNumber}` : ''}.`
+        : 'Anexado na ficha (migra pro card quando o cliente for cadastrado).');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao anexar no card.');
+    }
+  }
+
   async function handleDelete(msg: WhatsAppThreadMessage) {
     if (!(await confirm({
       title: 'Apagar mensagem da thread',
@@ -522,6 +563,11 @@ export function WhatsAppInbox() {
           </div>
 
           {/* Filtro por tags */}
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-[#8fbcac] hover:bg-[#2e5749] hover:text-white">
+              <Settings2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
           {allTags.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {allTags.map((t) => {
@@ -539,9 +585,6 @@ export function WhatsAppInbox() {
                   </button>
                 );
               })}
-              <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-[#8fbcac] hover:bg-[#2e5749] hover:text-white">
-                <Settings2 className="h-3.5 w-3.5" />
-              </button>
             </div>
           )}
           {allTags.length === 0 && (
@@ -569,83 +612,40 @@ export function WhatsAppInbox() {
             </div>
           )}
 
-          {/* Fixas no topo */}
-          <ConversationGroup title="Fila de espera" items={groups.queued} activeContactId={activeContactId} onSelect={setActiveContactId} highlight />
-          <ConversationGroup title="Meus atendimentos" items={groups.mine} activeContactId={activeContactId} onSelect={setActiveContactId} />
+          {/* Grupos por prioridade: quem chega novo (ou o bot transfere) entra
+              na Fila de espera lá em cima, visível pra equipe inteira. */}
+          <ConversationGroup title="Fila de espera" accent="fila" items={groups.queued} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
+          <ConversationGroup title="Conversas ativas" accent="ativas" items={groups.ativas} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
+          <ConversationGroup title="Bot atendendo" accent="bot" items={groups.bot} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
+          <ConversationGroup title="Em recuperação" accent="recup" items={groups.standby} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
 
-          {/* Aba com o resto das categorias — uma lista por vez.
-              Gruda no topo da área rolável (sticky) pra ficar sempre acessível. */}
-          {/* Seletor de categoria: dropdown ÚNICO (compacto, sem scroll lateral,
-              uma linha só) que abre como LISTA VERTICAL — cada categoria numa
-              linha com bolinha de cor e contador alinhado à direita. */}
-          <div className="sticky top-0 z-10 mt-3 border-y border-[#14332a] bg-[#1f3d33]/95 px-3 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#366b58]">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${TABS.find((t) => t.key === activeTab)!.dot}`} />
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    {TABS.find((t) => t.key === activeTab)!.label}
-                  </span>
-                  <span className="rounded-full bg-[#1d9e75] px-2 py-0.5 text-[11px] font-bold tabular-nums text-white">
-                    {tabItems[activeTab].length}
-                  </span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-[#8fbcac]" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="w-[var(--radix-dropdown-menu-trigger-width)] border-[#3a6b58] bg-[#24483c] p-1"
-              >
-                {TABS.map((tab) => (
-                  <DropdownMenuItem
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-[13px] font-semibold focus:bg-[#366b58] focus:text-white ${
-                      activeTab === tab.key ? 'bg-[#1d9e75] text-white focus:bg-[#1d9e75]' : 'text-[#cfe6db]'
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tab.dot}`} />
-                    <span className="min-w-0 flex-1 truncate">{tab.label}</span>
-                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
-                      activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-[#1a4034] text-[#9fd6bd]'
-                    }`}>
-                      {tabItems[tab.key].length}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {/* Desfechos (encerradas, sem resposta…) atrás de um select único. */}
+          <div className="mt-3 border-t border-[#14332a] px-3 pb-1 pt-3 dark:border-zinc-800">
+            <select
+              value={otherFilter}
+              onChange={(e) => setOtherFilter(e.target.value as '' | OtherKey)}
+              className="h-8 w-full cursor-pointer rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2 text-sm font-semibold text-[#cfe6db] outline-none focus:ring-2 focus:ring-[#6fd6ad]"
+            >
+              <option value="">Outras conversas…</option>
+              {OTHER_GROUPS.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.label} ({otherItems[g.key].length})
+                </option>
+              ))}
+            </select>
           </div>
-
-          {activeTab === 'others' && attendants.length > 0 && (
-            <div className="px-4 pb-1 pt-2">
-              <select
-                value={attendantFilter}
-                onChange={(e) => setAttendantFilter(e.target.value)}
-                className="h-7 w-full max-w-[180px] cursor-pointer rounded-md border border-[#dce8e1] bg-[#2e5749] px-1.5 text-xs font-semibold text-[#cfe6db] outline-none"
-              >
-                <option value="all">Todos os atendentes</option>
-                {attendants.filter((a) => a.id !== meId).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </div>
+          {otherFilter && (
+            <ConversationGroup
+              title={OTHER_GROUPS.find((g) => g.key === otherFilter)!.label}
+              items={otherItems[otherFilter]}
+              activeContactId={activeContactId}
+              onSelect={setActiveContactId}
+              meId={meId}
+              meName={session?.user?.name ?? ''}
+              forceShow
+              emptyLabel={`Nenhuma conversa em "${OTHER_GROUPS.find((g) => g.key === otherFilter)!.label}".`}
+            />
           )}
-
-          <ConversationGroup
-            title={TABS.find((t) => t.key === activeTab)!.label}
-            items={tabItems[activeTab]}
-            activeContactId={activeContactId}
-            onSelect={setActiveContactId}
-            hideTitle
-            emptyLabel={
-              activeTab === 'others' ? 'Nenhuma conversa com outros atendentes.'
-                : activeTab === 'bot' ? 'Nenhuma conversa com o bot.'
-                  : activeTab === 'qualified' ? 'Nenhuma conversa qualificada ainda.'
-                    : activeTab === 'unqualified' ? 'Nenhuma conversa encerrada não qualificada.'
-                      : `Nenhuma conversa encerrada como "${TABS.find((t) => t.key === activeTab)?.label}".`
-            }
-          />
         </div>
       </aside>
 
@@ -695,6 +695,16 @@ export function WhatsAppInbox() {
                   </span>
                 )}
               </button>
+              {/* Atalho conversa → card: um clique abre o dialog do kanban. */}
+              {clientInfo?.registered && clientInfo.cardNumber && (
+                <button
+                  onClick={() => setCardDialogOpen(true)}
+                  title="Abrir o card do cliente no kanban"
+                  className="hidden shrink-0 items-center gap-1 rounded-full border border-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50 sm:flex"
+                >
+                  Card #{clientInfo.cardNumber} ↗
+                </button>
+              )}
               {active.urgent && active.status !== 'closed' && (
                 <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
                   <AlertTriangle className="h-3 w-3" /> Urgente
@@ -768,6 +778,18 @@ export function WhatsAppInbox() {
                 <HeaderButton icon={Headset} label="Reabrir" onClick={() => runAction(() => assumeConversation(active.id), 'Atendimento reaberto.')} />
               )}
 
+              {/* Mostrar/ocultar a coluna Copiloto (só existe no desktop lg+). */}
+              <button
+                onClick={() => setCopilotOpen((v) => !v)}
+                title={copilotOpen ? 'Ocultar Copiloto' : 'Mostrar Copiloto'}
+                className={`hidden shrink-0 rounded-lg border p-1.5 transition-colors lg:block ${copilotOpen
+                    ? 'border-sky-300 bg-sky-50 text-sky-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+              >
+                <Sparkles className="h-4 w-4" />
+              </button>
+
               {/* Ações destrutivas do contato — exigem manage_wa_contacts */}
               {perms.manage_wa_contacts && (
                 <DropdownMenu>
@@ -814,29 +836,30 @@ export function WhatsAppInbox() {
                   || new Date(prev.createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
                 return (
                   <Fragment key={msg.id}>
-                  {newDay && (
-                    <div className="my-3 flex justify-center">
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400">
-                        {dayLabel(msg.createdAt)}
-                      </span>
-                    </div>
-                  )}
-                  <ThreadMessageRow
-                    msg={msg}
-                    grouped={!!grouped}
-                    meId={meId}
-                    highlighted={highlightId === msg.id}
-                    setRowRef={(el) => {
-                      if (el) rowRefs.current.set(msg.id, el);
-                      else rowRefs.current.delete(msg.id);
-                    }}
-                    onReply={() => { setEditTarget(null); setReplyTo(msg); }}
-                    onEdit={() => { setReplyTo(null); setEditTarget(msg); }}
-                    onDelete={() => handleDelete(msg)}
-                    onRetry={() => retryPending(msg)}
-                    onDiscard={() => removePending(msg.id)}
-                    onJumpToReply={() => jumpToMessage(msg.replyToId)}
-                  />
+                    {newDay && (
+                      <div className="my-3 flex justify-center">
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400">
+                          {dayLabel(msg.createdAt)}
+                        </span>
+                      </div>
+                    )}
+                    <ThreadMessageRow
+                      msg={msg}
+                      grouped={!!grouped}
+                      meId={meId}
+                      highlighted={highlightId === msg.id}
+                      setRowRef={(el) => {
+                        if (el) rowRefs.current.set(msg.id, el);
+                        else rowRefs.current.delete(msg.id);
+                      }}
+                      onReply={() => { setEditTarget(null); setReplyTo(msg); }}
+                      onEdit={() => { setReplyTo(null); setEditTarget(msg); }}
+                      onDelete={() => handleDelete(msg)}
+                      onRetry={() => retryPending(msg)}
+                      onDiscard={() => removePending(msg.id)}
+                      onJumpToReply={() => jumpToMessage(msg.replyToId)}
+                      onAttachToCard={() => handleAttachMedia(msg)}
+                    />
                   </Fragment>
                 );
               })}
@@ -890,6 +913,32 @@ export function WhatsAppInbox() {
         )}
       </section>
 
+      {/* ---------- Copiloto (coluna direita, lg+) ---------- */}
+      {active && copilotOpen && (
+        <CopilotPanel
+          conversation={active}
+          messages={displayMessages}
+          clientInfo={clientInfo ?? null}
+          onClientInfoChanged={(info) => { mutateClientInfo(info, { revalidate: false }); }}
+          onOpenCard={() => setCardDialogOpen(true)}
+          onRefreshMessages={async () => { await mutateMessages(); }}
+        />
+      )}
+
+      {/* CardDialog do cliente vinculado — aberto pelo atalho "Card #N" ou
+          pelo Copiloto. O dialog recarrega o card completo sozinho. */}
+      {cardDialogOpen && cardStub && clientInfo?.userId && (
+        <CardDialog
+          card={cardStub}
+          open={cardDialogOpen}
+          onClose={() => setCardDialogOpen(false)}
+          onUpdate={() => { mutateClientInfo(); }}
+          cardId={clientInfo.userId}
+          isProcess={false}
+          ownerId={clientInfo.userId}
+        />
+      )}
+
       <WhatsAppTagsModal open={tagsModalOpen} onOpenChange={setTagsModalOpen} onChanged={reloadTags} />
     </div>
   );
@@ -897,20 +946,41 @@ export function WhatsAppInbox() {
 
 /* ---------- subcomponentes ---------- */
 
+// Cores do cabeçalho de cada grupo da sidebar (por prioridade de ação),
+// calibradas pro fundo verde-escuro da skin original do inbox.
+const GROUP_ACCENT: Record<string, { header: string; chip: string }> = {
+  fila: { header: 'text-amber-400', chip: 'bg-[#2e5749] text-amber-200' },
+  ativas: { header: 'text-[#6fd6ad]', chip: 'bg-[#2e5749] text-[#c5ecdb]' },
+  bot: { header: 'text-sky-300', chip: 'bg-[#2e5749] text-sky-200' },
+  recup: { header: 'text-violet-300', chip: 'bg-[#2e5749] text-violet-200' },
+};
+
+/** Pill âmbar da janela de 24h na lista: expirada ou expirando em < 6h. */
+function windowPill(c: WhatsAppConversationDTO): string | null {
+  if (c.status !== 'human' && c.status !== 'queued') return null;
+  if (!c.lastInboundAt) return null;
+  const remaining = WINDOW_24H_MS - (Date.now() - new Date(c.lastInboundAt).getTime());
+  if (remaining <= 0) return '24h ⚠';
+  if (remaining < 6 * 60 * 60 * 1000) return `24h: ${Math.max(1, Math.floor(remaining / 3_600_000))}h`;
+  return null;
+}
+
 function ConversationGroup({
-  title, items, activeContactId, onSelect, highlight, headerExtra, forceShow, hideTitle, emptyLabel,
+  title, items, activeContactId, onSelect, accent, meId, meName, headerExtra, forceShow, hideTitle, emptyLabel,
 }: {
   title: string; items: WhatsAppConversationDTO[]; activeContactId: string | null;
-  onSelect: (contactId: string) => void; highlight?: boolean;
+  onSelect: (contactId: string) => void; accent?: keyof typeof GROUP_ACCENT;
+  meId?: string; meName?: string;
   headerExtra?: React.ReactNode; forceShow?: boolean; hideTitle?: boolean; emptyLabel?: string;
 }) {
   if (!items.length && !forceShow && !hideTitle) return null;
+  const colors = accent ? GROUP_ACCENT[accent] : { header: 'text-[#8fbcac]', chip: 'bg-[#2e5749] text-[#cfe6db]' };
   return (
     <div>
       {!hideTitle && (
-        <div className={`flex items-center gap-1.5 px-4 pb-1 pt-4 text-xs font-bold uppercase tracking-wider ${highlight ? 'text-amber-400' : 'text-[#8fbcac]'}`}>
+        <div className={`flex items-center gap-1.5 px-4 pb-1 pt-4 text-xs font-bold uppercase tracking-wider ${colors.header}`}>
           {title}
-          <span className="rounded-full bg-[#2e5749] px-1.5 text-[11px] font-bold text-[#cfe6db]">{items.length}</span>
+          <span className={`rounded-full px-1.5 text-[11px] font-bold ${colors.chip}`}>{items.length}</span>
           {headerExtra}
         </div>
       )}
@@ -919,19 +989,41 @@ function ConversationGroup({
       )}
       {items.map((c) => {
         const isActive = c.contactId === activeContactId;
+        // Selinho sobre o avatar: quem está com a conversa agora. Bot/standby
+        // mostram o robô; humano mostra as iniciais de quem falou por último
+        // (ou do atendente atribuído), "EU" quando é você.
+        const attName = c.status === 'human' ? (c.lastMessageAuthorName ?? c.assignedToName) : null;
+        const attIsMe = !!attName && (attName === meName || (!c.lastMessageAuthorName && c.assignedToId === meId));
+        const isBotSide = c.status === 'bot' || c.status === 'standby';
+        const pill = windowPill(c);
         return (
           <button
             key={c.id}
             onClick={() => onSelect(c.contactId)}
-            className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-              isActive ? 'bg-[#1a6649] text-white' : 'text-[#d3e2db] hover:bg-[#26483c]'
-            }`}
+            className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${isActive ? 'bg-[#1a6649] text-white' : 'text-[#d3e2db] hover:bg-[#26483c]'
+              }`}
           >
-            <Avatar className="h-8 w-8 shrink-0 border border-[#3a6b58]">
-              <AvatarFallback className="bg-[#356b57] text-[11px] font-bold text-[#c5ecdb]">
-                {initials(c.contactName ?? c.contactPhone)}
-              </AvatarFallback>
-            </Avatar>
+            <span className="relative shrink-0">
+              <Avatar className="h-8 w-8 border border-[#3a6b58]">
+                <AvatarFallback className="bg-[#356b57] text-[11px] font-bold text-[#c5ecdb]">
+                  {initials(c.contactName ?? c.contactPhone)}
+                </AvatarFallback>
+              </Avatar>
+              {isBotSide && (
+                <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#1f3d33] bg-sky-600 text-white">
+                  <Bot className="h-2.5 w-2.5" />
+                </span>
+              )}
+              {!isBotSide && attName && (
+                <span
+                  title={attIsMe ? 'Você' : attName}
+                  className={`absolute -bottom-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full border-2 border-[#1f3d33] px-px text-[7px] font-bold text-white ${attIsMe ? 'bg-emerald-600' : attendantBadgeColor(attName)
+                    }`}
+                >
+                  {attIsMe ? 'EU' : initials(attName)}
+                </span>
+              )}
+            </span>
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline justify-between gap-2">
                 <span className="flex min-w-0 items-baseline gap-1.5">
@@ -939,6 +1031,16 @@ function ConversationGroup({
                   {c.urgent && c.status !== 'closed' && (
                     <span className="shrink-0 animate-pulse rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       Urgente
+                    </span>
+                  )}
+                  {c.status === 'standby' && c.recoveryAttempts > 0 && (
+                    <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                      {Math.min(c.recoveryAttempts, 3)}ª de 3
+                    </span>
+                  )}
+                  {pill && (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                      {pill}
                     </span>
                   )}
                 </span>
@@ -976,12 +1078,13 @@ function StatusTicks({ status }: { status: string }) {
 }
 
 function ThreadMessageRow({
-  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply,
+  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard,
 }: {
   msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean;
   setRowRef: (el: HTMLDivElement | null) => void;
   onReply: () => void; onEdit: () => void; onDelete: () => void;
   onRetry: () => void; onDiscard: () => void; onJumpToReply: () => void;
+  onAttachToCard: () => void;
 }) {
   const mine = msg.direction === 'out';
   const isTemp = msg.id.startsWith('temp-');
@@ -1028,13 +1131,12 @@ function ThreadMessageRow({
           </span>
         )}
         <div
-          className={`rounded-2xl px-3 py-2 text-base shadow-sm ${
-            mine
+          className={`rounded-2xl px-3 py-2 text-base shadow-sm ${mine
               ? msg.sentByBot
                 ? 'rounded-br-md bg-violet-600 text-white'
                 : 'rounded-br-md bg-emerald-600 text-white'
               : 'rounded-bl-md border border-gray-100 bg-white text-gray-700 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100'
-          } ${msg.status === 'failed' ? 'opacity-70' : ''}`}
+            } ${msg.status === 'failed' ? 'opacity-70' : ''}`}
         >
           {msg.replyToId && (
             <button
@@ -1047,7 +1149,7 @@ function ThreadMessageRow({
               <span className="line-clamp-2">{msg.replyToBody ?? '—'}</span>
             </button>
           )}
-          {msg.mediaKey && <WaMediaBubble msg={msg} mine={mine} />}
+          {msg.mediaKey && <WaMediaBubble msg={msg} mine={mine} onAttachToCard={onAttachToCard} />}
           {!msg.mediaKey && msg.mediaType && (
             <span className={`mb-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold ${mine ? 'bg-white/15' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
               <Paperclip className="h-3.5 w-3.5" /> Enviando anexo...
@@ -1093,11 +1195,12 @@ function ThreadMessageRow({
  *   - documento: cartão com ícone, extensão em selo e ação "abrir"
  * A URL pré-assinada é buscada uma vez (cache em memória via getMediaUrl).
  */
-function WaMediaBubble({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolean }) {
+function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessage; mine: boolean; onAttachToCard?: () => void }) {
   const mediaKey = msg.mediaKey as string;
   const mediaType = msg.mediaType;
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const isTemp = msg.id.startsWith('temp-');
 
   useEffect(() => {
     let cancelled = false;
@@ -1119,6 +1222,33 @@ function WaMediaBubble({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolea
 
   const docName = fileNameFromKey(mediaKey);
 
+  // "Baixar" de verdade: URL com Content-Disposition attachment.
+  async function downloadAsFile() {
+    const res = await downloadFileFromS3(mediaKey, docName, false);
+    if (res.success && res.presignedUrl) window.open(res.presignedUrl, '_blank');
+    else toast.error('Não foi possível baixar o anexo.');
+  }
+
+  // Menu compartilhado por imagem/vídeo/documento: ver, baixar, anexar no card.
+  const mediaMenu = (
+    <DropdownMenuContent align="start" className="w-60">
+      <DropdownMenuItem onClick={openInNewTab} className="text-base">
+        <Eye className="mr-2 h-3.5 w-3.5 text-gray-500" /> Ver em tela cheia
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={downloadAsFile} className="text-base">
+        <Download className="mr-2 h-3.5 w-3.5 text-gray-500" /> Baixar
+      </DropdownMenuItem>
+      {onAttachToCard && !isTemp && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onAttachToCard} className="text-base text-emerald-700 focus:text-emerald-700">
+            <Paperclip className="mr-2 h-3.5 w-3.5 text-emerald-600" /> Anexar no card do cliente
+          </DropdownMenuItem>
+        </>
+      )}
+    </DropdownMenuContent>
+  );
+
   if (failed) {
     return (
       <button onClick={openInNewTab} title={docName} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
@@ -1129,19 +1259,23 @@ function WaMediaBubble({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolea
 
   if (mediaType?.startsWith('image/')) {
     return url ? (
-      <button
-        onClick={openInNewTab}
-        title="Abrir imagem em tamanho real"
-        className="group/img relative mb-1 block overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="Imagem enviada" className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]" />
-        <span className="pointer-events-none absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/25 via-transparent to-transparent p-2 opacity-0 transition-opacity group-hover/img:opacity-100">
-          <span className="rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
-            Abrir
-          </span>
-        </span>
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            title="Opções da imagem (ver, baixar, anexar no card)"
+            className="group/img relative mb-1 block overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt="Imagem enviada" className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]" />
+            <span className="pointer-events-none absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/25 via-transparent to-transparent p-2 opacity-0 transition-opacity group-hover/img:opacity-100">
+              <span className="rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+                Opções
+              </span>
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        {mediaMenu}
+      </DropdownMenu>
     ) : (
       <div className={`mb-1 flex h-36 w-52 items-center justify-center rounded-xl ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
         <Loader2 className="h-5 w-5 animate-spin opacity-60" />
@@ -1151,8 +1285,19 @@ function WaMediaBubble({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolea
 
   if (mediaType?.startsWith('video/')) {
     return url ? (
-      <div className="mb-1 overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10">
-        <video src={url} controls className="max-h-72 max-w-full" />
+      <div className="mb-1">
+        <div className="overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10">
+          <video src={url} controls className="max-h-72 max-w-full" />
+        </div>
+        {onAttachToCard && !isTemp && (
+          <button
+            onClick={onAttachToCard}
+            className={`mt-1 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors ${mine ? 'bg-white/15 text-white/90 hover:bg-white/25' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+          >
+            <Paperclip className="h-3 w-3" /> Anexar no card
+          </button>
+        )}
       </div>
     ) : (
       <div className={`mb-1 flex h-36 w-52 items-center justify-center rounded-xl ${mine ? 'bg-white/10' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
@@ -1167,29 +1312,32 @@ function WaMediaBubble({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolea
 
   const ext = (docName.split('.').pop() ?? '').toUpperCase().slice(0, 5);
   return (
-    <button
-      onClick={openInNewTab}
-      title={docName}
-      className={`mb-1 flex w-64 max-w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold shadow-sm transition-colors ${
-        mine
-          ? 'border-white/15 bg-white/10 hover:bg-white/20'
-          : 'border-gray-100 bg-gray-50 hover:bg-gray-100 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'
-      }`}
-    >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${mine ? 'bg-white/15' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>
-        <FileText className="h-5 w-5" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate">{docName}</span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] font-normal opacity-70">
-          {ext && (
-            <span className={`rounded px-1 py-px text-[10px] font-bold ${mine ? 'bg-white/20' : 'bg-gray-200 dark:bg-zinc-800'}`}>{ext}</span>
-          )}
-          Clique para abrir
-        </span>
-      </span>
-      <Download className={`h-4 w-4 shrink-0 ${mine ? 'text-white/70' : 'text-gray-400'}`} />
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          title={docName}
+          className={`mb-1 flex w-64 max-w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold shadow-sm transition-colors ${mine
+              ? 'border-white/15 bg-white/10 hover:bg-white/20'
+              : 'border-gray-100 bg-gray-50 hover:bg-gray-100 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'
+            }`}
+        >
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${mine ? 'bg-white/15' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>
+            <FileText className="h-5 w-5" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col leading-tight">
+            <span className="truncate">{docName}</span>
+            <span className="mt-0.5 flex items-center gap-1.5 text-[11px] font-normal opacity-70">
+              {ext && (
+                <span className={`rounded px-1 py-px text-[10px] font-bold ${mine ? 'bg-white/20' : 'bg-gray-200 dark:bg-zinc-800'}`}>{ext}</span>
+              )}
+              Clique para opções
+            </span>
+          </span>
+          <Download className={`h-4 w-4 shrink-0 ${mine ? 'text-white/70' : 'text-gray-400'}`} />
+        </button>
+      </DropdownMenuTrigger>
+      {mediaMenu}
+    </DropdownMenu>
   );
 }
 
@@ -1267,18 +1415,16 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
           className="hidden"
         />
       )}
-      <div className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 shadow-sm ${
-        mine ? 'border-white/15 bg-white/10' : 'border-gray-100 bg-gray-50 dark:border-zinc-800 dark:bg-zinc-900/60'
-      }`}>
+      <div className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 shadow-sm ${mine ? 'border-white/15 bg-white/10' : 'border-gray-100 bg-gray-50 dark:border-zinc-800 dark:bg-zinc-900/60'
+        }`}>
         <button
           onClick={toggle}
           disabled={!url}
           title={playing ? 'Pausar' : 'Tocar áudio'}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50 ${
-            mine
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50 ${mine
               ? 'bg-white/90 text-emerald-700 hover:bg-white'
               : 'bg-emerald-600 text-white hover:bg-emerald-700'
-          }`}
+            }`}
         >
           {!url
             ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -1309,11 +1455,10 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
         <button
           onClick={handleTranscribe}
           disabled={transcribing}
-          className={`mt-1.5 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors disabled:opacity-70 ${
-            mine
+          className={`mt-1.5 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors disabled:opacity-70 ${mine
               ? 'bg-white/15 text-white/90 hover:bg-white/25'
               : 'bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/70'
-          }`}
+            }`}
         >
           {transcribing
             ? <><Loader2 className="h-3 w-3 animate-spin" /> Transcrevendo…</>
@@ -1321,11 +1466,10 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
         </button>
       )}
       {transcript && (
-        <div className={`mt-1.5 rounded-lg border-l-2 px-2.5 py-1.5 text-sm leading-relaxed ${
-          mine
+        <div className={`mt-1.5 rounded-lg border-l-2 px-2.5 py-1.5 text-sm leading-relaxed ${mine
             ? 'border-white/40 bg-white/10 text-white/90'
             : 'border-violet-400 bg-violet-50/70 text-gray-600 dark:bg-violet-950/30 dark:text-zinc-300'
-        }`}>
+          }`}>
           <button
             onClick={() => setShowTranscript((v) => !v)}
             className={`mb-0.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide ${mine ? 'text-white/70' : 'text-violet-500 dark:text-violet-300'}`}

@@ -109,6 +109,19 @@ export function WhatsAppComposer({
     if (replyTo) textareaRef.current?.focus();
   }, [replyTo]);
 
+  // "Usar no campo" do Copiloto: a coluna direita injeta a sugestão aqui via
+  // CustomEvent (mesmo padrão do open-whatsapp-conversation).
+  useEffect(() => {
+    function onInsert(e: Event) {
+      const text = (e as CustomEvent<{ text?: string }>).detail?.text;
+      if (!text) return;
+      setValue(text);
+      textareaRef.current?.focus();
+    }
+    window.addEventListener('wa-composer-insert', onInsert);
+    return () => window.removeEventListener('wa-composer-insert', onInsert);
+  }, []);
+
   function pickFiles(list: FileList | null) {
     if (!list?.length) return;
     const incoming = Array.from(list);
@@ -271,6 +284,157 @@ export function WhatsAppComposer({
         </div>
       )}
 
+      {/* Ferramentas de envio — chips com rótulo visível (redesign aprovado):
+          o que antes era uma fileira de ícones soltos agora se apresenta. */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || editing || noteMode}
+          title="Anexar arquivos (pode selecionar vários)"
+          className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+        >
+          <ImagePlus className="h-4 w-4" /> <span className="hidden sm:inline">Anexar</span>
+        </button>
+
+        {/* Respostas rápidas: insere o texto no input com um clique */}
+        <DropdownMenu onOpenChange={(o) => { if (!o) setReplySearch(''); }}>
+          <DropdownMenuTrigger asChild>
+            <button
+              disabled={(disabled && !noteMode) || editing}
+              title="Respostas rápidas"
+              className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+            >
+              <Zap className="h-4 w-4" /> <span className="hidden sm:inline">Respostas rápidas</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72">
+            <DropdownMenuLabel className="text-sm">Respostas rápidas</DropdownMenuLabel>
+            {quickReplies.length > 0 && (
+              <div className="relative px-2 pb-1.5">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={replySearch}
+                  onChange={(e) => setReplySearch(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="Buscar resposta..."
+                  className="h-8 pl-7 text-sm"
+                />
+              </div>
+            )}
+            {quickReplies.length === 0 && (
+              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta criada ainda.</DropdownMenuItem>
+            )}
+            {quickReplies.length > 0 && filteredQuickReplies.length === 0 && (
+              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta encontrada.</DropdownMenuItem>
+            )}
+            {filteredQuickReplies.map((q) => (
+              <DropdownMenuItem
+                key={q.id}
+                onClick={() => {
+                  setValue((prev) => (prev.trim() ? `${prev}\n${q.body}` : q.body));
+                  textareaRef.current?.focus();
+                }}
+                className="flex-col items-start gap-0.5 text-base"
+              >
+                <span className="w-full truncate font-semibold">{q.title}</span>
+                <span className="w-full truncate text-[11px] text-gray-400">{q.body}</span>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setQuickRepliesOpen(true)} className="text-base">
+              <Settings2 className="mr-2 h-4 w-4" /> Gerenciar respostas
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu onOpenChange={(o) => { if (!o) setFlowSearch(''); }}>
+          <DropdownMenuTrigger asChild>
+            <button
+              disabled={disabled || editing || !!runningFlow}
+              title="Fluxos de mensagens"
+              className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+            >
+              <Workflow className="h-4 w-4" /> <span className="hidden sm:inline">Fluxos</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel className="text-sm">Fluxos de mensagens</DropdownMenuLabel>
+            {flows.length > 0 && (
+              <div className="relative px-2 pb-1.5">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={flowSearch}
+                  onChange={(e) => setFlowSearch(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="Buscar fluxo..."
+                  className="h-8 pl-7 text-sm"
+                />
+              </div>
+            )}
+            {flows.length === 0 && (
+              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo criado ainda.</DropdownMenuItem>
+            )}
+            {flows.length > 0 && filteredFlows.length === 0 && (
+              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo encontrado.</DropdownMenuItem>
+            )}
+            {filteredFlows.map((f) => (
+              <DropdownMenuItem key={f.id} onClick={() => runFlow(f)} className="gap-2 text-base">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-semibold">{f.name}</span>
+                  <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                    {f.steps.slice(0, 6).map((s, i) => {
+                      const Icon = FLOW_KIND_ICON[s.kind] ?? FileText;
+                      return <Icon key={i} className="h-3 w-3" />;
+                    })}
+                    {f.steps.length > 6 && `+${f.steps.length - 6}`}
+                    <span className="ml-1">{f.steps.length} passo(s)</span>
+                  </span>
+                </span>
+                <Send className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setFlowsOpen(true)} className="text-base">
+              <Settings2 className="mr-2 h-4 w-4" /> Gerenciar fluxos
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Template: sempre visível — é o único envio que funciona com a
+            janela de 24h expirada, por isso o contorno verde de destaque. */}
+        <button
+          onClick={() => setTemplateModalOpen(true)}
+          disabled={editing}
+          title="Enviar mensagem de template (funciona mesmo com a janela de 24h expirada)"
+          className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:bg-zinc-900 dark:text-emerald-400"
+        >
+          <FileBadge className="h-4 w-4" /> <span className="hidden sm:inline">Template</span>
+        </button>
+
+        {/* Toggle nota interna */}
+        <button
+          onClick={() => setNoteMode((v) => !v)}
+          disabled={editing}
+          title={noteMode ? 'Voltar a responder o cliente' : 'Nota interna (só a equipe vê)'}
+          className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold transition-colors disabled:opacity-50 ${
+            noteMode
+              ? 'border-amber-400 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+              : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-400'
+          }`}
+        >
+          <StickyNote className="h-4 w-4" /> <span className="hidden sm:inline">Nota interna</span>
+        </button>
+
+        <p className="ml-auto hidden text-[11px] text-gray-400 md:block">Enter envia · Shift+Enter nova linha</p>
+      </div>
+
       <textarea
         ref={textareaRef}
         value={value}
@@ -297,180 +461,33 @@ export function WhatsAppComposer({
         rows={2}
         className="w-full resize-none bg-transparent p-3 text-base outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
       />
-      <div className="flex items-center justify-between border-t bg-gray-50 px-3 py-2 dark:bg-zinc-950">
-        <div className="flex items-center gap-1">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || editing || noteMode}
-            title="Anexar arquivos (pode selecionar vários)"
-            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          >
-            <ImagePlus className="h-6 w-6" />
-          </button>
-
-          <DropdownMenu onOpenChange={(o) => { if (!o) setFlowSearch(''); }}>
-            <DropdownMenuTrigger asChild>
-              <button
-                disabled={disabled || editing || !!runningFlow}
-                title="Fluxos de mensagens"
-                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-              >
-                <Workflow className="h-6 w-6" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel className="text-sm">Fluxos de mensagens</DropdownMenuLabel>
-              {flows.length > 0 && (
-                <div className="relative px-2 pb-1.5">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    value={flowSearch}
-                    onChange={(e) => setFlowSearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    placeholder="Buscar fluxo..."
-                    className="h-8 pl-7 text-sm"
-                  />
-                </div>
-              )}
-              {flows.length === 0 && (
-                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo criado ainda.</DropdownMenuItem>
-              )}
-              {flows.length > 0 && filteredFlows.length === 0 && (
-                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo encontrado.</DropdownMenuItem>
-              )}
-              {filteredFlows.map((f) => (
-                <DropdownMenuItem key={f.id} onClick={() => runFlow(f)} className="gap-2 text-base">
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-semibold">{f.name}</span>
-                    <span className="flex items-center gap-1 text-[11px] text-gray-400">
-                      {f.steps.slice(0, 6).map((s, i) => {
-                        const Icon = FLOW_KIND_ICON[s.kind] ?? FileText;
-                        return <Icon key={i} className="h-3 w-3" />;
-                      })}
-                      {f.steps.length > 6 && `+${f.steps.length - 6}`}
-                      <span className="ml-1">{f.steps.length} passo(s)</span>
-                    </span>
-                  </span>
-                  <Send className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setFlowsOpen(true)} className="text-base">
-                <Settings2 className="mr-2 h-4 w-4" /> Gerenciar fluxos
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <button
-            onClick={() => setTemplateModalOpen(true)}
-            disabled={editing}
-            title="Enviar mensagem de template (funciona mesmo com a janela de 24h expirada)"
-            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          >
-            <FileBadge className="h-6 w-6" />
-          </button>
-
-          {/* Respostas rápidas: insere o texto no input com um clique */}
-          <DropdownMenu onOpenChange={(o) => { if (!o) setReplySearch(''); }}>
-            <DropdownMenuTrigger asChild>
-              <button
-                disabled={(disabled && !noteMode) || editing}
-                title="Respostas rápidas"
-                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-              >
-                <Zap className="h-6 w-6" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-72">
-              <DropdownMenuLabel className="text-sm">Respostas rápidas</DropdownMenuLabel>
-              {quickReplies.length > 0 && (
-                <div className="relative px-2 pb-1.5">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    value={replySearch}
-                    onChange={(e) => setReplySearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    placeholder="Buscar resposta..."
-                    className="h-8 pl-7 text-sm"
-                  />
-                </div>
-              )}
-              {quickReplies.length === 0 && (
-                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta criada ainda.</DropdownMenuItem>
-              )}
-              {quickReplies.length > 0 && filteredQuickReplies.length === 0 && (
-                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta encontrada.</DropdownMenuItem>
-              )}
-              {filteredQuickReplies.map((q) => (
-                <DropdownMenuItem
-                  key={q.id}
-                  onClick={() => {
-                    setValue((prev) => (prev.trim() ? `${prev}\n${q.body}` : q.body));
-                    textareaRef.current?.focus();
-                  }}
-                  className="flex-col items-start gap-0.5 text-base"
-                >
-                  <span className="w-full truncate font-semibold">{q.title}</span>
-                  <span className="w-full truncate text-[11px] text-gray-400">{q.body}</span>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setQuickRepliesOpen(true)} className="text-base">
-                <Settings2 className="mr-2 h-4 w-4" /> Gerenciar respostas
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Sugestão de resposta pela IA (propõe → humano revisa → envia) */}
-          <button
-            onClick={async () => {
-              if (suggesting) return;
-              setSuggesting(true);
-              try {
-                const suggestion = await suggestWhatsAppReply(contactId);
-                setValue(suggestion);
-                textareaRef.current?.focus();
-                toast.success('Sugestão pronta — revise antes de enviar.');
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
-              } finally {
-                setSuggesting(false);
-              }
-            }}
-            disabled={disabled || editing || noteMode || suggesting}
-            title="Sugerir resposta com IA (você revisa antes de enviar)"
-            className={`rounded-lg p-1.5 transition-colors disabled:opacity-50 ${
-              suggesting
-                ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'
-                : 'text-gray-400 hover:bg-violet-100 hover:text-violet-600 dark:hover:bg-violet-900/40 dark:hover:text-violet-300'
-            }`}
-          >
-            {suggesting ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6" />}
-          </button>
-
-          {/* Toggle nota interna */}
-          <button
-            onClick={() => setNoteMode((v) => !v)}
-            disabled={editing}
-            title={noteMode ? 'Voltar a responder o cliente' : 'Nota interna (só a equipe vê)'}
-            className={`rounded-lg p-1.5 transition-colors disabled:opacity-50 ${
-              noteMode
-                ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300'
-                : 'text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-            }`}
-          >
-            <StickyNote className="h-6 w-6" />
-          </button>
-
-          <p className="ml-2 hidden text-[11px] text-gray-400 sm:block">Enter envia · Shift+Enter nova linha</p>
-        </div>
+      <div className="flex items-center justify-end gap-1.5 border-t bg-gray-50 px-3 py-2 dark:bg-zinc-950">
+        {/* Sugestão de resposta pela IA (propõe → humano revisa → envia) */}
+        <button
+          onClick={async () => {
+            if (suggesting) return;
+            setSuggesting(true);
+            try {
+              const suggestion = await suggestWhatsAppReply(contactId);
+              setValue(suggestion);
+              textareaRef.current?.focus();
+              toast.success('Sugestão pronta — revise antes de enviar.');
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
+            } finally {
+              setSuggesting(false);
+            }
+          }}
+          disabled={disabled || editing || noteMode || suggesting}
+          title="Sugerir resposta com IA (você revisa antes de enviar)"
+          className={`rounded-lg p-1.5 transition-colors disabled:opacity-50 ${
+            suggesting
+              ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'
+              : 'text-gray-400 hover:bg-violet-100 hover:text-violet-600 dark:hover:bg-violet-900/40 dark:hover:text-violet-300'
+          }`}
+        >
+          {suggesting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+        </button>
         <Button
           onClick={submit}
           disabled={(disabled && !noteMode) || savingEdit || savingNote || (!value.trim() && !attachments.length)}

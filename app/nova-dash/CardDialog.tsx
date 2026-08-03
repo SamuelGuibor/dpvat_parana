@@ -8,7 +8,9 @@ import {
 } from '@/app/_shared/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
-import { Link, Trash2, Loader2 } from 'lucide-react';
+import { Link, Trash2, Loader2, MessageCircle } from 'lucide-react';
+import useSWR from 'swr';
+import { findWhatsAppContactForCard } from '@/app/_actions/whatsapp/client-info';
 import { toast } from 'sonner';
 
 import { getUsers } from '@/app/_actions/users/get-user';
@@ -264,6 +266,23 @@ export const CardDialog: React.FC<CardDialogProps> = ({
     }
   }
 
+  // Atalho card → conversa: se o card tem contato de WhatsApp (vínculo direto
+  // ou telefone batendo), o cabeçalho ganha o botão "Abrir conversa".
+  const { data: waContactId } = useSWR(
+    open && !isProcess ? ['wa-contact-for-card', cardId] : null,
+    () => findWhatsAppContactForCard(cardId),
+    { revalidateOnFocus: false },
+  );
+
+  function openWhatsAppConversation() {
+    if (!waContactId) return;
+    // Mesmo canal usado pelas notificações: page.tsx troca pra aba WhatsApp e
+    // o inbox abre a conversa (pelo evento ou pelo sessionStorage).
+    sessionStorage.setItem('wa-open-contact', waContactId);
+    window.dispatchEvent(new CustomEvent('open-whatsapp-conversation', { detail: { contactId: waContactId } }));
+    handleDismiss();
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleDismiss(); }}>
       {/* Desktop: classes originais intactas. Só NO CELULAR (max-sm) o dialog
@@ -278,6 +297,15 @@ export const CardDialog: React.FC<CardDialogProps> = ({
             Manual de Instruções <Link className="w-4 h-4 inline-block" />
           </a>
           <DialogDescription>Edição detalhada do processo</DialogDescription>
+          {waContactId && (
+            <button
+              onClick={openWhatsAppConversation}
+              title="Abrir a conversa deste cliente no WhatsApp"
+              className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
+            >
+              <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa no WhatsApp
+            </button>
+          )}
           {/* Tags do card: gerenciadas SÓ aqui; o kanban exibe (badge + "+N"). */}
           <CardTagsBar
             cardId={cardId}

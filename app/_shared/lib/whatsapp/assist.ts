@@ -122,6 +122,46 @@ export async function suggestReplyForContact(
 }
 
 // ---------------------------------------------------------------------------
+// Resumo da conversa sob demanda (aba Copiloto do inbox): devolve o texto pro
+// atendente em vez de gravar comentário no card.
+// ---------------------------------------------------------------------------
+export async function summarizeConversationForAgent(
+  contactId: string,
+  agent: { id: string; name: string },
+): Promise<string> {
+  const contact = await db.whatsAppContact.findUnique({
+    where: { id: contactId },
+    select: { name: true, phone: true },
+  });
+  if (!contact) throw new Error("Contato não encontrado.");
+
+  const [history, conversation] = await Promise.all([
+    loadHistory(contactId, 60),
+    db.whatsAppConversation.findUnique({ where: { contactId }, select: { botMemory: true } }),
+  ]);
+  if (!history.length) throw new Error("Ainda não há conversa para resumir.");
+
+  const out = await callAssist<{ summary: string; usage?: object | null }>("/summarize", {
+    contact: { name: contact.name, phone: contact.phone },
+    history,
+    memory: conversation?.botMemory ?? null,
+  });
+
+  await logWhatsAppEvent({
+    action: "wa_summary",
+    message: "pediu resumo da conversa à IA (Copiloto)",
+    authorId: agent.id,
+    authorName: agent.name,
+    contactId,
+    contactName: contact.name,
+    contactPhone: contact.phone,
+    metadata: { usage: out.usage ?? undefined },
+  });
+
+  return out.summary;
+}
+
+// ---------------------------------------------------------------------------
 // Resumo da conversa → comentário no card do kanban (dispara ao VINCULAR o
 // contato a um User/Process). Best-effort: falha aqui nunca quebra o vínculo.
 // ---------------------------------------------------------------------------

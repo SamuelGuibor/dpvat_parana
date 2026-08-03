@@ -21,6 +21,12 @@
       "port": 3007
     },
     {
+      "name": "megastand",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:\\megastand\\megastand", "--", "-p", "3010"],
+      "port": 3010
+    },
+    {
       "name": "esboco-megastands",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "http-server", "C:\\Users\\pc\\AppData\\Local\\Temp\\claude\\D--dpvat-parana-dpvat-parana\\af2f981d-8ed5-474e-8166-a60a9ce874a4\\scratchpad", "-p", "8099", "-c-1"],

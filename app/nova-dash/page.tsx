@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle, MessageCircle } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
@@ -14,6 +14,7 @@ import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
 import { ArchivedCards } from '@/app/nova-dash/ArchivedCards';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
 import { Workspace } from '@/app/nova-dash/workspace/Workspace';
+import { WhatsAppInbox } from '@/app/nova-dash/workspace/whatsapp/WhatsAppInbox';
 import Team from '@/app/nova-dash/_components/team_dash';
 import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
 import { TicketsBoard } from '@/app/nova-dash/tickets/TicketsBoard';
@@ -50,9 +51,10 @@ function PageInner() {
   const router = useRouter();
   const { unread } = useUnread();
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
-  // Badge único da aba: soma não-lidas do chat interno + do WhatsApp.
+  // O WhatsApp agora tem aba própria: o badge do Espaço de Trabalho conta só
+  // o chat interno; o do WhatsApp conta as conversas não lidas do inbox.
   const whatsappUnread = useWhatsAppUnread();
-  const workspaceUnread = chatUnread + whatsappUnread;
+  const workspaceUnread = chatUnread;
 
   // O dark mode oficial é o Dark Reader (DarkModeToggle). Este era um toggle
   // legado que aplicava `.dark` no <html> por cima — se um usuário tivesse
@@ -68,10 +70,10 @@ function PageInner() {
     function handleOpenCard() {
       setActiveTab('kanban');
     }
-    // Notificação de WhatsApp clicada → vai pra aba do Espaço de Trabalho
-    // (o Workspace troca pra seção WhatsApp e o inbox abre a conversa).
+    // Notificação de WhatsApp clicada → vai direto pra aba do WhatsApp
+    // (o inbox lê o contactId do sessionStorage e abre a conversa).
     function handleOpenWhatsApp() {
-      setActiveTab('meu-espaco');
+      setActiveTab('whatsapp');
     }
     window.addEventListener('open-kanban-card', handleOpenCard);
     window.addEventListener('open-whatsapp-conversation', handleOpenWhatsApp);
@@ -112,6 +114,7 @@ function PageInner() {
   }
 
   const isWorkspace = activeTab === 'meu-espaco';
+  const isWhatsApp = activeTab === 'whatsapp';
   const kanban = activeTab === 'kanban';
 
   // Permissões vêm do servidor (cargo + overrides do ADMIN++) via
@@ -119,12 +122,12 @@ function PageInner() {
   const canViewArchived = perms.view_archived;
   const canViewTickets = perms.view_tickets;
 
-  // Kanban + Espaço de Trabalho são fixos; Arquivados e Tickets Dev entram
-  // conforme a permissão. Classes literais para o Tailwind não perder o JIT.
+  // Kanban + Espaço de Trabalho + WhatsApp são fixos; Arquivados e Tickets Dev
+  // entram conforme a permissão. Classes literais para o Tailwind não perder o JIT.
   // Mobile: as abas viram uma linha com scroll lateral; o grid só vale no md+.
-  const visibleTabs = 2 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
+  const visibleTabs = 3 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
   const tabsGridCols =
-    visibleTabs === 4 ? "md:grid-cols-4" : visibleTabs === 3 ? "md:grid-cols-3" : "md:grid-cols-2";
+    visibleTabs === 5 ? "md:grid-cols-5" : visibleTabs === 4 ? "md:grid-cols-4" : "md:grid-cols-3";
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
@@ -180,7 +183,7 @@ function PageInner() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-3 md:px-6">
           <TabsList
               data-tour="tabs"
-              className={`flex w-full gap-1 overflow-x-auto md:grid md:max-w-4xl md:overflow-visible ${tabsGridCols} ${
+              className={`flex w-full gap-1 overflow-x-auto md:grid md:max-w-5xl md:overflow-visible ${tabsGridCols} ${
                 isDark ? "bg-zinc-800 text-zinc-300" : ""
               }`}
             >
@@ -230,6 +233,19 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger
+              value="whatsapp"
+              data-tour="tab-whatsapp"
+              className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+            >
+              <MessageCircle className="w-4 h-4 mr-2" />
+              WhatsApp
+              {whatsappUnread > 0 && (
+                <span className="ml-2 grid h-5 min-w-[20px] place-items-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">
+                  {whatsappUnread > 99 ? '99+' : whatsappUnread}
+                </span>
+              )}
+            </TabsTrigger>
             {/* <TabsTrigger
               value="ponto"
               className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
@@ -251,7 +267,7 @@ function PageInner() {
         canViewTickets={canViewTickets}
       />
 
-      <main className={`flex min-h-0 flex-1 flex-col ${isWorkspace ? 'overflow-hidden' : 'overflow-y-auto'} ${isDark ? 'bg-zinc-950' : ''}`}>
+      <main className={`flex min-h-0 flex-1 flex-col ${isWorkspace || isWhatsApp ? 'overflow-hidden' : 'overflow-y-auto'} ${isDark ? 'bg-zinc-950' : ''}`}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1">
           {/* <TabsContent value="dashboard">
             <StrategicDashboard />
@@ -265,6 +281,10 @@ function PageInner() {
           <TabsContent value="meu-espaco" className="min-h-0">
             <Workspace />
           </TabsContent>
+          <TabsContent value="whatsapp" className="min-h-0">
+            {/* No celular o inbox ocupa a tela inteira (sem moldura de 16px). */}
+            <div className="h-full p-0 sm:p-4"><WhatsAppInbox /></div>
+          </TabsContent>
           <TabsContent value="tickets-dev">
             <TicketsBoard />
           </TabsContent>
@@ -274,7 +294,7 @@ function PageInner() {
         </Tabs>
       </main>
 
-      {!isWorkspace && !kanban && (
+      {!isWorkspace && !isWhatsApp && !kanban && (
         <footer className={`shrink-0 border-t transition-colors ${
           isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
         }`}>
