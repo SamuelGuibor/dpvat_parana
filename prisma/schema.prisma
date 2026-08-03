@@ -856,6 +856,26 @@ model WhatsAppTemplate {
   // Texto de referência com {{1}} {{2}}... só pra equipe saber o que digitar
   // em cada variável — não é enviado à Meta (ela já tem o template aprovado).
   bodyPreview String?
+  // Ciclo de vida na Meta (03/08/2026): antes só existiam os APPROVED aqui,
+  // porque a sincronização descartava o resto — quem criava um template não
+  // tinha como acompanhar a análise. Agora espelhamos todos os status.
+  // APPROVED | PENDING | REJECTED | PAUSED | DISABLED
+  status      String  @default("APPROVED")
+  // UTILITY | MARKETING | AUTHENTICATION — a Meta exige na criação e reprova
+  // quando o conteúdo não bate com a categoria escolhida.
+  category    String  @default("UTILITY")
+  // Motivo devolvido pela Meta quando status=REJECTED (para a equipe corrigir
+  // e reenviar sem adivinhar).
+  rejectedReason String?
+  // Id do template na Graph API — chega na criação e no webhook de status.
+  metaId      String?
+  // Cabeçalho de TEXTO (a Meta permite no máx. 1 variável e 60 caracteres).
+  // Cabeçalho de mídia (imagem/vídeo/documento) não é suportado aqui: exige
+  // subir um arquivo de exemplo pela Resumable Upload API.
+  headerText  String?
+  footerText  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   @@map("whatsapp_templates")
 }

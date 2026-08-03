@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Button } from '@/app/_shared/ui/button';
 import {
   Loader2, RotateCcw, Square, Target, Pencil, Check,
-  PlayCircle, MessageCircleQuestion, Files, UserX, UserMinus, UserCheck,
+  PlayCircle, MessageCircleQuestion, Files, UserX, UserMinus, UserCheck, Bot,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ import {
   type FunnelAnalytics,
 } from '@/app/_actions/analytics/get-funnel-analytics';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import { getContratadosTagCount } from '@/app/_actions/whatsapp/tags';
 
 type Counts = {
   contratado?: number;
@@ -225,6 +226,7 @@ export const StrategicDashboard: React.FC = () => {
   const [loadError, setLoadError] = useState(false);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [kanbanItems, setKanbanItems] = useState([])
+  const [contratadosBot, setContratadosBot] = useState(0);
 
   const fetchAllData = useCallback(async (range: DateRange) => {
     setLoading(true);
@@ -232,10 +234,11 @@ export const StrategicDashboard: React.FC = () => {
       setLoadError(false);
       const params = buildDateParams(range);
 
-      const [countsRes, monthRes, kanbanRes] = await Promise.all([
+      const [countsRes, monthRes, kanbanRes, contratadosBotCount] = await Promise.all([
         fetch(`/api/botconversa/counts?${params}`, { cache: 'no-store' }),
         fetch(`/api/botconversa/monthly?${params}`, { cache: 'no-store' }),
         fetch(`/api/botconversa/get-kanban?${params}`, { cache: 'no-store' }),
+        getContratadosTagCount(),
       ]);
       if (!countsRes.ok || !monthRes.ok || !kanbanRes.ok) {
         throw new Error('Falha ao buscar métricas');
@@ -250,6 +253,7 @@ export const StrategicDashboard: React.FC = () => {
       setCounts(countsData);
       setMonthlyData(monthData);
       setKanbanItems(kanbanData);
+      setContratadosBot(contratadosBotCount);
     } catch (err) {
       // Antes uma falha aqui deixava os KPIs em ZERO como se fosse dado real —
       // o gestor podia tomar decisão com base em zero falso.
@@ -303,6 +307,7 @@ export const StrategicDashboard: React.FC = () => {
     { title: 'Não Contratado', value: counts.nao_contratado, color: 'text-red-600', icon: <UserX className="text-red-600" size={28} /> },
     { title: 'Não Qualificado', value: counts.nao_qualificado, color: 'text-[#8a0303]', icon: <UserMinus className="text-[#8a0303]" size={28} /> },
     { title: 'Contratado', value: counts.contratado, color: 'text-green-600', icon: <UserCheck className="text-green-600" size={28} /> },
+    { title: 'Contratados (bot)', value: contratadosBot, color: 'text-emerald-600', icon: <Bot className="text-emerald-600" size={28} /> },
   ];
 
   return (

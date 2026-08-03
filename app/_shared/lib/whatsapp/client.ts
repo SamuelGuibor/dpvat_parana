@@ -225,9 +225,21 @@ export async function sendTemplate(
   templateName: string,
   vars: string[] = [],
   language = "pt_BR",
+  headerVar?: string | null,
 ): Promise<SendResult> {
   // A Meta rejeita variáveis com \n, \t ou 4+ espaços consecutivos (erro 132012).
-  const cleanVars = vars.map((v) => v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim());
+  const clean = (v: string) => v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim();
+  const cleanVars = vars.map(clean);
+
+  // Cabeçalho vem antes do corpo e é um componente próprio: sem ele, um
+  // template com {{1}} no cabeçalho é recusado por nº de parâmetros.
+  const components: Record<string, unknown>[] = [];
+  if (headerVar?.trim()) {
+    components.push({ type: "header", parameters: [{ type: "text", text: clean(headerVar) }] });
+  }
+  if (cleanVars.length) {
+    components.push({ type: "body", parameters: cleanVars.map((v) => ({ type: "text", text: v })) });
+  }
 
   const result = await postMessageRaw({
     to: phone,
@@ -235,9 +247,7 @@ export async function sendTemplate(
     template: {
       name: templateName,
       language: { code: language },
-      ...(cleanVars.length
-        ? { components: [{ type: "body", parameters: cleanVars.map((v) => ({ type: "text", text: v })) }] }
-        : {}),
+      ...(components.length ? { components } : {}),
     },
   });
 
@@ -254,14 +264,30 @@ export async function sendTemplate(
 // ---------------------------------------------------------------------------
 
 export interface MetaTemplate {
+  metaId: string | null;
   name: string;
   language: string;
   status: string; // APPROVED | PENDING | REJECTED | PAUSED ...
+  category: string; // UTILITY | MARKETING | AUTHENTICATION
+  headerText: string | null; // só cabeçalho de TEXTO; mídia vem como null
   bodyText: string | null;
+  footerText: string | null;
   bodyVars: number;
+  rejectedReason: string | null;
 }
 
-export async function fetchApprovedTemplates(): Promise<MetaTemplate[]> {
+/** Conta as variáveis posicionais {{1}} {{2}}... de um corpo de template. */
+export function countTemplateVars(bodyText: string | null | undefined): number {
+  const varNumbers = new Set<string>();
+  for (const m of (bodyText ?? "").matchAll(/\{\{\s*(\d+)\s*\}\}/g)) varNumbers.add(m[1]);
+  return varNumbers.size;
+}
+
+/**
+ * Lista os templates da conta com TODOS os status (não só os aprovados) — a
+ * tela de templates acompanha o ciclo da Meta: em análise → aprovado/reprovado.
+ */
+export async function fetchMetaTemplates(): Promise<MetaTemplate[]> {
   const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
   if (!TOKEN || !wabaId) {
     throw new Error("Sincronização indisponível: configure WHATSAPP_WABA_ID (id da conta WhatsApp Business) no ambiente.");
@@ -269,7 +295,7 @@ export async function fetchApprovedTemplates(): Promise<MetaTemplate[]> {
 
   const templates: MetaTemplate[] = [];
   let url: string | null =
-    `${GRAPH_BASE}/${wabaId}/message_templates?fields=name,status,language,components&limit=100`;
+    `${GRAPH_BASE}/${wabaId}/message_templates?fields=id,name,status,category,language,components,rejected_reason&limit=100`;
 
   while (url) {
     const res: Response = await fetch(url, {
@@ -282,17 +308,25 @@ export async function fetchApprovedTemplates(): Promise<MetaTemplate[]> {
     }
 
     for (const t of data?.data ?? []) {
-      const body = (t.components ?? []).find((c: { type?: string }) => c.type === "BODY");
-      const bodyText: string | null = body?.text ?? null;
-      // Conta as variáveis posicionais {{1}} {{2}}... do corpo aprovado.
-      const varNumbers = new Set<string>();
-      for (const m of (bodyText ?? "").matchAll(/\{\{\s*(\d+)\s*\}\}/g)) varNumbers.add(m[1]);
+      const components = (t.components ?? []) as { type?: string; format?: string; text?: string }[];
+      const bodyText: string | null = components.find((c) => c.type === "BODY")?.text ?? null;
+      const footerText: string | null = components.find((c) => c.type === "FOOTER")?.text ?? null;
+      // Cabeçalho de mídia não tem `text` — fica null e a tela mostra só o corpo.
+      const header = components.find((c) => c.type === "HEADER");
+      const headerText: string | null = header?.format === "TEXT" ? header.text ?? null : null;
+      // "NONE" é como a Meta diz "não foi reprovado" — não vira motivo na tela.
+      const rejected = String(t.rejected_reason ?? "");
       templates.push({
+        metaId: t.id ?? null,
         name: t.name,
         language: t.language,
         status: t.status,
+        category: t.category ?? "UTILITY",
+        headerText,
         bodyText,
-        bodyVars: varNumbers.size,
+        footerText,
+        bodyVars: countTemplateVars(bodyText),
+        rejectedReason: rejected && rejected !== "NONE" ? rejected : null,
       });
     }
 
@@ -300,6 +334,97 @@ export async function fetchApprovedTemplates(): Promise<MetaTemplate[]> {
   }
 
   return templates;
+}
+
+/**
+ * CRIA um template na Meta e o submete para aprovação. Diferente do resto do
+ * cadastro (que só espelha), isto muda o estado lá: o template nasce PENDING e
+ * a Meta responde em até ~24h (o webhook message_template_status_update avisa).
+ *
+ * A Meta exige um exemplo para CADA variável do corpo — sem isso a criação é
+ * recusada na hora com "body_text example is required".
+ */
+export async function createMetaTemplate(input: {
+  name: string;
+  language: string;
+  category: string;
+  headerText?: string | null;
+  headerExample?: string | null;
+  bodyText: string;
+  bodyExamples: string[];
+  footerText?: string | null;
+}): Promise<{ metaId: string | null; status: string; error?: string }> {
+  const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
+  if (!TOKEN || !wabaId) {
+    return { metaId: null, status: "", error: "Criação indisponível: configure WHATSAPP_WABA_ID (id da conta WhatsApp Business) no ambiente." };
+  }
+
+  const components: Record<string, unknown>[] = [];
+
+  // O cabeçalho vem ANTES do corpo — a Meta valida a ordem dos componentes.
+  // No header o exemplo é `example.header_text` (array simples), diferente do
+  // corpo, que usa `body_text` (array de arrays).
+  if (input.headerText?.trim()) {
+    components.push({
+      type: "HEADER",
+      format: "TEXT",
+      text: input.headerText.trim(),
+      ...(input.headerExample?.trim() ? { example: { header_text: [input.headerExample.trim()] } } : {}),
+    });
+  }
+
+  components.push({
+    type: "BODY",
+    text: input.bodyText,
+    ...(input.bodyExamples.length ? { example: { body_text: [input.bodyExamples] } } : {}),
+  });
+  if (input.footerText?.trim()) {
+    components.push({ type: "FOOTER", text: input.footerText.trim() });
+  }
+
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${wabaId}/message_templates`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${TOKEN}`,
+      },
+      body: JSON.stringify({
+        name: input.name,
+        language: input.language,
+        category: input.category,
+        components,
+      }),
+      cache: "no-store",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg = data?.error?.error_user_msg ?? data?.error?.message ?? `Meta respondeu HTTP ${res.status}.`;
+      console.error("[WHATSAPP TEMPLATES] Criação recusada pela Meta:", msg);
+      return { metaId: null, status: "", error: msg };
+    }
+    return { metaId: data?.id ?? null, status: data?.status ?? "PENDING" };
+  } catch (err) {
+    console.error("[WHATSAPP TEMPLATES] Falha de rede ao criar template:", err);
+    return { metaId: null, status: "", error: String(err) };
+  }
+}
+
+/** Apaga o template NA META (some pra valer, não só do cadastro local). */
+export async function deleteMetaTemplate(name: string): Promise<{ error?: string }> {
+  const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
+  if (!TOKEN || !wabaId) return { error: "WHATSAPP_WABA_ID não configurado." };
+  try {
+    const res = await fetch(
+      `${GRAPH_BASE}/${wabaId}/message_templates?name=${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${TOKEN}` }, cache: "no-store" },
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { error: data?.error?.message ?? `Meta respondeu HTTP ${res.status}.` };
+    return {};
+  } catch (err) {
+    return { error: String(err) };
+  }
 }
 
 /**

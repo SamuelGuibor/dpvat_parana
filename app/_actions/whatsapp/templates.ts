@@ -4,7 +4,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
-import { sendTemplate, fetchApprovedTemplates } from '@/app/_shared/lib/whatsapp/client';
+import {
+  sendTemplate, fetchMetaTemplates, createMetaTemplate, deleteMetaTemplate, countTemplateVars,
+} from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import {
   whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO,
@@ -33,75 +35,179 @@ export interface WhatsAppTemplateDTO {
   language: string;
   bodyVars: number;
   bodyPreview: string | null;
+  status: string; // APPROVED | PENDING | REJECTED | PAUSED | DISABLED
+  category: string;
+  rejectedReason: string | null;
+  headerText: string | null;
+  footerText: string | null;
 }
 
-export async function listWhatsAppTemplates(): Promise<WhatsAppTemplateDTO[]> {
-  await requireTeamMember();
-  const templates = await db.whatsAppTemplate.findMany({ orderBy: { name: 'asc' } });
-  return templates.map((t) => ({
-    id: t.id, name: t.name, language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyPreview,
-  }));
-}
-
-export async function saveWhatsAppTemplate(input: {
-  id?: string; name: string; language: string; bodyVars: number; bodyPreview?: string;
-}): Promise<WhatsAppTemplateDTO> {
-  await requireTeamMember();
-  const name = input.name.trim();
-  if (!name) throw new Error('Informe o nome exato do template aprovado na Meta.');
-  const language = input.language.trim() || 'pt_BR';
-  const bodyVars = Math.min(Math.max(Math.round(Number(input.bodyVars) || 0), 0), 20);
-  const bodyPreview = input.bodyPreview?.trim() || null;
-
-  const data = { name, language, bodyVars, bodyPreview };
-  const template = input.id
-    ? await db.whatsAppTemplate.update({ where: { id: input.id }, data })
-    : await db.whatsAppTemplate.create({ data });
-
+function toDTO(t: {
+  id: string; name: string; language: string; bodyVars: number; bodyPreview: string | null;
+  status: string; category: string; rejectedReason: string | null;
+  headerText: string | null; footerText: string | null;
+}): WhatsAppTemplateDTO {
   return {
-    id: template.id, name: template.name, language: template.language,
-    bodyVars: template.bodyVars, bodyPreview: template.bodyPreview,
+    id: t.id, name: t.name, language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyPreview,
+    status: t.status, category: t.category, rejectedReason: t.rejectedReason,
+    headerText: t.headerText, footerText: t.footerText,
   };
 }
 
 /**
- * Sincroniza o cadastro local com os templates realmente aprovados na Meta
- * (fonte da verdade). Puxa nome, idioma e nº de variáveis direto da Graph API,
- * então o envio nunca falha por divergência de variáveis/idioma.
- * Requer WHATSAPP_WABA_ID no ambiente.
+ * Lista o cadastro local. Por padrão devolve TODOS os status (a tela de
+ * gerenciamento acompanha o ciclo da Meta); `onlyApproved` é o que o envio
+ * usa — mandar template não aprovado a Meta recusa na hora.
  */
-export async function syncWhatsAppTemplatesFromMeta(): Promise<{ imported: number; skipped: number; error?: string }> {
+export async function listWhatsAppTemplates(onlyApproved = false): Promise<WhatsAppTemplateDTO[]> {
+  await requireTeamMember();
+  const templates = await db.whatsAppTemplate.findMany({
+    where: onlyApproved ? { status: 'APPROVED' } : undefined,
+    orderBy: { name: 'asc' },
+  });
+  return templates.map(toDTO);
+}
+
+/**
+ * CRIA o template na Meta e o submete para aprovação — nasce "Em análise".
+ * O nome segue a regra da Meta (minúsculas, números e _) e cada variável
+ * precisa de um exemplo, senão a Graph API recusa.
+ */
+export async function createWhatsAppTemplate(input: {
+  name: string; language: string; category: string;
+  headerText?: string; headerExample?: string;
+  bodyText: string; bodyExamples: string[]; footerText?: string;
+}): Promise<{ template?: WhatsAppTemplateDTO; error?: string }> {
   await requireTeamMember();
 
-  // Erros da Graph API voltam como campo `error` (não como throw): em
-  // produção o Next mascara exceptions de server action com um 500 genérico,
-  // e o atendente precisa LER o motivo (ex.: token expirado) pra agir.
+  const name = input.name.trim().toLowerCase().replace(/\s+/g, '_');
+  if (!/^[a-z0-9_]{1,512}$/.test(name)) {
+    return { error: 'O nome só aceita letras minúsculas, números e _ (sem acento e sem espaço).' };
+  }
+  const bodyText = input.bodyText.trim();
+  if (!bodyText) return { error: 'Escreva o corpo da mensagem.' };
+
+  const varCount = countTemplateVars(bodyText);
+  const examples = input.bodyExamples.slice(0, varCount).map((e) => e.trim());
+  if (examples.length < varCount || examples.some((e) => !e)) {
+    return { error: `A Meta exige um exemplo para cada variável — preencha as ${varCount} variável(is).` };
+  }
+
+  // Regras da Meta para cabeçalho de TEXTO: no máximo 60 caracteres, no
+  // máximo 1 variável, e ela tem que ser {{1}}.
+  const headerText = input.headerText?.trim() || null;
+  const headerExample = input.headerExample?.trim() || null;
+  if (headerText) {
+    if (headerText.length > 60) {
+      return { error: 'O cabeçalho pode ter no máximo 60 caracteres.' };
+    }
+    const headerVars = countTemplateVars(headerText);
+    if (headerVars > 1) {
+      return { error: 'O cabeçalho aceita no máximo 1 variável — use apenas {{1}}.' };
+    }
+    if (headerVars === 1 && !/\{\{\s*1\s*\}\}/.test(headerText)) {
+      return { error: 'A variável do cabeçalho precisa ser {{1}}.' };
+    }
+    if (headerVars === 1 && !headerExample) {
+      return { error: 'A Meta exige um exemplo para a variável do cabeçalho.' };
+    }
+  }
+
+  if (await db.whatsAppTemplate.findUnique({ where: { name } })) {
+    return { error: `Já existe um template chamado "${name}".` };
+  }
+
+  const language = input.language.trim() || 'pt_BR';
+  const category = ['UTILITY', 'MARKETING', 'AUTHENTICATION'].includes(input.category)
+    ? input.category
+    : 'UTILITY';
+  const footerText = input.footerText?.trim() || null;
+
+  // Erro da Graph API volta como campo (não throw): em produção o Next mascara
+  // exception de server action com 500 genérico e a equipe precisa ler o motivo.
+  const created = await createMetaTemplate({
+    name, language, category, headerText, headerExample, bodyText, bodyExamples: examples, footerText,
+  });
+  if (created.error) return { error: created.error };
+
+  const template = await db.whatsAppTemplate.create({
+    data: {
+      name, language, category, headerText, footerText,
+      bodyVars: varCount,
+      bodyPreview: bodyText,
+      status: created.status || 'PENDING',
+      metaId: created.metaId,
+    },
+  });
+  return { template: toDTO(template) };
+}
+
+/**
+ * Sincroniza o cadastro local com a Meta (fonte da verdade). Traz TODOS os
+ * status — antes só os aprovados entravam, e quem criava um template não
+ * conseguia acompanhar a análise nem ler o motivo da reprovação.
+ * Requer WHATSAPP_WABA_ID no ambiente.
+ */
+export async function syncWhatsAppTemplatesFromMeta(): Promise<{
+  imported: number; approved: number; pending: number; rejected: number; error?: string;
+}> {
+  await requireTeamMember();
+
+  const empty = { imported: 0, approved: 0, pending: 0, rejected: 0 };
   let metaTemplates;
   try {
-    metaTemplates = await fetchApprovedTemplates();
+    metaTemplates = await fetchMetaTemplates();
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao consultar os templates na Meta.';
     console.error('[WHATSAPP TEMPLATES] Sincronização falhou:', message);
-    return { imported: 0, skipped: 0, error: message };
+    return { ...empty, error: message };
   }
 
-  let imported = 0;
-  let skipped = 0;
+  const result = { ...empty };
   for (const t of metaTemplates) {
-    if (t.status !== 'APPROVED') { skipped++; continue; }
+    const data = {
+      language: t.language,
+      bodyVars: t.bodyVars,
+      bodyPreview: t.bodyText,
+      headerText: t.headerText,
+      footerText: t.footerText,
+      status: t.status,
+      category: t.category,
+      rejectedReason: t.rejectedReason,
+      metaId: t.metaId,
+    };
     await db.whatsAppTemplate.upsert({
       where: { name: t.name },
-      update: { language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyText },
-      create: { name: t.name, language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyText },
+      update: data,
+      create: { name: t.name, ...data },
     });
-    imported++;
+    result.imported++;
+    if (t.status === 'APPROVED') result.approved++;
+    else if (t.status === 'PENDING') result.pending++;
+    else if (t.status === 'REJECTED') result.rejected++;
   }
-  return { imported, skipped };
+
+  // Template apagado na Meta sai do cadastro: se ficasse, apareceria enviável
+  // e o envio falharia só na hora de falar com o cliente.
+  const names = metaTemplates.map((t) => t.name);
+  if (names.length) {
+    await db.whatsAppTemplate.deleteMany({ where: { name: { notIn: names } } });
+  }
+
+  return result;
 }
 
-export async function deleteWhatsAppTemplate(id: string): Promise<void> {
+/** Exclui o template — na Meta e no cadastro local. */
+export async function deleteWhatsAppTemplate(id: string): Promise<{ error?: string }> {
   await requireTeamMember();
+  const template = await db.whatsAppTemplate.findUnique({ where: { id } });
+  if (!template) return {};
+
+  const { error } = await deleteMetaTemplate(template.name);
+  if (error) return { error };
+
   await db.whatsAppTemplate.delete({ where: { id } });
+  return {};
 }
 
 /**
@@ -112,6 +218,7 @@ export async function sendWhatsAppTemplateMessage(
   contactId: string,
   templateId: string,
   vars: string[],
+  headerVar?: string,
 ): Promise<WhatsAppMessageDTO> {
   const me = await requireTeamMember();
 
@@ -122,18 +229,30 @@ export async function sendWhatsAppTemplateMessage(
   if (!contact) throw new Error('Contato não encontrado.');
   if (contact.optedOut) throw new Error('Este contato pediu para não receber mensagens.');
   if (!template) throw new Error('Template não encontrado.');
+  if (template.status !== 'APPROVED') {
+    throw new Error(`Este template está "${template.status}" na Meta — só templates aprovados podem ser enviados.`);
+  }
   if (vars.length !== template.bodyVars) throw new Error(`Este template espera ${template.bodyVars} variável(is).`);
 
-  const result = await sendTemplate(contact.phone, template.name, vars, template.language);
+  const headerVars = countTemplateVars(template.headerText);
+  if (headerVars > 0 && !headerVar?.trim()) {
+    throw new Error('Este template tem uma variável no cabeçalho — preencha antes de enviar.');
+  }
+
+  const result = await sendTemplate(contact.phone, template.name, vars, template.language, headerVar);
   if (!result.waMessageId) {
     throw new Error(result.error ?? 'Falha ao enviar o template pela WhatsApp API.');
   }
 
   // Texto de referência só pra thread da equipe (a Meta renderiza o template
   // de verdade no celular do cliente, mas queremos ver o que foi enviado).
-  const preview = template.bodyPreview
+  const body = template.bodyPreview
     ? vars.reduce((acc, v, i) => acc.replaceAll(`{{${i + 1}}}`, v), template.bodyPreview)
     : `[Template: ${template.name}]${vars.length ? ` (${vars.join(', ')})` : ''}`;
+  const header = template.headerText
+    ? template.headerText.replaceAll('{{1}}', headerVar?.trim() ?? '')
+    : null;
+  const preview = header ? `${header}\n\n${body}` : body;
 
   const message = await db.whatsAppMessage.create({
     data: {

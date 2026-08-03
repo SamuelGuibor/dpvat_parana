@@ -692,7 +692,7 @@ function AutomationEditor({
   // Templates aprovados na Meta (cadastro local) — fallback fora da janela de 24h.
   const { data: waTemplates = [] } = useSWR<WaTemplateOption[]>(
     "wa-templates",
-    () => listWhatsAppTemplates().catch(() => []),
+    () => listWhatsAppTemplates(true).catch(() => []),
   );
 
   useEffect(() => {

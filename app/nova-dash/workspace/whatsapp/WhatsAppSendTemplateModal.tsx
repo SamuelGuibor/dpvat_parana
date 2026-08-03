@@ -31,13 +31,15 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
   const [sending, setSending] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [vars, setVars] = useState<string[]>([]);
+  const [headerVar, setHeaderVar] = useState('');
   const [manageOpen, setManageOpen] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
 
   async function reload() {
     setLoading(true);
     try {
-      const list = await listWhatsAppTemplates();
+      // Só aprovados: a Meta recusa o envio de template em análise/reprovado.
+      const list = await listWhatsAppTemplates(true);
       setTemplates(list);
       if (list.length && !list.some((t) => t.id === selectedId)) setSelectedId(list[0].id);
     } catch (e) {
@@ -57,7 +59,14 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
 
   useEffect(() => {
     setVars(selected ? Array.from({ length: selected.bodyVars }, () => '') : []);
+    setHeaderVar('');
   }, [selected?.id, selected?.bodyVars]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cabeçalho aceita no máximo uma variável, sempre {{1}}.
+  const headerHasVar = /\{\{\s*1\s*\}\}/.test(selected?.headerText ?? '');
+  const headerPreview = selected?.headerText
+    ? selected.headerText.replaceAll('{{1}}', headerVar || '{{1}}')
+    : null;
 
   const preview = selected?.bodyPreview
     ? vars.reduce((acc, v, i) => acc.replaceAll(`{{${i + 1}}}`, v || `{{${i + 1}}}`), selected.bodyPreview)
@@ -67,7 +76,7 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
     if (!selected) return;
     setSending(true);
     try {
-      await sendWhatsAppTemplateMessage(contactId, selected.id, vars);
+      await sendWhatsAppTemplateMessage(contactId, selected.id, vars, headerVar);
       toast.success('Template enviado.');
       await onSent();
       onOpenChange(false);
@@ -135,6 +144,18 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
                 </div>
               </div>
 
+              {headerHasVar && (
+                <div className="space-y-2.5">
+                  <span className="block text-base font-semibold text-gray-600 dark:text-zinc-300">Variável do cabeçalho</span>
+                  <Input
+                    value={headerVar}
+                    onChange={(e) => setHeaderVar(e.target.value)}
+                    placeholder="Cabeçalho {{1}}"
+                    className="h-11 text-base"
+                  />
+                </div>
+              )}
+
               {selected && selected.bodyVars > 0 && (
                 <div className="space-y-2.5">
                   <span className="block text-base font-semibold text-gray-600 dark:text-zinc-300">Variáveis</span>
@@ -150,10 +171,13 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
                 </div>
               )}
 
-              {preview && (
+              {(preview || headerPreview) && (
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 text-base leading-relaxed text-gray-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-zinc-200">
                   <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Pré-visualização</span>
-                  <span className="whitespace-pre-wrap">{preview}</span>
+                  {headerPreview && (
+                    <span className="mb-1 block whitespace-pre-wrap font-bold text-gray-900 dark:text-zinc-50">{headerPreview}</span>
+                  )}
+                  {preview && <span className="whitespace-pre-wrap">{preview}</span>}
                 </div>
               )}
 
@@ -164,7 +188,7 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
           )}
 
           <DialogFooter>
-            <Button size="lg" onClick={handleSend} disabled={!selected || sending} className="bg-emerald-600 text-base hover:bg-emerald-700">
+            <Button size="lg" onClick={handleSend} disabled={!selected || sending || (headerHasVar && !headerVar.trim())} className="bg-emerald-600 text-base hover:bg-emerald-700">
               {sending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Send className="mr-2 h-5 w-5" />}
               Enviar template
             </Button>

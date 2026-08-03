@@ -57,3 +57,23 @@ export async function toggleConversationTag(conversationId: string, tagId: strin
     await db.whatsAppConversationTag.create({ data: { conversationId, tagId } });
   }
 }
+
+// KPI "Contratados (bot)" da Gestão Estratégica: conversas de WhatsApp com a
+// tag "Contratados" (aplicada pela equipe no inbox). Conta SÓ essa tag — a
+// tag "Qualificada" não vira contratado aqui. Não dá pra excluir quem tem as
+// duas: o fluxo normal é qualificar primeiro e contratar depois, então todas
+// as contratadas carregam também a de qualificada.
+export async function getContratadosTagCount(): Promise<number> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) throw new Error('Não autenticado.');
+
+  const contratadoTags = await db.whatsAppTag.findMany({
+    where: { name: { contains: 'contratad', mode: 'insensitive' } },
+    select: { id: true },
+  });
+  if (contratadoTags.length === 0) return 0;
+
+  return db.whatsAppConversation.count({
+    where: { tags: { some: { tagId: { in: contratadoTags.map((t) => t.id) } } } },
+  });
+}

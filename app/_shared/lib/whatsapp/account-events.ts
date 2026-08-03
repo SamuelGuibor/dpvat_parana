@@ -1,4 +1,5 @@
 import { createLog } from "@/app/_shared/lib/log";
+import { db } from "@/app/_shared/lib/prisma";
 
 // Eventos ADMINISTRATIVOS da WhatsApp Cloud API (tudo que não é "messages"):
 // violação de política (account_update), restrições, nota de qualidade do
@@ -115,6 +116,31 @@ function compact(value: Value): string {
 }
 
 /**
+ * A Meta avisa por webhook quando termina a análise de um template: refletimos
+ * o veredito no cadastro na hora, senão a equipe só descobriria clicando em
+ * "Sincronizar". Best-effort — falha aqui não pode derrubar o webhook.
+ */
+async function applyTemplateStatus(value: Value): Promise<void> {
+  const name = str(value.message_template_name);
+  const event = (str(value.event) ?? "").toUpperCase();
+  if (!name || !event) return;
+
+  const reason = str(value.reason);
+  // A Meta manda o id como número neste evento (e como string no GET) — daí o String().
+  const rawId = value.message_template_id;
+  const metaId = typeof rawId === "number" || typeof rawId === "string" ? String(rawId) : null;
+
+  await db.whatsAppTemplate.updateMany({
+    where: { name },
+    data: {
+      status: event,
+      rejectedReason: event === "REJECTED" && reason && reason !== "NONE" ? reason : null,
+      ...(metaId ? { metaId } : {}),
+    },
+  });
+}
+
+/**
  * Processa um change de webhook que NÃO é "messages". Sempre loga o payload
  * cru no console (fica nos logs da Vercel para investigação posterior).
  */
@@ -122,6 +148,10 @@ export async function handleAccountEvent(field: string, value: Value | undefined
   try {
     console.log(`[WHATSAPP ACCOUNT] Evento "${field}":`, JSON.stringify(value ?? null));
     if (!value) return;
+
+    if (field === "message_template_status_update") {
+      await applyTemplateStatus(value);
+    }
 
     await createLog({
       action: "wa_account",

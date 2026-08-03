@@ -335,6 +335,37 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       });
       return { sent: false, via: "template", reason: `template "${input.templateName}" não cadastrado (sincronize com a Meta)` };
     }
+    // Desde 03/08/2026 o cadastro guarda TODOS os status da Meta (antes só os
+    // aprovados). Sem esta guarda, um template em análise/reprovado seria
+    // tentado e falharia lá na Meta, sem motivo legível para a equipe.
+    if (template.status !== "APPROVED") {
+      await logWhatsAppEvent({
+        action: "wa_text",
+        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: template "${input.templateName}" está ${template.status} na Meta`,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        metadata: { source: input.source, automated: true, skipped: true, reason: "sem template" },
+      });
+      return { sent: false, via: "template", reason: `template "${input.templateName}" não está aprovado na Meta (${template.status})` };
+    }
+    // Aviso automático não tem de onde tirar a variável do cabeçalho — evita
+    // um envio que a Meta recusaria por nº de parâmetros.
+    if (/\{\{\s*\d+\s*\}\}/.test(template.headerText ?? "")) {
+      await logWhatsAppEvent({
+        action: "wa_text",
+        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: template "${input.templateName}" tem variável no cabeçalho`,
+        authorId: input.authorId,
+        authorName: input.authorName,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        metadata: { source: input.source, automated: true, skipped: true, reason: "sem template" },
+      });
+      return { sent: false, via: "template", reason: `template "${input.templateName}" tem variável no cabeçalho — use um template sem variável no cabeçalho para avisos automáticos` };
+    }
     const vars = (input.templateVars ?? []).slice(0, template.bodyVars);
     while (vars.length < template.bodyVars) vars.push("");
 
