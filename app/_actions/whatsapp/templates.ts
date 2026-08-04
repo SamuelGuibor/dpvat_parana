@@ -11,6 +11,7 @@ import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import {
   whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO,
 } from '@/app/_shared/lib/whatsapp/service';
+import { renderTemplateThreadText } from '@/app/_shared/lib/whatsapp/template-text';
 
 // Templates aprovados na Meta Business Manager — único jeito de iniciar
 // mensagem fora da janela de 24h. O nome/idioma/nº de variáveis aqui só
@@ -246,13 +247,7 @@ export async function sendWhatsAppTemplateMessage(
 
   // Texto de referência só pra thread da equipe (a Meta renderiza o template
   // de verdade no celular do cliente, mas queremos ver o que foi enviado).
-  const body = template.bodyPreview
-    ? vars.reduce((acc, v, i) => acc.replaceAll(`{{${i + 1}}}`, v), template.bodyPreview)
-    : `[Template: ${template.name}]${vars.length ? ` (${vars.join(', ')})` : ''}`;
-  const header = template.headerText
-    ? template.headerText.replaceAll('{{1}}', headerVar?.trim() ?? '')
-    : null;
-  const preview = header ? `${header}\n\n${body}` : body;
+  const preview = renderTemplateThreadText(template, vars, headerVar);
 
   const message = await db.whatsAppMessage.create({
     data: {

@@ -1,9 +1,9 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet } from 'lucide-react';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard';
+export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos';
 
 interface Props {
   active: WorkspaceSection;
@@ -11,6 +11,8 @@ interface Props {
   isManager: boolean;
   /** Permissão review_ai — hoje só o ADMIN++ enxerga a Revisão da IA. */
   canReviewAi: boolean;
+  /** Permissão view_costs — hoje só o ADMIN++ enxerga os custos do projeto. */
+  canViewCosts: boolean;
   chatUnread: number;
   reviewPending: number;
 }
@@ -28,7 +30,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, chatUnread, reviewPending }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -45,6 +47,10 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, cha
         // "Setores" agora vive dentro da Visão do Gestor (aba própria).
         ...(isManager
           ? [{ key: 'gestao' as const, label: 'Visão do Gestor', desc: 'Equipe e setores', icon: BarChart3 }]
+          : []),
+        // Custos de infraestrutura — restrito a quem tem view_costs.
+        ...(canViewCosts
+          ? [{ key: 'custos' as const, label: 'Custos', desc: 'Gastos do projeto', icon: Wallet }]
           : []),
       ],
     },

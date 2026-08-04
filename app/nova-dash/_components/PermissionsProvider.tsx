@@ -23,6 +23,7 @@ const NO_PERMISSIONS: PermissionMap = {
   manager_dashboard: false,
   review_ai: false,
   manage_wa_contacts: false,
+  view_costs: false,
   manage_team: false,
 };
 

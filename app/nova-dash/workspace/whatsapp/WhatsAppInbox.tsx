@@ -46,7 +46,7 @@ import { CopilotPanel } from './CopilotPanel';
 import { ClientInfoModal } from './ClientInfoModal';
 import { WhatsAppTagsModal } from './WhatsAppTagsModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
-import { formatWaText } from './wa-format';
+import { formatWaText, stripWaMarkup } from './wa-format';
 import { resolveMimeType } from './media-rules';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -1048,7 +1048,9 @@ function ConversationGroup({
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
               </span>
-              <span className="block truncate text-sm text-[#a7c9bc]">{c.lastMessagePreview ?? '—'}</span>
+              <span className="block truncate text-sm text-[#a7c9bc]">
+                {c.lastMessagePreview ? stripWaMarkup(c.lastMessagePreview) : '—'}
+              </span>
               {c.tags.length > 0 && (
                 <span className="mt-1 flex flex-wrap gap-1">
                   {c.tags.map((t) => (

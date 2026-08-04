@@ -5,6 +5,7 @@ import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendText, sendTemplate } from "./client";
 import { OPT_OUT_FOOTER } from "./opt-out";
 import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
+import { renderTemplateThreadText } from "./template-text";
 
 // Envio de mensagens de SISTEMA pro WhatsApp do cliente — usado pelas
 // automações do kanban (card entrou numa coluna) e pelo checklist de
@@ -384,9 +385,8 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       return { sent: false, via: "template", reason: result.error ?? "Meta rejeitou o template" };
     }
 
-    const preview = template.bodyPreview
-      ? vars.reduce((acc, v, i) => acc.replaceAll(`{{${i + 1}}}`, v), template.bodyPreview)
-      : `[Template: ${template.name}]${vars.length ? ` (${vars.join(", ")})` : ""}`;
+    // Sem headerVar: templates com variável no cabeçalho já foram barrados acima.
+    const preview = renderTemplateThreadText(template, vars);
     await persistSystemMessage(contact, result.waMessageId, preview, input.source);
     await logWhatsAppEvent({
       action: "wa_template",

@@ -75,6 +75,12 @@ export const PERMISSION_DEFS = [
       "Bloqueia números (para de responder) e exclui contatos do WhatsApp com todo o histórico.",
   },
   {
+    key: "view_costs",
+    label: "Custos do projeto",
+    description:
+      "Vê e lança os custos de infraestrutura (Vercel, Neon, Claude, AWS...) no Espaço de Trabalho.",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -104,6 +110,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manager_dashboard: false,
     review_ai: false,
     manage_wa_contacts: false,
+    view_costs: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -122,6 +129,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Excluir/bloquear contato é destrutivo — nasce exclusivo do ADMIN++,
     // concedível ao ADMIN+ por override.
     manage_wa_contacts: false,
+    // Custo do projeto é informação de sócio — nasce exclusivo do ADMIN++,
+    // concedível por override a quem o Super Admin quiser.
+    view_costs: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -136,6 +146,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manager_dashboard: true,
     review_ai: true,
     manage_wa_contacts: true,
+    view_costs: true,
     manage_team: true,
   },
 };

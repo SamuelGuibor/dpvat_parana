@@ -998,3 +998,33 @@ model DevTicket {
   @@index([assigneeId])
   @@map("dev_tickets")
 }
+
+// Custos de infraestrutura do projeto (Vercel, Neon, Claude, Railway, AWS...).
+// Lançamento MANUAL: a equipe registra o que foi cobrado e em que dia — não há
+// integração com as faturas dos provedores.
+//
+// Dinheiro em CENTAVOS (Int): Float arredonda errado em soma, e o Decimal do
+// Prisma não atravessa a fronteira de server action sem serializador próprio.
+//
+// Dois valores porque a maioria destes serviços cobra em dólar mas a fatura do
+// cartão chega em real: `amountCents` guarda o valor na moeda de origem (o que
+// o provedor mostra) e `amountBrlCents` o valor consolidado em real — é este
+// que soma nos totais e gráficos. Quando currency = BRL, os dois são iguais.
+model ProjectCost {
+  id             String   @id @default(cuid())
+  // Chave do serviço (vercel, neon, claude, ...) — ver SERVICES em _actions/costs.
+  service        String
+  // Do que foi a cobrança: "Plano Pro", "créditos de API", "S3 + SES"...
+  description    String?
+  chargedAt      DateTime
+  amountCents    Int
+  currency       String   @default("BRL") // BRL | USD
+  amountBrlCents Int
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@index([chargedAt])
+  @@index([service])
+  @@map("project_costs")
+}

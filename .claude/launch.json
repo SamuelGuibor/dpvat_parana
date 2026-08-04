@@ -33,6 +33,12 @@
       "port": 8099
     },
     {
+      "name": "portfolio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:\\portifolio\\portifolio_", "--", "-p", "3020"],
+      "port": 3020
+    },
+    {
       "name": "dev-verify",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "-p", "3001"],

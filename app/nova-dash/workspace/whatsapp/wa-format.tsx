@@ -25,6 +25,14 @@ function renderLine(line: string, keyBase: string): React.ReactNode[] {
   });
 }
 
+// Mesma marcação, mas em contexto que não renderiza HTML (prévia truncada na
+// lista de conversas): tira os marcadores em vez de mostrar *asterisco* cru.
+export function stripWaMarkup(text: string): string {
+  return text.replace(INLINE, (part) => (
+    part.startsWith('```') ? part.slice(3, -3) : part.slice(1, -1)
+  ));
+}
+
 export function formatWaText(text: string): React.ReactNode {
   const lines = text.split('\n');
   return lines.map((line, i) => (

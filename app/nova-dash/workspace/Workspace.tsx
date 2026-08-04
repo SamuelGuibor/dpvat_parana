@@ -7,6 +7,7 @@ import { Chat } from './chat/Chat';
 import { AIReview } from './whatsapp/AIReview';
 import { countPendingReviews } from '@/app/_actions/whatsapp/reviews';
 import { ManagerDashboard } from './manager/ManagerDashboard';
+import { CostsPanel } from './costs/CostsPanel';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { isManager } from '@/app/_shared/lib/managers';
@@ -23,6 +24,7 @@ export function Workspace() {
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
 
   const canReviewAi = !permsLoading && perms.review_ai;
+  const canViewCosts = !permsLoading && perms.view_costs;
 
   const [section, setSection] = useState<WorkspaceSection>('meu-espaco');
 
@@ -47,20 +49,23 @@ export function Workspace() {
 
   // Guarda extra: sem a permissão, cair numa seção restrita volta para o início.
   const effective: WorkspaceSection =
-    (section === 'gestao' && !manager) || (section === 'revisao-ia' && !canReviewAi)
+    (section === 'gestao' && !manager)
+    || (section === 'revisao-ia' && !canReviewAi)
+    || (section === 'custos' && !canViewCosts)
       ? 'meu-espaco'
       : section;
 
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} chatUnread={chatUnread} reviewPending={reviewPending} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
         {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
         {effective === 'revisao-ia' && <div className="h-full p-2 sm:p-4"><AIReview /></div>}
         {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
+        {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
       </div>
     </div>
   );
