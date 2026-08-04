@@ -63,7 +63,11 @@ export async function toggleConversationTag(conversationId: string, tagId: strin
 // tag "Qualificada" não vira contratado aqui. Não dá pra excluir quem tem as
 // duas: o fluxo normal é qualificar primeiro e contratar depois, então todas
 // as contratadas carregam também a de qualificada.
-export async function getContratadosTagCount(): Promise<number> {
+//
+// Respeita o filtro de data do dashboard, como os outros KPIs — e como o
+// número do CRM que entra junto na "Meta do mês (contratos)". No filtro
+// padrão (mês corrente) as duas parcelas falam do mesmo período.
+export async function getContratadosTagCount(fromISO?: string, toISO?: string): Promise<number> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
 
@@ -73,7 +77,10 @@ export async function getContratadosTagCount(): Promise<number> {
   });
   if (contratadoTags.length === 0) return 0;
 
+  const range = fromISO && toISO ? { gte: new Date(fromISO), lte: new Date(toISO) } : undefined;
   return db.whatsAppConversation.count({
-    where: { tags: { some: { tagId: { in: contratadoTags.map((t) => t.id) } } } },
+    where: {
+      tags: { some: { tagId: { in: contratadoTags.map((t) => t.id) }, ...(range ? { createdAt: range } : {}) } },
+    },
   });
 }

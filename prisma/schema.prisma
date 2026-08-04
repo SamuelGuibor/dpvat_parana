@@ -629,6 +629,11 @@ model WhatsAppTag {
 model WhatsAppConversationTag {
   conversationId String
   tagId          String
+  // Quando a tag foi aplicada (03/08/2026). Sem isto não dava para dizer
+  // "quantos contratados NESTE mês" — a contagem era só um total geral, que
+  // inflaria a meta mensal para sempre. Linhas antigas herdaram a data da
+  // migration, então histórico anterior a 03/08/2026 não é recuperável.
+  createdAt      DateTime             @default(now())
   conversation   WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tag            WhatsAppTag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
 

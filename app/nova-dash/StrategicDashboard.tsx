@@ -46,7 +46,9 @@ function currentMonthKey(): string {
 
 // Card "Meta do mês": contratos fechados vs meta definida pelo gestor (model
 // Goal no banco) — substitui o antigo alerta mock "Meta mensal atingida em 85%".
-function MonthGoalCard({ contratado, loading }: { contratado: number; loading: boolean }) {
+function MonthGoalCard({
+  contratado, crm, bot, loading,
+}: { contratado: number; crm: number; bot: number; loading: boolean }) {
   const { perms } = usePermissions();
   const month = currentMonthKey();
   const [target, setTarget] = useState<number | null>(null);
@@ -123,6 +125,9 @@ function MonthGoalCard({ contratado, loading }: { contratado: number; loading: b
                 </button>
               )}
             </div>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
+              {crm} do CRM + {bot} do bot (WhatsApp)
+            </p>
             {pct != null ? (
               <div>
                 <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-zinc-800">
@@ -238,7 +243,7 @@ export const StrategicDashboard: React.FC = () => {
         fetch(`/api/botconversa/counts?${params}`, { cache: 'no-store' }),
         fetch(`/api/botconversa/monthly?${params}`, { cache: 'no-store' }),
         fetch(`/api/botconversa/get-kanban?${params}`, { cache: 'no-store' }),
-        getContratadosTagCount(),
+        getContratadosTagCount(range.from.toISOString(), range.to.toISOString()),
       ]);
       if (!countsRes.ok || !monthRes.ok || !kanbanRes.ok) {
         throw new Error('Falha ao buscar métricas');
@@ -273,7 +278,11 @@ export const StrategicDashboard: React.FC = () => {
   }, []);
 
   const currentMonthIndex = new Date().getMonth();
-  const contratadoMesAtual = monthlyData[currentMonthIndex]?.aprovados ?? 0;
+  // A meta do mês soma os dois caminhos de contrato: o do CRM (evento
+  // "contratado" do BotConversa) e o do WhatsApp (tag "Contratados"). As duas
+  // parcelas seguem o mesmo filtro de data do dashboard.
+  const contratadoCrmMes = monthlyData[currentMonthIndex]?.aprovados ?? 0;
+  const contratadoMesAtual = contratadoCrmMes + contratadosBot;
 
   const soma_indeferidos = (counts.nao_contratado ?? 0) + (counts.nao_qualificado ?? 0);
   const soma_analise = (counts.em_conversa ?? 0) + (counts.em_honorario ?? 0) + (counts.enviou_documentos ?? 0)
@@ -347,7 +356,12 @@ export const StrategicDashboard: React.FC = () => {
           </Card>
         ))}
 
-        <MonthGoalCard contratado={contratadoMesAtual} loading={loading} />
+        <MonthGoalCard
+          contratado={contratadoMesAtual}
+          crm={contratadoCrmMes}
+          bot={contratadosBot}
+          loading={loading}
+        />
       </div>
 
       <Tabs defaultValue="analytics" className="space-y-4">
