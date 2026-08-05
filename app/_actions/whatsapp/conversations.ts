@@ -61,6 +61,15 @@ export async function countWhatsAppUnread(): Promise<number> {
   }).length;
 }
 
+/**
+ * Total REAL de conversas (badge do topo da lista). A lista em si é limitada
+ * a 200 (take) — o badge mostrava conversations.length e "estagnava" em 200.
+ */
+export async function countWhatsAppConversationsTotal(): Promise<number> {
+  await requireTeamMember();
+  return db.whatsAppConversation.count();
+}
+
 export interface WhatsAppConversationDTO {
   id: string;
   contactId: string;

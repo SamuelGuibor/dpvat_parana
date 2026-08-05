@@ -21,7 +21,7 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
-  useWhatsAppConversations, useWhatsAppMessages, type WhatsAppThreadMessage,
+  useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead,
@@ -145,6 +145,8 @@ export function WhatsAppInbox() {
   const meId = session?.user?.id ?? '';
 
   const { conversations, refreshConversations } = useWhatsAppConversations();
+  // Total REAL no banco (a lista acima é capada em 200 pelo servidor).
+  const conversationsTotal = useWhatsAppConversationsTotal();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
 
@@ -539,9 +541,9 @@ export function WhatsAppInbox() {
           <div className="mb-2 flex items-center gap-2 px-1">
             <MessageCircle className="h-4 w-4 text-[#6fd6ad]" />
             <span className="text-xs font-bold uppercase tracking-wider text-[#6fd6ad]">WhatsApp</span>
-            {conversations.length > 0 && (
+            {(conversationsTotal || conversations.length) > 0 && (
               <span className="ml-auto rounded-full bg-[#1d9e75] px-1.5 text-[11px] font-bold text-white">
-                {conversations.length}
+                {conversationsTotal || conversations.length}
               </span>
             )}
           </div>
@@ -1363,6 +1365,14 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
   const [transcript, setTranscript] = useState<string | null>(msg.transcript ?? null);
   const [transcribing, setTranscribing] = useState(false);
   const [showTranscript, setShowTranscript] = useState(true);
+  // Velocidade de reprodução (estilo WhatsApp): 1x → 1.5x → 2x → 1x.
+  const [speed, setSpeed] = useState(1);
+
+  function cycleSpeed() {
+    const next = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
+    setSpeed(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  }
 
   // Transcrição pode chegar pelo polling (outro atendente transcreveu).
   useEffect(() => {
@@ -1409,7 +1419,7 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
           ref={audioRef}
           src={url}
           preload="metadata"
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration); e.currentTarget.playbackRate = speed; }}
           onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
@@ -1450,6 +1460,18 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
             <span>{fmtAudioTime(current)} / {fmtAudioTime(duration)}</span>
           </div>
         </div>
+        {/* Velocidade 1x / 1.5x / 2x (clica pra alternar) */}
+        <button
+          onClick={cycleSpeed}
+          disabled={!url}
+          title="Velocidade de reprodução"
+          className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold tabular-nums transition-colors disabled:opacity-50 ${mine
+              ? 'bg-white/20 text-white hover:bg-white/30'
+              : 'bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600'
+            }`}
+        >
+          {speed === 1 ? '1x' : speed === 1.5 ? '1.5x' : '2x'}
+        </button>
       </div>
 
       {/* Transcrição pela IA */}

@@ -28,6 +28,7 @@ export type LogAction =
   | "wa_suggest"     // IA sugeriu resposta pro atendente (agent-assist)
   | "wa_summary"     // IA resumiu a conversa pro card do kanban
   | "wa_transcribe"  // IA transcreveu um áudio a pedido do atendente
+  | "wa_ficha_ai"    // IA preencheu campos da ficha do cliente pela conversa
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)

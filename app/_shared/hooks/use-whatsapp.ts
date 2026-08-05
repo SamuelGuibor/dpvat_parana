@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import {
   listWhatsAppConversations,
   countWhatsAppUnread,
+  countWhatsAppConversationsTotal,
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
 
@@ -44,6 +45,19 @@ export function useWhatsAppConversations() {
     { refreshInterval: 15_000, revalidateOnFocus: true, shouldRetryOnError: false },
   );
   return { conversations: data ?? [], refreshConversations: mutate, isLoading, error };
+}
+
+/**
+ * Total REAL de conversas (badge do topo da lista do inbox). A lista é capada
+ * em 200 pelo servidor — contar conversations.length "estagnava" no 200.
+ */
+export function useWhatsAppConversationsTotal() {
+  const { data } = useSWR<number>(
+    'whatsapp-conversations-total',
+    () => countWhatsAppConversationsTotal(),
+    { refreshInterval: 60_000, revalidateOnFocus: true, shouldRetryOnError: false },
+  );
+  return data ?? 0;
 }
 
 // Tamanho de cada bloco ao "carregar mensagens anteriores".

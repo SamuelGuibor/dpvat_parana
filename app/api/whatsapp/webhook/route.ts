@@ -8,6 +8,7 @@ import {
   type IngestResult,
 } from "@/app/_shared/lib/whatsapp/service";
 import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
+import { autoFillClientInfo } from "@/app/_shared/lib/whatsapp/ficha-ai";
 import { handleAccountEvent } from "@/app/_shared/lib/whatsapp/account-events";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
 
@@ -111,14 +112,23 @@ export async function POST(req: NextRequest) {
         // na mensagem mais recente. O lote inteiro é agregado pelo próprio
         // bot (debounce de rajada + burst desde a última resposta).
         const botCandidates = new Map<string, IngestResult>();
+        // Contatos com mensagem nova neste lote (qualquer status): candidatos
+        // ao preenchimento automático da ficha pela IA.
+        const fichaCandidates = new Set<string>();
         for (const msg of value.messages ?? []) {
           const result = await ingestIncomingMessage(msg, profileName);
+          if (result?.isNew) fichaCandidates.add(result.contactId);
           if (result?.isNew && result.conversationStatus === "bot") {
             botCandidates.set(result.contactId, result); // fica a última do contato
           }
         }
         for (const result of botCandidates.values()) {
           await handleIncomingWhatsApp(result);
+        }
+        // Ficha automática: roda DEPOIS do bot (a transcrição do áudio já
+        // existe) e é best-effort — nunca quebra o webhook.
+        for (const contactId of fichaCandidates) {
+          await autoFillClientInfo(contactId);
         }
 
         for (const st of value.statuses ?? []) {
