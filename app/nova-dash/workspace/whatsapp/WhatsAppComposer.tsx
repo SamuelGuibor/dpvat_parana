@@ -201,6 +201,8 @@ export function WhatsAppComposer({
       const ok = await confirm({
         title: `Enviar fluxo "${flow.name}"?`,
         description: `${flow.steps.length} passo${flow.steps.length === 1 ? '' : 's'} serão enviados ao cliente, na sequência e com os delays configurados.`,
+        tone: 'default',
+        confirmLabel: 'Enviar',
       });
       if (!ok) return;
       cancelFlowRef.current = false;

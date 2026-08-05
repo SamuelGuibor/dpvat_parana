@@ -404,6 +404,8 @@ export function CommentsTab({ cardId, isProcess }: Props) {
       const ok = await confirm({
         title: 'Refazer auditoria?',
         description: `Este card já tem uma auditoria de ${AUDIT_TYPE_LABELS[auditType]?.toLowerCase() ?? auditType}. Deseja rodar de novo? A auditoria anterior continua nos comentários (você pode excluí-la pelo ícone de lixeira).`,
+        tone: 'default',
+        confirmLabel: 'Refazer',
       });
       if (!ok) return;
     }
