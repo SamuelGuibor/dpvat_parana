@@ -4,6 +4,7 @@ import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendText, sendMedia, sendVoiceNote } from "./client";
+import { applyFlowTagsToContact } from "./flow-tags";
 import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 
 // Execução de um fluxo pré-setado (WhatsAppFlow) do lado do SERVIDOR — usada
@@ -144,6 +145,8 @@ export async function runFlowForContact(
     }
 
     if (sentAny) {
+      // Tags configuradas no fluxo: o bot também etiqueta a conversa.
+      await applyFlowTagsToContact(contact.id, flow.tagIds);
       await logWhatsAppEvent({
         action: "wa_flow",
         message: `bot disparou o fluxo "${flow.name}" para ${contact.name ?? contact.phone}`,

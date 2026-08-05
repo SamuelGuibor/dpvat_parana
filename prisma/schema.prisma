@@ -4,7 +4,10 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime usa o endpoint POOLED do Neon (conexões rápidas e estáveis);
+  // o Prisma CLI (migrations) usa a conexão direta via DIRECT_URL.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model SavedPrompt {
@@ -683,6 +686,9 @@ model WhatsAppFlow {
   // este fluxo se encaixa na situação do cliente e dispará-lo automaticamente.
   description String?
   steps       Json
+  // IDs de WhatsAppTag aplicadas ao contato quando o fluxo é disparado
+  // (organização do chat: ex. fluxo de dispensa já etiqueta o cliente).
+  tagIds      Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

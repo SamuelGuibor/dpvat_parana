@@ -12,7 +12,15 @@ export type AutomationCondition = {
 };
 
 export type AutomationAction = {
-  type: "comment" | "file" | "whatsapp" | "move";
+  // "ai_audit": auditoria de documentos por IA (Claude) — o tipo específico
+  // vai em `auditType` (documento pessoal ou documentação do INSS).
+  // "sheets": registra uma linha numa planilha do Google quando o card entra
+  // na coluna (ex.: ENVIADO EMAIL CAIQUE → base de dados externa).
+  type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets";
+  auditType?: "documento_pessoal" | "inss_roteiro";
+  sheetsSpreadsheetId?: string; // ID ou URL completa da planilha
+  sheetsTab?: string;           // nome da aba (vazio = primeira)
+  sheetsColumns?: string[];     // valores das colunas, com [[variáveis]] do card
   templateText?: string;
   templateFileKey?: string;
   templateFileName?: string;

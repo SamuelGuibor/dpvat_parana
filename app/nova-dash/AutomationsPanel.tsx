@@ -43,6 +43,8 @@ import {
   Bot,
   MessageCircle,
   MoveRight,
+  Sparkles,
+  Table,
 } from "lucide-react";
 import { listWhatsAppTemplates } from "../_actions/whatsapp/templates";
 import { toast } from "sonner";
@@ -63,7 +65,11 @@ type Condition = {
 };
 
 type Action = {
-  type: "comment" | "file" | "whatsapp" | "move";
+  type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets";
+  auditType?: "documento_pessoal" | "inss_roteiro";
+  sheetsSpreadsheetId?: string;
+  sheetsTab?: string;
+  sheetsColumns?: string[];
   templateText?: string;
   templateFileKey?: string;
   templateFileName?: string;
@@ -405,8 +411,8 @@ function ActionRow({
           </span>
           <Select
             value={action.type}
-            onValueChange={(v: "comment" | "file" | "whatsapp" | "move") =>
-              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [], moveLabelId: undefined })
+            onValueChange={(v: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets") =>
+              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [], moveLabelId: undefined, auditType: v === "ai_audit" ? "documento_pessoal" : undefined, sheetsSpreadsheetId: undefined, sheetsTab: undefined, sheetsColumns: undefined })
             }
           >
             <SelectTrigger className="h-7 text-xs w-[160px]">
@@ -431,6 +437,16 @@ function ActionRow({
               <SelectItem value="move" className="text-xs">
                 <span className="flex items-center gap-1.5">
                   <MoveRight className="w-3 h-3" /> Mover Card
+                </span>
+              </SelectItem>
+              <SelectItem value="ai_audit" className="text-xs">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3" /> Auditoria IA
+                </span>
+              </SelectItem>
+              <SelectItem value="sheets" className="text-xs">
+                <span className="flex items-center gap-1.5">
+                  <Table className="w-3 h-3" /> Planilha Google
                 </span>
               </SelectItem>
             </SelectContent>
@@ -622,6 +638,77 @@ function ActionRow({
           </div>
         )}
 
+        {action.type === "ai_audit" && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+              Tipo de auditoria
+            </label>
+            <Select
+              value={action.auditType ?? "documento_pessoal"}
+              onValueChange={(v: "documento_pessoal" | "inss_roteiro") => onChange({ ...action, auditType: v })}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="documento_pessoal" className="text-xs">
+                  Documento pessoal (RG/CNH/CIN — validade e dados)
+                </SelectItem>
+                <SelectItem value="inss_roteiro" className="text-xs">
+                  Documentação INSS (benefício, qualidade de segurado, roteiro)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-400 dark:text-zinc-500">
+              {action.auditType === "inss_roteiro"
+                ? "A IA analisa os documentos previdenciários anexados, escolhe o benefício/NB do roteiro, valida a qualidade de segurado, renomeia os arquivos e deixa um comentário-resumo destacado no card."
+                : "A IA lê o RG/CNH/CIN anexado, confere se foi expedido há mais de 10 anos (aplica a etiqueta \"DOCUMENTO VENCIDO\" e notifica a responsável) e cruza os dados do documento com os campos do card, comentando divergências."}
+            </p>
+          </div>
+        )}
+
+        {action.type === "sheets" && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+                Planilha (URL completa ou ID)
+              </label>
+              <Input
+                value={action.sheetsSpreadsheetId ?? ""}
+                onChange={(e) => onChange({ ...action, sheetsSpreadsheetId: e.target.value })}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+                Aba da planilha <span className="text-gray-400 font-normal">(vazio = primeira aba)</span>
+              </label>
+              <Input
+                value={action.sheetsTab ?? ""}
+                onChange={(e) => onChange({ ...action, sheetsTab: e.target.value })}
+                placeholder="Ex.: Enviados"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+                Colunas da linha <span className="text-gray-400 font-normal">(uma por linha, com [[variáveis]]; vazio = padrão data, nome, CPF, telefone, serviço, coluna)</span>
+              </label>
+              <textarea
+                value={(action.sheetsColumns ?? []).join("\n")}
+                onChange={(e) => onChange({ ...action, sheetsColumns: e.target.value.split("\n") })}
+                placeholder={"[[name]]\n[[cpf]]\n[[telefone]]"}
+                rows={3}
+                className="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Requer uma service account do Google configurada no servidor (GOOGLE_SHEETS_CLIENT_EMAIL / GOOGLE_SHEETS_PRIVATE_KEY) e a planilha compartilhada com o e-mail dela (permissão de editor).
+            </p>
+          </div>
+        )}
+
         {action.type === "move" && (
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
@@ -719,6 +806,9 @@ function AutomationEditor({
 
     const invalidMove = actions.some((a) => a.type === "move" && !a.moveLabelId);
     if (invalidMove) { toast.error("Selecione a coluna de destino da ação de mover"); return; }
+
+    const invalidSheets = actions.some((a) => a.type === "sheets" && !a.sheetsSpreadsheetId?.trim());
+    if (invalidSheets) { toast.error("Informe a URL ou ID da planilha do Google"); return; }
 
     const moveToSelf = actions.some((a) => a.type === "move" && a.moveLabelId === triggerLabelId);
     if (moveToSelf) { toast.error("A ação de mover não pode apontar para a própria coluna que dispara"); return; }
@@ -1021,6 +1111,20 @@ function AutomationCard({
                       <span className="text-gray-600 dark:text-zinc-300 line-clamp-2">
                         {a.waText || "(sem mensagem)"}
                         {a.waTemplateName && <span className="text-gray-400"> · fallback: {a.waTemplateName}</span>}
+                      </span>
+                    </>
+                  ) : a.type === "sheets" ? (
+                    <>
+                      <Table className="w-3.5 h-3.5 text-teal-500 shrink-0 mt-0.5" />
+                      <span className="text-gray-600 dark:text-zinc-300 line-clamp-1">
+                        Planilha Google{a.sheetsTab ? ` · aba: ${a.sheetsTab}` : ""}
+                      </span>
+                    </>
+                  ) : a.type === "ai_audit" ? (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0 mt-0.5" />
+                      <span className="text-gray-600 dark:text-zinc-300">
+                        Auditoria IA: {a.auditType === "inss_roteiro" ? "documentação INSS (roteiro)" : "documento pessoal (RG/CNH/CIN)"}
                       </span>
                     </>
                   ) : a.type === "move" ? (

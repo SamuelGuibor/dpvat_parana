@@ -12,6 +12,8 @@ import { getMyPermissions } from "@/app/_actions/team/permissions";
 import type { PermissionMap } from "@/app/_shared/lib/permissions";
 
 const NO_PERMISSIONS: PermissionMap = {
+  create_hospitals: false,
+  run_ai_audit: false,
   view_archived: false,
   archive_cards: false,
   delete_cards: false,

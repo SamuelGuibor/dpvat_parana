@@ -82,6 +82,18 @@ const ACTION_STYLES: Record<
     badge: 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
     label: 'Arquivo',
   },
+  ai_audit: {
+    icon: Sparkles,
+    node: 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400',
+    badge: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800',
+    label: 'Auditoria IA',
+  },
+  ai_audit_feedback: {
+    icon: MessageSquare,
+    node: 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400',
+    badge: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800',
+    label: 'Feedback IA',
+  },
   dev_commit: {
     icon: Code2,
     node: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400',
@@ -340,6 +352,11 @@ export function LogsTab({ cardId, isProcess }: Props) {
                             title={format(date, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           >
                             <Clock className="w-3 h-3" />
+                            {/* Horário exato da ação (dia já está no cabeçalho do grupo) */}
+                            <span className="font-semibold text-gray-500 dark:text-zinc-400 tabular-nums">
+                              {format(date, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            </span>
+                            <span className="text-gray-300 dark:text-zinc-600">·</span>
                             <span className="capitalize">
                               {formatDistanceToNow(date, { addSuffix: true, locale: ptBR })}
                             </span>

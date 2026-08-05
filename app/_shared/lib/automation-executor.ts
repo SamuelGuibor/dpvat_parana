@@ -8,6 +8,8 @@ import { db } from "./prisma";
 import { fetchAutomationsByLabel, AutomationCondition, AutomationAction } from "./db/automations";
 import { sendSystemWhatsApp } from "./whatsapp/outbound";
 import { createLog } from "./log";
+import { runAiAudit } from "./ai-audit";
+import { appendSheetRow } from "./google-sheets";
 
 // Limite de movimentos encadeados por ação "move" (coluna A move pra B, que
 // move pra C...). Evita loop infinito entre automações que se apontam.
@@ -190,6 +192,49 @@ export async function runAutomations({
               console.warn(`[AUTOMATION] WhatsApp não enviado (auto ${auto.id}): ${result.reason}`);
             }
           }
+        }
+
+        // Registro em planilha do Google Sheets (ex.: base externa do Caique).
+        if (action.type === "sheets" && action.sheetsSpreadsheetId) {
+          try {
+            const columns = (action.sheetsColumns ?? []).filter((c) => typeof c === "string");
+            // Sem colunas configuradas: linha padrão com os dados principais.
+            const row = columns.length
+              ? columns.map((c) => fillTemplate(c, vars))
+              : [
+                  new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+                  vars.name ?? "",
+                  vars.cpf ?? "",
+                  vars.telefone ?? "",
+                  vars.service ?? "",
+                  String(cardData.role ?? ""),
+                ];
+            await appendSheetRow(action.sheetsSpreadsheetId, action.sheetsTab, row);
+            await createLog({
+              action: "sheets_export",
+              message: `registrou o card na planilha do Google (automação: ${auto.name})`,
+              authorId,
+              authorName: `🤖 Bot (Automação)`,
+              userId: isProcess ? null : cardId,
+              processId: isProcess ? cardId : null,
+              metadata: { automationId: auto.id, automationName: auto.name, tab: action.sheetsTab ?? null },
+            });
+          } catch (err) {
+            console.error(`[AUTOMATION] Erro ao registrar na planilha (auto ${auto.id}):`, err);
+          }
+        }
+
+        // Auditoria de documentos por IA (Claude). Roda inline (await) para
+        // garantir execução antes do fim da request; nunca lança.
+        if (action.type === "ai_audit" && action.auditType) {
+          await runAiAudit({
+            cardId,
+            isProcess,
+            auditType: action.auditType,
+            authorId,
+            authorName: `🤖 Bot (Automação: ${auto.name})`,
+            trigger: "automation",
+          });
         }
 
         // Ação TERMINAL: move o card pra outra coluna e dispara as automações

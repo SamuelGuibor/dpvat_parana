@@ -31,7 +31,10 @@ export type LogAction =
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
-  | "overdue_alert"; // notificação de card estourado (limite de dias da coluna)
+  | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
+  | "sheets_export"     // automação registrou o card numa planilha do Google
+  | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
+  | "ai_audit_feedback"; // feedback humano sobre uma auditoria da IA
 
 interface CreateLogInput {
   action: LogAction;

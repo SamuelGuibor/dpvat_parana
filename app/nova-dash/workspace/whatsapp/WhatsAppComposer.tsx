@@ -8,6 +8,7 @@ import {
   StickyNote, Zap, Search, Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import { Button } from '@/app/_shared/ui/button';
 import { Input } from '@/app/_shared/ui/input';
 import {
@@ -65,6 +66,11 @@ export function WhatsAppComposer({
   const [flowSearch, setFlowSearch] = useState('');
   const [runningFlow, setRunningFlow] = useState<{ name: string; step: number; total: number } | null>(null);
   const cancelFlowRef = useRef(false);
+  // Guard SÍNCRONO contra disparo duplo do fluxo: o estado `runningFlow` só
+  // atualiza no próximo render, então dois cliques rápidos (ou um clique
+  // fantasma do menu) passavam juntos pela checagem e o fluxo ia 2x.
+  const flowBusyRef = useRef(false);
+  const { confirm, confirmDialog } = useConfirm();
 
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
@@ -187,9 +193,18 @@ export function WhatsAppComposer({
   }
 
   async function runFlow(flow: WhatsAppFlowDTO) {
-    if (disabled || runningFlow) return;
-    cancelFlowRef.current = false;
+    if (disabled || runningFlow || flowBusyRef.current) return;
+    flowBusyRef.current = true;
     try {
+      // Confirmação explícita: evita envio acidental (clique fantasma do menu
+      // fechando em cima do item, clique duplo etc.).
+      const ok = await confirm({
+        title: `Enviar fluxo "${flow.name}"?`,
+        description: `${flow.steps.length} passo${flow.steps.length === 1 ? '' : 's'} serão enviados ao cliente, na sequência e com os delays configurados.`,
+      });
+      if (!ok) return;
+      cancelFlowRef.current = false;
+      setRunningFlow({ name: flow.name, step: 1, total: flow.steps.length });
       // Log de auditoria: quem disparou qual fluxo (os passos individuais
       // também geram seus próprios logs de texto/mídia).
       logFlowDispatched(contactId, flow.name, flow.steps.length).catch(() => {});
@@ -219,6 +234,7 @@ export function WhatsAppComposer({
       await onRefresh();
     } finally {
       setRunningFlow(null);
+      flowBusyRef.current = false;
     }
   }
 
@@ -228,6 +244,7 @@ export function WhatsAppComposer({
         ? 'border-amber-300 focus-within:ring-amber-500 dark:border-amber-800'
         : 'border-gray-200 focus-within:ring-emerald-500 dark:border-zinc-800'
     }`}>
+      {confirmDialog}
       {/* Barra do modo nota interna */}
       {noteMode && !editing && (
         <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">

@@ -107,6 +107,11 @@ export async function sendMetaCrmEvent(event: CrmLeadEvent): Promise<void> {
 export const META_LEAD_STAGES = {
   qualificado: "LeadQualificado",
   nao_qualificado: "LeadNaoQualificado",
+  // Sub-motivos de não qualificado (dashboard) reportam o mesmo evento genérico.
+  nq_sem_cobertura: "LeadNaoQualificado",
+  nq_fora_prazo: "LeadNaoQualificado",
+  nq_sem_lesao: "LeadNaoQualificado",
+  nq_desistiu: "LeadNaoQualificado",
 } as const;
 
 /**

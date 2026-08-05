@@ -6,6 +6,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
+import { applyFlowTagsToContact } from '@/app/_shared/lib/whatsapp/flow-tags';
 
 // Fluxos de mensagens pré-setadas do atendimento: sequência de passos (texto,
 // imagem, vídeo, áudio ou documento) com delay antes de cada envio. As mídias
@@ -54,6 +55,8 @@ export interface WhatsAppFlowDTO {
   name: string;
   description: string | null;
   steps: WhatsAppFlowStep[];
+  // Tags de conversa (WhatsAppTag) aplicadas ao contato quando o fluxo dispara.
+  tagIds: string[];
 }
 
 const KINDS: FlowStepKind[] = ['text', 'image', 'video', 'audio', 'document'];
@@ -88,23 +91,25 @@ export async function listWhatsAppFlows(): Promise<WhatsAppFlowDTO[]> {
     name: f.name,
     description: f.description ?? null,
     steps: (f.steps as unknown as WhatsAppFlowStep[]) ?? [],
+    tagIds: Array.isArray(f.tagIds) ? (f.tagIds as string[]) : [],
   }));
 }
 
-export async function saveWhatsAppFlow(input: { id?: string; name: string; description?: string; steps: WhatsAppFlowStep[] }): Promise<WhatsAppFlowDTO> {
+export async function saveWhatsAppFlow(input: { id?: string; name: string; description?: string; steps: WhatsAppFlowStep[]; tagIds?: string[] }): Promise<WhatsAppFlowDTO> {
   await requireTeamMember();
 
   const name = input.name.trim();
   if (!name) throw new Error('Dê um nome ao fluxo.');
   const description = input.description?.trim() || null;
   const steps = sanitizeSteps(input.steps);
-  const data = { name, description, steps: steps as unknown as object };
+  const tagIds = (input.tagIds ?? []).filter((t) => typeof t === 'string').slice(0, 20);
+  const data = { name, description, steps: steps as unknown as object, tagIds: tagIds as unknown as object };
 
   const flow = input.id
     ? await db.whatsAppFlow.update({ where: { id: input.id }, data })
     : await db.whatsAppFlow.create({ data });
 
-  return { id: flow.id, name: flow.name, description: flow.description ?? null, steps };
+  return { id: flow.id, name: flow.name, description: flow.description ?? null, steps, tagIds };
 }
 
 export async function deleteWhatsAppFlow(id: string): Promise<void> {
@@ -123,15 +128,20 @@ export async function logFlowDispatched(contactId: string, flowName: string, ste
   const me = await db.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, role: true } });
   if (!me || !TEAM_ROLES.includes(me.role)) return;
   const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { name: true, phone: true } });
+
+  // Tags configuradas no fluxo: aplica à conversa do contato no disparo.
+  const flow = await db.whatsAppFlow.findUnique({ where: { name: flowName }, select: { tagIds: true } });
+  const appliedTags = flow ? await applyFlowTagsToContact(contactId, flow.tagIds) : [];
+
   await logWhatsAppEvent({
     action: 'wa_flow',
-    message: `disparou o fluxo "${flowName}" (${steps} passo${steps === 1 ? '' : 's'}) para ${contact?.name ?? contact?.phone ?? 'contato'}`,
+    message: `disparou o fluxo "${flowName}" (${steps} passo${steps === 1 ? '' : 's'}) para ${contact?.name ?? contact?.phone ?? 'contato'}${appliedTags.length ? ` — tags aplicadas: ${appliedTags.join(', ')}` : ''}`,
     authorId: me.id,
     authorName: me.name ?? 'Atendente',
     contactId,
     contactName: contact?.name,
     contactPhone: contact?.phone,
-    metadata: { flowName, steps },
+    metadata: { flowName, steps, appliedTags },
   });
 }
 

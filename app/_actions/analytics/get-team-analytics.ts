@@ -71,7 +71,9 @@ export async function getTeamAnalytics(range: DateRangeInput): Promise<TeamAnaly
     select: { id: true, name: true, image: true, lastSeenAt: true },
   });
   const teamIds = users.map((u) => u.id);
-  const scoped = { createdAt: { gte: from, lte: to }, authorId: { in: teamIds } };
+  // Transcrição de áudio (wa_transcribe) não conta como tarefa — é um clique
+  // utilitário em que a IA faz o trabalho (mesma exclusão do drill-down).
+  const scoped = { createdAt: { gte: from, lte: to }, authorId: { in: teamIds }, action: { notIn: ['wa_transcribe'] } };
 
   const [byAuthor, byAuthorAction, heatmapLogs, devLogs] = await Promise.all([
     db.log.groupBy({ by: ['authorId'], where: scoped, _count: { _all: true } }),

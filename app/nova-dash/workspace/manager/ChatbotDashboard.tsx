@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
-import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
+import { CLOSE_CATEGORY_LABELS, NON_QUALIFIED_CATEGORIES } from '@/app/_shared/lib/whatsapp/close-categories';
 import { SystemMap } from './SystemMap';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -485,19 +485,41 @@ export function ChatbotDashboard() {
               {Object.keys(data.closeCategories).length === 0 ? (
                 <p className="py-8 text-center text-sm text-gray-400">Sem encerramentos no período.</p>
               ) : (
-                <div className="space-y-3">
-                  {Object.entries(data.closeCategories)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([key, value]) => (
-                      <Bar
-                        key={key}
-                        label={CLOSE_CATEGORY_LABELS[key] ?? key}
-                        value={value}
-                        max={closeMax}
-                        color="bg-gradient-to-r from-blue-500 to-indigo-600"
-                      />
-                    ))}
-                </div>
+                <>
+                  {/* Não qualificados (por motivo) em rosa; churn pós-contrato em âmbar. */}
+                  <div className="space-y-3">
+                    {Object.entries(data.closeCategories)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([key, value]) => (
+                        <Bar
+                          key={key}
+                          label={CLOSE_CATEGORY_LABELS[key] ?? key}
+                          value={value}
+                          max={closeMax}
+                          color={
+                            NON_QUALIFIED_CATEGORIES.includes(key)
+                              ? 'bg-gradient-to-r from-rose-500 to-red-600'
+                              : key === 'contratado_perdido'
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-600'
+                                : 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                          }
+                        />
+                      ))}
+                  </div>
+                  {(() => {
+                    const nqTotal = NON_QUALIFIED_CATEGORIES.reduce((s, k) => s + (data.closeCategories[k] ?? 0), 0);
+                    const churn = data.closeCategories['contratado_perdido'] ?? 0;
+                    if (!nqTotal && !churn) return null;
+                    return (
+                      <p className="mt-4 border-t border-gray-100 pt-3 text-xs font-semibold text-gray-500 dark:border-zinc-800 dark:text-zinc-400">
+                        <span className="text-rose-600 dark:text-rose-400">Não qualificados (todos os motivos): {nqTotal}</span>
+                        {churn > 0 && (
+                          <span className="ml-3 text-amber-600 dark:text-amber-400">Contratados e perdidos: {churn}</span>
+                        )}
+                      </p>
+                    );
+                  })()}
+                </>
               )}
             </section>
 

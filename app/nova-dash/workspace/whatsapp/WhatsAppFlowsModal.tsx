@@ -18,6 +18,8 @@ import {
   type WhatsAppFlowDTO, type WhatsAppFlowStep, type FlowStepKind,
 } from '@/app/_actions/whatsapp/flows';
 import { checkFileForWhatsApp } from './media-rules';
+import { listWhatsAppTags, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import { Tag, Check } from 'lucide-react';
 import { ManagedListSelect } from './ManagedListSelect';
 
 // Gerenciador dos fluxos de mensagens pré-setadas: sequência de passos de
@@ -33,12 +35,12 @@ const KIND_META: Record<FlowStepKind, { label: string; icon: React.ElementType; 
 };
 const KINDS = Object.keys(KIND_META) as FlowStepKind[];
 
-interface EditingFlow { id?: string; name: string; description: string; steps: WhatsAppFlowStep[] }
+interface EditingFlow { id?: string; name: string; description: string; steps: WhatsAppFlowStep[]; tagIds: string[] }
 
 const emptyStep = (kind: FlowStepKind = 'text', delayMs = 1000): WhatsAppFlowStep => ({
   kind, body: '', mediaKey: null, mediaType: null, fileName: null, delayMs,
 });
-const EMPTY: EditingFlow = { name: '', description: '', steps: [emptyStep('text', 0)] };
+const EMPTY: EditingFlow = { name: '', description: '', steps: [emptyStep('text', 0)], tagIds: [] };
 
 interface Props {
   open: boolean;
@@ -52,6 +54,8 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<EditingFlow>(EMPTY);
+  // Tags de conversa disponíveis (para etiquetar o contato no disparo do fluxo).
+  const [allTags, setAllTags] = useState<WhatsAppTagDTO[]>([]);
 
   async function reload() {
     setLoading(true);
@@ -65,8 +69,19 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
   }
 
   useEffect(() => {
-    if (open) { reload(); setEditing(EMPTY); }
+    if (open) {
+      reload();
+      setEditing(EMPTY);
+      listWhatsAppTags().then(setAllTags).catch(() => setAllTags([]));
+    }
   }, [open]);
+
+  function toggleTag(tagId: string) {
+    setEditing((f) => ({
+      ...f,
+      tagIds: f.tagIds.includes(tagId) ? f.tagIds.filter((t) => t !== tagId) : [...f.tagIds, tagId],
+    }));
+  }
 
   function setStep(idx: number, patch: Partial<WhatsAppFlowStep>) {
     setEditing((f) => ({
@@ -146,7 +161,7 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
             onSelect={(id) => {
               const f = flows.find((x) => x.id === id);
               if (!f) return;
-              setEditing({ id: f.id, name: f.name, description: f.description ?? '', steps: f.steps.length ? f.steps.map((s) => ({ ...s })) : [emptyStep('text', 0)] });
+              setEditing({ id: f.id, name: f.name, description: f.description ?? '', steps: f.steps.length ? f.steps.map((s) => ({ ...s })) : [emptyStep('text', 0)], tagIds: f.tagIds ?? [] });
             }}
             onDelete={handleDelete}
           />
@@ -180,6 +195,41 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
               A IA lê esta descrição para decidir, sozinha, se este fluxo se encaixa na situação do cliente. Sem descrição, o bot não dispara o fluxo automaticamente.
             </span>
           </label>
+
+          {/* Tags aplicadas ao contato no disparo do fluxo */}
+          <div>
+            <span className="mb-1.5 flex items-center gap-1.5 text-base font-semibold text-gray-600 dark:text-zinc-300">
+              <Tag className="h-4 w-4 text-emerald-600" />
+              Etiquetar contato ao disparar
+              <span className="font-normal text-gray-400">(opcional)</span>
+            </span>
+            {allTags.length === 0 ? (
+              <p className="text-sm text-gray-400">
+                Nenhuma tag de conversa criada ainda — crie em Tags, no inbox do WhatsApp.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {allTags.map((t) => {
+                  const active = editing.tagIds.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleTag(t.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm font-semibold transition-colors ${active ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-700'}`}
+                      style={active ? { background: t.color } : undefined}
+                    >
+                      {active ? <Check className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />}
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <span className="mt-1 block text-sm text-gray-400">
+              Ao enviar o fluxo (pelo atendente ou pelo bot), estas tags são aplicadas automaticamente à conversa do cliente — útil para filtrar no chat depois (ex.: dispensados).
+            </span>
+          </div>
 
           <div className="space-y-2">
             {editing.steps.map((step, idx) => (

@@ -8,6 +8,10 @@ import { DEV_COMMIT_ACTION, devCommitFiles, devFilesDelta, devFilesTotal } from 
 
 const ONLINE_WINDOW_MS = 90_000;
 
+// Ações excluídas da contagem de atividade: a transcrição de áudio é um
+// clique utilitário (a IA faz o trabalho) e inflava o feed/contadores.
+const EXCLUDED_ACTIONS = ['wa_transcribe'];
+
 export interface CollaboratorDetail {
   profile: {
     id: string;
@@ -75,20 +79,20 @@ export async function getCollaboratorDetail(
     user, allTime, todayC, weekC, monthC, grouped, periodLogs, feedRows, teamGrouped, teamMembers,
   ] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, image: true, role: true, email: true, lastSeenAt: true } }),
-    db.log.count({ where: { authorId: userId, createdAt: { gte: windowStart } } }),
-    db.log.count({ where: { authorId: userId, createdAt: { gte: today } } }),
-    db.log.count({ where: { authorId: userId, createdAt: { gte: weekAgo } } }),
-    db.log.count({ where: { authorId: userId, createdAt: { gte: monthAgo } } }),
-    db.log.groupBy({ by: ['action'], where: { authorId: userId, createdAt: { gte: periodStart } }, _count: { _all: true } }),
-    db.log.findMany({ where: { authorId: userId, createdAt: { gte: periodStart } }, select: { createdAt: true, action: true, metadata: true } }),
+    db.log.count({ where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: windowStart } } }),
+    db.log.count({ where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: today } } }),
+    db.log.count({ where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: weekAgo } } }),
+    db.log.count({ where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: monthAgo } } }),
+    db.log.groupBy({ by: ['action'], where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: periodStart } }, _count: { _all: true } }),
+    db.log.findMany({ where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: periodStart } }, select: { createdAt: true, action: true, metadata: true } }),
     // Feed com TODOS os logs do filtro ativo (7/30/90 dias) — a UI rola.
     db.log.findMany({
-      where: { authorId: userId, createdAt: { gte: periodStart } },
+      where: { authorId: userId, action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: periodStart } },
       orderBy: { createdAt: 'desc' },
       take: 1000,
       select: { id: true, action: true, message: true, createdAt: true, processId: true, user: { select: { name: true } }, process: { select: { name: true } } },
     }),
-    db.log.groupBy({ by: ['authorId'], where: { createdAt: { gte: periodStart } }, _count: { _all: true } }),
+    db.log.groupBy({ by: ['authorId'], where: { action: { notIn: EXCLUDED_ACTIONS }, createdAt: { gte: periodStart } }, _count: { _all: true } }),
     // Equipe atual: usada para excluir do ranking quem foi demitido (deletado)
     // ou autores não-humanos (ex.: "whatsapp-bot").
     db.user.findMany({ where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } }, select: { id: true } }),

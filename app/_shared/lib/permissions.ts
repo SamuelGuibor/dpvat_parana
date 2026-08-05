@@ -81,6 +81,17 @@ export const PERMISSION_DEFS = [
       "Vê e lança os custos de infraestrutura (Vercel, Neon, Claude, AWS...) no Espaço de Trabalho.",
   },
   {
+    key: "create_hospitals",
+    label: "Criar hospitais",
+    description: "Pode adicionar hospitais novos no campo Hospital do card (quem não tem só seleciona os existentes).",
+  },
+  {
+    key: "run_ai_audit",
+    label: "Auditoria IA",
+    description:
+      "Dispara manualmente a auditoria de documentos por IA no card e avalia os resultados (feedback).",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -99,6 +110,8 @@ export const PERMISSION_KEYS = PERMISSION_DEFS.map((d) => d.key) as PermissionKe
 // de confiança; ADMIN++ tem tudo.
 const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
   ADMIN: {
+    create_hospitals: false,
+    run_ai_audit: true,
     view_archived: false,
     archive_cards: false,
     delete_cards: true,
@@ -114,6 +127,8 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_team: false,
   },
   "ADMIN+": {
+    create_hospitals: true,
+    run_ai_audit: true,
     view_archived: true,
     archive_cards: true,
     delete_cards: true,
@@ -135,6 +150,8 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_team: false,
   },
   "ADMIN++": {
+    create_hospitals: true,
+    run_ai_audit: true,
     view_archived: true,
     archive_cards: true,
     delete_cards: true,

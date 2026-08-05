@@ -4,6 +4,7 @@ import useSWR from 'swr';
 import { Check, ChevronsUpDown, Plus, Search, X } from 'lucide-react';
 import { Label } from '@/app/_shared/ui/label';
 import { cn } from '@/app/_shared/lib/utils';
+import { usePermissions } from '../_components/PermissionsProvider';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -46,9 +47,12 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
     return list.filter((h) => h.toLowerCase().includes(query.toLowerCase()));
   }, [data, value, query]);
 
+  // Criar hospital novo é gated pela permissão "create_hospitals" — sem ela o
+  // usuário só seleciona hospitais já existentes na lista.
+  const { perms } = usePermissions();
   const trimmed = query.trim();
   const exactMatch = options.some((h) => h.toLowerCase() === trimmed.toLowerCase());
-  const canAdd = trimmed.length > 0 && !exactMatch;
+  const canAdd = trimmed.length > 0 && !exactMatch && !!perms?.create_hospitals;
 
   function select(v: string) {
     onChange(id, v);
