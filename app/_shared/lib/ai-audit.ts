@@ -251,7 +251,7 @@ async function buildContent(
 async function callClaude(content: any[]): Promise<any> {
   const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     max_tokens: 8000,
     messages: [{ role: "user", content }],
   });
