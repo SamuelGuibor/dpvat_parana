@@ -9,9 +9,9 @@ import {
   UserRound, BadgeCheck, SquareArrowOutUpRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { suggestWhatsAppReply, summarizeWhatsAppConversation } from '@/app/_actions/whatsapp/assist';
+import { suggestWhatsAppReply, summarizeWhatsAppConversation, fillClientInfoWithAI } from '@/app/_actions/whatsapp/assist';
 import {
-  saveClientInfo, addClientFromConversation,
+  saveClientInfo, addClientFromConversation, getClientInfo,
   type ClientInfoResult, type ClientInfoFields,
 } from '@/app/_actions/whatsapp/client-info';
 import {
@@ -149,6 +149,27 @@ export function CopilotPanel({
     }
     return null;
   }, [messages]);
+
+  // Preenchimento da ficha pela IA sob demanda (mesmo pipeline do webhook).
+  const [fillingFicha, setFillingFicha] = useState(false);
+
+  async function handleFillFichaAI() {
+    if (fillingFicha) return;
+    setFillingFicha(true);
+    try {
+      const result = await fillClientInfoWithAI(contactId);
+      if (result.filled.length) {
+        onClientInfoChanged(await getClientInfo(contactId));
+        toast.success(`IA preencheu: ${result.filled.join(', ')}.`);
+      } else {
+        toast.info(result.reason ?? 'A IA não encontrou dados novos na conversa.');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao preencher a ficha com IA.');
+    } finally {
+      setFillingFicha(false);
+    }
+  }
 
   // Checklist da ficha: o que o bot (ou a equipe) já coletou.
   const fields = clientInfo?.fields ?? {};
@@ -291,6 +312,15 @@ export function CopilotPanel({
                   </span>
                 ))}
               </div>
+              <button
+                onClick={handleFillFichaAI}
+                disabled={fillingFicha}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-60"
+              >
+                {fillingFicha
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Lendo a conversa…</>
+                  : <><Sparkles className="h-3.5 w-3.5" /> Preencher ficha com IA</>}
+              </button>
               <button onClick={() => setTab('ficha')} className="mt-2 text-xs font-bold text-sky-600 hover:underline">
                 Completar na aba Ficha →
               </button>

@@ -5,6 +5,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
+import { fetchAdNames } from '@/app/_shared/lib/whatsapp/meta-ad-names';
 
 // Métricas do chatbot para o dashboard (abaixo da Visão do Gestor). Deriva
 // tudo dos logs de WhatsApp (action começando com "wa_"):
@@ -76,7 +77,21 @@ export interface ChatbotAnalytics {
   // referral (link direto, indicação, busca...).
   adOrigins: {
     byPlatform: Record<string, number>; // facebook | instagram | meta | organic
-    byAd: { platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number }[];
+    // campaignName/adsetName/adName vêm da Marketing API (META_ADS_TOKEN com
+    // ads_read); sem token válido ficam null e a UI cai no headline + id.
+    byAd: {
+      platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number;
+      // Quebra por plataforma DENTRO do anúncio (o mesmo anúncio roda no
+      // Facebook e no Instagram — antes só o ícone da 1ª origem aparecia).
+      platforms: Record<string, number>;
+      adName: string | null; adsetName: string | null; campaignName: string | null;
+    }[];
+    // Leads novos por DIA no período, quebrados por plataforma — mostra se a
+    // campanha está crescendo ou perdendo tração.
+    daily: {
+      date: string; label: string; total: number;
+      facebook: number; instagram: number; meta: number; organic: number;
+    }[];
     totalNewContacts: number;
   };
   // Avisos AUTOMÁTICOS ao cliente (progresso do card + automações): entregas
@@ -173,31 +188,80 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     // card, e esses não são leads (o cliente nunca escreveu).
     db.whatsAppContact.findMany({
       where: { createdAt: { gte: since }, optInSource: 'inbound' },
-      select: { adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true },
+      select: { adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
     }),
   ]);
 
   // Agrupa origem dos leads: por plataforma e por anúncio individual.
+  // Série diária: um ponto por dia do período (dias sem lead entram zerados,
+  // senão o gráfico "pula" a data e a queda fica invisível).
+  const dailyMap = new Map<string, ChatbotAnalytics['adOrigins']['daily'][number]>();
+  for (let i = 0; i < periodDays; i++) {
+    const d = new Date(since);
+    d.setDate(d.getDate() + i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    dailyMap.set(key, {
+      date: key,
+      label: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+      total: 0, facebook: 0, instagram: 0, meta: 0, organic: 0,
+    });
+  }
+
   const adOrigins = {
     byPlatform: {} as Record<string, number>,
-    byAd: [] as { platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number }[],
+    byAd: [] as ChatbotAnalytics['adOrigins']['byAd'],
+    daily: [] as ChatbotAnalytics['adOrigins']['daily'],
     totalNewContacts: newContacts.length,
   };
   const adKeyMap = new Map<string, (typeof adOrigins.byAd)[number]>();
   for (const c of newContacts) {
     const platform = c.adPlatform ?? 'organic';
     adOrigins.byPlatform[platform] = (adOrigins.byPlatform[platform] ?? 0) + 1;
+
+    const dk = `${c.createdAt.getFullYear()}-${String(c.createdAt.getMonth() + 1).padStart(2, '0')}-${String(c.createdAt.getDate()).padStart(2, '0')}`;
+    const day = dailyMap.get(dk);
+    if (day) {
+      day.total += 1;
+      // Plataforma desconhecida cai em "meta" (é um anúncio, só não sabemos a rede).
+      const bucket = (['facebook', 'instagram', 'organic'] as const).find((k) => k === platform) ?? 'meta';
+      day[bucket] += 1;
+    }
+
     if (!c.adPlatform) continue;
     const key = c.adSourceId ?? c.adHeadline ?? c.adSourceUrl ?? 'desconhecido';
     let entry = adKeyMap.get(key);
     if (!entry) {
-      entry = { platform, headline: c.adHeadline, sourceId: c.adSourceId, sourceUrl: c.adSourceUrl, count: 0 };
+      entry = {
+        platform, headline: c.adHeadline, sourceId: c.adSourceId, sourceUrl: c.adSourceUrl, count: 0,
+        platforms: {}, adName: null, adsetName: null, campaignName: null,
+      };
       adKeyMap.set(key, entry);
       adOrigins.byAd.push(entry);
     }
     entry.count += 1;
+    entry.platforms[platform] = (entry.platforms[platform] ?? 0) + 1;
   }
+  adOrigins.daily = [...dailyMap.values()];
   adOrigins.byAd.sort((a, b) => b.count - a.count);
+  // Ícone principal do anúncio = plataforma com mais leads (não a 1ª a chegar).
+  for (const entry of adOrigins.byAd) {
+    const top = Object.entries(entry.platforms).sort((a, b) => b[1] - a[1])[0];
+    if (top) entry.platform = top[0];
+  }
+
+  // Enriquece com os nomes reais (Campanha › Conjunto › Anúncio) da Marketing
+  // API — mesma visão do Gerenciador de Anúncios. Best-effort com cache.
+  const adNames = await fetchAdNames(
+    adOrigins.byAd.map((a) => a.sourceId).filter((id): id is string => !!id),
+  );
+  for (const entry of adOrigins.byAd) {
+    const names = entry.sourceId ? adNames.get(entry.sourceId) : undefined;
+    if (names) {
+      entry.adName = names.adName;
+      entry.adsetName = names.adsetName;
+      entry.campaignName = names.campaignName;
+    }
+  }
 
   // Índice authorId:contactId → timestamps das mensagens (já em ordem asc).
   const msgTimes = new Map<string, number[]>();

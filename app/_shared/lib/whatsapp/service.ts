@@ -162,11 +162,19 @@ export async function ingestIncomingMessage(
 
   // Cliente escreveu = opt-in documentado (exigência da Meta pra mensagens
   // proativas). Só preenche na primeira vez, preservando a data original.
+  //
+  // O nome de perfil do WhatsApp só entra quando o contato AINDA NÃO tem nome:
+  // sobrescrever sempre apagava o nome salvo pela equipe na ficha a cada
+  // mensagem recebida (o contato "voltava" pro apelido do WhatsApp).
   const contact = await db.whatsAppContact.upsert({
     where: { phone: msg.from },
-    update: profileName ? { name: profileName } : {},
+    update: {},
     create: { phone: msg.from, name: profileName ?? null, optedInAt: new Date(), optInSource: "inbound" },
   });
+  if (!contact.name?.trim() && profileName) {
+    await db.whatsAppContact.update({ where: { id: contact.id }, data: { name: profileName } });
+    contact.name = profileName;
+  }
   if (!contact.optedInAt) {
     await db.whatsAppContact.update({
       where: { id: contact.id },

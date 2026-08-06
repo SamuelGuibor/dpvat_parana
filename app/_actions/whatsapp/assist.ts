@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { suggestReplyForContact, transcribeMessageAudio, summarizeConversationForAgent } from '@/app/_shared/lib/whatsapp/assist';
+import { autoFillClientInfo, type FichaAiResult } from '@/app/_shared/lib/whatsapp/ficha-ai';
 
 // Ações de agent-assist do inbox: a IA AJUDA o atendente (sugere resposta,
 // transcreve áudio) — quem decide e envia é sempre o humano.
@@ -48,4 +49,15 @@ export async function transcribeWhatsAppAudio(messageId: string): Promise<string
 export async function summarizeWhatsAppConversation(contactId: string): Promise<string> {
   const me = await requireTeamMember();
   return summarizeConversationForAgent(contactId, me);
+}
+
+/**
+ * Dispara na hora o preenchimento automático da ficha pela IA (o mesmo que
+ * roda sozinho no webhook a cada mensagem nova do cliente). Serve pra
+ * conversas antigas (anteriores ao recurso) e pra conferir por que nada foi
+ * preenchido — o motivo volta pro atendente em vez de morrer no console.
+ */
+export async function fillClientInfoWithAI(contactId: string): Promise<FichaAiResult> {
+  await requireTeamMember();
+  return autoFillClientInfo(contactId);
 }

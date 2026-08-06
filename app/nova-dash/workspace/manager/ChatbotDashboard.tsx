@@ -8,6 +8,7 @@ import {
   UserRound, Undo2, DollarSign, StickyNote, Users, ShieldAlert, ShieldCheck,
   Info, Facebook, Instagram, Megaphone, Globe, Send, CheckCircle2, BellRing,
 } from 'lucide-react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { CLOSE_CATEGORY_LABELS, NON_QUALIFIED_CATEGORIES } from '@/app/_shared/lib/whatsapp/close-categories';
@@ -97,30 +98,43 @@ const ACTION_META: Record<string, { icon: React.ElementType; label: string }> = 
 // entidade, nunca o ranking). Ícone + rótulo garantem que a cor nunca é o
 // único código. Paleta FB/IG/Meta validada p/ daltonismo; "Orgânico" é o
 // slot neutro proposital (não é marca).
-const PLATFORM_META: Record<string, { label: string; icon: React.ElementType; chip: string; bar: string }> = {
+const PLATFORM_META: Record<string, {
+  label: string; icon: React.ElementType; chip: string; bar: string;
+  // text = cor do ícone quando ele aparece solto (legendas); hex = mesma cor
+  // para o SVG do gráfico, que não lê classe do Tailwind.
+  text: string; hex: string;
+}> = {
   facebook: {
     label: 'Facebook',
     icon: Facebook,
     chip: 'bg-[#1877F2] text-white',
     bar: 'bg-[#1877F2]',
+    text: 'text-[#1877F2]',
+    hex: '#1877F2',
   },
   instagram: {
     label: 'Instagram',
     icon: Instagram,
     chip: 'bg-gradient-to-tr from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white',
     bar: 'bg-[#E1306C]',
+    text: 'text-[#E1306C]',
+    hex: '#E1306C',
   },
   meta: {
     label: 'Meta (outro)',
     icon: Megaphone,
     chip: 'bg-violet-500 text-white',
     bar: 'bg-violet-500',
+    text: 'text-violet-500',
+    hex: '#8b5cf6',
   },
   organic: {
     label: 'Orgânico',
     icon: Globe,
     chip: 'bg-slate-400 text-white dark:bg-zinc-600',
     bar: 'bg-slate-400 dark:bg-zinc-600',
+    text: 'text-slate-400',
+    hex: '#94a3b8',
   },
 };
 // Ordem FIXA dos segmentos (nunca reordenar por valor: o gestor compara
@@ -281,53 +295,10 @@ export function ChatbotDashboard() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-6 lg:grid-cols-5">
-                {/* Participação por plataforma */}
-                <div className="lg:col-span-2">
-                  <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">Por plataforma</p>
-                  {(() => {
-                    const total = data.adOrigins.totalNewContacts;
-                    const entries = PLATFORM_ORDER
-                      .map((k) => ({ key: k, ...PLATFORM_META[k], value: data.adOrigins.byPlatform[k] ?? 0 }))
-                      .filter((e) => e.value > 0);
-                    return (
-                      <>
-                        <div className="mb-4 flex h-4 w-full gap-[3px]">
-                          {entries.map((e) => (
-                            <div
-                              key={e.key}
-                              className={`h-full rounded-[4px] ${e.bar}`}
-                              style={{ flexGrow: e.value, flexBasis: '10px' }}
-                              title={`${e.label}: ${e.value} (${Math.round((e.value / total) * 100)}%)`}
-                            />
-                          ))}
-                        </div>
-                        <div className="space-y-2">
-                          {entries.map((e) => {
-                            const Icon = e.icon;
-                            return (
-                              <div key={e.key} className="flex items-center justify-between rounded-xl border border-gray-100 px-3 py-2.5 dark:border-zinc-800">
-                                <div className="flex items-center gap-2.5">
-                                  <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${e.chip}`}>
-                                    <Icon className="h-4 w-4" />
-                                  </span>
-                                  <span className="text-sm font-semibold text-gray-700 dark:text-zinc-200">{e.label}</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-lg font-extrabold tabular-nums text-gray-900 dark:text-zinc-100">{e.value}</span>
-                                  <span className="ml-2 text-xs font-medium tabular-nums text-gray-400">{Math.round((e.value / total) * 100)}%</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-
-                {/* Ranking de anúncios */}
-                <div className="lg:col-span-3">
+              <div>
+                {/* Ranking de anúncios (largura total — o resumo por
+                    plataforma virou a legenda do gráfico diário abaixo). */}
+                <div>
                   <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">Quais anúncios trouxeram leads</p>
                   {data.adOrigins.byAd.length === 0 ? (
                     <div className="flex h-[calc(100%-2rem)] min-h-[10rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-200 px-6 text-center dark:border-zinc-700">
@@ -337,43 +308,253 @@ export function ChatbotDashboard() {
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-2.5">
-                      {data.adOrigins.byAd.slice(0, 8).map((ad, i) => {
-                        const p = PLATFORM_META[ad.platform] ?? PLATFORM_META.meta;
-                        const Icon = p.icon;
-                        const pct = Math.round((ad.count / data.adOrigins.totalNewContacts) * 100);
-                        const adMax = Math.max(1, ...data.adOrigins.byAd.map((a) => a.count));
+                    (() => {
+                      const ads = data.adOrigins.byAd;
+                      const total = data.adOrigins.totalNewContacts;
+                      const hasNames = ads.some((a) => a.campaignName);
+
+                      const platsOf = (ad: (typeof ads)[number]) =>
+                        Object.entries(ad.platforms ?? { [ad.platform]: ad.count })
+                          .filter(([, n]) => n > 0)
+                          .sort((a, b) => b[1] - a[1]);
+
+                      /**
+                       * Barra empilhada por plataforma: a largura total é a
+                       * fatia do anúncio/conjunto no período, e cada segmento é
+                       * uma rede. Substitui os chips numéricos soltos.
+                       */
+                      const StackedBar = ({
+                        entries, share, thick,
+                      }: { entries: [string, number][]; share: number; thick?: boolean }) => {
+                        const sum = entries.reduce((s, [, n]) => s + n, 0) || 1;
                         return (
-                          <div
-                            key={ad.sourceId ?? ad.headline ?? i}
-                            className="rounded-xl border border-gray-100 px-3.5 py-3 dark:border-zinc-800"
-                            title={ad.sourceUrl ?? undefined}
-                          >
-                            <div className="mb-2 flex items-center gap-2.5">
-                              <span className="w-6 shrink-0 text-center text-xs font-extrabold text-gray-300 dark:text-zinc-600">{i + 1}º</span>
-                              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${p.chip}`}>
-                                <Icon className="h-3.5 w-3.5" />
-                              </span>
-                              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800 dark:text-zinc-100">
-                                {ad.headline ?? (ad.sourceId ? `Anúncio ${ad.sourceId}` : 'Anúncio sem título')}
-                              </span>
-                              <span className="text-lg font-extrabold tabular-nums text-gray-900 dark:text-zinc-100">{ad.count}</span>
-                              <span className="w-14 shrink-0 text-right text-xs font-medium tabular-nums text-gray-400">{pct}%</span>
-                            </div>
-                            <div className="ml-[3.6rem] h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-zinc-800">
-                              <div className={`h-full rounded-full ${p.bar}`} style={{ width: `${(ad.count / adMax) * 100}%` }} />
+                          <div className={`overflow-hidden rounded-full bg-gray-100 dark:bg-zinc-800 ${thick ? 'h-2' : 'h-1.5'}`}>
+                            <div className="flex h-full gap-px" style={{ width: `${Math.max(share * 100, 1.5)}%` }}>
+                              {entries.map(([plat, n]) => {
+                                const pm = PLATFORM_META[plat] ?? PLATFORM_META.meta;
+                                return (
+                                  <div
+                                    key={plat}
+                                    className={`h-full ${pm.bar}`}
+                                    style={{ width: `${(n / sum) * 100}%` }}
+                                    title={`${pm.label}: ${n}`}
+                                  />
+                                );
+                              })}
                             </div>
                           </div>
                         );
-                      })}
-                      {data.adOrigins.byAd.length > 8 && (
-                        <p className="pt-1 text-center text-xs text-gray-400">
-                          + {data.adOrigins.byAd.length - 8} outros anúncios com menos leads
-                        </p>
-                      )}
-                    </div>
+                      };
+
+                      /** Legenda compacta: ícone da rede + número de leads. */
+                      const PlatLegend = ({ entries, big }: { entries: [string, number][]; big?: boolean }) => (
+                        <span className="flex shrink-0 items-center gap-2.5">
+                          {entries.map(([plat, n]) => {
+                            const pm = PLATFORM_META[plat] ?? PLATFORM_META.meta;
+                            const PIcon = pm.icon;
+                            return (
+                              <span key={plat} title={`${pm.label}: ${n}`} className={`flex items-center gap-1 font-semibold tabular-nums text-gray-600 dark:text-zinc-300 ${big ? 'text-xs' : 'text-[11px]'}`}>
+                                <PIcon className={`${big ? 'h-3.5 w-3.5' : 'h-3 w-3'} ${pm.text}`} />
+                                {n}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      );
+
+                      const AdRow = ({ ad, rank }: { ad: (typeof ads)[number]; rank: number }) => {
+                        const entries = platsOf(ad);
+                        const pct = Math.round((ad.count / total) * 100);
+                        return (
+                          <div className="py-1.5" title={ad.sourceUrl ?? undefined}>
+                            <div className="mb-1 flex items-baseline gap-2">
+                              <span className="w-5 shrink-0 text-[10px] font-bold text-gray-300 dark:text-zinc-600">{rank}º</span>
+                              <span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-zinc-200">
+                                {ad.adName ?? ad.headline ?? (ad.sourceId ? `Anúncio ${ad.sourceId}` : 'Anúncio sem título')}
+                                {/* Sem nome da campanha, o id curto diferencia anúncios de headline igual. */}
+                                {!ad.adName && ad.sourceId && (
+                                  <span className="ml-1.5 text-[10px] tabular-nums text-gray-400">…{ad.sourceId.slice(-6)}</span>
+                                )}
+                              </span>
+                              <PlatLegend entries={entries} />
+                              <span className="w-9 shrink-0 text-right text-sm font-bold tabular-nums text-gray-900 dark:text-zinc-100">{ad.count}</span>
+                              <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-400">{pct}%</span>
+                            </div>
+                            <div className="ml-7">
+                              <StackedBar entries={entries} share={ad.count / total} />
+                            </div>
+                          </div>
+                        );
+                      };
+
+                      if (!hasNames) {
+                        // Sem META_ADS_TOKEN (ads_read): lista plana, sem a
+                        // hierarquia campanha › conjunto.
+                        return (
+                          <div className="rounded-2xl border border-gray-100 px-3.5 py-2 dark:border-zinc-800">
+                            {ads.slice(0, 8).map((ad, i) => <AdRow key={ad.sourceId ?? ad.headline ?? i} ad={ad} rank={i + 1} />)}
+                            {ads.length > 8 && (
+                              <p className="py-1.5 text-center text-xs text-gray-400">+ {ads.length - 8} outros anúncios com menos leads</p>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // Agrupa Campanha › Conjunto, na ordem do total de leads —
+                      // mesma hierarquia do Gerenciador de Anúncios da Meta.
+                      const campaigns = new Map<string, {
+                        count: number;
+                        adsets: Map<string, { count: number; platforms: Record<string, number>; ads: typeof ads }>;
+                      }>();
+                      for (const ad of ads) {
+                        const cKey = ad.campaignName ?? 'Sem campanha (orgânico ou sem permissão)';
+                        const sKey = ad.adsetName ?? '—';
+                        let c = campaigns.get(cKey);
+                        if (!c) { c = { count: 0, adsets: new Map() }; campaigns.set(cKey, c); }
+                        c.count += ad.count;
+                        let s = c.adsets.get(sKey);
+                        if (!s) { s = { count: 0, platforms: {}, ads: [] as typeof ads }; c.adsets.set(sKey, s); }
+                        s.count += ad.count;
+                        s.ads.push(ad);
+                        for (const [plat, n] of Object.entries(ad.platforms ?? { [ad.platform]: ad.count })) {
+                          s.platforms[plat] = (s.platforms[plat] ?? 0) + n;
+                        }
+                      }
+                      let rank = 0;
+                      return (
+                        <div className="space-y-5">
+                          {[...campaigns.entries()].sort((a, b) => b[1].count - a[1].count).map(([cName, c]) => (
+                            <div key={cName}>
+                              <div className="mb-2 flex items-center justify-between gap-3 px-0.5">
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <Megaphone className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                  <span className="truncate text-xs font-extrabold uppercase tracking-wide text-gray-500 dark:text-zinc-300">{cName}</span>
+                                </span>
+                                <span className="shrink-0 text-xs font-bold tabular-nums text-gray-400">{c.count} leads</span>
+                              </div>
+
+                              {/* Um card por CONJUNTO (região): total + mix de
+                                  rede no topo, anúncios do conjunto dentro. */}
+                              <div className="space-y-2.5">
+                                {[...c.adsets.entries()].sort((a, b) => b[1].count - a[1].count).map(([sName, s]) => {
+                                  const sEntries = Object.entries(s.platforms).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+                                  return (
+                                    <div key={sName} className="rounded-xl border border-gray-100 px-3.5 py-3 dark:border-zinc-800">
+                                      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                                        <span className="truncate text-sm font-bold text-gray-800 dark:text-zinc-100">{sName}</span>
+                                        <span className="flex shrink-0 items-center gap-3">
+                                          <PlatLegend entries={sEntries} big />
+                                          <span className="text-xl font-extrabold tabular-nums text-gray-900 dark:text-zinc-100">{s.count}</span>
+                                        </span>
+                                      </div>
+                                      <StackedBar entries={sEntries} share={s.count / total} thick />
+                                      <div className="mt-2 divide-y divide-gray-100 border-t border-gray-100 pt-1 dark:divide-zinc-800 dark:border-zinc-800">
+                                        {s.ads.sort((a, b) => b.count - a.count).map((ad, i) => {
+                                          rank += 1;
+                                          return <AdRow key={ad.sourceId ?? ad.headline ?? i} ad={ad} rank={rank} />;
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()
                   )}
                 </div>
+
+                {/* Leads por dia: a campanha está crescendo ou caindo? */}
+                {(() => {
+                  const daily = data.adOrigins.daily ?? [];
+                  if (daily.length < 2) return null;
+                  const platEntries = PLATFORM_ORDER
+                    .map((k) => ({ key: k, ...PLATFORM_META[k], value: data.adOrigins.byPlatform[k] ?? 0 }))
+                    .filter((e) => e.value > 0);
+                  // Tendência: média da 2ª metade do período contra a 1ª.
+                  const half = Math.floor(daily.length / 2);
+                  const avg = (arr: typeof daily) => (arr.reduce((s, d) => s + d.total, 0) / Math.max(1, arr.length));
+                  const first = avg(daily.slice(0, half));
+                  const last = avg(daily.slice(half));
+                  const trend = first > 0 ? Math.round(((last - first) / first) * 100) : null;
+                  const perDay = Math.round((data.adOrigins.totalNewContacts / daily.length) * 10) / 10;
+
+                  return (
+                    <div className="mt-6 border-t border-gray-100 pt-5 dark:border-zinc-800">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Leads por dia</p>
+                          <p className="mt-0.5 text-xs text-gray-400">
+                            Média de <span className="font-bold text-gray-600 dark:text-zinc-300">{perDay.toLocaleString('pt-BR')} por dia</span>
+                            {trend !== null && (
+                              <>
+                                {' · '}
+                                <span className={trend > 0 ? 'font-bold text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'font-bold text-rose-600 dark:text-rose-400' : 'font-bold'}>
+                                  {trend > 0 ? '↑' : trend < 0 ? '↓' : '→'} {Math.abs(trend)}%
+                                </span>
+                                {' na 2ª metade do período'}
+                              </>
+                            )}
+                          </p>
+                        </div>
+                        {/* Legenda = totais por plataforma (substitui a coluna removida). */}
+                        <div className="flex flex-wrap items-center gap-3">
+                          {platEntries.map((e) => {
+                            const Icon = e.icon;
+                            return (
+                              <span key={e.key} className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-zinc-300">
+                                <Icon className={`h-4 w-4 ${e.text}`} />
+                                {e.label}
+                                <span className="tabular-nums text-gray-900 dark:text-zinc-100">{e.value}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="h-56 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={daily} margin={{ top: 5, right: 5, left: -26, bottom: 0 }}>
+                            <defs>
+                              {PLATFORM_ORDER.map((k) => (
+                                <linearGradient key={k} id={`leadOrigin-${k}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor={PLATFORM_META[k].hex} stopOpacity={0.45} />
+                                  <stop offset="95%" stopColor={PLATFORM_META[k].hex} stopOpacity={0.03} />
+                                </linearGradient>
+                              ))}
+                            </defs>
+                            <XAxis
+                              dataKey="label"
+                              tick={{ fontSize: 10, fill: '#94a3b8' }}
+                              tickLine={false}
+                              axisLine={false}
+                              interval={Math.max(0, Math.floor(daily.length / 7) - 1)}
+                            />
+                            <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
+                            <Tooltip
+                              contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,.12)', fontSize: 12 }}
+                              formatter={(v: number, name: string) => [`${v} ${v === 1 ? 'lead' : 'leads'}`, PLATFORM_META[name]?.label ?? name]}
+                            />
+                            {/* Empilhado: a altura total é o total do dia e
+                                cada faixa é uma rede — mesma leitura das barras. */}
+                            {platEntries.map((e) => (
+                              <Area
+                                key={e.key}
+                                type="monotone"
+                                dataKey={e.key}
+                                stackId="leads"
+                                stroke={e.hex}
+                                strokeWidth={2}
+                                fill={`url(#leadOrigin-${e.key})`}
+                              />
+                            ))}
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </section>

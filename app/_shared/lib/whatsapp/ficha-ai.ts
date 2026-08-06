@@ -101,24 +101,33 @@ async function currentFields(contact: {
   return out;
 }
 
+export interface FichaAiResult {
+  /** Campos efetivamente preenchidos nesta rodada. */
+  filled: string[];
+  /** Por que nada foi preenchido (quando aplicável) — visível na UI/manual. */
+  reason?: string;
+}
+
 /**
  * Extrai da conversa os campos vazios da ficha e persiste. Chamado pelo
- * webhook a cada lote de mensagens novas do cliente — só chama a IA quando
- * ainda existe campo vazio.
+ * webhook a cada lote de mensagens novas do cliente (e manualmente pelo botão
+ * do Copiloto) — só chama a IA quando ainda existe campo vazio.
  */
-export async function autoFillClientInfo(contactId: string): Promise<void> {
+export async function autoFillClientInfo(contactId: string): Promise<FichaAiResult> {
   try {
-    if (!process.env.CLAUDE_API_KEY) return;
+    if (!process.env.CLAUDE_API_KEY) {
+      return { filled: [], reason: "CLAUDE_API_KEY não configurada no servidor." };
+    }
 
     const contact = await db.whatsAppContact.findUnique({
       where: { id: contactId },
       select: { id: true, userId: true, clientDraft: true, name: true, phone: true },
     });
-    if (!contact) return;
+    if (!contact) return { filled: [], reason: "Contato não encontrado." };
 
     const fields = await currentFields(contact);
     const missing = AI_FIELDS.filter((f) => !fields[f]);
-    if (!missing.length) return; // ficha completa — nada a fazer
+    if (!missing.length) return { filled: [], reason: "A ficha já está completa." };
 
     // Histórico recente (texto + transcrições). Sem conteúdo útil → não gasta IA.
     const rows = await db.whatsAppMessage.findMany({
@@ -134,7 +143,7 @@ export async function autoFillClientInfo(contactId: string): Promise<void> {
     const hasClientContent = history.some(
       (m) => m.direction === "in" && (m.body?.trim() || m.transcript || m.mediaKey),
     );
-    if (!hasClientContent) return;
+    if (!hasClientContent) return { filled: [], reason: "Sem mensagens do cliente para analisar." };
 
     const content: any[] = [];
 
@@ -206,7 +215,9 @@ Responda APENAS com JSON válido:
       max_tokens: 1000,
       messages: [{ role: "user", content }],
     });
-    if (response.stop_reason === "refusal") return;
+    if (response.stop_reason === "refusal") {
+      return { filled: [], reason: "A IA recusou a análise deste conteúdo." };
+    }
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -220,7 +231,9 @@ Responda APENAS com JSON válido:
       const v = extracted[f];
       if (typeof v === "string" && v.trim()) updates[f] = v.trim();
     }
-    if (!Object.keys(updates).length) return;
+    if (!Object.keys(updates).length) {
+      return { filled: [], reason: "A IA não encontrou dados novos na conversa." };
+    }
 
     if (contact.userId) {
       await db.user.update({ where: { id: contact.userId }, data: updates });
@@ -259,7 +272,23 @@ Responda APENAS com JSON válido:
       contactPhone: contact.phone,
       metadata: { fields: updates, usage },
     });
+
+    return { filled: Object.keys(updates) };
   } catch (err) {
     console.error("[WHATSAPP FICHA-AI] Falha ao preencher a ficha:", contactId, err);
+    // Falha também vira log (visível na Atividade do dashboard) — antes só
+    // aparecia no console efêmero da Vercel e o recurso "morria em silêncio".
+    const detail = err instanceof Error ? err.message : String(err);
+    try {
+      await logWhatsAppEvent({
+        action: "wa_ficha_ai",
+        message: `IA falhou ao preencher a ficha: ${detail.slice(0, 200)}`,
+        authorId: "whatsapp-bot",
+        authorName: "🤖 Bot WhatsApp",
+        contactId,
+        metadata: { error: detail },
+      });
+    } catch { /* log é best-effort */ }
+    return { filled: [], reason: detail };
   }
 }
