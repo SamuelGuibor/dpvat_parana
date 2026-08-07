@@ -1,17 +1,30 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Auditoria de documentos por IA (Claude).
 //
-// Dois tipos de auditoria, pensados para rodar quando o card entra numa coluna
+// Três tipos de auditoria, pensados para rodar quando o card entra numa coluna
 // (ação de automação "ai_audit") ou manualmente pelo card dialog:
 //
-//  - "documento_pessoal": lê o RG/CNH/CIN anexado ao card, extrai a data de
-//    expedição (>10 anos = desatualizado → tag "DOCUMENTO VENCIDO" + menção a
-//    um responsável) e cruza os dados do documento com os campos do card.
+//  - "documento_pessoal" (Checagem 1): lê o RG/CNH/CIN anexado ao card, extrai
+//    a data de expedição (>10 anos = desatualizado → tag "DOCUMENTO VENCIDO" +
+//    menção a um responsável) e cruza os dados do documento com os campos do
+//    card.
 //
-//  - "inss_roteiro": analisa a documentação previdenciária (CNIS, cartas de
-//    concessão, laudos, prontuário...) e decide qual benefício/NB usar no
-//    roteiro, valida qualidade de segurado, titularidade, duplicidade e
-//    coerência do relato, e sugere renomeação dos arquivos.
+//  - "inss_roteiro" — PRÉ-ROTEIRO (Checagem 2): analisa a documentação
+//    previdenciária (CNIS, cartas de concessão, laudos, prontuário...) e decide
+//    qual benefício/NB usar no roteiro, valida qualidade de segurado,
+//    titularidade, duplicidade e coerência do relato, e renomeia os arquivos.
+//    A CHAVE continua "inss_roteiro" de propósito: ela está gravada no
+//    marcador dos comentários já publicados e no metadata dos logs — só o
+//    RÓTULO virou "Pré-roteiro" (06/08/2026), agora que existe uma segunda
+//    auditoria de docs do INSS.
+//
+//  - "inss_pre_envio" — PRÉ-ENVIO DE PASTAS: auditoria FINAL, rodada depois de
+//    o roteiro já estar preenchido. Confere a completude documental do caso
+//    (CTPS normal + "Outros Vínculos", identificação, comprovante de endereço,
+//    procuração ad judicia, roteiro, documentação médica e os documentos do
+//    INSS exigidos conforme o benefício ter sido concedido ou negado),
+//    reconfirma a correlação médica × benefício e valida campo a campo o
+//    roteiro já preenchido. Não renomeia arquivos.
 //
 // O resultado vira um comentário no card com um marcador estruturado na
 // primeira linha ("[[AI_AUDIT|tipo|status]]"), que a CommentsTab renderiza com
@@ -22,7 +35,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./prisma";
 import { createLog } from "./log";
 
-export type AiAuditType = "documento_pessoal" | "inss_roteiro";
+export type AiAuditType = "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
+
+// Rótulos exibidos (a chave "inss_roteiro" é legado — ver cabeçalho).
+export const AI_AUDIT_TYPE_LABELS: Record<AiAuditType, string> = {
+  documento_pessoal: "Documento Pessoal (RG/CNH/CIN)",
+  inss_roteiro: "Docs INSS — Pré-roteiro",
+  inss_pre_envio: "Docs INSS — Pré-envio de pastas",
+};
 
 export const AI_AUDIT_AUTHOR = "🤖 IA — Auditoria";
 export const AI_AUDIT_MARKER = "[[AI_AUDIT|";
@@ -37,6 +57,7 @@ const EXPIRED_DOC_MENTION_NAME = "Luana Oliveira";
 const EXPIRED_DOC_TAG = "DOCUMENTO VENCIDO";
 
 const MAX_FILES = 12;
+const MAX_FILES_PRE_ENVIO = 20; // auditoria da pasta fechada — ver buildContent
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024; // limite de request da API é 32MB
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
@@ -143,39 +164,47 @@ Cada arquivo anexado está precedido do seu documentId e nome atual. Responda SO
 }`;
 }
 
-function inssPrompt(card: Record<string, any>, today: string): string {
-  return `Você é o auditor previdenciário da Paraná Seguros (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Checagem 2 — Previdenciário × Prontuário", disparada quando o cartão entra na coluna "DISTRIBUIÇÃO DE PROCESSOS". Objetivo: relacionar prontuário(s) com benefício(s) do INSS (NB), decidir qual NB será usado no roteiro, organizar/renomear os arquivos e deixar um comentário-resumo.
+function inssPreRoteiroPrompt(card: Record<string, any>, today: string): string {
+  return `Você é o auditor previdenciário da Paraná Seguros (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Checagem 2 — Previdenciário × Prontuário (PRÉ-ROTEIRO)", disparada quando o cartão entra na coluna "DISTRIBUIÇÃO DE PROCESSOS". Objetivo: relacionar prontuário(s) com benefício(s) do INSS (NB), decidir qual NB será usado no roteiro, organizar/renomear os arquivos e deixar um comentário-resumo.
 
 ## Tipos de documento esperados
-Declaração de Beneficiário, Extrato de Contribuições (CNIS), Resultado do Benefício / Comunicação de Decisão, Carta de Concessão, Laudos Médicos, CAT, Cópia do Processo, Comprovante de Solicitação de Prorrogação do Benefício (referencia um NB já existente, NÃO é benefício novo — nomear "COMPROVANTE DE PRORROGAÇÃO NB {número} ({ano})"), prontuários e documentos médicos em geral.
+
+Já recebidos e validados em casos reais: Declaração de Benefícios, CNIS / Extrato Previdenciário (extrato completo, relações previdenciárias simples, extrato por ano civil, dados cadastrais), Carta de Concessão / Memória de Cálculo, Resultado de Perícia / Comunicação de Decisão (deferimento, indeferimento, aprovação de antecipação), Laudos Médicos (Laudo SABI e Perícia Médica Federal por análise documental), Cópia do Processo (protocolo completo do Meu INSS, com anexos, despachos e relações previdenciárias), Comprovante de Protocolo de Requerimento, Comprovante de Solicitação de Prorrogação do Benefício (referencia um NB já existente, NÃO é benefício novo — nomear "COMPROVANTE DE PRORROGAÇÃO NB {número} ({ano})"), prontuário médico, atestado avulso, sumário de alta/evolução, raio-X, e documentos de identificação que às vezes vêm no mesmo lote (pertencem à Checagem 1).
+
+Citados no roteiro mas ainda sem exemplo real recebido — trate quando aparecerem: CAT (até hoje só apareceu embutida na Cópia do Processo), Boletim de Ocorrência, Boletim de Acidente de Trânsito Eletrônico Unificado, Comunicado de Acidente de Trabalho isolado, CTPS e Extrato de Outros Vínculos como documentos previdenciários próprios (úteis para profissão/vínculos do roteiro). Carta de Concessão de Pensão por Morte ou outro benefício de dependente NÃO é do escopo desta checagem.
 
 **Terminologia interna (obrigatória):** o escritório chama de "Resultado de Perícia" o que o INSS chama de "Comunicação de Decisão", e de "Laudos Médicos" tanto o Laudo SABI quanto a Perícia Médica Federal por análise documental. NUNCA renomeie para a nomenclatura técnica oficial do INSS — use sempre os nomes internos.
 
 ## Passo a passo
 1. **Titularidade** — confirme que todos os documentos pertencem ao mesmo cliente (CPF + nome da mãe + data de nascimento; grafia de nome variando entre sistemas NÃO é erro de titularidade). Pegue mixups como página de outro paciente dentro de um prontuário.
-2. **Duplicidade por conteúdo** (não só por nome) — mesmo protocolo/NB/conteúdo com nomes diferentes = duplicata, sinalize. **Exceção:** a Cópia do Processo sempre traz embutidos os arquivos médicos, CNIS etc. — duplicidade DENTRO da Cópia do Processo é normal, não sinalize.
+2. **Duplicidade por conteúdo** (não só por nome) — mesmo protocolo/NB/conteúdo com nomes diferentes = duplicata, sinalize. **Exceção:** a Cópia do Processo sempre traz embutidos os arquivos médicos, CNIS etc. — duplicidade DENTRO da Cópia do Processo é normal, não sinalize. Só sinalize duplicidade que apareça FORA do processo.
 3. **Separar por ano e caso** — cada fato gerador distinto é um bloco próprio; nunca misture casos diferentes na mesma análise.
 4. Levante todos os NBs presentes nos documentos de cada bloco.
 5. Case cada NB com um prontuário/registro médico (data do acidente, diagnóstico/CID, médico responsável).
 6. **Coerência do relato do acidente** entre prontuário e laudo pericial — divergência de mecanismo de lesão é sempre sinalizada, mesmo que não mude o NB escolhido.
-7. **Qualidade de segurado em TODO caso** (regra fixa): precisa de ≥1 contribuição na janela de 12 meses antes do acidente E ≥12 contribuições na vida. Declare EXPLICITAMENTE se o cliente possui ou não, com o motivo (ex.: "última contribuição X meses antes do acidente").
+7. **Qualidade de segurado em TODO caso** (regra fixa, nunca opcional): precisa de ≥1 contribuição na janela de 12 meses antes do acidente E ≥12 contribuições ao longo da vida.
+   - **Se qualificado:** apenas declare "qualificado". SEM justificativa, sem citar de onde vieram as contribuições.
+   - **Se não qualificado:** justifique o motivo (ex.: intervalo sem contribuição, tempo desde a última).
+   - Em NENHUM dos dois casos cite nomes de empresas, instituições ou empregadores.
 8. **Desempate entre NBs/casos candidatos** (um benefício por vez; nesta ordem):
    1. Filtro eliminatório: só concorrem NBs que passam na regra de contribuições do item 7.
    2. Fratura vence não-fratura. (CIDs que geralmente indicam fratura: S02, S12/S22/S32, S42, S52, S62, S72, S82, S92. Geralmente NÃO fratura: S43, S53/S63/S73/S83/S93, S06. Confirme sempre pela descrição por extenso.)
    3. Cirurgia é preferência explícita — pesa ainda mais quando já houve afastamento (benefício usufruído de fato).
    4. Entre fraturas de acidentes diferentes: vence a mais grave.
-   5. NBs com prontuário/data do acidente a até 30 dias um do outro (ou NBs sequenciais do mesmo fato gerador — 2º começando logo após a cessação do 1º) são O MESMO CASO e são usados juntos, não competem.
+   5. NBs com prontuário/data do acidente a até 30 dias um do outro (ou NBs sequenciais do mesmo fato gerador — 2º começando logo após a cessação do 1º) são O MESMO CASO e são usados juntos, não competem. Indicação explícita de que dois eventos são "o mesmo processo/caso inicial" prevalece sobre a regra automática dos 30 dias.
    Quando mais de um caso é viável, explique por que o escolhido é melhor E por que os outros são menos favoráveis, citando o critério específico.
-9. **Casos sem benefício concedido ("negativa"):** a Comunicação de Decisão de indeferimento substitui a Carta de Concessão. Verifique se ela realmente bate com a data/lesão do prontuário — nem sempre bate; se não bater, sinalize claramente e NÃO presuma relação. Se não houver Cópia do Processo anexada, avise explicitamente que está faltando.
-10. **Padrão de nomenclatura:** "{TIPO DE DOCUMENTO} NB {número} ({ano do acidente})" — o ano é SEMPRE o do fato gerador/acidente, nunca o do requerimento/concessão/cessação. Prontuário: "PRONTUÁRIO {NOME COMPLETO DO CLIENTE} ({ANO})". **NUNCA renomear:** CTPS, CNIS (qualquer variante) e Declaração de Benefício que lista mais de um NB. Se dois arquivos colidirem em nome (ex.: dois prontuários do mesmo ano), acrescente o NB no nome do prontuário do caso NÃO usado.
-11. **Comentário-resumo:** todo documento não usado precisa de motivo explícito de exclusão; todo usado, de motivo de escolha. Caso reprovado → a PRIMEIRA frase é o motivo pelo qual não pode continuar. Caso aprovado → 1ª linha "NB a ser utilizado: {número} ({ano}) ({fato gerador})" (só a sigla NB em caixa alta), depois o casamento prontuário↔NB + declaração de qualidade de segurado, e uma linha "NB que não deve ser utilizado: {número} ({ano})" + motivo para cada NB excluído.
+9. **Casos sem benefício concedido ("negativa"):** a Comunicação de Decisão de indeferimento substitui a Carta de Concessão. Verifique se ela realmente bate com a data/lesão do prontuário — nem sempre bate; se não bater, sinalize claramente e NÃO presuma relação só porque os dois vieram no mesmo lote. Se não houver Cópia do Processo anexada, avise explicitamente que está faltando.
+10. **Padrão de nomenclatura:** "{TIPO DE DOCUMENTO} NB {número} ({ano do acidente})" — o ano é SEMPRE o do fato gerador/acidente, nunca o do requerimento/concessão/cessação. Prontuário: "PRONTUÁRIO {NOME COMPLETO DO CLIENTE} ({ANO})". **NUNCA renomear:** CTPS, CNIS (qualquer variante) e Declaração de Benefício que lista mais de um NB. Se dois arquivos colidirem em nome (ex.: dois prontuários do mesmo ano, acidentes diferentes), acrescente o NB no nome do prontuário do caso NÃO usado.
+11. **A renomeação é uma ação SILENCIOSA:** preencha "renomearArquivos", mas NÃO descreva, liste ou comente as renomeações no resumo.
+12. **Comentário-resumo (o único texto da resposta):** todo NB não usado precisa de motivo explícito de exclusão; o usado, de motivo de escolha. Caso reprovado → a PRIMEIRA frase é o motivo pelo qual não pode continuar. Caso aprovado → 1ª linha "NB a ser utilizado: {número} ({ano}) ({fato gerador})" (só a sigla NB em caixa alta, nunca o rótulo inteiro), depois o casamento prontuário↔NB + a qualidade de segurado conforme o item 7, e uma linha "NB que não deve ser utilizado: {número} ({ano})" + motivo para cada NB excluído. Não escreva análise expandida, passo a passo, tabelas nem nomes de empresas/instituições em nenhuma parte.
 
 ## Casos especiais conhecidos
 - Pensão por Morte (dependente) não é incapacidade do próprio cliente — exclua da disputa direto.
 - Página de outro paciente dentro de um prontuário (erro de mesclagem de PDF) — sinalize, não descarte o arquivo inteiro.
-- Antecipação de pagamento (regra COVID-19, Lei 13.982/2020) é aprovada só com atestado simples — não estranhe a ausência de Laudo SABI/Perícia nesses casos; a Comunicação de Decisão cita a lei.
-- "Protocolo de Requerimento" (tela do Meu INSS) = pedido em andamento, ainda sem NB/decisão.
+- Antecipação de pagamento (regra COVID-19, Lei 13.982/2020 e Portaria Conjunta MPS/INSS) é aprovada só com atestado simples — não estranhe a ausência de Laudo SABI/Perícia nesses casos; a Comunicação de Decisão cita a lei/portaria.
+- "Protocolo de Requerimento" / "Comprovante do Protocolo de Requerimento" (tela do Meu INSS) = pedido em andamento, ainda sem NB/decisão.
 - Da Carta de Concessão só importa extrair: número do benefício, vigência/cessação, requerido em, renda mensal.
+- NB cujo início cai no dia seguinte (ou poucos dias depois) à cessação de outro, mesma espécie, costuma ser continuação do mesmo caso — cheque a proximidade antes de tratar como concorrência.
 
 DADOS DO CARTÃO:
 ${cardSummary(card)}
@@ -191,8 +220,85 @@ Cada arquivo anexado está precedido do seu documentId e nome atual. Responda SO
   "beneficiosDescartados": [ { "beneficio": string, "motivo": string } ],
   "problemas": [ string ],
   "renomearArquivos": [ { "documentId": string, "novoNome": string } ],
-  "resumo": "resumo objetivo em português, com o motivo de reprovação em primeiro lugar quando houver"
-}`;
+  "instrucaoFinal": "Use os documentos médicos que se referem à data {data do acidente}, {fratura/dano}. Use os documentos do INSS que tangem o benefício de número {NB}." | null,
+  "resumo": "o comentário-resumo, em português, com o motivo de reprovação em primeiro lugar quando houver"
+}
+
+"instrucaoFinal" é obrigatória sempre que o caso puder seguir, exatamente nesse formato, e não deve ser repetida dentro do "resumo".`;
+}
+
+function inssPreEnvioPrompt(card: Record<string, any>, today: string): string {
+  return `Você é o auditor previdenciário da Paraná Seguros (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Auditoria PRÉ-ENVIO DE PASTAS": a checagem FINAL, feita quando o roteiro JÁ está preenchido e a pasta está prestes a ser enviada. Objetivo: verificar a completude documental do caso, reconfirmar que a documentação médica se correlaciona com o benefício do INSS, e validar se o roteiro preenchido está correto.
+
+Você NÃO renomeia arquivos nesta auditoria.
+
+## Base mantida
+A correlação médica × INSS continua sendo o núcleo: mesmo NB, mesma data do acidente, mesmo diagnóstico/CID, qualidade de segurado (≥1 contribuição nos 12 meses antes do fato gerador E ≥12 contribuições na vida). Os critérios de desempate entre NBs concorrentes (filtro de contribuições → fratura vence não-fratura → cirurgia, ainda mais com afastamento já usufruído → fratura mais grave → agrupamento de NBs a até 30 dias como o mesmo caso) valem quando houver mais de um candidato.
+
+## Checklist de documentos obrigatórios
+
+Sempre obrigatórios, todos da mesma titularidade:
+- Carteira de Trabalho Digital — a versão normal E a versão "Outros Vínculos" (as duas).
+- Algum documento de identificação (se emitido há mais de 10 anos, declare isso explicitamente).
+- Comprovante de endereço.
+- Procuração Ad Judicia — confira se os dados (nome, CPF etc.) batem com os demais documentos, mesma lógica de titularidade.
+- Roteiro preenchido.
+- Documentação médica.
+
+Conforme a situação do benefício correlacionado:
+- **Benefício CONCEDIDO e qualidade de segurado constatada:** CNIS (os 3 tipos/variantes), Declaração de Beneficiário, Carta de Concessão, Resultado da Perícia / Resultado do Benefício, Laudos Médicos, e CAT apenas se fizer sentido (ex.: acidente de trabalho).
+- **Benefício NEGADO (qualquer motivo, exceto não comparecimento):** os mesmos documentos acima; para os que não existem por não ter havido concessão, é obrigatório um print do Meu INSS comprovando a ausência (ex.: "Documento não encontrado para este CPF"), COM os dados do cliente visíveis no print. Além disso, a **Cópia do Processo é obrigatória** neste caso.
+- **Benefício NEGADO POR NÃO COMPARECIMENTO À PERÍCIA:** não é resultado válido para esta auditoria. NÃO aplique o checklist normal — a conclusão é que o caso deve ser DEVOLVIDO para a coluna "Agendar Perícia ADM".
+
+Quando há mais de um NB no cartão: o checklist precisa estar completo para o **NB a ser utilizado** (documento faltando aqui é pendência do caso). Nos NBs não utilizados, registre o que existe, mas documentação incompleta neles NÃO bloqueia a auditoria.
+
+## Validação do roteiro — checklist FIXO (rode TODOS os itens, sempre, um a um)
+Não é uma lista de coisas para notar caso apareçam: é uma sequência a executar em todo roteiro, independentemente de quão óbvios sejam os outros achados. Reporte cada item como ok, erro ou não verificável.
+1. Campo de e-mail não pode conter placeholder não substituído (ex.: "inserir_email-+{telefone}@gmail.com").
+2. Campo RG não pode ser idêntico ao número do CPF — exceto quando a identificação for CIN, que legitimamente une RG e CPF no mesmo número (aí não é erro).
+3. Profissão (atual e na época do acidente): confira cargo por extenso E código CBO. Localize na CTPS o vínculo cuja janela de datas cobre a data em questão e use exatamente o cargo e o CBO daquele trecho. Cargo certo com CBO de outro período ainda é erro. Sem CTPS enviada, marque como não verificável — nunca presuma correto.
+4. Veículos envolvidos: todos os veículos citados no prontuário/laudo (inclusive de terceiros) precisam aparecer na resposta do roteiro.
+5. Tempo de afastamento: REFAÇA a conta a partir das datas de início/cessação do benefício; não confie no valor escrito.
+6. Consistência interna do prontuário/laudo (lateralidade direito × esquerdo, datas divergentes entre páginas) e entre o prontuário e o que o roteiro registrou.
+
+## Duplicidade
+Cheque duplicidade por conteúdo, não só por nome. Duplicidade DENTRO da Cópia do Processo é esperada — não sinalize. Só sinalize a que aparece fora dela.
+
+## Qualidade de segurado
+Se qualificado: diga apenas que o cliente é qualificado — sem justificativa, sem datas de contribuição, sem nomes de instituições. Se não qualificado: justifique o motivo (ex.: última contribuição X meses antes do acidente), também sem citar instituição/empregador.
+
+## Avisos obrigatórios
+- Documento médico sem relação com o benefício correlacionado → avise.
+- Item do checklist faltando → avise dizendo especificamente o que falta.
+- Cliente sem qualidade de segurado → é o motivo de reprovação, vem em primeiro lugar.
+- Roteiro incorreto → especifique o campo e a divergência.
+
+## Heurísticas
+- CIDs que geralmente indicam fratura: S02, S12/S22/S32, S42, S52, S62, S72, S82, S92. Geralmente NÃO fratura: S43, S53/S63/S73/S83/S93, S06. Confirme sempre pela descrição por extenso.
+- Antecipação de pagamento (regras excepcionais) pode ser aprovada só com atestado médico simples, sem laudo pericial completo.
+- Grafia de nome variando entre sistemas (hospital × INSS × documentos assinados digitalmente) não é erro de titularidade — confirme por CPF + nome da mãe + data de nascimento.
+
+DADOS DO CARTÃO:
+${cardSummary(card)}
+
+Cada arquivo anexado está precedido do seu documentId e nome atual. Responda SOMENTE com um JSON válido, sem markdown, neste formato:
+{
+  "podeSeguir": boolean,
+  "motivoReprovacao": string | null,
+  "devolverParaAgendarPericia": boolean,
+  "nbUtilizar": string | null,
+  "beneficioEscolhido": string | null,
+  "situacaoBeneficio": "concedido" | "negado" | "negado_nao_comparecimento" | "indeterminada",
+  "qualidadeSegurado": "valida" | "invalida" | "indeterminada",
+  "justificativaEscolha": string | null,
+  "beneficiosDescartados": [ { "beneficio": string, "motivo": string } ],
+  "checklist": [ { "item": string, "situacao": "ok" | "faltando" | "nao_aplicavel", "observacao": string | null } ],
+  "roteiro": [ { "campo": string, "situacao": "ok" | "erro" | "nao_verificavel", "divergencia": string | null } ],
+  "problemas": [ string ],
+  "resumo": "o comentário-resumo, coeso e objetivo, em português, com o motivo de reprovação em primeiro lugar quando houver"
+}
+
+O array "checklist" precisa conter uma entrada para CADA documento obrigatório aplicável ao caso, e o array "roteiro", uma entrada para CADA um dos 6 itens do checklist fixo do roteiro — inclusive os que estão corretos.`;
 }
 
 // ─── Execução ───────────────────────────────────────────────────────────────
@@ -214,7 +320,12 @@ async function buildContent(
   const skipped: string[] = [];
   let total = 0;
 
-  for (const doc of docs.slice(0, MAX_FILES)) {
+  // O pré-envio confere a PASTA inteira (CTPS × 2, identificação, endereço,
+  // procuração, roteiro, médicos e o bloco do INSS) — 12 arquivos estouram
+  // fácil e um anexo cortado vira "documento faltando" falso.
+  const maxFiles = auditType === "inss_pre_envio" ? MAX_FILES_PRE_ENVIO : MAX_FILES;
+
+  for (const doc of docs.slice(0, maxFiles)) {
     const kind = mediaKind(doc.name || doc.key);
     if (!kind) { skipped.push(doc.name); continue; }
     try {
@@ -243,7 +354,12 @@ async function buildContent(
   }
 
   const today = new Date().toLocaleDateString("pt-BR");
-  const prompt = auditType === "documento_pessoal" ? personalDocPrompt(card, today) : inssPrompt(card, today);
+  const prompt =
+    auditType === "documento_pessoal"
+      ? personalDocPrompt(card, today)
+      : auditType === "inss_pre_envio"
+        ? inssPreEnvioPrompt(card, today)
+        : inssPreRoteiroPrompt(card, today);
   content.push({ type: "text", text: prompt });
   return { content, usedFiles, skipped };
 }
@@ -469,7 +585,109 @@ export async function runAiAudit({
       return;
     }
 
-    // inss_roteiro
+    if (auditType === "inss_pre_envio") {
+      const faltando = (Array.isArray(result.checklist) ? result.checklist : []).filter(
+        (c: any) => c?.situacao === "faltando",
+      );
+      const roteiroErros = (Array.isArray(result.roteiro) ? result.roteiro : []).filter(
+        (r: any) => r?.situacao === "erro",
+      );
+      const roteiroNaoVerificavel = (Array.isArray(result.roteiro) ? result.roteiro : []).filter(
+        (r: any) => r?.situacao === "nao_verificavel",
+      );
+
+      const parts: string[] = [];
+      let status: string;
+
+      if (result.devolverParaAgendarPericia) {
+        // Negativa por não comparecimento não é desfecho auditável: o caso
+        // volta para a fila de perícia em vez de seguir para o envio.
+        status = "reprovado";
+        parts.push(
+          '**🚫 Benefício negado por NÃO COMPARECIMENTO à perícia** — não é um resultado válido para esta auditoria. ' +
+            'Devolver o card para a coluna **"Agendar Perícia ADM"**.',
+        );
+      } else {
+        status = result.podeSeguir && !faltando.length && !roteiroErros.length ? "ok" : result.podeSeguir ? "alerta" : "reprovado";
+        if (!result.podeSeguir && result.motivoReprovacao) {
+          parts.push(`**🚫 Motivo de reprovação:** ${result.motivoReprovacao}`);
+        }
+        if (result.nbUtilizar) {
+          parts.push(
+            `**NB a utilizar:** ${result.nbUtilizar}${result.beneficioEscolhido ? ` (${result.beneficioEscolhido})` : ""}` +
+              (result.situacaoBeneficio && result.situacaoBeneficio !== "indeterminada"
+                ? ` · benefício ${String(result.situacaoBeneficio).replace(/_/g, " ")}`
+                : ""),
+          );
+        }
+        parts.push(
+          `**Qualidade de segurado:** ${
+            result.qualidadeSegurado === "valida" ? "✅ qualificado" : result.qualidadeSegurado === "invalida" ? "❌ não qualificado" : "⚠️ indeterminada"
+          }`,
+        );
+        if (result.justificativaEscolha) parts.push(`**Correlação:** ${result.justificativaEscolha}`);
+      }
+
+      if (Array.isArray(result.beneficiosDescartados) && result.beneficiosDescartados.length) {
+        parts.push(
+          "**Benefícios descartados:**\n" +
+            result.beneficiosDescartados.map((b: any) => `- ${b.beneficio}: ${b.motivo}`).join("\n"),
+        );
+      }
+      if (faltando.length) {
+        parts.push(
+          "**📋 Checklist — FALTANDO:**\n" +
+            faltando.map((c: any) => `- ${c.item}${c.observacao ? ` — ${c.observacao}` : ""}`).join("\n"),
+        );
+      } else if (!result.devolverParaAgendarPericia) {
+        parts.push("**📋 Checklist:** ✅ completo.");
+      }
+      if (roteiroErros.length) {
+        parts.push(
+          "**📝 Roteiro — divergências:**\n" +
+            roteiroErros.map((r: any) => `- **${r.campo}**: ${r.divergencia ?? "divergência encontrada"}`).join("\n"),
+        );
+      } else if (!result.devolverParaAgendarPericia) {
+        parts.push("**📝 Roteiro:** ✅ sem divergências nos itens verificados.");
+      }
+      if (roteiroNaoVerificavel.length) {
+        parts.push(
+          "**Itens do roteiro NÃO verificáveis:**\n" +
+            roteiroNaoVerificavel
+              .map((r: any) => `- **${r.campo}**${r.divergencia ? ` — ${r.divergencia}` : " — sem documento de apoio anexado"}`)
+              .join("\n"),
+        );
+      }
+      if (Array.isArray(result.problemas) && result.problemas.length) {
+        parts.push("**⚠️ Problemas encontrados:**\n" + result.problemas.map((p: string) => `- ${p}`).join("\n"));
+      }
+      parts.push(result.resumo ?? "");
+
+      const comment = await makeComment(status, parts.filter(Boolean).join("\n\n") + skippedNote);
+      await createLog({
+        action: "ai_audit",
+        message: `auditou a pasta antes do envio via IA (${
+          result.devolverParaAgendarPericia
+            ? "devolver para agendar perícia"
+            : status === "ok"
+              ? "pasta completa"
+              : status === "alerta"
+                ? "com pendências"
+                : "caso reprovado"
+        })`,
+        authorId,
+        authorName,
+        userId: isProcess ? null : cardId,
+        processId: isProcess ? cardId : null,
+        metadata: {
+          auditType, status, trigger, commentId: comment.id, files: usedFiles,
+          missingCount: faltando.length, roteiroErrorCount: roteiroErros.length,
+        },
+      });
+      return;
+    }
+
+    // inss_roteiro (pré-roteiro)
     const renamed: string[] = [];
     if (Array.isArray(result.renomearArquivos)) {
       for (const r of result.renomearArquivos) {
@@ -502,15 +720,19 @@ export async function runAiAudit({
     if (Array.isArray(result.problemas) && result.problemas.length) {
       parts.push("**⚠️ Problemas encontrados:**\n" + result.problemas.map((p: string) => `- ${p}`).join("\n"));
     }
-    if (renamed.length) {
-      parts.push("**Arquivos renomeados:**\n" + renamed.map((r) => `- ${r}`).join("\n"));
-    }
+    // A renomeação é ação SILENCIOSA (regra da skill): os arquivos são
+    // renomeados de fato, mas a lista não entra no comentário — fica só no log
+    // (metadata.renamedCount) e visível na aba Arquivos.
     parts.push(result.resumo ?? "");
+    // Última linha obrigatória do comentário-resumo, quando o caso pode seguir.
+    if (result.podeSeguir && typeof result.instrucaoFinal === "string" && result.instrucaoFinal.trim()) {
+      parts.push(result.instrucaoFinal.trim());
+    }
 
     const comment = await makeComment(status, parts.filter(Boolean).join("\n\n") + skippedNote);
     await createLog({
       action: "ai_audit",
-      message: `auditou a documentação do INSS via IA (${result.podeSeguir ? "caso pode seguir" : "caso reprovado"})`,
+      message: `auditou a documentação do INSS (pré-roteiro) via IA (${result.podeSeguir ? "caso pode seguir" : "caso reprovado"})`,
       authorId,
       authorName,
       userId: isProcess ? null : cardId,

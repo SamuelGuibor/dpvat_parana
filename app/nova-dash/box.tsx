@@ -120,10 +120,15 @@ export function NotificationDropdown() {
                     const cardId = n.processId ?? n.userId;
                     if (!cardId) return;
                     setOpen(false);
+                    // Se o sino foi clicado fora da aba do Kanban, o board não
+                    // está montado e o evento se perderia — o sessionStorage
+                    // segura o pedido até ele montar (igual à busca global).
+                    const payload = { id: cardId, isProcess: !!n.processId };
+                    try {
+                      sessionStorage.setItem('kanban-open-card', JSON.stringify(payload));
+                    } catch { /* noop */ }
                     window.dispatchEvent(
-                      new CustomEvent('open-kanban-card', {
-                        detail: { id: cardId, isProcess: !!n.processId },
-                      }),
+                      new CustomEvent('open-kanban-card', { detail: payload }),
                     );
                   }}
                   className={`flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-zinc-800 transition border-b last:border-b-0 cursor-pointer ${

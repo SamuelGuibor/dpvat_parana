@@ -78,7 +78,7 @@ export function Chat() {
   const meId = session?.user?.id ?? '';
   const { members } = usePresence();
   const { unread, refreshUnread } = useUnread();
-  const { channels, refreshChannels } = useMyChannels();
+  const { channels, refreshChannels, isLoading: channelsLoading } = useMyChannels();
 
   const [activeChannel, setActiveChannel] = useState<string>(GENERAL_CHANNEL);
   // Mobile: lista de canais e conversa alternam em tela cheia (no desktop as
@@ -126,10 +126,33 @@ export function Chat() {
   // acesso), volta pro Geral em vez de deixar o membro numa conversa morta.
   useEffect(() => {
     if (activeChannel === GENERAL_CHANNEL || isDm) return;
+    // Enquanto a lista não chegou, `channels` é [] — sem esta guarda um canal
+    // aberto por link/menção seria jogado pro Geral antes de carregar.
+    if (channelsLoading) return;
     if (!channels.some((c) => c.id === activeChannel)) {
       setActiveChannel(GENERAL_CHANNEL);
     }
-  }, [channels, activeChannel, isDm]);
+  }, [channels, channelsLoading, activeChannel, isDm]);
+
+  // Menção do chat clicada na caixa de Menções e Tarefas: abre o canal de
+  // origem. O sessionStorage cobre o caso do Chat ainda não estar montado
+  // quando o evento dispara (troca de aba).
+  useEffect(() => {
+    const openFromMention = (channelId?: string | null) => {
+      let target = channelId ?? null;
+      if (!target) {
+        try { target = sessionStorage.getItem('chat-open-channel'); } catch { /* noop */ }
+      }
+      if (!target) return;
+      try { sessionStorage.removeItem('chat-open-channel'); } catch { /* noop */ }
+      setActiveChannel(target);
+      setMobileView('thread');
+    };
+    openFromMention();
+    const handler = (e: Event) => openFromMention((e as CustomEvent).detail?.channelId);
+    window.addEventListener('open-chat-channel', handler);
+    return () => window.removeEventListener('open-chat-channel', handler);
+  }, []);
 
   // SSE: mensagem real → revalida; evento "digitando" → registra o autor.
   const onStream = useCallback((e: ChatStreamEvent) => {

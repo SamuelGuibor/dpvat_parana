@@ -119,6 +119,22 @@ export async function updateUser(data: UpdateUserData) {
       },
     });
 
+    // Nome do card mudou → o contato do WhatsApp vinculado acompanha. A lista
+    // do inbox e o próprio bot se dirigem ao cliente pelo `whatsapp_contacts.
+    // name`; sem essa propagação o atendimento continuava chamando o cliente
+    // pelo apelido do perfil do WhatsApp mesmo depois de a equipe corrigir o
+    // nome no card. Best-effort: nunca quebra a edição do card.
+    if (data.name && data.name !== currentUser.name) {
+      try {
+        await db.whatsAppContact.updateMany({
+          where: { userId: data.id },
+          data: { name: data.name },
+        });
+      } catch (err) {
+        console.error("[CARD] Falha ao propagar o nome para o contato do WhatsApp:", data.id, err);
+      }
+    }
+
     // Checklist de progresso avançou → informa o cliente no WhatsApp
     // (assíncrono; nunca bloqueia nem quebra a atualização do card).
     if (data.status && data.status !== currentUser.status) {

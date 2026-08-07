@@ -66,7 +66,7 @@ type Condition = {
 
 type Action = {
   type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets";
-  auditType?: "documento_pessoal" | "inss_roteiro";
+  auditType?: "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
   sheetsSpreadsheetId?: string;
   sheetsTab?: string;
   sheetsColumns?: string[];
@@ -645,7 +645,7 @@ function ActionRow({
             </label>
             <Select
               value={action.auditType ?? "documento_pessoal"}
-              onValueChange={(v: "documento_pessoal" | "inss_roteiro") => onChange({ ...action, auditType: v })}
+              onValueChange={(v: "documento_pessoal" | "inss_roteiro" | "inss_pre_envio") => onChange({ ...action, auditType: v })}
             >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
@@ -655,14 +655,19 @@ function ActionRow({
                   Documento pessoal (RG/CNH/CIN — validade e dados)
                 </SelectItem>
                 <SelectItem value="inss_roteiro" className="text-xs">
-                  Documentação INSS (benefício, qualidade de segurado, roteiro)
+                  Docs INSS — pré-roteiro (benefício, qualidade de segurado)
+                </SelectItem>
+                <SelectItem value="inss_pre_envio" className="text-xs">
+                  Docs INSS — pré-envio de pastas (checklist + roteiro)
                 </SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-gray-400 dark:text-zinc-500">
-              {action.auditType === "inss_roteiro"
-                ? "A IA analisa os documentos previdenciários anexados, escolhe o benefício/NB do roteiro, valida a qualidade de segurado, renomeia os arquivos e deixa um comentário-resumo destacado no card."
-                : "A IA lê o RG/CNH/CIN anexado, confere se foi expedido há mais de 10 anos (aplica a etiqueta \"DOCUMENTO VENCIDO\" e notifica a responsável) e cruza os dados do documento com os campos do card, comentando divergências."}
+              {action.auditType === "inss_pre_envio"
+                ? "Auditoria final, com o roteiro já preenchido: a IA confere o checklist da pasta (CTPS normal e \"Outros Vínculos\", identificação, comprovante de endereço, procuração, roteiro, médicos e os documentos do INSS conforme o benefício), reconfirma a correlação médica × benefício e valida o roteiro campo a campo."
+                : action.auditType === "inss_roteiro"
+                  ? "A IA analisa os documentos previdenciários anexados, escolhe o benefício/NB do roteiro, valida a qualidade de segurado, renomeia os arquivos e deixa um comentário-resumo destacado no card."
+                  : "A IA lê o RG/CNH/CIN anexado, confere se foi expedido há mais de 10 anos (aplica a etiqueta \"DOCUMENTO VENCIDO\" e notifica a responsável) e cruza os dados do documento com os campos do card, comentando divergências."}
             </p>
           </div>
         )}
@@ -1124,7 +1129,11 @@ function AutomationCard({
                     <>
                       <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0 mt-0.5" />
                       <span className="text-gray-600 dark:text-zinc-300">
-                        Auditoria IA: {a.auditType === "inss_roteiro" ? "documentação INSS (roteiro)" : "documento pessoal (RG/CNH/CIN)"}
+                        Auditoria IA: {a.auditType === "inss_pre_envio"
+                          ? "docs INSS (pré-envio de pastas)"
+                          : a.auditType === "inss_roteiro"
+                            ? "docs INSS (pré-roteiro)"
+                            : "documento pessoal (RG/CNH/CIN)"}
                       </span>
                     </>
                   ) : a.type === "move" ? (

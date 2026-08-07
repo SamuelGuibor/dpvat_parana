@@ -148,6 +148,14 @@ export async function getClientInfo(contactId: string): Promise<ClientInfoResult
       const u = user as unknown as Record<string, string | null> & { cardNumber?: number | null };
       const fields: ClientInfoFields = {};
       for (const key of CLIENT_FIELDS) fields[key] = u[key] ?? null;
+      // Contato vinculado a um card → o nome do cadastro é o nome oficial. O
+      // contato nasce com o apelido do perfil do WhatsApp, que é o que o bot e
+      // a lista do inbox usam; alinha aqui para o cliente parar de ser chamado
+      // pelo apelido depois de a equipe ter corrigido o nome no card.
+      const cardName = u.name?.trim();
+      if (cardName && cardName !== contact.name) {
+        await db.whatsAppContact.update({ where: { id: contactId }, data: { name: cardName } });
+      }
       return {
         registered: true,
         userId,

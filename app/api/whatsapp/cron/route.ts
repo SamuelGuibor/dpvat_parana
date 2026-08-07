@@ -3,7 +3,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
-import { recordRecoveryEvent } from '@/app/_shared/lib/whatsapp/rule-events';
+import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
 
@@ -71,6 +71,63 @@ const RECOVERY_RETRY_MS = 6 * 60 * 60_000;        // re-tenta envios que falhara
 //   _final: {{1}} = primeiro nome, {{2}} = pendência ("enviar seus documentos").
 const RECOVERY_TEMPLATE_1 = 'recuperacao_triagem_1';
 const RECOVERY_TEMPLATE_FINAL = 'recuperacao_triagem_final';
+
+// Desfechos que NÃO são "sumiu no meio da triagem": lead já qualificado ou
+// contratado, dúvida resolvida, cliente cadastrado com acidente novo,
+// transferido ao atendente, spam. Nada disso é lead a resgatar.
+const NON_RECOVERABLE_CATEGORIES = new Set([
+  'qualificado', 'contratado_perdido', 'perguntas', 'novo_acidente',
+  'transferido', 'descartado', 'sem_resposta',
+]);
+// Janela em que uma mensagem MANUAL de atendente ainda diz respeito a este
+// atendimento (mais velho que isso é histórico de outro assunto).
+const HUMAN_TOUCH_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * O ciclo de recuperação existe para UM caso: lead novo que sumiu no meio da
+ * triagem. Devolve o motivo pelo qual esta conversa NÃO deve entrar (ou seguir)
+ * no ciclo — null significa "pode provocar".
+ *
+ * Caso Daniel (06/08/2026): a IA qualificou o lead, um atendente assumiu,
+ * respondeu e devolveu ao bot. Como `assumeConversation` zerava o `qualified`,
+ * o único filtro que existia (`!conv.qualified`) deixou passar e o cron
+ * cutucou, no dia seguinte, um cliente cujo processo já estava com a equipe
+ * ("só falta a confirmação final pra seguir com seu contrato"). Os filtros
+ * abaixo olham o que o `qualified` sozinho não enxerga: a categoria do
+ * desfecho, o card no kanban e o atendimento humano recente.
+ */
+async function standbyBlockReason(conv: {
+  contactId: string;
+  qualified: boolean | null;
+  closeCategory: string | null;
+  recoveryAttempts: number;
+  contact: { optedOut: boolean; userId: string | null };
+}): Promise<string | null> {
+  if (conv.contact.optedOut) return 'contato em opt-out';
+  if (conv.recoveryAttempts >= RECOVERY_MAX_ATTEMPTS) return 'ciclo de recuperação já esgotado';
+  if (conv.qualified === true) return 'lead já qualificado';
+  if (conv.closeCategory && NON_RECOVERABLE_CATEGORIES.has(conv.closeCategory)) {
+    return `desfecho "${conv.closeCategory}" não é triagem incompleta`;
+  }
+  if (conv.contact.userId) return 'contato já é cliente cadastrado (card no kanban)';
+  // Atendente humano já falou com ele nos últimos dias → quem decide se cutuca
+  // é a equipe, não o cron. O texto do ciclo ("seu atendimento está quase
+  // pronto, falta pouco") é de triagem e destoa de um caso já em andamento.
+  const humanReply = await db.whatsAppMessage.findFirst({
+    where: {
+      contactId: conv.contactId,
+      direction: 'out',
+      sentByBot: false,
+      authorId: { not: null },
+      internal: false,
+      deletedAt: null,
+      createdAt: { gte: new Date(Date.now() - HUMAN_TOUCH_LOOKBACK_MS) },
+    },
+    select: { id: true },
+  });
+  if (humanReply) return 'conversa teve atendimento humano nos últimos 7 dias';
+  return null;
+}
 
 // Horário comercial (7h–21h, Brasília): provocação fora disso é adiada pro
 // próximo dia útil de relógio — cutucar às 3h da manhã é convite a denúncia.
@@ -548,12 +605,20 @@ export async function GET(req: NextRequest) {
         // Falha no envio não trava o encerramento.
         console.error('[WHATSAPP CRON] Despedida não entregue (encerrando mesmo assim):', conv.contactId, err);
       }
-      const recoverable =
-        !conv.qualified && !conv.contact.optedOut && conv.recoveryAttempts < RECOVERY_MAX_ATTEMPTS;
-      if (recoverable) {
+      const block = await standbyBlockReason(conv);
+      if (!block) {
         await enterStandby(conv);
         results.standby++;
       } else {
+        // Telemetria: por que este cliente NÃO foi para o ciclo. Sem isso o
+        // standby indevido só aparecia como mensagem inesperada no WhatsApp.
+        await recordCodeIntervention({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'recuperacao_bloqueada',
+          detail: `Conversa encerrada sem entrar no ciclo de recuperação: ${block}.`,
+        });
         await finalizeClose(conv);
         results.closed++;
       }
@@ -604,6 +669,24 @@ export async function GET(req: NextRequest) {
           detail: 'ciclo completo sem resposta do cliente',
         });
         await finalizeClose(conv, { closeCategory: 'sem_resposta', recoveryOutcome: 'esgotado' });
+        results.closed++;
+        continue;
+      }
+      // Rede de segurança: conversa que NUNCA deveria ter entrado no ciclo
+      // (lead já qualificado, cliente com card, atendimento humano recente) —
+      // seja porque entrou antes desta trava existir, seja porque virou cliente
+      // depois de entrar. Sai do standby em SILÊNCIO, sem gastar provocação e
+      // sem sobrescrever a categoria do desfecho original.
+      const block = await standbyBlockReason(conv);
+      if (block) {
+        await recordCodeIntervention({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'recuperacao_bloqueada',
+          detail: `Ciclo de recuperação interrompido antes da provocação: ${block}.`,
+        });
+        await finalizeClose(conv, { recoveryOutcome: 'bloqueado' });
         results.closed++;
         continue;
       }

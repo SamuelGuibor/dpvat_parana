@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle, MessageCircle, AtSign } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
@@ -14,6 +14,7 @@ import { KanbanBoard } from '@/app/nova-dash/KanbanBoard';
 import { ArchivedCards } from '@/app/nova-dash/ArchivedCards';
 import { StrategicDashboard } from '@/app/nova-dash/StrategicDashboard';
 import { Workspace } from '@/app/nova-dash/workspace/Workspace';
+import { MentionsInbox } from '@/app/nova-dash/mentions/MentionsInbox';
 import { WhatsAppInbox } from '@/app/nova-dash/workspace/whatsapp/WhatsAppInbox';
 import Team from '@/app/nova-dash/_components/team_dash';
 import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
@@ -28,6 +29,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { useWhatsAppUnread } from '@/app/_shared/hooks/use-whatsapp';
+import { usePendingMentions, OPEN_MENTIONS_TAB_EVENT } from '@/app/_shared/hooks/use-mentions';
 import { PermissionsProvider, usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { GlobalSearch } from '@/app/nova-dash/_components/GlobalSearch';
 import { isTeamRole } from '@/app/_shared/lib/permissions';
@@ -55,6 +57,8 @@ function PageInner() {
   // o chat interno; o do WhatsApp conta as conversas não lidas do inbox.
   const whatsappUnread = useWhatsAppUnread();
   const workspaceUnread = chatUnread;
+  // Menções pendentes na caixa própria (não some quando o sino é limpo).
+  const { pending: mentionsPending, fresh: mentionsFresh, clearFresh: clearMentionsFresh } = usePendingMentions();
 
   // O dark mode oficial é o Dark Reader (DarkModeToggle). Este era um toggle
   // legado que aplicava `.dark` no <html> por cima — se um usuário tivesse
@@ -75,11 +79,24 @@ function PageInner() {
     function handleOpenWhatsApp() {
       setActiveTab('whatsapp');
     }
+    // Menção do chat clicada na caixa de Menções → Espaço de Trabalho > Chat
+    // (o Workspace abre a seção e o Chat abre o canal, via sessionStorage).
+    function handleOpenChat() {
+      setActiveTab('meu-espaco');
+    }
+    // Botão "Ver" do toast de menção nova.
+    function handleOpenMentions() {
+      setActiveTab('mencoes');
+    }
+    window.addEventListener(OPEN_MENTIONS_TAB_EVENT, handleOpenMentions);
     window.addEventListener('open-kanban-card', handleOpenCard);
     window.addEventListener('open-whatsapp-conversation', handleOpenWhatsApp);
+    window.addEventListener('open-chat-channel', handleOpenChat);
     return () => {
       window.removeEventListener('open-kanban-card', handleOpenCard);
       window.removeEventListener('open-whatsapp-conversation', handleOpenWhatsApp);
+      window.removeEventListener('open-chat-channel', handleOpenChat);
+      window.removeEventListener(OPEN_MENTIONS_TAB_EVENT, handleOpenMentions);
     };
   }, []);
 
@@ -88,6 +105,11 @@ function PageInner() {
       router.replace('/login');
     }
   }, [status, router]);
+
+  // Abriu a caixa: para de piscar (o badge continua com o total pendente).
+  useEffect(() => {
+    if (activeTab === 'mencoes') clearMentionsFresh();
+  }, [activeTab, clearMentionsFresh]);
 
   const isDark = false;
 
@@ -122,12 +144,14 @@ function PageInner() {
   const canViewArchived = perms.view_archived;
   const canViewTickets = perms.view_tickets;
 
-  // Kanban + Espaço de Trabalho + WhatsApp são fixos; Arquivados e Tickets Dev
+  // Kanban + Espaço de Trabalho + Menções + WhatsApp são fixos; Arquivados e Tickets Dev
   // entram conforme a permissão. Classes literais para o Tailwind não perder o JIT.
   // Mobile: as abas viram uma linha com scroll lateral; o grid só vale no md+.
-  const visibleTabs = 3 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
+  const visibleTabs = 4 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
   const tabsGridCols =
-    visibleTabs === 5 ? "md:grid-cols-5" : visibleTabs === 4 ? "md:grid-cols-4" : "md:grid-cols-3";
+    visibleTabs === 6 ? "md:grid-cols-6"
+      : visibleTabs === 5 ? "md:grid-cols-5"
+        : "md:grid-cols-4";
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
@@ -183,7 +207,7 @@ function PageInner() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-3 md:px-6">
           <TabsList
               data-tour="tabs"
-              className={`flex w-full gap-1 overflow-x-auto md:grid md:max-w-5xl md:overflow-visible ${tabsGridCols} ${
+              className={`flex w-full gap-1 overflow-x-auto md:grid md:max-w-[1400px] md:overflow-visible ${tabsGridCols} ${
                 isDark ? "bg-zinc-800 text-zinc-300" : ""
               }`}
             >
@@ -234,6 +258,25 @@ function PageInner() {
               )}
             </TabsTrigger>
             <TabsTrigger
+              value="mencoes"
+              data-tour="tab-mencoes"
+              className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+            >
+              <AtSign className="w-4 h-4 mr-2" />
+              Menções e Tarefas
+              {mentionsPending > 0 && (
+                <span className="relative ml-2 inline-flex">
+                  {/* Menção nova recém-chegada pisca até a aba ser aberta. */}
+                  {mentionsFresh && (
+                    <span className="absolute inset-0 animate-ping rounded-full bg-red-500 opacity-75" />
+                  )}
+                  <span className="relative grid h-5 min-w-[20px] place-items-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">
+                    {mentionsPending > 99 ? '99+' : mentionsPending}
+                  </span>
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger
               value="whatsapp"
               data-tour="tab-whatsapp"
               className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
@@ -280,6 +323,9 @@ function PageInner() {
           </TabsContent>
           <TabsContent value="meu-espaco" className="min-h-0">
             <Workspace />
+          </TabsContent>
+          <TabsContent value="mencoes">
+            <MentionsInbox />
           </TabsContent>
           <TabsContent value="whatsapp" className="min-h-0">
             {/* No celular o inbox ocupa a tela inteira (sem moldura de 16px). */}

@@ -4,6 +4,8 @@ import { db } from '@/app/_shared/lib/prisma';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { getServerSession } from 'next-auth';
 import { extractMentions } from '@/app/_shared/utils/mentions';
+import { recordMentions } from '@/app/_shared/lib/mention-inbox';
+import { GENERAL_CHANNEL, isDmChannel } from '@/app/_shared/utils/chat';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
 import { canAccessChannel, canSendToChannel, channelRecipients } from '@/app/_shared/lib/chat-access';
 
@@ -158,6 +160,31 @@ export async function sendMessage({ channelId, body, replyToId, attachment }: Se
         },
       });
     }
+
+    // Caixa de Menções e Tarefas: sobrevive à limpeza do sino, com o canal de
+    // origem para o clique levar de volta à conversa certa.
+    let channelLabel = 'Chat · Geral';
+    if (channelId !== GENERAL_CHANNEL) {
+      if (isDmChannel(channelId)) {
+        channelLabel = `Chat · Conversa com ${authorName}`;
+      } else {
+        const ch = await db.chatChannel.findUnique({
+          where: { id: channelId },
+          select: { name: true },
+        });
+        channelLabel = `Chat · ${ch?.name ?? 'canal'}`;
+      }
+    }
+    await recordMentions({
+      recipientIds: [...targetIds].filter((id) => id !== session.user.id),
+      authorId: session.user.id,
+      authorName,
+      source: 'chat',
+      text,
+      targetName: channelLabel,
+      chatMessageId: message.id,
+      channelId,
+    });
   } catch (err) {
     console.error('[CHAT] Falha ao criar notificações de menção:', err);
   }

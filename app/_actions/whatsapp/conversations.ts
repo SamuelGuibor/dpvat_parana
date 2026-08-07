@@ -108,7 +108,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     orderBy: { lastMessageAt: 'desc' },
     take: 200,
     include: {
-      contact: { select: { id: true, name: true, phone: true, optedOut: true } },
+      contact: { select: { id: true, name: true, phone: true, optedOut: true, userId: true } },
       tags: { include: { tag: true } },
       // Leitura GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa
       // de contar como não-lida para o resto da equipe.
@@ -150,6 +150,22 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     ? await db.user.findMany({ where: { id: { in: extraAuthorIds } }, select: { id: true, name: true } })
     : [];
 
+  // Nome EXIBIDO: manda o nome do card quando o contato já está vinculado a um
+  // cliente. O `whatsapp_contacts.name` nasce do perfil do WhatsApp (apelido,
+  // "Askeladd") e nem sempre acompanha a correção feita no card — na lista quem
+  // vale é o cadastro.
+  const linkedUserIds = [...new Set(
+    conversations.map((c) => c.contact.userId).filter((id): id is string => !!id),
+  )];
+  const cardNameById = new Map(
+    linkedUserIds.length
+      ? (await db.user.findMany({
+          where: { id: { in: linkedUserIds } },
+          select: { id: true, name: true },
+        })).map((u) => [u.id, u.name])
+      : [],
+  );
+
   const previewByContact = new Map(lastMessages.map((m) => [m.contactId, m]));
   const inboundByContact = new Map(lastInbound.map((m) => [m.contactId, m.createdAt]));
   const nameById = new Map([...assignees, ...extraAuthors].map((u) => [u.id, u.name ?? 'Atendente']));
@@ -169,7 +185,8 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     return {
       id: c.id,
       contactId: c.contactId,
-      contactName: c.contact.name,
+      contactName:
+        (c.contact.userId ? cardNameById.get(c.contact.userId)?.trim() : null) || c.contact.name,
       contactPhone: c.contact.phone,
       status: c.status,
       qualified: c.qualified,
@@ -218,7 +235,13 @@ export async function assumeConversation(conversationId: string): Promise<void> 
     where: { id: conversationId },
     // Assumiu: some o selo de urgência e zeram os marcadores de SLA da fila.
     // recoveryNextAt nulo: atendente assumiu → o ciclo de recuperação para.
-    data: { status: 'human', assignedToId: me.id, qualified: null, urgent: false, queuedAt: null, queueAlertAt: null, recoveryNextAt: null },
+    //
+    // `qualified` é PRESERVADO (06/08/2026). Antes o assumir zerava o campo, e
+    // com isso a conversa perdia a marca de lead qualificado: devolvida ao bot
+    // e abandonada pelo cliente, o cron a tratava como triagem incompleta e
+    // disparava o ciclo de recuperação em cima de quem já estava com a equipe
+    // (caso Daniel). Quem reclassifica o desfecho é o encerramento.
+    data: { status: 'human', assignedToId: me.id, urgent: false, queuedAt: null, queueAlertAt: null, recoveryNextAt: null },
   });
   if (before) {
     // "Assumir" reabre quando estava encerrada; senão é uma atribuição normal.

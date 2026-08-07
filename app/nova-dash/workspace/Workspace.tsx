@@ -47,6 +47,14 @@ export function Workspace() {
   // O WhatsApp saiu do Espaço de Trabalho: agora é aba própria da nova-dash.
   // A notificação clicada troca a aba lá em page.tsx; nada a fazer aqui.
 
+  // Menção do chat clicada na caixa de Menções: page.tsx traz para cá, aqui
+  // abrimos a seção do Chat (o canal em si o Chat lê do sessionStorage).
+  useEffect(() => {
+    const openChat = () => setSection('chat');
+    window.addEventListener('open-chat-channel', openChat);
+    return () => window.removeEventListener('open-chat-channel', openChat);
+  }, []);
+
   // Guarda extra: sem a permissão, cair numa seção restrita volta para o início.
   const effective: WorkspaceSection =
     (section === 'gestao' && !manager)

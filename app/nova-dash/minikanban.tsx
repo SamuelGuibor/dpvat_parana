@@ -21,7 +21,7 @@ const STAGES = [
     'iniciado',
     'Em Conversa',
     // 'Em Honorário',
-    'Enviou Documentos',
+    'Lista de Documentos',
     // 'Aguardando',
     'Não Contratado',
     'Não Qualificado',

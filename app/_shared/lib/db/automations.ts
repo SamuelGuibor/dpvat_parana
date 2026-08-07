@@ -17,7 +17,9 @@ export type AutomationAction = {
   // "sheets": registra uma linha numa planilha do Google quando o card entra
   // na coluna (ex.: ENVIADO EMAIL CAIQUE → base de dados externa).
   type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets";
-  auditType?: "documento_pessoal" | "inss_roteiro";
+  // "inss_roteiro" é o PRÉ-ROTEIRO (chave legada, ver ai-audit.ts);
+  // "inss_pre_envio" é a auditoria da pasta antes do envio.
+  auditType?: "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
   sheetsSpreadsheetId?: string; // ID ou URL completa da planilha
   sheetsTab?: string;           // nome da aba (vazio = primeira)
   sheetsColumns?: string[];     // valores das colunas, com [[variáveis]] do card

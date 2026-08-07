@@ -99,6 +99,7 @@ model User {
   commentsOnCard      Comment[]      @relation("UserComments")
   document            Document[]
   notifications       Notification[] @relation("UserNotifications")
+  mentions            Mention[]      @relation("UserMentions")
   processes           Process[]
   sessions            Session[]
   label               Label?         @relation("UserLabel", fields: [labelId], references: [id])
@@ -459,6 +460,40 @@ model Notification {
   recipient   User     @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([recipientId])
+}
+
+// Caixa de menções e tarefas. Cada @menção (comentário de card ou chat da
+// equipe) vira uma linha aqui, com estado próprio: PENDING → ACK (tomei
+// ciência) → DONE (resolvi). Existe separada da Notification porque o sino é
+// volátil — o usuário limpa e perde a rastreabilidade de "de onde era".
+model Mention {
+  id            String    @id @default(cuid())
+  recipientId   String
+  authorId      String?
+  authorName    String
+  // "comment" (comentário de card) | "chat" (chat da equipe)
+  source        String    @default("comment")
+  // Trecho já limpo do markup de menção/negrito, para render na tabela.
+  excerpt       String
+  // Origem — comentário de card (userId/processId é o card a abrir)
+  commentId     String?
+  userId        String?
+  processId     String?
+  // Nome do card ou do canal, para o usuário saber de onde veio.
+  targetName    String
+  // Origem — chat da equipe
+  chatMessageId String?
+  channelId     String?
+  // PENDING | ACK | DONE
+  status        String    @default("PENDING")
+  ackAt         DateTime?
+  doneAt        DateTime?
+  createdAt     DateTime  @default(now())
+  recipient     User      @relation("UserMentions", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, status])
+  @@index([recipientId, createdAt])
+  @@map("mentions")
 }
 
 model Log {

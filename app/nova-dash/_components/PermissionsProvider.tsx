@@ -26,6 +26,7 @@ const NO_PERMISSIONS: PermissionMap = {
   review_ai: false,
   manage_wa_contacts: false,
   view_costs: false,
+  view_all_mentions: false,
   manage_team: false,
 };
 

@@ -81,7 +81,10 @@ const AUDIT_STATUS_UI: Record<string, { label: string; icon: React.ElementType; 
 
 const AUDIT_TYPE_LABELS: Record<string, string> = {
   documento_pessoal: 'Documento Pessoal (RG/CNH/CIN)',
-  inss_roteiro: 'Documentação INSS — Roteiro',
+  // A chave "inss_roteiro" é legado (está gravada nos comentários antigos) —
+  // o rótulo virou "Pré-roteiro" quando surgiu a auditoria de pré-envio.
+  inss_roteiro: 'Docs INSS — Pré-roteiro',
+  inss_pre_envio: 'Docs INSS — Pré-envio de pastas',
 };
 
 const FEEDBACK_LABELS: Record<string, string> = {
@@ -397,7 +400,7 @@ export function CommentsTab({ cardId, isProcess }: Props) {
       .filter(Boolean) as string[],
   );
 
-  async function triggerAudit(auditType: 'documento_pessoal' | 'inss_roteiro') {
+  async function triggerAudit(auditType: 'documento_pessoal' | 'inss_roteiro' | 'inss_pre_envio') {
     // Já existe auditoria deste tipo no card? Confirma antes de refazer.
     const existing = (comments as any[]).some((c) => parseAudit(c.text)?.auditType === auditType);
     if (existing) {
@@ -462,7 +465,15 @@ export function CommentsTab({ cardId, isProcess }: Props) {
                   className="inline-flex items-center gap-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 px-2.5 py-1 text-[11px] font-bold text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors disabled:opacity-50"
                 >
                   {auditing === 'inss_roteiro' && <Loader2 className="w-3 h-3 animate-spin" />}
-                  Docs INSS
+                  Docs INSS — pré-roteiro
+                </button>
+                <button
+                  onClick={() => triggerAudit('inss_pre_envio')}
+                  disabled={!!auditing}
+                  className="inline-flex items-center gap-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 px-2.5 py-1 text-[11px] font-bold text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors disabled:opacity-50"
+                >
+                  {auditing === 'inss_pre_envio' && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Docs INSS — pré-envio
                 </button>
               </div>
             )}

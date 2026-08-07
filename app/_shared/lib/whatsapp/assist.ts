@@ -33,13 +33,27 @@ async function callAssist<T>(path: string, body: object): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ASSIST_TIMEOUT_MS);
   try {
-    const res = await fetch(`${CHATBOT_URL}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-bot-secret": CHATBOT_SECRET },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-      cache: "no-store",
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${CHATBOT_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-bot-secret": CHATBOT_SECRET },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+    } catch (err) {
+      // Sem isto o atendente via um "fetch failed"/500 cru na tela. Os dois
+      // casos reais: o microserviço do bot fora do ar (dev sem o serviço
+      // rodando, ou Railway caído) e a resposta que estourou o tempo.
+      console.error(`[WHATSAPP ASSIST] Falha ao chamar ${CHATBOT_URL}${path}:`, err);
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error("A IA demorou demais para responder. Tente de novo.");
+      }
+      throw new Error(
+        "Serviço de IA fora do ar — não consegui falar com o chatbot. Tente de novo em instantes.",
+      );
+    }
     if (!res.ok) throw new Error(`IA respondeu HTTP ${res.status}`);
     return (await res.json()) as T;
   } finally {

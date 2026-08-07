@@ -92,6 +92,12 @@ export const PERMISSION_DEFS = [
       "Dispara manualmente a auditoria de documentos por IA no card e avalia os resultados (feedback).",
   },
   {
+    key: "view_all_mentions",
+    label: "Menções da equipe",
+    description:
+      "Vê a caixa de Menções e Tarefas de todo mundo (quem foi marcado, o que ainda está pendente).",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -124,6 +130,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     review_ai: false,
     manage_wa_contacts: false,
     view_costs: false,
+    view_all_mentions: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -147,6 +154,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Custo do projeto é informação de sócio — nasce exclusivo do ADMIN++,
     // concedível por override a quem o Super Admin quiser.
     view_costs: false,
+    // Ver a caixa de menções dos outros é supervisão — nasce exclusiva do
+    // ADMIN++, concedível ao ADMIN+ por override.
+    view_all_mentions: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -164,6 +174,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     review_ai: true,
     manage_wa_contacts: true,
     view_costs: true,
+    view_all_mentions: true,
     manage_team: true,
   },
 };

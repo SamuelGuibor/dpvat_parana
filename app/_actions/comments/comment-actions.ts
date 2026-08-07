@@ -4,6 +4,7 @@ import { db } from "../../_shared/lib/prisma";
 import { authOptions } from "../../_shared/lib/auth";
 import { getServerSession } from "next-auth";
 import { extractMentions } from "@/app/_shared/utils/mentions";
+import { recordMentions } from "../../_shared/lib/mention-inbox";
 import { createLog } from "../../_shared/lib/log";
 
 interface CreateCommentProps {
@@ -79,8 +80,11 @@ export async function createComment({
 
   // 🔥 3️⃣ Extrai menções
   const mentions = extractMentions(text);
+  const mentionedIds: string[] = [];
   for (const mention of mentions) {
     if (mention.id === session.user.id) continue;
+    if (mentionedIds.includes(mention.id)) continue;
+    mentionedIds.push(mention.id);
 
     await db.notification.create({
       data: {
@@ -95,6 +99,20 @@ export async function createComment({
       },
     });
   }
+
+  // 🔥 4️⃣ Caixa de Menções e Tarefas — o item fica lá até a pessoa marcar
+  // ciente/concluído, mesmo que ela limpe o sino.
+  await recordMentions({
+    recipientIds: mentionedIds,
+    authorId: session.user.id,
+    authorName: session.user.name ?? "Usuário",
+    source: "comment",
+    text,
+    targetName,
+    commentId: comment.id,
+    userId: userId ?? null,
+    processId: processId ?? null,
+  });
 
   return comment;
 }
