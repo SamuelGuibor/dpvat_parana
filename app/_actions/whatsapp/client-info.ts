@@ -36,6 +36,8 @@ const CLIENT_FIELDS = [
   'name', 'cpf', 'rg', 'email', 'data_nasc', 'data_acidente',
   'estado_civil', 'profissao', 'nome_mae', 'cidade', 'estado',
   'rua', 'bairro', 'numero', 'cep', 'hospital', 'lesoes', 'obs',
+  // Preenchidos só quando o cliente informa por conta própria (o bot não pede).
+  'telefone_secundario', 'rede_social',
 ] as const;
 
 export type ClientInfoFields = Partial<Record<(typeof CLIENT_FIELDS)[number], string | null>>;
@@ -56,6 +58,10 @@ export interface ClientInfoResult {
   phone: string;
   cardNumber: number | null;
   fields: ClientInfoFields;
+  /** Campos preenchidos pela IA (ganham selo na ficha até alguém editar). */
+  aiFields: string[];
+  /** Hospital citado pelo cliente — a IA nunca preenche o select. */
+  hospitalHint: string | null;
 }
 
 /**
@@ -162,6 +168,8 @@ export async function getClientInfo(contactId: string): Promise<ClientInfoResult
         phone: contact.phone,
         cardNumber: u.cardNumber ?? null,
         fields,
+        aiFields: aiFieldList(contact.aiFilledFields),
+        hospitalHint: contact.hospitalHint ?? null,
       };
     }
     // User apontado não existe mais → limpa o vínculo e cai pro rascunho.
@@ -175,7 +183,15 @@ export async function getClientInfo(contactId: string): Promise<ClientInfoResult
     phone: contact.phone,
     cardNumber: null,
     fields: { name: contact.name ?? null, ...draft },
+    aiFields: aiFieldList(contact.aiFilledFields),
+    hospitalHint: contact.hospitalHint ?? null,
   };
+}
+
+/** Lista de campos marcados como preenchidos pela IA (whatsapp_contacts). */
+function aiFieldList(raw: unknown): string[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  return Object.keys(raw as Record<string, unknown>);
 }
 
 /**
@@ -190,6 +206,25 @@ export async function saveClientInfo(contactId: string, input: ClientInfoFields)
 
   const fields = sanitizeFields(input);
 
+  // Valores atuais, para saber o que o humano REALMENTE mudou: campo editado
+  // na mão perde o selo de "preenchido pela IA".
+  const before: Record<string, string | null> = contact.userId
+    ? (((await db.user.findUnique({
+      where: { id: contact.userId },
+      select: Object.fromEntries(CLIENT_FIELDS.map((f) => [f, true])) as Record<string, true>,
+    })) ?? {}) as unknown as Record<string, string | null>)
+    : ((contact.clientDraft ?? {}) as Record<string, string | null>);
+
+  const marks = { ...((contact.aiFilledFields ?? {}) as Record<string, string>) };
+  let marksChanged = false;
+  for (const [key, value] of Object.entries(fields)) {
+    if (!(key in marks)) continue;
+    if ((before[key] ?? null) !== value) {
+      delete marks[key];
+      marksChanged = true;
+    }
+  }
+
   if (contact.userId) {
     // Email é unique no User — não sobrescreve com null pra não quebrar login.
     const data = { ...fields };
@@ -202,6 +237,18 @@ export async function saveClientInfo(contactId: string, input: ClientInfoFields)
     await db.whatsAppContact.update({
       where: { id: contactId },
       data: { clientDraft: fields, ...(fields.name ? { name: fields.name } : {}) },
+    });
+  }
+
+  // Escolheu o hospital no select → a dica da IA cumpriu o papel e sai.
+  const clearHint = !!fields.hospital && !!contact.hospitalHint;
+  if (marksChanged || clearHint) {
+    await db.whatsAppContact.update({
+      where: { id: contactId },
+      data: {
+        ...(marksChanged ? { aiFilledFields: marks as Prisma.InputJsonValue } : {}),
+        ...(clearHint ? { hospitalHint: null } : {}),
+      },
     });
   }
 

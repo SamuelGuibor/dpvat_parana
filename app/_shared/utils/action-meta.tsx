@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Activity, ArrowRightLeft, Pencil, Plus, MessageSquare, FileUp, FileX,
   ListChecks, Archive, MessageCircle, Image as ImageIcon, FileText, Workflow,
-  LayoutTemplate, StickyNote, Bot, UserCheck, RotateCcw, CheckCircle2, Code2,
+  LayoutTemplate, StickyNote, Bot, UserCheck, RotateCcw, CheckCircle2, Code2, Sparkles,
 } from 'lucide-react';
 
 /** Metadados visuais por tipo de ação de log (compartilhado por Meu Espaço e Gestor).
@@ -29,6 +29,7 @@ export const ACTION_META: Record<string, { label: string; icon: React.ElementTyp
   wa_return_bot:   { label: 'WhatsApp: p/ bot',    icon: Bot,            tint: 'text-gray-600 bg-gray-100',    ring: 'ring-gray-100',    bar: 'bg-gray-500', hex: '#6b7280' },
   wa_close:        { label: 'WhatsApp: encerrou',  icon: CheckCircle2,   tint: 'text-lime-600 bg-lime-50',     ring: 'ring-lime-100',    bar: 'bg-lime-600', hex: '#65a30d' },
   wa_bot:          { label: 'WhatsApp: bot (IA)',  icon: Bot,            tint: 'text-zinc-500 bg-zinc-100',    ring: 'ring-zinc-100',    bar: 'bg-zinc-400', hex: '#a1a1aa' },
+  ficha_ai_fill:   { label: 'Ficha preenchida pela IA', icon: Sparkles,  tint: 'text-violet-600 bg-violet-50', ring: 'ring-violet-100',  bar: 'bg-violet-500', hex: '#8b5cf6' },
 };
 
 export function metaFor(action: string) {

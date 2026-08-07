@@ -535,6 +535,11 @@ export function ChatbotDashboard() {
                             <Tooltip
                               contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,.12)', fontSize: 12 }}
                               formatter={(v: number, name: string) => [`${v} ${v === 1 ? 'lead' : 'leads'}`, PLATFORM_META[name]?.label ?? name]}
+                              // Ao lado da data, o total do dia somando todas as plataformas.
+                              labelFormatter={(label: string, payload: readonly { payload?: { total?: number } }[]) => {
+                                const total = payload?.[0]?.payload?.total ?? 0;
+                                return `${label} · ${total} ${total === 1 ? 'lead' : 'leads'}`;
+                              }}
                             />
                             {/* Empilhado: a altura total é o total do dia e
                                 cada faixa é uma rede — mesma leitura das barras. */}

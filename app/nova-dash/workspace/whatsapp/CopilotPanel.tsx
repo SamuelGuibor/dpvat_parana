@@ -158,9 +158,16 @@ export function CopilotPanel({
     setFillingFicha(true);
     try {
       const result = await fillClientInfoWithAI(contactId);
-      if (result.filled.length) {
+      // Documento anexado e hospital citado também mudam a ficha, mesmo quando
+      // nenhum campo foi preenchido — recarrega nesses casos.
+      const touched = result.filled.length || result.attached?.length || result.hospitalHint;
+      if (touched) {
         onClientInfoChanged(await getClientInfo(contactId));
-        toast.success(`IA preencheu: ${result.filled.join(', ')}.`);
+        mutateDocs();
+      }
+      if (result.filled.length) {
+        const extra = result.attached?.length ? ` · anexou ${result.attached.join(', ')}` : '';
+        toast.success(`IA preencheu: ${result.filled.join(', ')}.${extra}`);
       } else {
         toast.info(result.reason ?? 'A IA não encontrou dados novos na conversa.');
       }
@@ -523,6 +530,13 @@ function FichaTab({
     setFields((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Campo veio da IA e ainda não foi editado na mão (o selo some ao salvar
+  // uma alteração). Enquanto o formulário está sujo, o selo já é escondido
+  // para o campo mexido — feedback imediato.
+  const aiSet = new Set(clientInfo?.aiFields ?? []);
+  const byAi = (key: keyof ClientInfoFields) =>
+    aiSet.has(key) && (clientInfo?.fields[key] ?? null) === (fields[key] ?? null);
+
   // CEP completo → busca ViaCEP e preenche rua/bairro (mesmo fluxo do CardDialog).
   async function handleCepChange(raw: string) {
     const masked = maskCep(raw);
@@ -587,10 +601,10 @@ function FichaTab({
       {clientInfo && (
         <>
           <FichaSection title="Dados pessoais">
-            <FField label="Nome" value={fields.name ?? ''} onChange={(v) => setField('name', v)} />
+            <FField label="Nome" value={fields.name ?? ''} onChange={(v) => setField('name', v)} ai={byAi('name')} />
             <div className="grid grid-cols-2 gap-2">
-              <FField label="CPF" value={fields.cpf ?? ''} onChange={(v) => setField('cpf', maskCpf(v))} error={cpfInvalid ? 'CPF inválido' : undefined} />
-              <FField label="RG" value={fields.rg ?? ''} onChange={(v) => setField('rg', v)} />
+              <FField label="CPF" value={fields.cpf ?? ''} onChange={(v) => setField('cpf', maskCpf(v))} error={cpfInvalid ? 'CPF inválido' : undefined} ai={byAi('cpf')} />
+              <FField label="RG" value={fields.rg ?? ''} onChange={(v) => setField('rg', v)} ai={byAi('rg')} />
             </div>
             {/* Telefone vem do contato do WhatsApp — só leitura. */}
             <div className="flex flex-col gap-1">
@@ -602,34 +616,53 @@ function FichaTab({
               <p className="text-[10px] italic text-gray-400">número do WhatsApp — não editável por aqui</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <FField label="Nascimento" value={fields.data_nasc ?? ''} onChange={(v) => setField('data_nasc', v)} placeholder="dd/mm/aaaa" />
-              <FSelect label="Estado civil" value={fields.estado_civil ?? ''} onChange={(v) => setField('estado_civil', v)} options={ESTADO_CIVIL} />
+              <FField label="Nascimento" value={fields.data_nasc ?? ''} onChange={(v) => setField('data_nasc', v)} placeholder="dd/mm/aaaa" ai={byAi('data_nasc')} hint={partialDate(fields.data_nasc) ? 'data incompleta — confirme com o cliente' : undefined} />
+              <FSelect label="Estado civil" value={fields.estado_civil ?? ''} onChange={(v) => setField('estado_civil', v)} options={ESTADO_CIVIL} ai={byAi('estado_civil')} />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <FField label="Profissão" value={fields.profissao ?? ''} onChange={(v) => setField('profissao', v)} />
-              <FField label="Nome da mãe" value={fields.nome_mae ?? ''} onChange={(v) => setField('nome_mae', v)} />
+              <FField label="Profissão" value={fields.profissao ?? ''} onChange={(v) => setField('profissao', v)} ai={byAi('profissao')} />
+              <FField label="Nome da mãe" value={fields.nome_mae ?? ''} onChange={(v) => setField('nome_mae', v)} ai={byAi('nome_mae')} />
             </div>
             <FField label="E-mail" value={fields.email ?? ''} onChange={(v) => setField('email', v)} />
+            <div className="grid grid-cols-2 gap-2">
+              <FField label="Outro telefone" value={fields.telefone_secundario ?? ''} onChange={(v) => setField('telefone_secundario', v)} ai={byAi('telefone_secundario')} />
+              <FField label="Rede social" value={fields.rede_social ?? ''} onChange={(v) => setField('rede_social', v)} ai={byAi('rede_social')} />
+            </div>
           </FichaSection>
 
           <FichaSection title="Endereço">
             <div className="grid grid-cols-2 gap-2">
-              <FField label="CEP" value={fields.cep ?? ''} onChange={handleCepChange} placeholder="00000-000" hint="preenche rua e bairro sozinho" />
-              <FField label="Cidade" value={fields.cidade ?? ''} onChange={(v) => setField('cidade', v)} />
+              <FField label="CEP" value={fields.cep ?? ''} onChange={handleCepChange} placeholder="00000-000" hint="preenche rua e bairro sozinho" ai={byAi('cep')} />
+              <FField label="Cidade" value={fields.cidade ?? ''} onChange={(v) => setField('cidade', v)} ai={byAi('cidade')} />
             </div>
-            <FField label="Rua" value={fields.rua ?? ''} onChange={(v) => setField('rua', v)} />
+            <FField label="Rua" value={fields.rua ?? ''} onChange={(v) => setField('rua', v)} ai={byAi('rua')} />
             <div className="grid grid-cols-2 gap-2">
-              <FField label="Bairro" value={fields.bairro ?? ''} onChange={(v) => setField('bairro', v)} />
-              <FField label="Número" value={fields.numero ?? ''} onChange={(v) => setField('numero', v)} />
+              <FField label="Bairro" value={fields.bairro ?? ''} onChange={(v) => setField('bairro', v)} ai={byAi('bairro')} />
+              <FField label="Número" value={fields.numero ?? ''} onChange={(v) => setField('numero', v)} ai={byAi('numero')} />
             </div>
-            <FSelect label="Estado" value={fields.estado ?? ''} onChange={(v) => setField('estado', v)} options={ESTADOS} />
+            <FSelect label="Estado" value={fields.estado ?? ''} onChange={(v) => setField('estado', v)} options={ESTADOS} ai={byAi('estado')} />
           </FichaSection>
 
           <FichaSection title="Dados do acidente">
-            <FField label="Data do acidente" value={fields.data_acidente ?? ''} onChange={(v) => setField('data_acidente', v)} placeholder="dd/mm/aaaa" />
-            {/* Mesmo combobox do card: busca nos hospitais existentes e permite "Adicionar". */}
-            <HospitalCombobox id="hospital" label="Hospital" value={fields.hospital ?? ''} onChange={(_, v) => setField('hospital', v)} />
-            <FField label="Lesões" value={fields.lesoes ?? ''} onChange={(v) => setField('lesoes', v)} />
+            <FField
+              label="Data do acidente"
+              value={fields.data_acidente ?? ''}
+              onChange={(v) => setField('data_acidente', v)}
+              placeholder="dd/mm/aaaa"
+              ai={byAi('data_acidente')}
+              hint={partialDate(fields.data_acidente) ? 'o cliente só informou este período — confirme a data exata' : undefined}
+            />
+            {/* Mesmo combobox do card: busca nos hospitais existentes e permite "Adicionar".
+                A IA NUNCA preenche este campo — só deixa a dica abaixo. */}
+            <div className="flex flex-col gap-1">
+              <HospitalCombobox id="hospital" label="Hospital" value={fields.hospital ?? ''} onChange={(_, v) => setField('hospital', v)} />
+              {clientInfo.hospitalHint && !fields.hospital && (
+                <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400">
+                  atendido em {clientInfo.hospitalHint}, validar o select correto
+                </p>
+              )}
+            </div>
+            <FField label="Lesões" value={fields.lesoes ?? ''} onChange={(v) => setField('lesoes', v)} ai={byAi('lesoes')} />
             <FTextArea label="Observação" value={fields.obs ?? ''} onChange={(v) => setField('obs', v)} />
           </FichaSection>
 
@@ -702,21 +735,50 @@ function FichaSection({ title, children }: { title: string; children: React.Reac
   );
 }
 
+/**
+ * Data incompleta ("2019", "03/2019"): quando o cliente só lembra o ano, a IA
+ * registra o que ele disse em vez de deixar o campo vazio — a ficha sinaliza
+ * para o atendente fechar a data depois.
+ */
+function partialDate(value?: string | null): boolean {
+  const v = (value ?? '').trim();
+  if (!v) return false;
+  return !/^\d{2}\/\d{2}\/\d{4}$/.test(v);
+}
+
+/** Selo de origem: o campo foi preenchido pela IA e ainda não foi revisado. */
+function AiTag() {
+  return (
+    <span
+      title="Preenchido pela IA a partir da conversa — confira e edite se precisar"
+      className="inline-flex items-center gap-0.5 rounded bg-violet-100 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+    >
+      <Sparkles className="h-2.5 w-2.5" /> IA
+    </span>
+  );
+}
+
 function FField({
-  label, value, onChange, placeholder, error, hint,
+  label, value, onChange, placeholder, error, hint, ai,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; error?: string; hint?: string;
+  placeholder?: string; error?: string; hint?: string; ai?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</label>
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+        {label}{ai && <AiTag />}
+      </label>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={`w-full rounded-lg border px-2.5 py-1.5 text-sm text-gray-800 outline-none transition-colors focus:ring-2 dark:bg-zinc-950 dark:text-zinc-100 ${
-          error ? 'border-red-300 focus:ring-red-400' : 'border-gray-200 focus:ring-emerald-500'
+          error
+            ? 'border-red-300 focus:ring-red-400'
+            : ai
+              ? 'border-violet-300 bg-violet-50/40 focus:ring-violet-400 dark:bg-violet-950/10'
+              : 'border-gray-200 focus:ring-emerald-500'
         }`}
       />
       {error && <p className="text-[10px] font-semibold text-red-600">{error}</p>}
@@ -726,17 +788,21 @@ function FField({
 }
 
 function FSelect({
-  label, value, onChange, options,
+  label, value, onChange, options, ai,
 }: {
-  label: string; value: string; onChange: (v: string) => void; options: string[];
+  label: string; value: string; onChange: (v: string) => void; options: string[]; ai?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</label>
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+        {label}{ai && <AiTag />}
+      </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full cursor-pointer rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-zinc-950 dark:text-zinc-100"
+        className={`w-full cursor-pointer rounded-lg border bg-white px-2 py-1.5 text-sm text-gray-800 outline-none focus:ring-2 dark:bg-zinc-950 dark:text-zinc-100 ${
+          ai ? 'border-violet-300 focus:ring-violet-400' : 'border-gray-200 focus:ring-emerald-500'
+        }`}
       >
         <option value="">—</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}

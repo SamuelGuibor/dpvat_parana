@@ -562,6 +562,14 @@ model WhatsAppContact {
   adHeadline     String?
   ctwaClid       String? // click id p/ API de Conversões
   adReferral     Json? // payload cru do referral, para auditoria
+  // Ficha por IA: quais campos foram preenchidos pela IA (e quando) —
+  // { "cidade": "2026-08-06T22:10:00.000Z" }. Serve só para marcar a origem na
+  // ficha; quando um humano edita o campo, a marca sai.
+  aiFilledFields Json?
+  // Hospital citado pelo cliente. A IA NUNCA preenche o campo hospital (é um
+  // select com cadastro próprio) — deixa a dica aqui para o atendente escolher
+  // a opção certa na mão.
+  hospitalHint   String?
   // Último estágio do funil reportado à API de Conversões da Meta (dedupe:
   // não reenvia o mesmo estágio pro mesmo lead). Ex.: LeadQualificado.
   metaLeadStage   String?
