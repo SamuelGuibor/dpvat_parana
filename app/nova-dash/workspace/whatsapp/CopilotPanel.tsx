@@ -158,16 +158,13 @@ export function CopilotPanel({
     setFillingFicha(true);
     try {
       const result = await fillClientInfoWithAI(contactId);
-      // Documento anexado e hospital citado também mudam a ficha, mesmo quando
-      // nenhum campo foi preenchido — recarrega nesses casos.
-      const touched = result.filled.length || result.attached?.length || result.hospitalHint;
-      if (touched) {
+      // O hospital citado também muda a ficha (vira a dica embaixo do select),
+      // mesmo quando nenhum campo foi preenchido.
+      if (result.filled.length || result.hospitalHint) {
         onClientInfoChanged(await getClientInfo(contactId));
-        mutateDocs();
       }
       if (result.filled.length) {
-        const extra = result.attached?.length ? ` · anexou ${result.attached.join(', ')}` : '';
-        toast.success(`IA preencheu: ${result.filled.join(', ')}.${extra}`);
+        toast.success(`IA preencheu: ${result.filled.join(', ')}.`);
       } else {
         toast.info(result.reason ?? 'A IA não encontrou dados novos na conversa.');
       }

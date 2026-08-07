@@ -114,104 +114,10 @@ async function currentFields(contact: {
 export interface FichaAiResult {
   /** Campos efetivamente preenchidos nesta rodada. */
   filled: string[];
-  /** Documentos do cliente anexados nesta rodada (nome dado pela IA). */
-  attached?: string[];
   /** Hospital citado pelo cliente (a IA nunca preenche o campo). */
   hospitalHint?: string | null;
   /** Por que nada foi preenchido (quando aplicável) — visível na UI/manual. */
   reason?: string;
-}
-
-type DraftDoc = { key: string; name: string; uploadedAt: string };
-
-/** Chaves S3 que já viraram documento do cliente (card ou rascunho). */
-async function attachedKeys(contact: {
-  userId: string | null; draftDocuments: unknown;
-}): Promise<Set<string>> {
-  if (contact.userId) {
-    const docs = await db.document.findMany({
-      where: { userId: contact.userId },
-      select: { key: true },
-    });
-    return new Set(docs.map((d) => d.key));
-  }
-  return new Set(((contact.draftDocuments ?? []) as DraftDoc[]).map((d) => d.key));
-}
-
-/** O cliente mandou algum anexo que ainda não virou documento da ficha? */
-async function hasUnattachedMedia(contact: {
-  id: string; userId: string | null; draftDocuments: unknown;
-}): Promise<boolean> {
-  const rows = await db.whatsAppMessage.findMany({
-    where: { contactId: contact.id, direction: "in", internal: false, deletedAt: null, mediaKey: { not: null } },
-    orderBy: { createdAt: "desc" },
-    take: MAX_HISTORY,
-    select: { mediaKey: true, mediaType: true },
-  });
-  if (!rows.length) return false;
-  const already = await attachedKeys(contact);
-  return rows.some(
-    (m) => m.mediaKey
-      && !already.has(m.mediaKey)
-      && (/^image\/(jpeg|png|webp|gif)$/.test(m.mediaType ?? "") || m.mediaType === "application/pdf"),
-  );
-}
-
-/**
- * Anexa na ficha do cliente os documentos que ele mandou espontaneamente,
- * nomeados pelo que a IA identificou ("RG", "Raio X", "Laudo médico"...).
- * Mesma regra do botão "Anexar no card": aponta pra mesma chave S3 da
- * mensagem, sem re-upload. Sem User vinculado, vai pro rascunho.
- */
-async function attachDocuments(
-  contact: { id: string; userId: string | null; draftDocuments: unknown },
-  mediaRefs: string[],
-  docs: unknown,
-): Promise<string[]> {
-  if (!Array.isArray(docs) || !docs.length || !mediaRefs.length) return [];
-
-  const named: { key: string; name: string }[] = [];
-  for (const d of docs) {
-    const i = Number((d as any)?.i);
-    const tipo = String((d as any)?.tipo ?? "").trim();
-    const key = mediaRefs[i];
-    if (!key || !tipo) continue;
-    // Extensão do arquivo original, para o preview abrir certo.
-    const ext = key.includes(".") ? key.slice(key.lastIndexOf(".")) : "";
-    named.push({ key, name: `${tipo.slice(0, 60)}${ext}` });
-  }
-  if (!named.length) return [];
-
-  const saved: string[] = [];
-  try {
-    if (contact.userId) {
-      for (const doc of named) {
-        const dup = await db.document.findFirst({
-          where: { userId: contact.userId, key: doc.key },
-          select: { id: true },
-        });
-        if (dup) continue;
-        await db.document.create({ data: { userId: contact.userId, key: doc.key, name: doc.name } });
-        saved.push(doc.name);
-      }
-    } else {
-      const drafts = ((contact.draftDocuments ?? []) as DraftDoc[]).slice();
-      for (const doc of named) {
-        if (drafts.some((d) => d.key === doc.key)) continue;
-        drafts.push({ key: doc.key, name: doc.name, uploadedAt: new Date().toISOString() });
-        saved.push(doc.name);
-      }
-      if (saved.length) {
-        await db.whatsAppContact.update({
-          where: { id: contact.id },
-          data: { draftDocuments: drafts as unknown as Prisma.InputJsonValue },
-        });
-      }
-    }
-  } catch (err) {
-    console.error("[WHATSAPP FICHA-AI] Falha ao anexar documento:", contact.id, err);
-  }
-  return saved;
 }
 
 /**
@@ -229,19 +135,14 @@ export async function autoFillClientInfo(contactId: string): Promise<FichaAiResu
       where: { id: contactId },
       select: {
         id: true, userId: true, clientDraft: true, name: true, phone: true,
-        draftDocuments: true, aiFilledFields: true,
+        aiFilledFields: true,
       },
     });
     if (!contact) return { filled: [], reason: "Contato não encontrado." };
 
     const fields = await currentFields(contact);
     const missing = AI_FIELDS.filter((f) => !fields[f]);
-    // Ficha completa ainda vale uma rodada se o cliente mandou documento novo
-    // ("mandou o raio X do nada") — a IA identifica e anexa. Sem campo vazio e
-    // sem anexo pendente, não gasta IA.
-    if (!missing.length && !(await hasUnattachedMedia(contact))) {
-      return { filled: [], reason: "A ficha já está completa." };
-    }
+    if (!missing.length) return { filled: [], reason: "A ficha já está completa." };
 
     // Histórico recente (texto + transcrições). Sem conteúdo útil → não gasta IA.
     const rows = await db.whatsAppMessage.findMany({
@@ -262,12 +163,11 @@ export async function autoFillClientInfo(contactId: string): Promise<FichaAiResu
     const content: any[] = [];
 
     // Fotos/PDFs recentes ENVIADOS PELO CLIENTE (RG/CNH/comprovantes) entram
-    // como anexo pra IA ler o documento de verdade.
+    // como anexo pra IA LER o documento e extrair os campos. A IA não anexa
+    // nada no card — quem decide o que vira arquivo do cliente é a equipe,
+    // pelo botão "Anexar no card" da aba Arquivos.
     let total = 0;
     let mediaCount = 0;
-    // Chaves S3 na MESMA ordem em que os anexos entram no content — é assim
-    // que o índice devolvido pela IA em "docs" volta a apontar pro arquivo.
-    const mediaRefs: string[] = [];
     for (const m of [...history].reverse()) {
       if (mediaCount >= MAX_MEDIA_FILES) break;
       if (m.direction !== "in" || !m.mediaKey || !m.mediaType) continue;
@@ -279,7 +179,6 @@ export async function autoFillClientInfo(contactId: string): Promise<FichaAiResu
         if (buf.length > MAX_FILE_BYTES || total + buf.length > MAX_TOTAL_BYTES) continue;
         total += buf.length;
         mediaCount += 1;
-        mediaRefs.push(m.mediaKey);
         content.push(
           isImage
             ? { type: "image", source: { type: "base64", media_type: m.mediaType, data: buf.toString("base64") } }
@@ -308,9 +207,7 @@ export async function autoFillClientInfo(contactId: string): Promise<FichaAiResu
     const prompt = `Você é o assistente da Paraná Seguros (assessoria previdenciária). Leia a conversa de WhatsApp abaixo (e os documentos anexados, se houver — RG, CNH, comprovantes etc.) e extraia SOMENTE os dados do CLIENTE para a ficha de cadastro.
 
 Campos que ainda estão VAZIOS na ficha (extraia apenas estes):
-${missing.length
-      ? missing.map((f) => `- ${f}: ${FIELD_LABELS[f]}`).join("\n")
-      : "- (nenhum: a ficha já está completa — devolva \"fields\" vazio e só identifique os documentos anexados)"}
+${missing.map((f) => `- ${f}: ${FIELD_LABELS[f]}`).join("\n")}
 
 Regras:
 - Só preencha um campo se o dado estiver EXPLÍCITO na conversa ou legível num documento anexado. NUNCA invente nem deduza.
@@ -319,14 +216,13 @@ Regras:
 - DATAS: use DD/MM/AAAA quando a data completa estiver dita. Se o cliente só souber o ANO ("foi em 2019"), devolva "2019"; se souber mês e ano ("março de 2019"), devolva "03/2019". É melhor registrar o ano do que deixar vazio — mas nunca chute o dia ou o mês que ele não disse.
 - CPF/CEP com a máscara usual. Estado como UF (ex.: PR).
 - HOSPITAL: não é um campo da ficha aqui. Se o cliente disser onde foi atendido, devolva o nome em "hospitalMencionado" — quem escolhe no cadastro é o atendente.
-- DOCUMENTOS ANEXADOS: para cada anexo que você recebeu, diga o que é em "docs", na MESMA ORDEM em que apareceram (índice 0 = primeiro anexo). Use rótulos curtos: "RG", "CNH", "Comprovante de residência", "Raio X", "Laudo médico", "Carteira de trabalho", "Boletim de ocorrência", "Outro". Se não der para identificar, use "Outro".
 - Se nada foi encontrado, devolva "fields" vazio.
 
 CONVERSA:
 ${transcriptText}
 
 Responda APENAS com JSON válido:
-{"fields": {"campo": "valor", ...}, "hospitalMencionado": "nome ou null", "docs": [{"i": 0, "tipo": "RG"}]}`;
+{"fields": {"campo": "valor", ...}, "hospitalMencionado": "nome ou null"}`;
 
     content.push({ type: "text", text: prompt });
 
@@ -365,21 +261,12 @@ Responda APENAS com JSON válido:
       await db.whatsAppContact.update({ where: { id: contactId }, data: { hospitalHint } });
     }
 
-    // Documento que o cliente mandou por conta própria já vira arquivo do
-    // cliente, com o nome do que a IA identificou (RG, Raio X, laudo...).
-    const attached = await attachDocuments(contact, mediaRefs, parsed?.docs);
-
     if (!Object.keys(updates).length) {
-      const extras = [
-        attached.length ? `anexou ${attached.length} documento(s)` : null,
-        hospitalHint ? `hospital citado: ${hospitalHint}` : null,
-      ].filter(Boolean);
       return {
         filled: [],
-        attached,
         hospitalHint,
-        reason: extras.length
-          ? `Nenhum campo novo, mas ${extras.join(" e ")}.`
+        reason: hospitalHint
+          ? `Nenhum campo novo, mas o cliente citou o hospital: ${hospitalHint}.`
           : "A IA não encontrou dados novos na conversa.",
       };
     }
@@ -424,7 +311,6 @@ Responda APENAS com JSON válido:
         userId: contact.userId,
         metadata: {
           fields: updates,
-          ...(attached.length ? { documentos: attached } : {}),
           ...(hospitalHint ? { hospitalCitado: hospitalHint } : {}),
         },
       });
