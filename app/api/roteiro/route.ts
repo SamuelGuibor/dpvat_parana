@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { db } from "@/app/_shared/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/_shared/lib/auth";
+import { createLog } from "@/app/_shared/lib/log";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, S3_BUCKET } from "@/app/api/instructions/_s3";
 
@@ -185,6 +188,11 @@ export async function POST(request: Request) {
   const body = await request.json();
   const { messages, cardId, isProcess, attachments, attachment, s3Keys } = body;
 
+  // Autor do gasto de IA no log (a rota já exige sessão via middleware).
+  const session = await getServerSession(authOptions);
+  const authorId = session?.user?.id ?? null;
+  const authorName = session?.user?.name ?? null;
+
   if (!messages || !Array.isArray(messages)) {
     return NextResponse.json(
       { error: "Mensagens não fornecidas" },
@@ -245,10 +253,46 @@ export async function POST(request: Request) {
           return;
         }
 
+        // O converter fecha o stream com a sentinela <<<AI_USAGE:{...}>>>.
+        // Seguramos um rabo de bytes para recortá-la antes de chegar ao
+        // navegador e gravamos o consumo no log (Canto da IA).
+        const TAIL_BYTES = 512;
+        let carry = new Uint8Array(0);
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          controller.enqueue(value);
+          const merged = new Uint8Array(carry.length + value.length);
+          merged.set(carry);
+          merged.set(value, carry.length);
+          if (merged.length > TAIL_BYTES) {
+            controller.enqueue(merged.slice(0, merged.length - TAIL_BYTES));
+            carry = merged.slice(merged.length - TAIL_BYTES);
+          } else {
+            carry = merged;
+          }
+        }
+
+        const tail = new TextDecoder().decode(carry);
+        const sentinel = tail.match(/\n?<<<AI_USAGE:(\{[\s\S]*\})>>>\s*$/);
+        if (sentinel) {
+          const clean = tail.slice(0, sentinel.index);
+          if (clean) controller.enqueue(encoder.encode(clean));
+          try {
+            const usage = JSON.parse(sentinel[1]);
+            await createLog({
+              action: "roteiro_ai",
+              message: "gerou/continuou o roteiro com IA",
+              authorId: authorId ?? "roteiro",
+              authorName: authorName ?? "Roteiro (IA)",
+              userId: cardId && !isProcess ? cardId : null,
+              processId: cardId && isProcess ? cardId : null,
+              metadata: { usage },
+            });
+          } catch (err) {
+            console.error("[ROTEIRO] Falha ao registrar consumo da IA:", err);
+          }
+        } else if (carry.length) {
+          controller.enqueue(carry);
         }
 
         controller.close();

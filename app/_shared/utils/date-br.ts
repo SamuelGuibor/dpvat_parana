@@ -78,6 +78,23 @@ export function brDayKeySeries(days: number, until: Date = new Date()): string[]
   return keys;
 }
 
+/** Instante das 00:00 (Brasília) do dia 1º do mês que contém `date`. */
+export function brStartOfMonth(date: Date = new Date()): Date {
+  const [y, m] = brDayKey(date).split('-').map(Number);
+  return brStartOfDay(new Date(Date.UTC(y, m - 1, 1, 12, 0, 0)));
+}
+
+/** Quantos dias tem o mês (de Brasília) que contém `date`. */
+export function brDaysInMonth(date: Date = new Date()): number {
+  const [y, m] = brDayKey(date).split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** Dia do mês (1..31) no fuso de Brasília. */
+export function brDayOfMonth(date: Date = new Date()): number {
+  return Number(brDayKey(date).slice(8, 10));
+}
+
 /** Índice do mês (0=jan) no fuso de Brasília. */
 export function brMonthIndex(date: Date | string | number): number {
   return Number(brDayKey(date).slice(5, 7)) - 1;

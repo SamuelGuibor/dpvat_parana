@@ -1,47 +1,28 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Bot, Loader2, BadgeCheck, XCircle, Headset, HelpCircle, AlertTriangle,
-  Brain, Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
-  UserRound, Undo2, DollarSign, StickyNote, Users, ShieldAlert, ShieldCheck,
+  Bot, Loader2, BadgeCheck, XCircle, AlertTriangle,
+  Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
+  UserRound, Undo2, StickyNote, ShieldAlert, ShieldCheck,
   Info, Facebook, Instagram, Megaphone, Globe, Send, CheckCircle2, BellRing,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
-import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
-import { CLOSE_CATEGORY_LABELS, NON_QUALIFIED_CATEGORIES } from '@/app/_shared/lib/whatsapp/close-categories';
+import { getChatbotAnalytics, getAdLeadOutcomes, type ChatbotAnalytics, type AdLeadOutcome } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { SystemMap } from './SystemMap';
+import { AiCorner } from './AiCorner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Card de métrica com contorno colorido (não preenchido) no modo claro — o
-// preenchimento sólido volta no modo escuro via a paleta padrão do app.
-function Metric({
-  icon: Icon, label, value, hint, tone,
-}: {
-  icon: React.ElementType; label: string; value: string | number; hint?: string;
-  tone: 'emerald' | 'rose' | 'blue' | 'amber' | 'violet' | 'slate';
-}) {
-  const tones: Record<string, string> = {
-    emerald: 'border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
-    rose: 'border-rose-300 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300',
-    blue: 'border-blue-300 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300',
-    amber: 'border-amber-300 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
-    violet: 'border-violet-300 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300',
-    slate: 'border-gray-300 text-gray-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300',
-  };
-  return (
-    <div className={`rounded-2xl border-2 bg-white/60 p-4 dark:bg-transparent ${tones[tone]}`}>
-      <div className="mb-1 flex items-center gap-2">
-        <Icon className="h-5 w-5" />
-        <span className="text-sm font-semibold">{label}</span>
-      </div>
-      <p className="text-3xl font-extrabold tabular-nums">{value}</p>
-      {hint && <p className="mt-0.5 text-xs opacity-70">{hint}</p>}
-    </div>
-  );
+/** Minutos → "42 min" / "3 h 10" — 1416 min não diz nada a ninguém. */
+function formatDuration(minutes: number | null): string {
+  if (minutes == null) return '—';
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} h ${String(m).padStart(2, '0')}` : `${h} h`;
 }
 
 // Avisos da Meta (Saúde da conta): cor/ícone por gravidade + rótulo por campo
@@ -179,6 +160,20 @@ export function ChatbotDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Drill-down da campanha: clicar num anúncio (ou no Orgânico) abre o modal
+  // com cada lead, seu desfecho e o motivo do não qualificado.
+  const [leadModal, setLeadModal] = useState<{ title: string; sourceKey: string | null } | null>(null);
+  const [leadRows, setLeadRows] = useState<AdLeadOutcome[] | null>(null);
+  useEffect(() => {
+    if (!leadModal) return;
+    let alive = true;
+    setLeadRows(null);
+    getAdLeadOutcomes(leadModal.sourceKey, period)
+      .then((rows) => { if (alive) setLeadRows(rows); })
+      .catch(() => { if (alive) setLeadRows([]); });
+    return () => { alive = false; };
+  }, [leadModal, period]);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -188,16 +183,6 @@ export function ChatbotDashboard() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [period]);
-
-  const intentMax = useMemo(
-    () => Math.max(1, ...Object.values(data?.bot.intents ?? {})),
-    [data],
-  );
-
-  const closeMax = useMemo(
-    () => Math.max(1, ...Object.values(data?.closeCategories ?? {})),
-    [data],
-  );
 
   return (
     <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
@@ -223,48 +208,21 @@ export function ChatbotDashboard() {
         <div className="flex items-center justify-center py-20 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
         <>
-          {/* Métricas principais */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            <Metric icon={BadgeCheck} tone="emerald" label="Qualificados" value={data.bot.qualify} />
-            <Metric icon={XCircle} tone="rose" label="Não qualificados" value={data.bot.disqualify} />
-            <Metric icon={Headset} tone="blue" label="Transferidos" value={data.bot.handoff} hint="para atendente" />
-            <Metric icon={HelpCircle} tone="amber" label="Dúvidas" value={data.bot.doubts} />
-            <Metric icon={AlertTriangle} tone="rose" label="Erros da IA" value={data.bot.error} />
-            <Metric icon={Activity} tone="slate" label="Decisões" value={data.bot.totalDecisions} hint="mensagens tratadas" />
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Metric icon={Brain} tone="violet" label="% de entendimento" value={`${data.bot.understoodRate}%`} hint="mensagens compreendidas" />
-            <Metric icon={BadgeCheck} tone="emerald" label="Taxa de acerto" value={`${data.bot.successRate}%`} hint="decisões sem erro" />
-            <Metric icon={Brain} tone="blue" label="Confiança média" value={`${data.bot.avgConfidence}%`} />
-            <Metric icon={Timer} tone="amber" label="Tempo médio p/ qualificar" value={data.bot.avgQualifyMinutes != null ? `${data.bot.avgQualifyMinutes} min` : '—'} />
-          </div>
-
-          {/* Gasto com a API do Claude (janelas fixas: semana e mês) */}
-          <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Metric
-              icon={DollarSign} tone="emerald" label="Gasto na semana (API Claude)"
-              value={`US$ ${data.cost.weekUSD.toFixed(2)}`}
-              hint={`${data.cost.weekTokens.toLocaleString('pt-BR')} tokens · últimos 7 dias`}
-            />
-            <Metric
-              icon={DollarSign} tone="blue" label="Gasto no mês (API Claude)"
-              value={`US$ ${data.cost.monthUSD.toFixed(2)}`}
-              hint={`${data.cost.monthTokens.toLocaleString('pt-BR')} tokens · últimos 30 dias`}
-            />
-            <Metric
-              icon={Bot} tone="slate" label="Modelo da IA"
-              value={data.cost.model ? data.cost.model.replace('claude-', '') : '—'}
-              hint="preço por token varia por modelo"
-            />
-            <Metric
-              icon={Activity} tone="violet" label="Custo médio por decisão"
-              value={data.bot.totalDecisions + data.bot.error > 0 && data.cost.monthUSD > 0
-                ? `US$ ${(data.cost.monthUSD / Math.max(1, data.bot.totalDecisions + data.bot.error)).toFixed(3)}`
-                : '—'}
-              hint="mês ÷ decisões do período"
-            />
-          </div>
+          {/* Canto da IA: custo por operação + qualidade do bot num bloco só.
+              (Qualificados/Não qualificados moraram aqui; agora vivem na
+              Origem dos leads, por campanha — onde a pergunta é feita.) */}
+          <AiCorner
+            quality={{
+              doubts: data.bot.doubts,
+              errors: data.bot.error,
+              decisions: data.bot.totalDecisions,
+              handoff: data.bot.handoff,
+              understoodRate: data.bot.understoodRate,
+              successRate: data.bot.successRate,
+              qualifyTime: formatDuration(data.bot.avgQualifyMinutes),
+              periodDays: period,
+            }}
+          />
 
           {/* Origem dos leads: de qual anúncio/plataforma cada lead veio */}
           <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -280,11 +238,56 @@ export function ChatbotDashboard() {
                   De onde vieram os leads que chamaram no WhatsApp — por plataforma de anúncio e por anúncio individual.
                 </p>
               </div>
-              <div className="rounded-2xl border-2 border-emerald-300 px-5 py-2 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
-                <p className="text-3xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">{data.adOrigins.totalNewContacts}</p>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70 dark:text-emerald-400/70">novos leads · {period} dias</p>
-              </div>
+              {(() => {
+                // Placar geral do período: quanto do funil virou cliente.
+                const totals = Object.values(data.adOrigins.outcomesByPlatform ?? {}).reduce(
+                  (acc, o) => ({
+                    qualified: acc.qualified + o.qualified,
+                    disqualified: acc.disqualified + o.disqualified,
+                    pending: acc.pending + o.pending,
+                  }),
+                  { qualified: 0, disqualified: 0, pending: 0 },
+                );
+                return (
+                  <div className="flex items-stretch gap-2">
+                    <div className="rounded-2xl border-2 border-emerald-300 px-4 py-2 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
+                      <p className="text-3xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">{totals.qualified}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70 dark:text-emerald-400/70">qualificados</p>
+                    </div>
+                    <div className="rounded-2xl border-2 border-rose-300 px-4 py-2 text-center dark:border-rose-800 dark:bg-rose-950/30">
+                      <p className="text-3xl font-extrabold tabular-nums text-rose-700 dark:text-rose-300">{totals.disqualified}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600/70 dark:text-rose-400/70">não qualif.</p>
+                    </div>
+                    <div className="rounded-2xl border-2 border-gray-300 px-4 py-2 text-center dark:border-zinc-700">
+                      <p className="text-3xl font-extrabold tabular-nums text-gray-700 dark:text-zinc-300">{data.adOrigins.totalNewContacts}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">leads · {period} dias</p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
+
+            {/* Orgânico também tem desfecho — clicável como os anúncios. */}
+            {(data.adOrigins.outcomesByPlatform?.organic?.qualified
+              || data.adOrigins.outcomesByPlatform?.organic?.disqualified
+              || data.adOrigins.outcomesByPlatform?.organic?.pending) ? (
+              <button
+                type="button"
+                onClick={() => setLeadModal({ title: 'Leads orgânicos (sem anúncio)', sourceKey: null })}
+                className="mb-4 flex w-full items-center justify-between rounded-xl border border-gray-100 px-3.5 py-2 text-left transition-colors hover:bg-gray-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
+              >
+                <span className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-zinc-200">
+                  <Globe className="h-3.5 w-3.5 text-slate-400" /> Orgânico (sem anúncio)
+                </span>
+                <span className="flex items-center gap-2 text-[11px] font-bold tabular-nums">
+                  <span className="text-emerald-600 dark:text-emerald-400">✓{data.adOrigins.outcomesByPlatform.organic.qualified}</span>
+                  <span className="text-rose-600 dark:text-rose-400">✗{data.adOrigins.outcomesByPlatform.organic.disqualified}</span>
+                  {data.adOrigins.outcomesByPlatform.organic.pending > 0 && (
+                    <span className="text-gray-400">…{data.adOrigins.outcomesByPlatform.organic.pending}</span>
+                  )}
+                </span>
+              </button>
+            ) : null}
 
             {data.adOrigins.totalNewContacts === 0 ? (
               <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-gray-200 py-10 text-center dark:border-zinc-700">
@@ -365,15 +368,32 @@ export function ChatbotDashboard() {
                       const AdRow = ({ ad, rank }: { ad: (typeof ads)[number]; rank: number }) => {
                         const entries = platsOf(ad);
                         const pct = Math.round((ad.count / total) * 100);
+                        const adTitle = ad.adName ?? ad.headline ?? (ad.sourceId ? `Anúncio ${ad.sourceId}` : 'Anúncio sem título');
                         return (
-                          <div className="py-1.5" title={ad.sourceUrl ?? undefined}>
+                          <button
+                            type="button"
+                            onClick={() => setLeadModal({
+                              title: adTitle,
+                              sourceKey: ad.sourceId ?? ad.headline ?? ad.sourceUrl ?? 'desconhecido',
+                            })}
+                            title="Clique para ver cada lead e o desfecho"
+                            className="-mx-2 block w-[calc(100%+16px)] rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800/50"
+                          >
                             <div className="mb-1 flex items-baseline gap-2">
                               <span className="w-5 shrink-0 text-[10px] font-bold text-gray-300 dark:text-zinc-600">{rank}º</span>
                               <span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-zinc-200">
-                                {ad.adName ?? ad.headline ?? (ad.sourceId ? `Anúncio ${ad.sourceId}` : 'Anúncio sem título')}
+                                {adTitle}
                                 {/* Sem nome da campanha, o id curto diferencia anúncios de headline igual. */}
                                 {!ad.adName && ad.sourceId && (
                                   <span className="ml-1.5 text-[10px] tabular-nums text-gray-400">…{ad.sourceId.slice(-6)}</span>
+                                )}
+                              </span>
+                              {/* Desfecho: verde qualificou, vermelho não, cinza em andamento. */}
+                              <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold tabular-nums">
+                                <span title={`${ad.qualified} qualificado(s)`} className="text-emerald-600 dark:text-emerald-400">✓{ad.qualified}</span>
+                                <span title={`${ad.disqualified} não qualificado(s)`} className="text-rose-600 dark:text-rose-400">✗{ad.disqualified}</span>
+                                {ad.pending > 0 && (
+                                  <span title={`${ad.pending} em andamento`} className="text-gray-400">…{ad.pending}</span>
                                 )}
                               </span>
                               <PlatLegend entries={entries} />
@@ -383,7 +403,7 @@ export function ChatbotDashboard() {
                             <div className="ml-7">
                               <StackedBar entries={entries} share={ad.count / total} />
                             </div>
-                          </div>
+                          </button>
                         );
                       };
 
@@ -607,7 +627,7 @@ export function ChatbotDashboard() {
           </section>
 
           {/* Desempenho do atendimento humano */}
-          {data.team.attendants.length > 0 && (
+          {/* {data.team.attendants.length > 0 && (
             <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="mb-1 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
                 <Users className="h-4 w-4 text-emerald-500" /> Desempenho da equipe
@@ -642,73 +662,9 @@ export function ChatbotDashboard() {
                 </table>
               </div>
             </section>
-          )}
+          )} */}
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-6">
-            {/* Intenções */}
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-3">
-              <h2 className="mb-4 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
-                <MessageSquare className="h-4 w-4 text-emerald-500" /> Intenções detectadas
-              </h2>
-              {Object.keys(data.bot.intents).length === 0 ? (
-                <p className="py-8 text-center text-sm text-gray-400">Sem dados no período.</p>
-              ) : (
-                <div className="space-y-3">
-                  {Object.entries(data.bot.intents)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([label, value]) => (
-                      <Bar key={label} label={label} value={value} max={intentMax} color="bg-gradient-to-r from-emerald-500 to-teal-600" />
-                    ))}
-                </div>
-              )}
-            </section>
-
-            {/* Como os assuntos foram encerrados (categorias) */}
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-3">
-              <h2 className="mb-4 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
-                <BadgeCheck className="h-4 w-4 text-blue-500" /> Encerramentos por categoria
-              </h2>
-              {Object.keys(data.closeCategories).length === 0 ? (
-                <p className="py-8 text-center text-sm text-gray-400">Sem encerramentos no período.</p>
-              ) : (
-                <>
-                  {/* Não qualificados (por motivo) em rosa; churn pós-contrato em âmbar. */}
-                  <div className="space-y-3">
-                    {Object.entries(data.closeCategories)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([key, value]) => (
-                        <Bar
-                          key={key}
-                          label={CLOSE_CATEGORY_LABELS[key] ?? key}
-                          value={value}
-                          max={closeMax}
-                          color={
-                            NON_QUALIFIED_CATEGORIES.includes(key)
-                              ? 'bg-gradient-to-r from-rose-500 to-red-600'
-                              : key === 'contratado_perdido'
-                                ? 'bg-gradient-to-r from-amber-500 to-orange-600'
-                                : 'bg-gradient-to-r from-blue-500 to-indigo-600'
-                          }
-                        />
-                      ))}
-                  </div>
-                  {(() => {
-                    const nqTotal = NON_QUALIFIED_CATEGORIES.reduce((s, k) => s + (data.closeCategories[k] ?? 0), 0);
-                    const churn = data.closeCategories['contratado_perdido'] ?? 0;
-                    if (!nqTotal && !churn) return null;
-                    return (
-                      <p className="mt-4 border-t border-gray-100 pt-3 text-xs font-semibold text-gray-500 dark:border-zinc-800 dark:text-zinc-400">
-                        <span className="text-rose-600 dark:text-rose-400">Não qualificados (todos os motivos): {nqTotal}</span>
-                        {churn > 0 && (
-                          <span className="ml-3 text-amber-600 dark:text-amber-400">Contratados e perdidos: {churn}</span>
-                        )}
-                      </p>
-                    );
-                  })()}
-                </>
-              )}
-            </section>
-
             {/* Avisos automáticos ao cliente: entregas × falhas (auditoria) */}
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-3">
               <h2 className="mb-1 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
@@ -838,6 +794,162 @@ export function ChatbotDashboard() {
         </>
       )}
       <SystemMap />
+
+      {/* Modal do drill-down: cada lead da campanha, com desfecho e motivo. */}
+      {leadModal && (
+        <LeadOutcomesDialog
+          title={leadModal.title}
+          periodDays={period}
+          rows={leadRows}
+          onClose={() => setLeadModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Modal de desfecho da campanha ─────────────────────────────────────────
+   Qualificados e não qualificados em colunas SEPARADAS (verde × vermelho),
+   cada uma com o próprio placar e motivo por lead; "em andamento" numa faixa
+   discreta embaixo. */
+
+function LeadOutcomesDialog({
+  title, periodDays, rows, onClose,
+}: {
+  title: string;
+  periodDays: number;
+  rows: AdLeadOutcome[] | null;
+  onClose: () => void;
+}) {
+  const qualified = (rows ?? []).filter((l) => l.outcome === 'qualified');
+  const disqualified = (rows ?? []).filter((l) => l.outcome === 'disqualified');
+  const pending = (rows ?? []).filter((l) => l.outcome === 'pending');
+  const conversion = rows?.length
+    ? Math.round((qualified.length / (qualified.length + disqualified.length || 1)) * 100)
+    : 0;
+
+  const LeadItem = ({ lead, tone }: { lead: AdLeadOutcome; tone: 'emerald' | 'rose' | 'gray' }) => (
+    <li className="px-4 py-2.5">
+      <p className="truncate text-sm font-semibold text-gray-800 dark:text-zinc-100">
+        {lead.name ?? `+${lead.phone}`}
+        {lead.cardNumber != null && (
+          <span className="ml-1.5 text-[11px] font-bold text-blue-600 dark:text-blue-400">#{lead.cardNumber}</span>
+        )}
+      </p>
+      <p className={`mt-0.5 text-[11px] ${
+        tone === 'rose' ? 'font-medium text-rose-500 dark:text-rose-400' : 'text-gray-400'
+      }`}>
+        {tone === 'gray'
+          ? `em andamento · chegou em ${new Date(lead.createdAt).toLocaleDateString('pt-BR')}`
+          : `${lead.reason ?? (tone === 'emerald' ? 'Qualificado' : 'Não qualificado')} · ${new Date(lead.createdAt).toLocaleDateString('pt-BR')}`}
+      </p>
+    </li>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 md:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Cabeçalho com o placar grande */}
+        <div className="border-b border-gray-100 px-6 py-5 dark:border-zinc-800">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">{title}</h3>
+              <p className="text-xs text-gray-400">leads dos últimos {periodDays} dias e o desfecho de cada um</p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Fechar"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-zinc-800"
+            >
+              <XCircle className="h-6 w-6" />
+            </button>
+          </div>
+
+          {rows && rows.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-stretch gap-2.5">
+              <div className="rounded-xl border-2 border-emerald-300 px-4 py-1.5 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
+                <p className="text-2xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">{qualified.length}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70">qualificados</p>
+              </div>
+              <div className="rounded-xl border-2 border-rose-300 px-4 py-1.5 text-center dark:border-rose-800 dark:bg-rose-950/30">
+                <p className="text-2xl font-extrabold tabular-nums text-rose-700 dark:text-rose-300">{disqualified.length}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600/70">não qualif.</p>
+              </div>
+              <div className="rounded-xl border-2 border-gray-200 px-4 py-1.5 text-center dark:border-zinc-700">
+                <p className="text-2xl font-extrabold tabular-nums text-gray-600 dark:text-zinc-300">{pending.length}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">em andamento</p>
+              </div>
+              <div className="ml-auto rounded-xl bg-blue-600 px-4 py-1.5 text-center text-white">
+                <p className="text-2xl font-extrabold tabular-nums">{conversion}%</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70">conversão</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Corpo: duas colunas — verde e vermelha */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {rows === null ? (
+            <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
+          ) : rows.length === 0 ? (
+            <p className="px-6 py-14 text-center text-sm text-gray-400">Nenhum lead deste anúncio no período.</p>
+          ) : (
+            <div className="grid gap-4 p-4 md:grid-cols-2 md:p-5">
+              {/* Coluna dos qualificados */}
+              <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-emerald-200 dark:border-emerald-900/50">
+                <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300">Qualificados</span>
+                  <span className="ml-auto rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-bold tabular-nums text-white">{qualified.length}</span>
+                </div>
+                {qualified.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-xs text-gray-400">Nenhum lead qualificado ainda.</p>
+                ) : (
+                  <ul className="divide-y divide-emerald-100/70 dark:divide-emerald-900/30">
+                    {qualified.map((lead) => <LeadItem key={lead.contactId} lead={lead} tone="emerald" />)}
+                  </ul>
+                )}
+              </div>
+
+              {/* Coluna dos não qualificados (com o motivo em destaque) */}
+              <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-rose-200 dark:border-rose-900/50">
+                <div className="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2.5 dark:border-rose-900/50 dark:bg-rose-950/30">
+                  <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                  <span className="text-sm font-extrabold text-rose-700 dark:text-rose-300">Não qualificados</span>
+                  <span className="ml-auto rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold tabular-nums text-white">{disqualified.length}</span>
+                </div>
+                {disqualified.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-xs text-gray-400">Nenhum lead descartado. 🎉</p>
+                ) : (
+                  <ul className="divide-y divide-rose-100/70 dark:divide-rose-900/30">
+                    {disqualified.map((lead) => <LeadItem key={lead.contactId} lead={lead} tone="rose" />)}
+                  </ul>
+                )}
+              </div>
+
+              {/* Em andamento: faixa discreta de largura total */}
+              {pending.length > 0 && (
+                <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-zinc-800 md:col-span-2">
+                  <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-800/50">
+                    <Timer className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm font-extrabold text-gray-600 dark:text-zinc-300">Em andamento</span>
+                    <span className="ml-auto rounded-full bg-gray-400 px-2 py-0.5 text-[11px] font-bold tabular-nums text-white dark:bg-zinc-600">{pending.length}</span>
+                  </div>
+                  <ul className="grid divide-y divide-gray-100 dark:divide-zinc-800 md:grid-cols-2 md:divide-y-0">
+                    {pending.map((lead) => <LeadItem key={lead.contactId} lead={lead} tone="gray" />)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

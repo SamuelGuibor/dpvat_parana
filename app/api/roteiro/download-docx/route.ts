@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { gerarDocumento } from "@/app/_shared/utils/gerarDocumento";
 import { db } from "@/app/_shared/lib/prisma";
+import { createLog } from "@/app/_shared/lib/log";
 
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
@@ -96,7 +97,23 @@ async function extractFieldsViaAI(content: string): Promise<Record<string, strin
     });
     if (!res.ok) return {};
     const data = await res.json();
-    return data && typeof data === "object" ? data : {};
+    if (!data || typeof data !== "object") return {};
+
+    // O converter devolve o consumo no campo reservado _usage — registra no
+    // log (Canto da IA) e tira do objeto antes de usar os campos.
+    if (data._usage) {
+      try {
+        await createLog({
+          action: "roteiro_ai",
+          message: "extraiu os campos do roteiro com IA (download .docx)",
+          authorId: "roteiro",
+          authorName: "Roteiro (IA)",
+          metadata: { usage: data._usage },
+        });
+      } catch { /* best-effort */ }
+      delete data._usage;
+    }
+    return data;
   } catch (err) {
     console.warn("[DOCX] extract-fields (rede de seguranca) falhou:", err);
     return {};

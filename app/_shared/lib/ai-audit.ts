@@ -364,7 +364,20 @@ async function buildContent(
   return { content, usedFiles, skipped };
 }
 
-async function callClaude(content: any[]): Promise<any> {
+/**
+ * Consumo da última chamada à IA, no formato que o Canto da IA lê do log
+ * (metadata.usage). Antes o `response.usage` era descartado e as auditorias —
+ * que leem documentos inteiros com sonnet-5 — não apareciam em lugar nenhum.
+ */
+export interface AiUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+async function callClaude(content: any[]): Promise<{ result: any; usage: AiUsage }> {
   const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
   const response = await client.messages.create({
     model: "claude-sonnet-5",
@@ -378,7 +391,16 @@ async function callClaude(content: any[]): Promise<any> {
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n");
-  return extractJson(text);
+  return {
+    result: extractJson(text),
+    usage: {
+      model: response.model,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      cacheReadTokens: (response.usage as any)?.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: (response.usage as any)?.cache_creation_input_tokens ?? 0,
+    },
+  };
 }
 
 // Garante a tag e conecta ao card; menciona e notifica a responsável.
@@ -498,7 +520,7 @@ export async function runAiAudit({
     }
 
     if (await wasCancelled()) return;
-    const result = await callClaude(content);
+    const { result, usage } = await callClaude(content);
     if (await wasCancelled()) return; // cancelada durante a análise — descarta
 
     const skippedNote = skipped.length
@@ -580,7 +602,7 @@ export async function runAiAudit({
         authorName,
         userId: isProcess ? null : cardId,
         processId: isProcess ? cardId : null,
-        metadata: { auditType, status, trigger, commentId: comment.id, files: usedFiles },
+        metadata: { auditType, status, trigger, commentId: comment.id, files: usedFiles, usage },
       });
       return;
     }
@@ -737,7 +759,7 @@ export async function runAiAudit({
       authorName,
       userId: isProcess ? null : cardId,
       processId: isProcess ? cardId : null,
-      metadata: { auditType, status, trigger, commentId: comment.id, files: usedFiles, renamedCount: renamed.length },
+      metadata: { auditType, status, trigger, commentId: comment.id, files: usedFiles, renamedCount: renamed.length, usage },
     });
   } catch (err) {
     console.error(`[AI_AUDIT] Erro na auditoria ${auditType} do card ${cardId}:`, err);

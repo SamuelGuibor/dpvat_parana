@@ -6,6 +6,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import { fetchAdNames } from '@/app/_shared/lib/whatsapp/meta-ad-names';
+import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
 
 // Métricas do chatbot para o dashboard (abaixo da Visão do Gestor). Deriva
@@ -46,19 +47,11 @@ export interface ChatbotAnalytics {
     understoodRate: number;      // % de mensagens entendidas (0..100)
     successRate: number;         // % de decisões sem erro (acertos)
     avgConfidence: number;       // confiança média (0..100)
-    avgQualifyMinutes: number | null; // tempo médio até qualificar
+    // Mediana do tempo entre o início da conversa e a qualificação (mediana
+    // porque conversas reabertas dias depois distorcem a média).
+    avgQualifyMinutes: number | null;
     intents: Record<string, number>;
     emotions: Record<string, number>;
-  };
-  // Gasto estimado com a API do Claude (USD), derivado dos tokens gravados
-  // no metadata.usage dos logs wa_bot. Sempre semanal e mensal, independente
-  // do filtro de período.
-  cost: {
-    weekUSD: number;
-    monthUSD: number;
-    weekTokens: number;
-    monthTokens: number;
-    model: string | null;
   };
   // Como os assuntos foram encerrados no período (perguntas, qualificado, etc.).
   closeCategories: Record<string, number>;
@@ -86,7 +79,11 @@ export interface ChatbotAnalytics {
       // Facebook e no Instagram — antes só o ícone da 1ª origem aparecia).
       platforms: Record<string, number>;
       adName: string | null; adsetName: string | null; campaignName: string | null;
+      // Desfecho dos leads deste anúncio — qual campanha CONVERTE, não só traz volume.
+      qualified: number; disqualified: number; pending: number;
     }[];
+    // Desfecho agregado por plataforma (inclui o orgânico, que não tem anúncio).
+    outcomesByPlatform: Record<string, { qualified: number; disqualified: number; pending: number }>;
     // Leads novos por DIA no período, quebrados por plataforma — mostra se a
     // campanha está crescendo ou perdendo tração.
     daily: {
@@ -109,38 +106,6 @@ export interface ChatbotAnalytics {
   // Saúde da conta: avisos oficiais da Meta no período (violação, restrição,
   // qualidade do número, templates). Vazio = conta sem ocorrências.
   accountEvents: MetaAccountEvent[];
-}
-
-// Preço por 1M de tokens (USD) — tabela oficial da Anthropic (jun/2026).
-// Cache read ≈ 0,1× do input; cache write ≈ 1,25× do input.
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'claude-fable-5': { input: 10, output: 50 },
-  'claude-opus-4-8': { input: 5, output: 25 },
-  'claude-opus-4-7': { input: 5, output: 25 },
-  'claude-opus-4-6': { input: 5, output: 25 },
-  'claude-opus-4-5': { input: 5, output: 25 },
-  'claude-sonnet-5': { input: 3, output: 15 },
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-sonnet-4-5': { input: 3, output: 15 },
-  'claude-haiku-4-5': { input: 1, output: 5 },
-};
-
-function usageCostUSD(u: {
-  model?: string; inputTokens?: number; outputTokens?: number;
-  cacheReadTokens?: number; cacheWriteTokens?: number;
-}): number {
-  const key = Object.keys(MODEL_PRICING).find((k) => (u.model ?? '').startsWith(k));
-  const price = key ? MODEL_PRICING[key] : MODEL_PRICING['claude-opus-4-8'];
-  const inTok = u.inputTokens ?? 0;
-  const outTok = u.outputTokens ?? 0;
-  const cacheRead = u.cacheReadTokens ?? 0;
-  const cacheWrite = u.cacheWriteTokens ?? 0;
-  return (
-    (inTok * price.input +
-      outTok * price.output +
-      cacheRead * price.input * 0.1 +
-      cacheWrite * price.input * 1.25) / 1_000_000
-  );
 }
 
 const INTENT_LABELS: Record<string, string> = {
@@ -167,14 +132,10 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   // amanhã enquanto aqui ainda era hoje).
   const since = brStartOfDaysAgo(periodDays - 1);
 
-  // Janelas fixas para o gasto com a API (independentes do filtro).
-  const weekAgo = brStartOfDaysAgo(6);
-  const monthAgo = brStartOfDaysAgo(29);
-  const costSince = since < monthAgo ? since : monthAgo;
 
   const [logs, humanMessages, newContacts] = await Promise.all([
     db.log.findMany({
-      where: { action: { startsWith: 'wa_' }, createdAt: { gte: costSince } },
+      where: { action: { startsWith: 'wa_' }, createdAt: { gte: since } },
       orderBy: { createdAt: 'desc' },
       select: { id: true, action: true, message: true, authorId: true, authorName: true, metadata: true, createdAt: true },
     }),
@@ -190,9 +151,24 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     // card, e esses não são leads (o cliente nunca escreveu).
     db.whatsAppContact.findMany({
       where: { createdAt: { gte: since }, optInSource: 'inbound' },
-      select: { adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
+      select: { id: true, adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
     }),
   ]);
+
+  // Desfecho de cada lead novo (qualificado / não qualificado / em andamento)
+  // — é o que liga a campanha ao RESULTADO, não só ao volume.
+  const leadConversations = await db.whatsAppConversation.findMany({
+    where: { contactId: { in: newContacts.map((c) => c.id) } },
+    select: { contactId: true, status: true, qualified: true, closeCategory: true },
+  });
+  const outcomeByContact = new Map(leadConversations.map((c) => [c.contactId, c]));
+  const outcomeOf = (contactId: string): 'qualified' | 'disqualified' | 'pending' => {
+    const conv = outcomeByContact.get(contactId);
+    if (!conv) return 'pending';
+    if (conv.qualified === true || conv.closeCategory === 'qualificado') return 'qualified';
+    if (conv.status === 'closed') return 'disqualified';
+    return 'pending';
+  };
 
   // Agrupa origem dos leads: por plataforma e por anúncio individual.
   // Série diária: um ponto por dia do período (dias sem lead entram zerados,
@@ -209,6 +185,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   const adOrigins = {
     byPlatform: {} as Record<string, number>,
     byAd: [] as ChatbotAnalytics['adOrigins']['byAd'],
+    outcomesByPlatform: {} as ChatbotAnalytics['adOrigins']['outcomesByPlatform'],
     daily: [] as ChatbotAnalytics['adOrigins']['daily'],
     totalNewContacts: newContacts.length,
   };
@@ -216,6 +193,11 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   for (const c of newContacts) {
     const platform = c.adPlatform ?? 'organic';
     adOrigins.byPlatform[platform] = (adOrigins.byPlatform[platform] ?? 0) + 1;
+
+    const outcome = outcomeOf(c.id);
+    const platOutcome = adOrigins.outcomesByPlatform[platform]
+      ?? (adOrigins.outcomesByPlatform[platform] = { qualified: 0, disqualified: 0, pending: 0 });
+    platOutcome[outcome] += 1;
 
     const dk = brDayKey(c.createdAt);
     const day = dailyMap.get(dk);
@@ -233,12 +215,14 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
       entry = {
         platform, headline: c.adHeadline, sourceId: c.adSourceId, sourceUrl: c.adSourceUrl, count: 0,
         platforms: {}, adName: null, adsetName: null, campaignName: null,
+        qualified: 0, disqualified: 0, pending: 0,
       };
       adKeyMap.set(key, entry);
       adOrigins.byAd.push(entry);
     }
     entry.count += 1;
     entry.platforms[platform] = (entry.platforms[platform] ?? 0) + 1;
+    entry[outcome] += 1;
   }
   adOrigins.daily = [...dailyMap.values()];
   adOrigins.byAd.sort((a, b) => b.count - a.count);
@@ -288,7 +272,6 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   const activity: ChatbotActivityItem[] = [];
   const accountEvents: MetaAccountEvent[] = [];
 
-  const cost = { weekUSD: 0, monthUSD: 0, weekTokens: 0, monthTokens: 0, model: null as string | null };
   const closeCategories: Record<string, number> = {};
 
   const autoNotify = {
@@ -326,19 +309,6 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
 
   for (const l of logs) {
     const meta = (l.metadata ?? {}) as any;
-
-    // Gasto com a API do Claude (janelas fixas de 7 e 30 dias). Entram na
-    // conta as decisões do bot (wa_bot) e as chamadas de agent-assist —
-    // sugestão de resposta (wa_suggest) e resumo pro card (wa_summary).
-    if (['wa_bot', 'wa_suggest', 'wa_summary'].includes(l.action) && meta.usage) {
-      const usd = usageCostUSD(meta.usage);
-      const tokens =
-        (meta.usage.inputTokens ?? 0) + (meta.usage.outputTokens ?? 0) +
-        (meta.usage.cacheReadTokens ?? 0) + (meta.usage.cacheWriteTokens ?? 0);
-      if (!cost.model && meta.usage.model) cost.model = meta.usage.model;
-      if (l.createdAt >= monthAgo) { cost.monthUSD += usd; cost.monthTokens += tokens; }
-      if (l.createdAt >= weekAgo) { cost.weekUSD += usd; cost.weekTokens += tokens; }
-    }
 
     // Métricas/atividade respeitam o filtro de período ativo.
     if (l.createdAt < since) continue;
@@ -456,9 +426,17 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   bot.understoodRate = understoodTotal ? Math.round((understoodYes / understoodTotal) * 100) : 0;
   bot.successRate = totalDecisionsAndErrors ? Math.round((bot.totalDecisions / totalDecisionsAndErrors) * 100) : 0;
   bot.avgConfidence = confCount ? Math.round((confSum / confCount) * 100) : 0;
-  bot.avgQualifyMinutes = qualifyDurations.length
-    ? Math.round(qualifyDurations.reduce((a, b) => a + b, 0) / qualifyDurations.length / 60000)
-    : null;
+  // MEDIANA, não média: `durationMs` conta desde a criação do registro da
+  // conversa, então um contato que voltou no dia seguinte entra com 20h+ e
+  // arrastava a média toda para cima (era o "1416 min" do painel).
+  if (qualifyDurations.length) {
+    const sorted = [...qualifyDurations].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    bot.avgQualifyMinutes = Math.round(medianMs / 60000);
+  } else {
+    bot.avgQualifyMinutes = null;
+  }
 
   // Ordena intents pelos rótulos amigáveis (mantém as chaves brutas, o front
   // traduz — mas já reescrevemos as chaves conhecidas para o rótulo).
@@ -468,8 +446,6 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   }
   bot.intents = intentsLabeled;
 
-  cost.weekUSD = Math.round(cost.weekUSD * 10000) / 10000;
-  cost.monthUSD = Math.round(cost.monthUSD * 10000) / 10000;
 
   const attendants = [...teamStats.values()]
     .map((s) => ({
@@ -484,5 +460,83 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     .filter((s) => s.assumed || s.closed || s.messages)
     .sort((a, b) => b.messages - a.messages);
 
-  return { periodDays, bot, cost, closeCategories, team: { attendants }, adOrigins, autoNotify, activity, accountEvents };
+  return { periodDays, bot, closeCategories, team: { attendants }, adOrigins, autoNotify, activity, accountEvents };
+}
+
+// ─── Drill-down da campanha: quem qualificou, quem não, e por quê ───────────
+
+export interface AdLeadOutcome {
+  contactId: string;
+  name: string | null;
+  phone: string;
+  createdAt: string;
+  outcome: 'qualified' | 'disqualified' | 'pending';
+  /** Motivo legível (categoria de encerramento) — null se em andamento. */
+  reason: string | null;
+  /** Nº do card, quando o lead virou cliente. */
+  cardNumber: number | null;
+}
+
+/**
+ * Leads de UM anúncio (ou do orgânico) no período, com o desfecho de cada um.
+ * `sourceKey` é o mesmo agrupador do byAd (adSourceId ?? headline ?? url);
+ * null = leads orgânicos (sem anúncio).
+ */
+export async function getAdLeadOutcomes(
+  sourceKey: string | null,
+  periodDays: 7 | 30 | 90 = 7,
+): Promise<AdLeadOutcome[]> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) throw new Error('Não autenticado.');
+  if (!canViewChatbotDashboard(session.user.email)) {
+    throw new Error('Acesso restrito.');
+  }
+
+  const since = brStartOfDaysAgo(periodDays - 1);
+  const contacts = await db.whatsAppContact.findMany({
+    where: { createdAt: { gte: since }, optInSource: 'inbound' },
+    select: {
+      id: true, name: true, phone: true, createdAt: true, userId: true,
+      adPlatform: true, adSourceId: true, adHeadline: true, adSourceUrl: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Mesma chave de agrupamento do byAd — o clique no card abre exatamente
+  // os leads daquela linha.
+  const mine = contacts.filter((c) => {
+    if (sourceKey === null) return !c.adPlatform;
+    if (!c.adPlatform) return false;
+    return (c.adSourceId ?? c.adHeadline ?? c.adSourceUrl ?? 'desconhecido') === sourceKey;
+  });
+  if (!mine.length) return [];
+
+  const [conversations, users] = await Promise.all([
+    db.whatsAppConversation.findMany({
+      where: { contactId: { in: mine.map((c) => c.id) } },
+      select: { contactId: true, status: true, qualified: true, closeCategory: true },
+    }),
+    db.user.findMany({
+      where: { id: { in: mine.map((c) => c.userId).filter((id): id is string => !!id) } },
+      select: { id: true, cardNumber: true },
+    }),
+  ]);
+  const convByContact = new Map(conversations.map((c) => [c.contactId, c]));
+  const cardByUser = new Map(users.map((u) => [u.id, u.cardNumber]));
+
+  return mine.map((c) => {
+    const conv = convByContact.get(c.id);
+    const qualified = conv?.qualified === true || conv?.closeCategory === 'qualificado';
+    const closed = conv?.status === 'closed';
+    const outcome: AdLeadOutcome['outcome'] = qualified ? 'qualified' : closed ? 'disqualified' : 'pending';
+    return {
+      contactId: c.id,
+      name: c.name,
+      phone: c.phone,
+      createdAt: c.createdAt.toISOString(),
+      outcome,
+      reason: conv?.closeCategory ? CLOSE_CATEGORY_LABELS[conv.closeCategory] ?? conv.closeCategory : null,
+      cardNumber: c.userId ? cardByUser.get(c.userId) ?? null : null,
+    };
+  });
 }
