@@ -4,6 +4,7 @@ import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
 import { DEV_COMMIT_ACTION, devCommitFiles, devFilesDelta, devFilesTotal } from "../../_shared/lib/dev-activity";
+import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDay, brStartOfDaysAgo } from "../../_shared/utils/date-br";
 
 export interface ActivityItem {
   id: string;
@@ -21,9 +22,7 @@ export interface MyActivity {
   feed: ActivityItem[];
 }
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
+// Os cortes de dia seguem o fuso de Brasília (o servidor roda em UTC).
 
 /**
  * Estatísticas de atividade do PRÓPRIO usuário logado, derivadas dos logs
@@ -37,17 +36,12 @@ export async function getMyActivity(): Promise<MyActivity> {
   if (!session?.user?.id) throw new Error("Não autenticado.");
   const authorId = session.user.id;
 
-  const now = new Date();
-  const today = startOfDay(now);
-  const weekAgo = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 6); // 7 dias incluindo hoje
-  const monthAgo = new Date(today);
-  monthAgo.setDate(monthAgo.getDate() - 29);
+  const today = brStartOfDay();
+  const weekAgo = brStartOfDaysAgo(6); // 7 dias incluindo hoje
+  const monthAgo = brStartOfDaysAgo(29);
   // Janela máxima de análise: 90 dias (as métricas "resetam" a cada 90 dias).
-  const windowStart = new Date(today);
-  windowStart.setDate(windowStart.getDate() - 89);
-  const chartStart = new Date(today);
-  chartStart.setDate(chartStart.getDate() - 13); // últimos 14 dias
+  const windowStart = brStartOfDaysAgo(89);
+  const chartStart = brStartOfDaysAgo(13); // últimos 14 dias
 
   const [allCount, todayCount, weekCount, monthCount, grouped, chartLogs, feedRows] =
     await Promise.all([
@@ -95,22 +89,15 @@ export async function getMyActivity(): Promise<MyActivity> {
 
   // Bucket diário dos últimos 14 dias (dev pesa por arquivos; demais, 1 cada).
   const buckets = new Map<string, number>();
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(chartStart);
-    d.setDate(d.getDate() + i);
-    buckets.set(d.toISOString().slice(0, 10), 0);
-  }
+  for (const key of brDayKeySeries(14)) buckets.set(key, 0);
   for (const l of chartLogs) {
     const weight = l.action === DEV_COMMIT_ACTION ? devCommitFiles(l.metadata) : 1;
-    const key = startOfDay(l.createdAt).toISOString().slice(0, 10);
+    const key = brDayKey(l.createdAt);
     if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + weight);
   }
   const daily = Array.from(buckets.entries()).map(([date, count]) => ({
     date,
-    label: new Date(date + "T12:00:00").toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-    }),
+    label: brLabelFromKey(date),
     count,
   }));
 

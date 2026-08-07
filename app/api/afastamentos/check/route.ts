@@ -3,11 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/_shared/lib/auth";
 import { db } from "@/app/_shared/lib/prisma";
+import { brDateBR } from "@/app/_shared/utils/date-br";
 
 export const dynamic = "force-dynamic";
 
+// Data no fuso de Brasília: em UTC um afastamento até 06/08 aparecia como 07/08
+// na notificação para quem batesse o cron depois das 21h.
 function fmt(date: Date): string {
-  return date.toISOString().slice(0, 10).split("-").reverse().join("/");
+  return brDateBR(date);
 }
 
 /**

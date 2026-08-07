@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Badge } from '@/app/_shared/ui/badge';
 import { Trash2, Phone, User, FileText, Search, UserPlus, Download } from 'lucide-react';
 import { formatPhone } from '@/app/_shared/utils/format';
+import { brDayKey } from '@/app/_shared/utils/date-br';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -90,7 +91,7 @@ export const LeadsTable: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `leads-${brDayKey()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success(`${filteredLeads.length} lead(s) exportado(s).`);

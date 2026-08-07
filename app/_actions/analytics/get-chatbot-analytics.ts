@@ -6,6 +6,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import { fetchAdNames } from '@/app/_shared/lib/whatsapp/meta-ad-names';
+import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
 
 // Métricas do chatbot para o dashboard (abaixo da Visão do Gestor). Deriva
 // tudo dos logs de WhatsApp (action começando com "wa_"):
@@ -161,13 +162,14 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     throw new Error('Acesso restrito: você não está autorizado a ver o Desempenho do Chatbot.');
   }
 
-  const since = new Date();
-  since.setDate(since.getDate() - (periodDays - 1));
-  since.setHours(0, 0, 0, 0);
+  // Todo corte de dia é no fuso de Brasília: em produção o Node roda em UTC e
+  // das 21h em diante o servidor já virava o dia (o gráfico abria um bucket de
+  // amanhã enquanto aqui ainda era hoje).
+  const since = brStartOfDaysAgo(periodDays - 1);
 
   // Janelas fixas para o gasto com a API (independentes do filtro).
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0);
-  const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 29); monthAgo.setHours(0, 0, 0, 0);
+  const weekAgo = brStartOfDaysAgo(6);
+  const monthAgo = brStartOfDaysAgo(29);
   const costSince = since < monthAgo ? since : monthAgo;
 
   const [logs, humanMessages, newContacts] = await Promise.all([
@@ -196,13 +198,10 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   // Série diária: um ponto por dia do período (dias sem lead entram zerados,
   // senão o gráfico "pula" a data e a queda fica invisível).
   const dailyMap = new Map<string, ChatbotAnalytics['adOrigins']['daily'][number]>();
-  for (let i = 0; i < periodDays; i++) {
-    const d = new Date(since);
-    d.setDate(d.getDate() + i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  for (const key of brDayKeySeries(periodDays)) {
     dailyMap.set(key, {
       date: key,
-      label: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: brLabelFromKey(key),
       total: 0, facebook: 0, instagram: 0, meta: 0, organic: 0,
     });
   }
@@ -218,7 +217,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     const platform = c.adPlatform ?? 'organic';
     adOrigins.byPlatform[platform] = (adOrigins.byPlatform[platform] ?? 0) + 1;
 
-    const dk = `${c.createdAt.getFullYear()}-${String(c.createdAt.getMonth() + 1).padStart(2, '0')}-${String(c.createdAt.getDate()).padStart(2, '0')}`;
+    const dk = brDayKey(c.createdAt);
     const day = dailyMap.get(dk);
     if (day) {
       day.total += 1;

@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
+import { brDayKey } from '@/app/_shared/utils/date-br';
 
+// O "dia" da jornada é o dia de Brasília, não o do servidor (UTC): das 21h em
+// diante o ponto batido à noite caía no dia seguinte.
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return brDayKey();
 }
 
 export async function GET(req: NextRequest) {

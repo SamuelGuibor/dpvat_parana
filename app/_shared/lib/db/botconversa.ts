@@ -1,4 +1,5 @@
 import { db } from "@/app/_shared/lib/prisma";
+import { brMonthIndex } from "@/app/_shared/utils/date-br";
 
 type StatusKey = "aprovados" | "indeferidos" | "emAndamento";
 
@@ -56,7 +57,9 @@ export async function fetchEventsByMonth(year = new Date().getFullYear(), range?
   for (const event of events) {
     if (!event.createdAt) continue;
     const mappedKey = EVENT_MAP[event.evento];
-    if (mappedKey) monthlyData[event.createdAt.getMonth()][mappedKey]++;
+    // Mês pelo fuso de Brasília (o servidor roda em UTC): um evento do dia 31
+    // às 22h caía no mês seguinte.
+    if (mappedKey) monthlyData[brMonthIndex(event.createdAt)][mappedKey]++;
   }
 
   return monthlyData;

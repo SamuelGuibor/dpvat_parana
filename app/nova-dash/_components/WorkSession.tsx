@@ -10,6 +10,7 @@ import { Clock, Play, Coffee, RotateCcw, Square, Users, TrendingUp, Calendar } f
 import { Button } from '@/app/_shared/ui/button';
 import { Badge } from '@/app/_shared/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/_shared/ui/card';
+import { brDayKey } from '@/app/_shared/utils/date-br';
 
 interface WorkSession {
   id: string;
@@ -83,7 +84,7 @@ function PersonalPonto({ isDark }: { isDark: boolean }) {
 
   useEffect(() => {
     if (!session) { setElapsed(0); return; }
-    const isToday = session.date === new Date().toISOString().slice(0, 10);
+    const isToday = session.date === brDayKey();
     if (!session.isActive || session.isPaused || !isToday) {
       setElapsed(calcWorkedMinutes(session));
       return;
@@ -229,7 +230,7 @@ function TeamPonto({ isDark }: { isDark: boolean }) {
     return avgMinutes(recent);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = brDayKey();
 
   return (
     <Card className={`border-2 ${isDark ? 'border-zinc-700 bg-zinc-900' : 'border-purple-200 bg-white'}`}>

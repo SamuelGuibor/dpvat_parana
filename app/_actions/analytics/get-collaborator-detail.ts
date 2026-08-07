@@ -5,6 +5,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { getSessionPermissions } from '@/app/_shared/lib/permissions-server';
 import { DEV_COMMIT_ACTION, devCommitFiles, devFilesDelta, devFilesTotal } from '@/app/_shared/lib/dev-activity';
+import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDay, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
 
 const ONLINE_WINDOW_MS = 90_000;
 
@@ -50,9 +51,7 @@ function localBucket(date: Date): { day: number; hour: number } {
   return { day: WEEKDAY_INDEX[wd] ?? 0, hour: hh };
 }
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
+// Os cortes de dia seguem o fuso de Brasília (o servidor roda em UTC).
 
 /**
  * Métricas detalhadas de UM colaborador (drill-down da Visão do Gestor).
@@ -67,13 +66,12 @@ export async function getCollaboratorDetail(
   const perms = await getSessionPermissions();
   if (!perms?.permissions.manager_dashboard) throw new Error('Acesso restrito a gestores.');
 
-  const now = new Date();
-  const today = startOfDay(now);
-  const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
-  const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate() - 29);
+  const today = brStartOfDay();
+  const weekAgo = brStartOfDaysAgo(6);
+  const monthAgo = brStartOfDaysAgo(29);
   // Janela máxima de análise: 90 dias (as métricas "resetam" a cada 90 dias).
-  const windowStart = new Date(today); windowStart.setDate(windowStart.getDate() - 89);
-  const periodStart = new Date(today); periodStart.setDate(periodStart.getDate() - (periodDays - 1));
+  const windowStart = brStartOfDaysAgo(89);
+  const periodStart = brStartOfDaysAgo(periodDays - 1);
 
   const [
     user, allTime, todayC, weekC, monthC, grouped, periodLogs, feedRows, teamGrouped, teamMembers,
@@ -118,15 +116,12 @@ export async function getCollaboratorDetail(
 
   // Série diária (dev pesa por arquivos; demais ações, 1 cada).
   const buckets = new Map<string, number>();
-  for (let i = 0; i < periodDays; i++) {
-    const d = new Date(periodStart); d.setDate(d.getDate() + i);
-    buckets.set(d.toISOString().slice(0, 10), 0);
-  }
+  for (const key of brDayKeySeries(periodDays)) buckets.set(key, 0);
   const hourly = new Array(24).fill(0);
   const weekday = new Array(7).fill(0);
   for (const l of periodLogs) {
     const weight = l.action === DEV_COMMIT_ACTION ? devCommitFiles(l.metadata) : 1;
-    const key = startOfDay(l.createdAt).toISOString().slice(0, 10);
+    const key = brDayKey(l.createdAt);
     if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + weight);
     const { day, hour } = localBucket(l.createdAt);
     hourly[hour] += weight;
@@ -134,7 +129,7 @@ export async function getCollaboratorDetail(
   }
   const daily = Array.from(buckets.entries()).map(([date, count]) => ({
     date,
-    label: new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+    label: brLabelFromKey(date),
     count,
   }));
 
