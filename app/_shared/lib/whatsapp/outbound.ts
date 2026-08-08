@@ -37,7 +37,7 @@ export function normalizePhoneBR(raw: string): string | null {
 export async function findOrCreateContactByPhone(
   rawPhone: string,
   name?: string | null,
-): Promise<{ id: string; phone: string; name: string | null; optedOut: boolean; optedInAt: Date | null } | null> {
+): Promise<{ id: string; phone: string; name: string | null; optedOut: boolean; optedInAt: Date | null; numberId: string | null } | null> {
   const digits = rawPhone.replace(/\D/g, "");
   const last8 = digits.slice(-8);
   if (last8.length < 8) return null;
@@ -50,18 +50,24 @@ export async function findOrCreateContactByPhone(
   if (rows.length) {
     return db.whatsAppContact.findUnique({
       where: { id: rows[0].id },
-      select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true },
+      select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
     });
   }
 
   const normalized = normalizePhoneBR(rawPhone);
   if (!normalized) return null;
-  const created = await db.whatsAppContact.upsert({
+  // phone deixou de ser unique global (multi-número) → find-or-create manual.
+  // Contato criado pelo sistema (sem mensagem recebida) nasce sem numberId e
+  // envia pelo número default; o webhook o adota quando o cliente responder.
+  const existing = await db.whatsAppContact.findFirst({
     where: { phone: normalized },
-    update: {},
-    create: { phone: normalized, name: name ?? null },
+    select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
   });
-  return { id: created.id, phone: created.phone, name: created.name, optedOut: created.optedOut, optedInAt: created.optedInAt };
+  if (existing) return existing;
+  const created = await db.whatsAppContact.create({
+    data: { phone: normalized, name: name ?? null },
+  });
+  return { id: created.id, phone: created.phone, name: created.name, optedOut: created.optedOut, optedInAt: created.optedInAt, numberId: created.numberId };
 }
 
 /** Janela de 24h da Meta: aberta se o CLIENTE mandou mensagem nas últimas 24h. */
@@ -87,7 +93,7 @@ const UNANSWERED_ALERT_THRESHOLD = 3;
 
 /** Persiste a mensagem enviada pelo sistema e transmite pro inbox da equipe. */
 async function persistSystemMessage(
-  contact: { id: string; phone: string; name: string | null },
+  contact: { id: string; phone: string; name: string | null; numberId?: string | null },
   waMessageId: string,
   body: string,
   systemSource: string,
@@ -95,6 +101,7 @@ async function persistSystemMessage(
   const message = await db.whatsAppMessage.create({
     data: {
       contactId: contact.id,
+      numberId: contact.numberId ?? null,
       waMessageId,
       direction: "out",
       body,
@@ -106,7 +113,7 @@ async function persistSystemMessage(
   const conversation = await db.whatsAppConversation.upsert({
     where: { contactId: contact.id },
     update: { lastMessageAt: new Date() },
-    create: { contactId: contact.id },
+    create: { contactId: contact.id, numberId: contact.numberId ?? null },
   });
 
   const dto: WhatsAppMessageDTO = {
@@ -262,7 +269,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
 
     if (windowOpen) {
       const body = input.text + OPT_OUT_FOOTER;
-      const result = await sendText(contact.phone, body);
+      const result = await sendText(contact.phone, body, undefined, contact.numberId);
       if (!result.waMessageId) {
         await logWhatsAppEvent({
           action: "wa_text",
@@ -322,7 +329,15 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       return { sent: false, via: null, reason: "janela de 24h expirada e nenhum template configurado" };
     }
 
-    const template = await db.whatsAppTemplate.findUnique({ where: { name: input.templateName } });
+    // name deixou de ser unique global: catálogo é por número/WABA. Prefere o
+    // template do número do contato; cai no do catálogo legado (numberId null).
+    const template = await db.whatsAppTemplate.findFirst({
+      where: {
+        name: input.templateName,
+        OR: [{ numberId: contact.numberId }, { numberId: null }],
+      },
+      orderBy: { numberId: { sort: "desc", nulls: "last" } },
+    });
     if (!template) {
       await logWhatsAppEvent({
         action: "wa_text",
@@ -370,7 +385,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
     const vars = (input.templateVars ?? []).slice(0, template.bodyVars);
     while (vars.length < template.bodyVars) vars.push("");
 
-    const result = await sendTemplate(contact.phone, template.name, vars, template.language);
+    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId);
     if (!result.waMessageId) {
       await logWhatsAppEvent({
         action: "wa_text",

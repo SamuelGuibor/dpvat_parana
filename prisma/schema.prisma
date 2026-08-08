@@ -530,12 +530,42 @@ model Goal {
 }
 
 // ============ WhatsApp Cloud API (Meta oficial) ============
-// Contato = número de telefone único. Pode ser vinculado manualmente a um
-// User/Process já cadastrado (userId/processId são referências soltas, sem FK,
-// para não criar cascade com dados de clientes).
+
+// NÚMERO da empresa (multi-tenant, 07/08/2026): cada linha é um número do
+// WhatsApp Business com suas próprias credenciais da Meta, cadastradas pela
+// tela de Números do workspace. O token vai CRIPTOGRAFADO (AES-256-GCM em
+// app/_shared/lib/whatsapp/crypto.ts) — nunca em texto puro no banco.
+// Enquanto não houver linha aqui, o sistema segue nas envs WHATSAPP_* (o
+// runtime cria/casa o número default automaticamente — ver numbers.ts).
+model WhatsAppNumber {
+  id             String   @id @default(cuid())
+  phoneNumberId  String   @unique // id do número na Meta (metadata.phone_number_id do webhook)
+  wabaId         String? // conta WhatsApp Business dona do número (templates são por WABA)
+  displayPhone   String? // E.164 exibido (display_phone_number)
+  label          String // nome amigável na UI ("Comercial PR", "Leads Meta Ads"...)
+  accessTokenEnc String // token de System User, criptografado
+  appSecretEnc   String? // app secret p/ HMAC do webhook (null = usa WHATSAPP_APP_SECRET global)
+  apiVersion     String   @default("v21.0")
+  active         Boolean  @default(true)
+  // O número "original" (fallback de envio quando a conversa não tem numberId).
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("whatsapp_numbers")
+}
+
+// Contato = número de telefone único POR NÚMERO DA EMPRESA (o mesmo cliente
+// pode conversar com dois números nossos — são atendimentos separados). Pode
+// ser vinculado manualmente a um User/Process já cadastrado (userId/processId
+// são referências soltas, sem FK, para não criar cascade com dados de
+// clientes).
 model WhatsAppContact {
   id             String                @id @default(cuid())
-  phone          String                @unique // E.164, ex: 5541999999999
+  phone          String // E.164, ex: 5541999999999
+  // Número da empresa que atende este contato. Null só em linha legada ainda
+  // não backfillada (o ingest "adota" a linha na primeira mensagem nova).
+  numberId       String?
   name           String?
   userId         String?
   processId      String?
@@ -579,12 +609,16 @@ model WhatsAppContact {
   conversation   WhatsAppConversation?
   messages       WhatsAppMessage[]
 
+  @@unique([numberId, phone])
+  @@index([phone])
   @@map("whatsapp_contacts")
 }
 
 model WhatsAppConversation {
   id              String                     @id @default(cuid())
   contactId       String                     @unique
+  // Denormalizado do contato (o dashboard filtra conversas por número direto).
+  numberId        String?
   // "standby" (28/07/2026): cliente sumiu no meio da triagem — em vez de
   // fechar, entra no ciclo de recuperação (até 3 provocações em ~3 dias).
   status          String                     @default("bot") // bot | queued | human | standby | closed
@@ -634,6 +668,7 @@ model WhatsAppConversation {
 
   @@index([status])
   @@index([assignedToId])
+  @@index([numberId, lastMessageAt])
   @@map("whatsapp_conversations")
 }
 
@@ -690,6 +725,9 @@ model WhatsAppConversationTag {
 model WhatsAppMessage {
   id               String          @id @default(cuid())
   contactId        String
+  // Denormalizado do contato — as agregações do Desempenho do Chatbot filtram
+  // mensagens por número sem join.
+  numberId         String?
   waMessageId      String?         @unique // id da Meta; evita duplicar em retry de webhook
   direction        String // in | out
   body             String?
@@ -717,6 +755,7 @@ model WhatsAppMessage {
   contact          WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId, createdAt])
+  @@index([numberId, createdAt])
   @@map("whatsapp_messages")
 }
 
@@ -850,6 +889,8 @@ model WhatsAppPlaybook {
 model WhatsAppRuleEvent {
   id              String   @id @default(cuid())
   kind            String   @default("rule") // rule | followup | recovery
+  // Número da empresa da conversa (métricas por número no dashboard).
+  numberId        String?
   // kind="rule": ID da regra na versão vigente (R1, R2...). kind="recovery":
   // marcador da tentativa (T1, T2, T3). Nulo em followup.
   ruleId          String?
@@ -869,6 +910,7 @@ model WhatsAppRuleEvent {
   @@index([kind, createdAt])
   @@index([ruleId, createdAt])
   @@index([contactId])
+  @@index([numberId, createdAt])
   @@map("whatsapp_rule_events")
 }
 
@@ -904,7 +946,10 @@ model WhatsAppInstructions {
 
 model WhatsAppTemplate {
   id          String  @id @default(cuid())
-  name        String  @unique // nome aprovado na Meta
+  // Templates pertencem à WABA — cada número/WABA tem seu próprio catálogo.
+  // Null = catálogo do número default (legado).
+  numberId    String?
+  name        String // nome aprovado na Meta
   language    String  @default("pt_BR")
   bodyVars    Int     @default(0)
   // Texto de referência com {{1}} {{2}}... só pra equipe saber o que digitar
@@ -931,6 +976,7 @@ model WhatsAppTemplate {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
+  @@unique([numberId, name])
   @@map("whatsapp_templates")
 }
 

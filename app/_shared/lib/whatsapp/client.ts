@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getCreds, type WaCreds } from "./numbers";
 
 // Cliente da WhatsApp Cloud API (Meta oficial).
 //
@@ -6,15 +7,14 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 // puro, sem lib de terceiro. Quem persiste no banco é quem chama (webhook,
 // server action, automação) — aqui só falamos com a Meta e com o S3.
 //
-// Env vars (Vercel):
-//   WHATSAPP_TOKEN            token permanente de System User do Business Manager
-//   WHATSAPP_PHONE_NUMBER_ID  id do número no painel do WhatsApp Business
-//   WHATSAPP_API_VERSION      opcional, default v21.0
+// MULTI-NÚMERO (07/08/2026): as credenciais deixaram de ser constantes de
+// módulo — cada função aceita um `numberId` (WhatsAppNumber.id) opcional e
+// resolve token/phone_number_id via numbers.ts. Sem numberId → número default
+// (linha isDefault do banco, ou as envs WHATSAPP_* legadas).
 
-const TOKEN = process.env.WHATSAPP_TOKEN ?? "";
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID ?? "";
-const API_VERSION = process.env.WHATSAPP_API_VERSION ?? "v21.0";
-const GRAPH_BASE = `https://graph.facebook.com/${API_VERSION}`;
+function graphBase(c: WaCreds): string {
+  return `https://graph.facebook.com/${c.apiVersion}`;
+}
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -25,7 +25,10 @@ const s3 = new S3Client({
 });
 
 export function isWhatsAppConfigured(): boolean {
-  return !!TOKEN && !!PHONE_NUMBER_ID;
+  // Configurado = envs legadas presentes. Números cadastrados pela tela têm
+  // credencial própria no banco e não dependem deste check (o getCreds
+  // devolve null quando não há credencial nenhuma).
+  return !!process.env.WHATSAPP_TOKEN && !!process.env.WHATSAPP_PHONE_NUMBER_ID;
 }
 
 interface SendResult {
@@ -37,16 +40,17 @@ interface SendResultRaw extends SendResult {
   errorCode?: number;
 }
 
-async function postMessageRaw(payload: Record<string, unknown>): Promise<SendResultRaw> {
-  if (!isWhatsAppConfigured()) {
-    return { waMessageId: null, error: "WhatsApp Cloud API não configurada (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)." };
+async function postMessageRaw(payload: Record<string, unknown>, numberId?: string | null): Promise<SendResultRaw> {
+  const c = await getCreds(numberId);
+  if (!c) {
+    return { waMessageId: null, error: "WhatsApp Cloud API não configurada (cadastre um número ou WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)." };
   }
   try {
-    const res = await fetch(`${GRAPH_BASE}/${PHONE_NUMBER_ID}/messages`, {
+    const res = await fetch(`${graphBase(c)}/${c.phoneNumberId}/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${c.token}`,
       },
       body: JSON.stringify({ messaging_product: "whatsapp", ...payload }),
       cache: "no-store",
@@ -64,8 +68,8 @@ async function postMessageRaw(payload: Record<string, unknown>): Promise<SendRes
   }
 }
 
-async function postMessage(payload: Record<string, unknown>): Promise<SendResult> {
-  const { waMessageId, error } = await postMessageRaw(payload);
+async function postMessage(payload: Record<string, unknown>, numberId?: string | null): Promise<SendResult> {
+  const { waMessageId, error } = await postMessageRaw(payload, numberId);
   return { waMessageId, error };
 }
 
@@ -75,14 +79,16 @@ async function postMessage(payload: Record<string, unknown>): Promise<SendResult
  * usamos enquanto o bot prepara a resposta, pra parecer um atendente real.
  * Best-effort: falha aqui nunca interrompe o fluxo de quem chamou.
  */
-export async function markMessageRead(waMessageId: string, typing = false): Promise<void> {
-  if (!isWhatsAppConfigured() || !waMessageId) return;
+export async function markMessageRead(waMessageId: string, typing = false, numberId?: string | null): Promise<void> {
+  if (!waMessageId) return;
+  const c = await getCreds(numberId);
+  if (!c) return;
   try {
-    const res = await fetch(`${GRAPH_BASE}/${PHONE_NUMBER_ID}/messages`, {
+    const res = await fetch(`${graphBase(c)}/${c.phoneNumberId}/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${c.token}`,
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
@@ -105,13 +111,13 @@ export async function markMessageRead(waMessageId: string, typing = false): Prom
  * Texto livre — só funciona dentro da janela de 24h desde a última mensagem
  * do cliente. `replyToWaId` transforma em resposta (quote) no celular dele.
  */
-export function sendText(phone: string, body: string, replyToWaId?: string): Promise<SendResult> {
+export function sendText(phone: string, body: string, replyToWaId?: string, numberId?: string | null): Promise<SendResult> {
   return postMessage({
     to: phone,
     type: "text",
     text: { body, preview_url: false },
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
-  });
+  }, numberId);
 }
 
 /**
@@ -127,6 +133,7 @@ export function sendMedia(
   caption?: string,
   filename?: string,
   replyToWaId?: string,
+  numberId?: string | null,
 ): Promise<SendResult> {
   const media: Record<string, unknown> = { link };
   if (caption && kind !== "audio") media.caption = caption;
@@ -136,7 +143,7 @@ export function sendMedia(
     type: kind,
     [kind]: media,
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
-  });
+  }, numberId);
 }
 
 /**
@@ -145,8 +152,9 @@ export function sendMedia(
  * como player de arquivo genérico; enviado por media `id` chega como voz
  * (bolha com forma de onda, "PTT"). A Meta só renderiza voz nesse caminho.
  */
-async function uploadMediaFromUrl(link: string, mimeType: string, filename: string): Promise<string | null> {
-  if (!isWhatsAppConfigured()) return null;
+async function uploadMediaFromUrl(link: string, mimeType: string, filename: string, numberId?: string | null): Promise<string | null> {
+  const c = await getCreds(numberId);
+  if (!c) return null;
   try {
     const bin = await fetch(link, { cache: "no-store" });
     if (!bin.ok) {
@@ -158,9 +166,9 @@ async function uploadMediaFromUrl(link: string, mimeType: string, filename: stri
     form.append("messaging_product", "whatsapp");
     form.append("type", mimeType);
     form.append("file", new Blob([buf], { type: mimeType }), filename);
-    const res = await fetch(`${GRAPH_BASE}/${PHONE_NUMBER_ID}/media`, {
+    const res = await fetch(`${graphBase(c)}/${c.phoneNumberId}/media`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${TOKEN}` },
+      headers: { Authorization: `Bearer ${c.token}` },
       body: form,
       cache: "no-store",
     });
@@ -187,14 +195,15 @@ export async function sendVoiceNote(
   link: string,
   filename = "audio.ogg",
   replyToWaId?: string,
+  numberId?: string | null,
 ): Promise<SendResult> {
-  const mediaId = await uploadMediaFromUrl(link, "audio/ogg", filename);
+  const mediaId = await uploadMediaFromUrl(link, "audio/ogg", filename, numberId);
   return postMessage({
     to: phone,
     type: "audio",
     audio: { ...(mediaId ? { id: mediaId } : { link }), voice: true },
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
-  });
+  }, numberId);
 }
 
 // Erros mais comuns da Graph API ao enviar template, traduzidos pra equipe.
@@ -226,6 +235,7 @@ export async function sendTemplate(
   vars: string[] = [],
   language = "pt_BR",
   headerVar?: string | null,
+  numberId?: string | null,
 ): Promise<SendResult> {
   // A Meta rejeita variáveis com \n, \t ou 4+ espaços consecutivos (erro 132012).
   const clean = (v: string) => v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim();
@@ -249,7 +259,7 @@ export async function sendTemplate(
       language: { code: language },
       ...(components.length ? { components } : {}),
     },
-  });
+  }, numberId);
 
   if (result.errorCode && TEMPLATE_ERROR_HINTS[result.errorCode]) {
     return { waMessageId: null, error: TEMPLATE_ERROR_HINTS[result.errorCode] };
@@ -287,19 +297,19 @@ export function countTemplateVars(bodyText: string | null | undefined): number {
  * Lista os templates da conta com TODOS os status (não só os aprovados) — a
  * tela de templates acompanha o ciclo da Meta: em análise → aprovado/reprovado.
  */
-export async function fetchMetaTemplates(): Promise<MetaTemplate[]> {
-  const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
-  if (!TOKEN || !wabaId) {
-    throw new Error("Sincronização indisponível: configure WHATSAPP_WABA_ID (id da conta WhatsApp Business) no ambiente.");
+export async function fetchMetaTemplates(numberId?: string | null): Promise<MetaTemplate[]> {
+  const c = await getCreds(numberId);
+  if (!c?.token || !c.wabaId) {
+    throw new Error("Sincronização indisponível: cadastre a WABA do número (ou configure WHATSAPP_WABA_ID no ambiente).");
   }
 
   const templates: MetaTemplate[] = [];
   let url: string | null =
-    `${GRAPH_BASE}/${wabaId}/message_templates?fields=id,name,status,category,language,components,rejected_reason&limit=100`;
+    `${graphBase(c)}/${c.wabaId}/message_templates?fields=id,name,status,category,language,components,rejected_reason&limit=100`;
 
   while (url) {
     const res: Response = await fetch(url, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
+      headers: { Authorization: `Bearer ${c.token}` },
       cache: "no-store",
     });
     const data = await res.json().catch(() => null);
@@ -353,10 +363,10 @@ export async function createMetaTemplate(input: {
   bodyText: string;
   bodyExamples: string[];
   footerText?: string | null;
-}): Promise<{ metaId: string | null; status: string; error?: string }> {
-  const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
-  if (!TOKEN || !wabaId) {
-    return { metaId: null, status: "", error: "Criação indisponível: configure WHATSAPP_WABA_ID (id da conta WhatsApp Business) no ambiente." };
+}, numberId?: string | null): Promise<{ metaId: string | null; status: string; error?: string }> {
+  const c = await getCreds(numberId);
+  if (!c?.token || !c.wabaId) {
+    return { metaId: null, status: "", error: "Criação indisponível: cadastre a WABA do número (ou configure WHATSAPP_WABA_ID no ambiente)." };
   }
 
   const components: Record<string, unknown>[] = [];
@@ -383,11 +393,11 @@ export async function createMetaTemplate(input: {
   }
 
   try {
-    const res = await fetch(`${GRAPH_BASE}/${wabaId}/message_templates`, {
+    const res = await fetch(`${graphBase(c)}/${c.wabaId}/message_templates`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${c.token}`,
       },
       body: JSON.stringify({
         name: input.name,
@@ -411,13 +421,13 @@ export async function createMetaTemplate(input: {
 }
 
 /** Apaga o template NA META (some pra valer, não só do cadastro local). */
-export async function deleteMetaTemplate(name: string): Promise<{ error?: string }> {
-  const wabaId = process.env.WHATSAPP_WABA_ID ?? "";
-  if (!TOKEN || !wabaId) return { error: "WHATSAPP_WABA_ID não configurado." };
+export async function deleteMetaTemplate(name: string, numberId?: string | null): Promise<{ error?: string }> {
+  const c = await getCreds(numberId);
+  if (!c?.token || !c.wabaId) return { error: "WABA não configurada para este número." };
   try {
     const res = await fetch(
-      `${GRAPH_BASE}/${wabaId}/message_templates?name=${encodeURIComponent(name)}`,
-      { method: "DELETE", headers: { Authorization: `Bearer ${TOKEN}` }, cache: "no-store" },
+      `${graphBase(c)}/${c.wabaId}/message_templates?name=${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${c.token}` }, cache: "no-store" },
     );
     const data = await res.json().catch(() => null);
     if (!res.ok) return { error: data?.error?.message ?? `Meta respondeu HTTP ${res.status}.` };
@@ -437,11 +447,14 @@ export async function downloadMediaToS3(
   mediaId: string,
   contactId: string,
   filenameHint?: string,
+  numberId?: string | null,
 ): Promise<{ key: string; mimeType: string } | null> {
   try {
+    const c = await getCreds(numberId);
+    if (!c) throw new Error("sem credencial WhatsApp");
     // 1. Resolve o media id para uma URL temporária.
-    const metaRes = await fetch(`${GRAPH_BASE}/${mediaId}`, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
+    const metaRes = await fetch(`${graphBase(c)}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${c.token}` },
       cache: "no-store",
     });
     if (!metaRes.ok) throw new Error(`metadata HTTP ${metaRes.status}`);
@@ -450,7 +463,7 @@ export async function downloadMediaToS3(
 
     // 2. Baixa o binário (a URL exige o mesmo Bearer token).
     const binRes = await fetch(meta.url, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
+      headers: { Authorization: `Bearer ${c.token}` },
       cache: "no-store",
     });
     if (!binRes.ok) throw new Error(`download HTTP ${binRes.status}`);

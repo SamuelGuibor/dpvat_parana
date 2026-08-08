@@ -114,7 +114,9 @@ export async function createWhatsAppTemplate(input: {
     }
   }
 
-  if (await db.whatsAppTemplate.findUnique({ where: { name } })) {
+  // Tela de templates opera no catálogo do número default (numberId null —
+  // legado). Catálogo por número entra quando a WABA nova tiver templates.
+  if (await db.whatsAppTemplate.findFirst({ where: { name, numberId: null } })) {
     return { error: `Já existe um template chamado "${name}".` };
   }
 
@@ -177,11 +179,14 @@ export async function syncWhatsAppTemplatesFromMeta(): Promise<{
       rejectedReason: t.rejectedReason,
       metaId: t.metaId,
     };
-    await db.whatsAppTemplate.upsert({
-      where: { name: t.name },
-      update: data,
-      create: { name: t.name, ...data },
-    });
+    // name deixou de ser unique global (catálogo por número) → upsert manual
+    // no catálogo default (numberId null).
+    const existing = await db.whatsAppTemplate.findFirst({ where: { name: t.name, numberId: null }, select: { id: true } });
+    if (existing) {
+      await db.whatsAppTemplate.update({ where: { id: existing.id }, data });
+    } else {
+      await db.whatsAppTemplate.create({ data: { name: t.name, ...data } });
+    }
     result.imported++;
     if (t.status === 'APPROVED') result.approved++;
     else if (t.status === 'PENDING') result.pending++;
@@ -192,7 +197,9 @@ export async function syncWhatsAppTemplatesFromMeta(): Promise<{
   // e o envio falharia só na hora de falar com o cliente.
   const names = metaTemplates.map((t) => t.name);
   if (names.length) {
-    await db.whatsAppTemplate.deleteMany({ where: { name: { notIn: names } } });
+    // Só limpa o catálogo default — os catálogos dos outros números não podem
+    // ser apagados por uma sincronização da WABA principal.
+    await db.whatsAppTemplate.deleteMany({ where: { name: { notIn: names }, numberId: null } });
   }
 
   return result;

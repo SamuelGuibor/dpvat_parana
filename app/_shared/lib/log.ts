@@ -115,6 +115,8 @@ export async function logWhatsAppEvent(input: {
   contactId: string;
   contactName?: string | null;
   contactPhone?: string | null;
+  /** NOSSO número da conversa (multi-tenant) — permite custo/atividade por número. */
+  numberId?: string | null;
   metadata?: Record<string, any>;
 }): Promise<void> {
   try {
@@ -130,6 +132,7 @@ export async function logWhatsAppEvent(input: {
           contactId: input.contactId,
           contactName: input.contactName ?? null,
           contactPhone: input.contactPhone ?? null,
+          ...(input.numberId ? { numberId: input.numberId } : {}),
           ...(sector ?? {}),
           ...(input.metadata ?? {}),
         },

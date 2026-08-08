@@ -8,6 +8,9 @@ import { AIReview } from './whatsapp/AIReview';
 import { countPendingReviews } from '@/app/_actions/whatsapp/reviews';
 import { ManagerDashboard } from './manager/ManagerDashboard';
 import { CostsPanel } from './costs/CostsPanel';
+import { ChatbotPanel } from './chatbot/ChatbotPanel';
+import { NumbersPanel } from './numbers/NumbersPanel';
+import { getChatbotDashboardAccess } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { isManager } from '@/app/_shared/lib/managers';
@@ -25,6 +28,14 @@ export function Workspace() {
 
   const canReviewAi = !permsLoading && perms.review_ai;
   const canViewCosts = !permsLoading && perms.view_costs;
+  const canManageNumbers = !permsLoading && perms.manage_team;
+
+  // Desempenho do Chatbot: allowlist própria (mais sensível que a visão do
+  // gestor — inclui gasto de IA), resolvida no servidor.
+  const [canViewChatbot, setCanViewChatbot] = useState(false);
+  useEffect(() => {
+    getChatbotDashboardAccess().then(setCanViewChatbot).catch(() => setCanViewChatbot(false));
+  }, []);
 
   const [section, setSection] = useState<WorkspaceSection>('meu-espaco');
 
@@ -60,13 +71,15 @@ export function Workspace() {
     (section === 'gestao' && !manager)
     || (section === 'revisao-ia' && !canReviewAi)
     || (section === 'custos' && !canViewCosts)
+    || (section === 'chatbot' && !canViewChatbot)
+    || (section === 'numeros' && !canManageNumbers)
       ? 'meu-espaco'
       : section;
 
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} chatUnread={chatUnread} reviewPending={reviewPending} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canViewChatbot={canViewChatbot} canManageNumbers={canManageNumbers} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
         {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
@@ -74,6 +87,8 @@ export function Workspace() {
         {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
         {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
+        {effective === 'chatbot' && <div className="h-full overflow-y-auto"><ChatbotPanel /></div>}
+        {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
       </div>
     </div>
   );

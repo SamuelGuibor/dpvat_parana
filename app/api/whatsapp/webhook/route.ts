@@ -10,6 +10,7 @@ import {
 import { handleIncomingWhatsApp } from "@/app/_shared/lib/whatsapp/bot";
 import { autoFillClientInfo } from "@/app/_shared/lib/whatsapp/ficha-ai";
 import { handleAccountEvent } from "@/app/_shared/lib/whatsapp/account-events";
+import { getCredsByPhoneNumberId } from "@/app/_shared/lib/whatsapp/numbers";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
 
 // Webhook da WhatsApp Cloud API (Meta oficial).
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
       changes?: {
         field?: string;
         value?: {
+          metadata?: { phone_number_id?: string; display_phone_number?: string };
           contacts?: { profile?: { name?: string } }[];
           messages?: IncomingWaMessage[];
           statuses?: IncomingWaStatus[];
@@ -90,6 +92,11 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Invalid JSON", { status: 400 });
   }
 
+  // Falha de INGESTÃO (banco fora, etc.) → responde 500 pra Meta reenviar o
+  // evento (retry por horas; o dedup por waMessageId segura duplicata). Falha
+  // DEPOIS de persistir (bot/ficha) continua 200 — a mensagem já está salva.
+  let ingestFailed = false;
+
   try {
     for (const entry of payload?.entry ?? []) {
       for (const change of entry?.changes ?? []) {
@@ -104,6 +111,20 @@ export async function POST(req: NextRequest) {
         }
         if (change?.field !== "messages" || !value) continue;
 
+        // MULTI-NÚMERO: qual dos NOSSOS números recebeu este evento. Número
+        // desconhecido (não cadastrado nem nas envs) → ignora o lote e avisa —
+        // processar sem saber o número mandaria a resposta pelo número errado.
+        const phoneNumberId = value.metadata?.phone_number_id ?? "";
+        const creds = await getCredsByPhoneNumberId(phoneNumberId);
+        if (!creds) {
+          await reportCriticalError(
+            "WHATSAPP WEBHOOK",
+            new Error(`Evento de phone_number_id desconhecido (${phoneNumberId || "vazio"}) — cadastre o número na tela de Números.`),
+          );
+          continue;
+        }
+        const numberId = creds.numberId;
+
         // Nome de perfil do remetente (quando a Meta manda os contatos).
         const profileName: string | undefined = value.contacts?.[0]?.profile?.name;
 
@@ -116,10 +137,15 @@ export async function POST(req: NextRequest) {
         // ao preenchimento automático da ficha pela IA.
         const fichaCandidates = new Set<string>();
         for (const msg of value.messages ?? []) {
-          const result = await ingestIncomingMessage(msg, profileName);
-          if (result?.isNew) fichaCandidates.add(result.contactId);
-          if (result?.isNew && result.conversationStatus === "bot") {
-            botCandidates.set(result.contactId, result); // fica a última do contato
+          try {
+            const result = await ingestIncomingMessage(msg, profileName, numberId);
+            if (result?.isNew) fichaCandidates.add(result.contactId);
+            if (result?.isNew && result.conversationStatus === "bot") {
+              botCandidates.set(result.contactId, result); // fica a última do contato
+            }
+          } catch (err) {
+            ingestFailed = true;
+            await reportCriticalError("WHATSAPP WEBHOOK ingest", err);
           }
         }
         for (const result of botCandidates.values()) {
@@ -137,11 +163,16 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (err) {
-    // Responde 200 mesmo assim: a Meta faria retry e o dedup segura, mas
-    // retry infinito de um payload problemático só gera ruído. O erro vai
-    // para o Discord — antes era só console.error efêmero na Vercel.
+    // Erro fora da ingestão por mensagem (bot, ficha, status): responde 200 —
+    // a mensagem já está persistida; retry da Meta só geraria ruído. O erro
+    // vai para o Discord — antes era só console.error efêmero na Vercel.
     await reportCriticalError("WHATSAPP WEBHOOK", err);
   }
 
+  if (ingestFailed) {
+    // Mensagem NÃO persistida → 500 força o retry da Meta; o dedup por
+    // waMessageId garante que o que já entrou não duplica.
+    return new NextResponse("ingest failed", { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

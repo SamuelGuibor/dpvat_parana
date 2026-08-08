@@ -1,8 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/whatsapp/cron",
+      "path": "/api/whatsapp/cron/sla",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/whatsapp/cron/nudge",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/whatsapp/cron/recovery",
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/afastamentos/check",

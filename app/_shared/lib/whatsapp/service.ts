@@ -140,6 +140,8 @@ function extractMediaId(msg: IncomingWaMessage): { id: string; filename?: string
 
 export interface IngestResult {
   contactId: string;
+  // NOSSO número que recebeu a mensagem (null = legado/envs).
+  numberId: string | null;
   conversationStatus: string;
   message: WhatsAppMessageDTO;
   isNew: boolean; // false quando é retry da Meta (waMessageId já existia)
@@ -153,6 +155,7 @@ export interface IngestResult {
 export async function ingestIncomingMessage(
   msg: IncomingWaMessage,
   profileName?: string,
+  numberId?: string | null,
 ): Promise<IngestResult | null> {
   // Dedup: retry de webhook não gera mensagem nova nem re-dispara o bot.
   const existing = await db.whatsAppMessage.findUnique({
@@ -166,11 +169,24 @@ export async function ingestIncomingMessage(
   // O nome de perfil do WhatsApp só entra quando o contato AINDA NÃO tem nome:
   // sobrescrever sempre apagava o nome salvo pela equipe na ficha a cada
   // mensagem recebida (o contato "voltava" pro apelido do WhatsApp).
-  const contact = await db.whatsAppContact.upsert({
-    where: { phone: msg.from },
-    update: {},
-    create: { phone: msg.from, name: profileName ?? null, optedInAt: new Date(), optInSource: "inbound" },
+  //
+  // MULTI-NÚMERO: o contato é escopado pelo NOSSO número (numberId). Linha
+  // legada sem numberId é "adotada" pelo número da mensagem na primeira vez —
+  // é o backfill incremental que cobre quem escapar do ensureDefaultNumber.
+  let contact = await db.whatsAppContact.findFirst({
+    where: numberId
+      ? { phone: msg.from, OR: [{ numberId }, { numberId: null }] }
+      : { phone: msg.from },
+    orderBy: { createdAt: "asc" },
   });
+  if (contact && numberId && !contact.numberId) {
+    contact = await db.whatsAppContact.update({ where: { id: contact.id }, data: { numberId } });
+  }
+  if (!contact) {
+    contact = await db.whatsAppContact.create({
+      data: { phone: msg.from, numberId: numberId ?? null, name: profileName ?? null, optedInAt: new Date(), optInSource: "inbound" },
+    });
+  }
   if (!contact.name?.trim() && profileName) {
     await db.whatsAppContact.update({ where: { id: contact.id }, data: { name: profileName } });
     contact.name = profileName;
@@ -203,8 +219,8 @@ export async function ingestIncomingMessage(
   // Cliente respondeu → zera os marcadores de silêncio do bot (30min/24h).
   let conversation = await db.whatsAppConversation.upsert({
     where: { contactId: contact.id },
-    update: { lastMessageAt: new Date(), botNudge30At: null, botNudge24At: null },
-    create: { contactId: contact.id },
+    update: { lastMessageAt: new Date(), botNudge30At: null, botNudge24At: null, ...(contact.numberId ? { numberId: contact.numberId } : {}) },
+    create: { contactId: contact.id, numberId: contact.numberId },
   });
 
   // Opt-out / opt-in (anti-spam): analisa o texto do cliente cedo.
@@ -291,7 +307,7 @@ export async function ingestIncomingMessage(
   let mediaType: string | null = null;
   const media = extractMediaId(msg);
   if (media) {
-    const stored = await downloadMediaToS3(media.id, contact.id, media.filename);
+    const stored = await downloadMediaToS3(media.id, contact.id, media.filename, contact.numberId);
     if (stored) {
       mediaKey = stored.key;
       mediaType = stored.mimeType;
@@ -314,6 +330,7 @@ export async function ingestIncomingMessage(
   const message = await db.whatsAppMessage.create({
     data: {
       contactId: contact.id,
+      numberId: contact.numberId,
       waMessageId: msg.id,
       direction: "in",
       body: extractBody(msg),
@@ -362,11 +379,11 @@ export async function ingestIncomingMessage(
   if (wantsOptOut && (exactOptOut || conversation.status !== "bot")) {
     if (!contact.optedOut) {
       try {
-        const confirm = await sendText(contact.phone, OPT_OUT_CONFIRMATION);
+        const confirm = await sendText(contact.phone, OPT_OUT_CONFIRMATION, undefined, contact.numberId);
         if (confirm.waMessageId) {
           await db.whatsAppMessage.create({
             data: {
-              contactId: contact.id, waMessageId: confirm.waMessageId,
+              contactId: contact.id, numberId: contact.numberId, waMessageId: confirm.waMessageId,
               direction: "out", body: OPT_OUT_CONFIRMATION, status: "sent", sentByBot: true,
             },
           });
@@ -387,7 +404,7 @@ export async function ingestIncomingMessage(
       where: { id: conversation.id },
       data: { status: "closed", assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
     });
-    return { contactId: contact.id, conversationStatus: "closed", message: dto, isNew: true };
+    return { contactId: contact.id, numberId: contact.numberId, conversationStatus: "closed", message: dto, isNew: true };
   }
 
   // Notificação (sino) do "cliente respondeu": NUNCA para todo mundo quando
@@ -396,7 +413,7 @@ export async function ingestIncomingMessage(
   // aqui: se a IA decidir escalar, o próprio handoff cria a notificação certa.
   await notifyIncomingMessage(conversation, contact, message.id, dto.body, mediaType);
 
-  return { contactId: contact.id, conversationStatus: conversation.status, message: dto, isNew: true };
+  return { contactId: contact.id, numberId: contact.numberId, conversationStatus: conversation.status, message: dto, isNew: true };
 }
 
 /**

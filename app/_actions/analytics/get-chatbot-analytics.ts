@@ -120,7 +120,7 @@ export async function getChatbotDashboardAccess(): Promise<boolean> {
   return !!session?.user?.id && canViewChatbotDashboard(session.user.email);
 }
 
-export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<ChatbotAnalytics> {
+export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId: string | null = null): Promise<ChatbotAnalytics> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
   if (!canViewChatbotDashboard(session.user.email)) {
@@ -132,8 +132,13 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
   // amanhã enquanto aqui ainda era hoje).
   const since = brStartOfDaysAgo(periodDays - 1);
 
+  // Filtro MULTI-NÚMERO: null = visão agregada (todos os números, como sempre
+  // foi). Mensagens/contatos filtram direto pela coluna numberId (indexada);
+  // os LOGS não têm a coluna — são filtrados abaixo resolvendo o numberId do
+  // contactId que cada log carrega no metadata.
+  const numberFilter = numberId ? { numberId } : {};
 
-  const [logs, humanMessages, newContacts] = await Promise.all([
+  const [rawLogs, humanMessages, newContacts] = await Promise.all([
     db.log.findMany({
       where: { action: { startsWith: 'wa_' }, createdAt: { gte: since } },
       orderBy: { createdAt: 'desc' },
@@ -141,7 +146,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     }),
     // Mensagens humanas do período — alimenta a 1ª resposta após assumir.
     db.whatsAppMessage.findMany({
-      where: { direction: 'out', sentByBot: false, internal: false, createdAt: { gte: since }, authorId: { not: null } },
+      where: { direction: 'out', sentByBot: false, internal: false, createdAt: { gte: since }, authorId: { not: null }, ...numberFilter },
       orderBy: { createdAt: 'asc' },
       select: { contactId: true, authorId: true, createdAt: true },
     }),
@@ -150,10 +155,27 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7): Promise<
     // progresso do kanban criam contatos "fantasma" a partir do telefone do
     // card, e esses não são leads (o cliente nunca escreveu).
     db.whatsAppContact.findMany({
-      where: { createdAt: { gte: since }, optInSource: 'inbound' },
+      where: { createdAt: { gte: since }, optInSource: 'inbound', ...numberFilter },
       select: { id: true, adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
     }),
   ]);
+
+  // Logs por número: o metadata carrega o contactId; resolve o numberId de
+  // cada contato citado e mantém só os do número pedido. Logs sem contactId
+  // (eventos administrativos da conta) ficam de fora da visão por número.
+  let logs = rawLogs;
+  if (numberId) {
+    const logContactIds = Array.from(new Set(
+      rawLogs.map((l) => (l.metadata as any)?.contactId).filter((id): id is string => typeof id === 'string'),
+    ));
+    const owned = new Set(
+      (await db.whatsAppContact.findMany({
+        where: { id: { in: logContactIds }, numberId },
+        select: { id: true },
+      })).map((c) => c.id),
+    );
+    logs = rawLogs.filter((l) => owned.has((l.metadata as any)?.contactId));
+  }
 
   // Desfecho de cada lead novo (qualificado / não qualificado / em andamento)
   // — é o que liga a campanha ao RESULTADO, não só ao volume.
@@ -485,6 +507,7 @@ export interface AdLeadOutcome {
 export async function getAdLeadOutcomes(
   sourceKey: string | null,
   periodDays: 7 | 30 | 90 = 7,
+  numberId: string | null = null,
 ): Promise<AdLeadOutcome[]> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
@@ -494,7 +517,7 @@ export async function getAdLeadOutcomes(
 
   const since = brStartOfDaysAgo(periodDays - 1);
   const contacts = await db.whatsAppContact.findMany({
-    where: { createdAt: { gte: since }, optInSource: 'inbound' },
+    where: { createdAt: { gte: since }, optInSource: 'inbound', ...(numberId ? { numberId } : {}) },
     select: {
       id: true, name: true, phone: true, createdAt: true, userId: true,
       adPlatform: true, adSourceId: true, adHeadline: true, adSourceUrl: true,

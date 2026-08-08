@@ -7,10 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/app/_shared/ui/avatar';
 import { Button } from '@/app/_shared/ui/button';
 import { BarChart3, Users, Activity, Flame, Loader2, Trophy, ChevronRight, Building2 } from 'lucide-react';
 import { getTeamAnalytics, type TeamAnalytics } from '@/app/_actions/analytics/get-team-analytics';
-import { getChatbotDashboardAccess } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { metaFor } from '@/app/_shared/utils/action-meta';
 import { CollaboratorDetail } from './CollaboratorDetail';
-import { ChatbotDashboard } from './ChatbotDashboard';
 import { SectorDashboard } from '../SectorDashboard';
 import { DateFilter, getDefaultDateRange, type DateRange } from '../../DateFilter';
 
@@ -37,12 +35,8 @@ export function ManagerDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  // Desempenho do Chatbot só aparece para e-mails autorizados (allowlist própria).
-  const [chatbotAccess, setChatbotAccess] = useState(false);
-
-  useEffect(() => {
-    getChatbotDashboardAccess().then(setChatbotAccess).catch(() => setChatbotAccess(false));
-  }, []);
+  // O Desempenho do Chatbot saiu daqui: virou a seção "Chatbot" da sidebar do
+  // Espaço de Trabalho (multi-tenant, com seletor de número).
 
   useEffect(() => {
     let alive = true;
@@ -176,12 +170,6 @@ export function ManagerDashboard() {
             </section>
           </div>
 
-          {/* Dashboard do chatbot (métricas da IA + gasto da API) — só para autorizados. */}
-          {chatbotAccess && (
-            <div className="mt-10">
-              <ChatbotDashboard />
-            </div>
-          )}
         </>
       )}
     </div>

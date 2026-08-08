@@ -610,7 +610,7 @@ export async function sendBotReply(
   //    evita o padrão de "mesma saudação repetida" que caracteriza spam.
   const contact = await db.whatsAppContact.findUnique({
     where: { id: contactId },
-    select: { optedOut: true },
+    select: { optedOut: true, numberId: true },
   });
   if (contact?.optedOut) {
     console.warn("[WHATSAPP BOT] Envio bloqueado: contato em opt-out.", contactId);
@@ -629,7 +629,7 @@ export async function sendBotReply(
 
   if (delayMs > 0) await sleep(delayMs);
 
-  const result = await sendText(phone, text);
+  const result = await sendText(phone, text, undefined, contact?.numberId);
   if (!result.waMessageId) {
     throw new Error(result.error ?? "Envio rejeitado pela Meta.");
   }
@@ -637,6 +637,7 @@ export async function sendBotReply(
   const message = await db.whatsAppMessage.create({
     data: {
       contactId,
+      numberId: contact?.numberId ?? null,
       waMessageId: result.waMessageId,
       direction: "out",
       body: text,
@@ -746,7 +747,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   // Tique azul + "digitando..." no celular do cliente enquanto a IA pensa —
   // best-effort, roda em paralelo sem atrasar o fluxo.
   if (message.waMessageId) {
-    markMessageRead(message.waMessageId, true).catch(() => {});
+    markMessageRead(message.waMessageId, true, ingest.numberId).catch(() => {});
   }
 
   // ---- Debounce de rajada -------------------------------------------------
@@ -869,6 +870,10 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     ]);
 
     const basePayload = {
+      // Qual dos NOSSOS números atende esta conversa (multi-tenant): hoje o
+      // cérebro ignora, mas o campo já viaja para permitir variação por número
+      // no bloco dinâmico sem quebrar o cache do playbook (que segue único).
+      numberId: ingest.numberId,
       contact: { name: message.contactName, phone: message.contactPhone },
       processInfo: card ? { name: card.name, etapa: card.etapa, etapaDescricao: card.etapaDescricao, service: card.service } : null,
       // Fluxos que a IA pode disparar (action="send_flow" + flowName).
@@ -1024,6 +1029,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         authorId: "whatsapp-bot",
         authorName: "🤖 Bot WhatsApp",
         contactId,
+        numberId: ingest.numberId,
         contactName: message.contactName,
         contactPhone: message.contactPhone,
         metadata: {
@@ -1166,6 +1172,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       authorId: "whatsapp-bot",
       authorName: "🤖 Bot WhatsApp",
       contactId,
+      numberId: ingest.numberId,
       contactName: message.contactName,
       contactPhone: message.contactPhone,
       metadata: {
@@ -1217,6 +1224,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       authorId: "whatsapp-bot",
       authorName: "🤖 Bot WhatsApp",
       contactId,
+      numberId: ingest.numberId,
       contactName: message.contactName,
       contactPhone: message.contactPhone,
       metadata: { outcome: "error", error: true, timeout: isTimeout, detail },

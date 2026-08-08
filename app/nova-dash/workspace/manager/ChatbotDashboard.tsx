@@ -11,7 +11,7 @@ import {
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, getAdLeadOutcomes, type ChatbotAnalytics, type AdLeadOutcome } from '@/app/_actions/analytics/get-chatbot-analytics';
-import { SystemMap } from './SystemMap';
+// import { SystemMap } from './SystemMap';
 import { AiCorner } from './AiCorner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -154,7 +154,7 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
   );
 }
 
-export function ChatbotDashboard() {
+export function ChatbotDashboard({ numberId = null }: { numberId?: string | null } = {}) {
   const [period, setPeriod] = useState<7 | 30 | 90>(7);
   const [data, setData] = useState<ChatbotAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -168,32 +168,26 @@ export function ChatbotDashboard() {
     if (!leadModal) return;
     let alive = true;
     setLeadRows(null);
-    getAdLeadOutcomes(leadModal.sourceKey, period)
+    getAdLeadOutcomes(leadModal.sourceKey, period, numberId)
       .then((rows) => { if (alive) setLeadRows(rows); })
       .catch(() => { if (alive) setLeadRows([]); });
     return () => { alive = false; };
-  }, [leadModal, period]);
+  }, [leadModal, period, numberId]);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    getChatbotAnalytics(period)
+    getChatbotAnalytics(period, numberId)
       .then((d) => { if (alive) { setData(d); setError(null); } })
       .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [period]);
+  }, [period, numberId]);
 
   return (
     <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
       <div className="mb-6 flex items-center justify-between border-t border-gray-200 pt-8 dark:border-zinc-800">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">
-            <Bot className="h-6 w-6 text-emerald-500" /> Desempenho do Chatbot
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-zinc-400">
-            Como a IA está triando os clientes — qualificações, dúvidas, erros e tempo de atendimento.
-          </p>
         </div>
         <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
           {([7, 30, 90] as const).map((p) => (
@@ -793,7 +787,7 @@ export function ChatbotDashboard() {
           </div>
         </>
       )}
-      <SystemMap />
+      {/* <SystemMap /> */}
 
       {/* Modal do drill-down: cada lead da campanha, com desfecho e motivo. */}
       {leadModal && (

@@ -212,7 +212,7 @@ export function AiCorner({ quality }: { quality?: AiQuality }) {
             </p>
             <div className="flex h-16 items-end gap-1">
               {data.daily.map((d) => (
-                <div key={d.date} className="group relative flex-1" title={`${d.label}: ${usd(d.usd)}`}>
+                <div key={d.date} className="group relative flex h-full flex-1 items-end" title={`${d.label}: ${usd(d.usd)}`}>
                   <div
                     className="w-full rounded-t bg-violet-400 transition-colors group-hover:bg-violet-600 dark:bg-violet-600"
                     style={{ height: `${Math.max((d.usd / peak) * 100, 2)}%` }}
