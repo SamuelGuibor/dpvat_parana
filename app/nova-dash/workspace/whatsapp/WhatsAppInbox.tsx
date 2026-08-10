@@ -171,12 +171,12 @@ export function WhatsAppInbox() {
   }
   useEffect(() => { reloadTags(); }, []);
 
-  // Rail de pastas: "Conversas ativas" abre selecionada por padrão; Fila, Bot
-  // e Recuperação vêm em seguida; os desfechos (encerradas) ficam cada um com
-  // seu próprio ícone, sem nada escondido atrás de um select.
+  // Rail de pastas: "Ativas" (fila + atendimento humano juntos, com quem está
+  // na fila sempre no topo) abre selecionada por padrão; Bot e Recuperação
+  // vêm em seguida; os desfechos (encerradas) ficam cada um com seu próprio
+  // ícone, sem nada escondido atrás de um select.
   const ACTIVE_FOLDERS = [
     { key: 'ativas', label: 'Ativas', title: 'Conversas ativas', icon: MessageCircle },
-    { key: 'queued', label: 'Fila', title: 'Fila de espera', icon: Clock },
     { key: 'bot', label: 'Bot', title: 'Bot atendendo', icon: Bot },
     { key: 'standby', label: 'Recup.', title: 'Em recuperação', icon: RotateCcw },
   ] as const;
@@ -197,7 +197,7 @@ export function WhatsAppInbox() {
   // Cor do cabeçalho de cada pasta quando várias seções aparecem empilhadas
   // (busca global por tag) — pastas de desfecho ficam com o tom neutro padrão.
   const FOLDER_ACCENT: Record<FolderKey, keyof typeof GROUP_ACCENT | undefined> = {
-    ativas: 'ativas', queued: 'fila', bot: 'bot', standby: 'recup',
+    ativas: 'ativas', bot: 'bot', standby: 'recup',
     qualified: undefined, unqualified: undefined, sem_resposta: undefined,
     perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined,
   };
@@ -355,8 +355,10 @@ export function WhatsAppInbox() {
   }, [filtered]);
 
   // Itens de cada pasta do rail (mesma fonte que os contadores dos ícones).
+  // "Ativas" junta fila + atendimento humano — quem está na fila sempre
+  // aparece primeiro (e entre os da fila, urgente primeiro).
   const FOLDER_ITEMS: Record<FolderKey, WhatsAppConversationDTO[]> = {
-    ativas: groups.ativas, queued: groups.queued, bot: groups.bot, standby: groups.standby,
+    ativas: [...groups.queued, ...groups.ativas], bot: groups.bot, standby: groups.standby,
     qualified: groups.qualified, unqualified: groups.unqualified, sem_resposta: groups.sem_resposta,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
     descartado: groups.descartado,
