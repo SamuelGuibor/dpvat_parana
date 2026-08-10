@@ -6,7 +6,8 @@ import useSWR from 'swr';
 import {
   Sparkles, Loader2, StickyNote, FileText, Download, Paperclip, Bot,
   ExternalLink, Lock, Check, RefreshCw, Image as ImageIcon, Video, Mic,
-  UserRound, BadgeCheck, SquareArrowOutUpRight,
+  UserRound, SquareArrowOutUpRight, Pencil, Trash2, Plus,
+  ChevronDown, ChevronUp, Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { suggestWhatsAppReply, summarizeWhatsAppConversation, fillClientInfoWithAI } from '@/app/_actions/whatsapp/assist';
@@ -15,13 +16,17 @@ import {
   type ClientInfoResult, type ClientInfoFields,
 } from '@/app/_actions/whatsapp/client-info';
 import {
-  listClientDocuments, attachConversationMediaToCard, type ClientDocumentDTO,
+  listClientDocuments, attachConversationMediaToCard, getClientDocumentUploadUrl,
+  confirmClientDocumentUpload, deleteClientDocument, renameClientDocument,
+  type ClientDocumentDTO,
 } from '@/app/_actions/whatsapp/client-documents';
 import { sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { maskCpf, isValidCpf, maskCep, formatPhone } from '@/app/_shared/utils/format';
 import { HospitalCombobox } from '@/app/nova-dash/card-dialog/HospitalCombobox';
 import { ESTADOS, ESTADO_CIVIL } from '@/app/nova-dash/card-dialog/constants';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/app/_shared/ui/dialog';
+import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import type { WhatsAppConversationDTO } from '@/app/_actions/whatsapp/conversations';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 
@@ -55,6 +60,18 @@ function mediaIcon(mediaType: string | null): React.ElementType {
   return FileText;
 }
 
+const AUDIO_EXT = /\.(ogg|opus|mp3|m4a|wav|aac|weba)$/i;
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic)$/i;
+const PDF_EXT = /\.pdf$/i;
+
+/** Tipo de arquivo pelo nome — os documentos do cliente não guardam mediaType. */
+function previewKind(name: string): 'audio' | 'image' | 'pdf' | 'other' {
+  if (AUDIO_EXT.test(name)) return 'audio';
+  if (IMAGE_EXT.test(name)) return 'image';
+  if (PDF_EXT.test(name)) return 'pdf';
+  return 'other';
+}
+
 function timeStamp(iso: string): string {
   const d = new Date(iso);
   return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
@@ -68,13 +85,25 @@ interface Props {
   /** Abre o CardDialog do cliente vinculado (só chega aqui se registered). */
   onOpenCard: () => void;
   onRefreshMessages: () => Promise<unknown>;
+  /** Incrementar esse número de fora força a aba "Ficha" a abrir (ex.: clique
+   * no nome do contato no cabeçalho da thread, no lugar do modal antigo). */
+  focusFicha?: number;
 }
 
 export function CopilotPanel({
-  conversation, messages, clientInfo, onClientInfoChanged, onOpenCard, onRefreshMessages,
+  conversation, messages, clientInfo, onClientInfoChanged, onOpenCard, onRefreshMessages, focusFicha,
 }: Props) {
   const contactId = conversation.contactId;
   const [tab, setTab] = useState<CopilotTab>('copiloto');
+
+  // Clique no nome do contato (fora deste painel) força a aba Ficha — ignora
+  // o primeiro render (focusFicha começa em 0/undefined, sem token ainda).
+  const firstFocusRef = useRef(true);
+  useEffect(() => {
+    if (firstFocusRef.current) { firstFocusRef.current = false; return; }
+    if (focusFicha) setTab('ficha');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusFicha]);
 
   // Documentos da ficha: alimenta o checklist do Copiloto e o "✓ no card"
   // da aba Arquivos.
@@ -218,12 +247,6 @@ export function CopilotPanel({
   );
   const [attachingId, setAttachingId] = useState<string | null>(null);
 
-  async function handleOpenMedia(key: string) {
-    const url = await getMediaUrl(key);
-    if (url) window.open(url, '_blank');
-    else toast.error('Não foi possível abrir o anexo.');
-  }
-
   async function handleAttach(msg: WhatsAppThreadMessage) {
     if (attachingId) return;
     setAttachingId(msg.id);
@@ -241,7 +264,7 @@ export function CopilotPanel({
   }
 
   return (
-    <aside className="hidden w-[300px] shrink-0 flex-col border-l border-gray-200 bg-gray-50 dark:border-zinc-800 lg:flex">
+    <aside className="hidden w-[270px] shrink-0 flex-col border-l border-gray-200 bg-gray-50 dark:border-zinc-800 lg:flex">
       {/* Abas da coluna */}
       <div className="flex shrink-0 border-b border-gray-200 bg-white dark:border-zinc-800">
         {([
@@ -253,7 +276,7 @@ export function CopilotPanel({
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 border-b-2 px-1 py-2.5 text-xs font-bold transition-colors ${
+            className={`flex-1 border-b-2 px-1 py-2 text-[11px] font-bold transition-colors ${
               tab === t.key
                 ? 'border-sky-600 text-sky-700'
                 : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -267,7 +290,7 @@ export function CopilotPanel({
         ))}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-2.5">
+      <div className="wa-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {/* ================= COPILOTO ================= */}
         {tab === 'copiloto' && (
           <>
@@ -395,6 +418,9 @@ export function CopilotPanel({
             clientInfo={clientInfo}
             onSaved={(info) => { onClientInfoChanged(info); mutateDocs(); }}
             onOpenCard={onOpenCard}
+            docs={docs ?? []}
+            onDocsChanged={(updated) => mutateDocs(updated, { revalidate: false })}
+            onOpenArquivos={() => setTab('arquivos')}
           />
         )}
 
@@ -441,54 +467,14 @@ export function CopilotPanel({
 
         {/* ================= ARQUIVOS ================= */}
         {tab === 'arquivos' && (
-          <>
-            {mediaMessages.length === 0 && (
-              <p className="px-1 text-sm text-gray-400">Nenhuma mídia nas mensagens carregadas.</p>
-            )}
-            {mediaMessages.map((m) => {
-              const key = m.mediaKey as string;
-              const Icon = mediaIcon(m.mediaType);
-              const attached = attachedKeys.has(key);
-              return (
-                <div key={m.id} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-gray-700">{fileNameFromKey(key)}</span>
-                    <span className="block text-[10px] text-gray-400">
-                      {timeStamp(m.createdAt)} · {m.direction === 'in' ? 'do cliente' : 'da equipe'}
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => handleOpenMedia(key)}
-                    title="Baixar / abrir"
-                    className="rounded-lg border border-gray-200 p-1.5 text-gray-500 transition-colors hover:bg-gray-100"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
-                  {attached ? (
-                    <span title="Já anexado na ficha/card" className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] font-bold text-emerald-700">
-                      <BadgeCheck className="h-3.5 w-3.5" /> no card
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleAttach(m)}
-                      disabled={attachingId === m.id}
-                      title="Anexar na ficha / card do cliente"
-                      className="flex items-center gap-1 rounded-lg border border-emerald-300 px-2 py-1.5 text-[10px] font-bold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60"
-                    >
-                      {attachingId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
-                      card
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            <p className="px-1 text-[11px] text-gray-400">
-              &ldquo;card&rdquo; anexa o arquivo direto na ficha do cliente — sem baixar e subir de novo.
-            </p>
-          </>
+          <ArquivosTab
+            contactId={contactId}
+            docs={docs ?? []}
+            onDocsChanged={(updated) => mutateDocs(updated, { revalidate: false })}
+            unattachedMedia={mediaMessages.filter((m) => !attachedKeys.has(m.mediaKey as string))}
+            attachingId={attachingId}
+            onAttach={handleAttach}
+          />
         )}
       </div>
     </aside>
@@ -498,17 +484,42 @@ export function CopilotPanel({
 /* ---------------- Ficha (padrão do dialog do card) ---------------- */
 
 function FichaTab({
-  contactId, clientInfo, onSaved, onOpenCard,
+  contactId, clientInfo, onSaved, onOpenCard, docs, onDocsChanged, onOpenArquivos,
 }: {
   contactId: string;
   clientInfo: ClientInfoResult | null;
   onSaved: (info: ClientInfoResult) => void;
   onOpenCard: () => void;
+  docs: ClientDocumentDTO[];
+  onDocsChanged: (docs: ClientDocumentDTO[]) => void;
+  onOpenArquivos: () => void;
 }) {
   const [fields, setFields] = useState<ClientInfoFields>(clientInfo?.fields ?? {});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const docInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleUploadDocs(list: FileList | null) {
+    if (!list?.length) return;
+    setUploadingDoc(true);
+    try {
+      for (const file of Array.from(list)) {
+        const mime = file.type || 'application/octet-stream';
+        const { url, key } = await getClientDocumentUploadUrl(contactId, file.name, mime);
+        const put = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } });
+        if (!put.ok) throw new Error(`Falha ao subir "${file.name}".`);
+        const updated = await confirmClientDocumentUpload(contactId, key, file.name);
+        onDocsChanged(updated);
+      }
+      toast.success('Documento adicionado.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao subir o documento.');
+    } finally {
+      setUploadingDoc(false);
+    }
+  }
 
   // Troca de conversa (ou primeira carga) repõe o formulário; edições em
   // andamento não são sobrescritas pelo revalidate do SWR.
@@ -663,6 +674,48 @@ function FichaTab({
             <FTextArea label="Observação" value={fields.obs ?? ''} onChange={(v) => setField('obs', v)} />
           </FichaSection>
 
+          <FichaSection title={`Documentos (${docs.length})`}>
+            <input
+              ref={docInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => { handleUploadDocs(e.target.files); e.target.value = ''; }}
+            />
+            {docs.length === 0 && (
+              <p className="text-xs text-gray-400">Nenhum documento anexado ainda.</p>
+            )}
+            {docs.length > 0 && (
+              <div className="flex flex-col gap-1">
+                {docs.slice(0, 4).map((d) => (
+                  <span key={d.id} className="flex items-center gap-1.5 truncate text-xs text-gray-600 dark:text-zinc-300">
+                    <FileText className="h-3 w-3 shrink-0 text-gray-400" /> <span className="truncate">{d.name}</span>
+                  </span>
+                ))}
+                {docs.length > 4 && (
+                  <span className="text-[10px] text-gray-400">+ {docs.length - 4} outro(s)</span>
+                )}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => docInputRef.current?.click()}
+                disabled={uploadingDoc}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 px-2.5 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60"
+              >
+                {uploadingDoc ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Adicionar documento
+              </button>
+              {docs.length > 0 && (
+                <button
+                  onClick={onOpenArquivos}
+                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100"
+                >
+                  Ver todos
+                </button>
+              )}
+            </div>
+          </FichaSection>
+
           <div className="sticky bottom-0 flex gap-2 border-t border-gray-200 bg-gray-50 py-2">
             <button
               onClick={handleSave}
@@ -689,6 +742,290 @@ function FichaTab({
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Arquivos (só o que é do cliente desta conversa) ---------------- */
+
+interface PreviewState { doc: ClientDocumentDTO; url: string; kind: 'image' | 'pdf' }
+
+function ArquivosTab({
+  contactId, docs, onDocsChanged, unattachedMedia, attachingId, onAttach,
+}: {
+  contactId: string;
+  docs: ClientDocumentDTO[];
+  onDocsChanged: (docs: ClientDocumentDTO[]) => void;
+  unattachedMedia: WhatsAppThreadMessage[];
+  attachingId: string | null;
+  onAttach: (m: WhatsAppThreadMessage) => void;
+}) {
+  const { confirm, confirmDialog } = useConfirm();
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [showUnattached, setShowUnattached] = useState(false);
+
+  const audioDocs = useMemo(() => docs.filter((d) => previewKind(d.name) === 'audio'), [docs]);
+  const otherDocs = useMemo(() => docs.filter((d) => previewKind(d.name) !== 'audio'), [docs]);
+
+  async function handlePreview(doc: ClientDocumentDTO) {
+    const kind = previewKind(doc.name);
+    if (kind !== 'image' && kind !== 'pdf') return;
+    const url = await getMediaUrl(doc.key);
+    if (!url) { toast.error('Não foi possível abrir o arquivo.'); return; }
+    setPreview({ doc, url, kind });
+  }
+
+  async function handleDownload(doc: ClientDocumentDTO) {
+    const url = await getMediaUrl(doc.key);
+    if (url) window.open(url, '_blank');
+    else toast.error('Não foi possível abrir o arquivo.');
+  }
+
+  async function handleRename(doc: ClientDocumentDTO, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === doc.name) return;
+    try {
+      onDocsChanged(await renameClientDocument(contactId, doc.id, trimmed));
+      toast.success('Arquivo renomeado.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao renomear.');
+    }
+  }
+
+  async function handleDelete(doc: ClientDocumentDTO) {
+    if (!(await confirm({
+      title: 'Excluir arquivo',
+      description: <>O arquivo <strong>{doc.name}</strong> será removido da ficha do cliente.</>,
+      confirmLabel: 'Excluir',
+    }))) return;
+    try {
+      onDocsChanged(await deleteClientDocument(contactId, doc.id));
+      toast.success('Arquivo excluído.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao excluir.');
+    }
+  }
+
+  return (
+    <>
+      {confirmDialog}
+      {docs.length === 0 && (
+        <p className="px-1 text-sm text-gray-400">Nenhum arquivo do cliente ainda — anexe pela Ficha ou pela conversa.</p>
+      )}
+
+      {otherDocs.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="px-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">Documentos e mídia</span>
+          {otherDocs.map((d) => (
+            <DocRow key={d.id} doc={d} onPreview={handlePreview} onDownload={handleDownload} onRename={handleRename} onDelete={handleDelete} />
+          ))}
+        </div>
+      )}
+
+      {audioDocs.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="px-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">Áudios</span>
+          {audioDocs.map((d) => (
+            <AudioDocRow key={d.id} doc={d} onDownload={handleDownload} onRename={handleRename} onDelete={handleDelete} />
+          ))}
+        </div>
+      )}
+
+      {unattachedMedia.length > 0 && (
+        <div className="flex flex-col gap-1.5 border-t border-dashed border-gray-200 pt-2">
+          <button
+            onClick={() => setShowUnattached((v) => !v)}
+            className="flex items-center justify-between px-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400 hover:text-gray-600"
+          >
+            Mídia da conversa ainda não anexada ({unattachedMedia.length})
+            {showUnattached ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          {showUnattached && unattachedMedia.map((m) => {
+            const key = m.mediaKey as string;
+            const Icon = mediaIcon(m.mediaType);
+            return (
+              <div key={m.id} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold text-gray-700">{fileNameFromKey(key)}</span>
+                  <span className="block text-[10px] text-gray-400">
+                    {timeStamp(m.createdAt)} · {m.direction === 'in' ? 'do cliente' : 'da equipe'}
+                  </span>
+                </span>
+                <button
+                  onClick={() => onAttach(m)}
+                  disabled={attachingId === m.id}
+                  title="Trazer pra ficha do cliente"
+                  className="flex items-center gap-1 rounded-lg border border-emerald-300 px-2 py-1.5 text-[10px] font-bold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60"
+                >
+                  {attachingId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+                  anexar
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Dialog open={!!preview} onOpenChange={(open) => { if (!open) setPreview(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6 text-sm">{preview?.doc.name}</DialogTitle>
+          </DialogHeader>
+          {preview?.kind === 'image' && (
+            <img src={preview.url} alt={preview.doc.name} className="max-h-[70vh] w-full rounded-lg object-contain" />
+          )}
+          {preview?.kind === 'pdf' && (
+            <iframe src={preview.url} title={preview.doc.name} className="h-[70vh] w-full rounded-lg border border-gray-200" />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Uma linha de documento/mídia (não-áudio): thumbnail se for imagem, ícone
+ * genérico senão. Nome renomeável inline, com preview e download/exclusão. */
+function DocRow({
+  doc, onPreview, onDownload, onRename, onDelete,
+}: {
+  doc: ClientDocumentDTO;
+  onPreview: (doc: ClientDocumentDTO) => void;
+  onDownload: (doc: ClientDocumentDTO) => void;
+  onRename: (doc: ClientDocumentDTO, newName: string) => void;
+  onDelete: (doc: ClientDocumentDTO) => void;
+}) {
+  const kind = previewKind(doc.name);
+  const [thumb, setThumb] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(doc.name);
+
+  useEffect(() => {
+    setName(doc.name);
+    if (kind !== 'image') return;
+    let cancelled = false;
+    getMediaUrl(doc.key).then((url) => { if (!cancelled) setThumb(url); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.key, doc.name]);
+
+  function commitRename() {
+    setRenaming(false);
+    if (name.trim() && name.trim() !== doc.name) onRename(doc, name.trim());
+    else setName(doc.name);
+  }
+
+  const Icon = kind === 'pdf' ? FileText : mediaIcon(null);
+  const previewable = kind === 'image' || kind === 'pdf';
+
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
+      <button
+        onClick={() => previewable && onPreview(doc)}
+        disabled={!previewable}
+        title={previewable ? 'Pré-visualizar' : undefined}
+        className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-emerald-50 text-emerald-700"
+      >
+        {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : <Icon className="h-4 w-4" />}
+      </button>
+      <span className="min-w-0 flex-1">
+        {renaming ? (
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { setName(doc.name); setRenaming(false); } }}
+            className="w-full rounded border border-emerald-300 px-1 py-0.5 text-xs font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-emerald-400"
+          />
+        ) : (
+          <span className="block truncate text-xs font-semibold text-gray-700">{doc.name}</span>
+        )}
+        <span className="block text-[10px] text-gray-400">{timeStamp(doc.uploadedAt)}</span>
+      </span>
+      <button onClick={() => setRenaming(true)} title="Renomear" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      {previewable && (
+        <button onClick={() => onPreview(doc)} title="Pré-visualizar" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+          <Eye className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button onClick={() => onDownload(doc)} title="Baixar" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+        <Download className="h-3.5 w-3.5" />
+      </button>
+      <button onClick={() => onDelete(doc)} title="Excluir" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500">
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/** Linha de áudio: player nativo inline (carrega a URL pré-assinada assim
+ * que a lista aparece), mesmo padrão de renomear/baixar/excluir do DocRow. */
+function AudioDocRow({
+  doc, onDownload, onRename, onDelete,
+}: {
+  doc: ClientDocumentDTO;
+  onDownload: (doc: ClientDocumentDTO) => void;
+  onRename: (doc: ClientDocumentDTO, newName: string) => void;
+  onDelete: (doc: ClientDocumentDTO) => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(doc.name);
+
+  useEffect(() => {
+    setName(doc.name);
+    let cancelled = false;
+    getMediaUrl(doc.key).then((u) => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [doc.key, doc.name]);
+
+  function commitRename() {
+    setRenaming(false);
+    if (name.trim() && name.trim() !== doc.name) onRename(doc, name.trim());
+    else setName(doc.name);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
+      <div className="flex items-center gap-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+          <Mic className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          {renaming ? (
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { setName(doc.name); setRenaming(false); } }}
+              className="w-full rounded border border-emerald-300 px-1 py-0.5 text-xs font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-emerald-400"
+            />
+          ) : (
+            <span className="block truncate text-xs font-semibold text-gray-700">{doc.name}</span>
+          )}
+          <span className="block text-[10px] text-gray-400">{timeStamp(doc.uploadedAt)}</span>
+        </span>
+        <button onClick={() => setRenaming(true)} title="Renomear" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={() => onDownload(doc)} title="Baixar" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+          <Download className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={() => onDelete(doc)} title="Excluir" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {url ? (
+        <audio controls src={url} className="h-8 w-full" />
+      ) : (
+        <span className="flex items-center gap-1.5 text-[10px] text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> carregando áudio…</span>
       )}
     </div>
   );

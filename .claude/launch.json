@@ -33,6 +33,12 @@
       "port": 8099
     },
     {
+      "name": "wa-ui-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:\\Users\\pc\\AppData\\Local\\Temp\\claude\\D--dpvat-parana-dpvat-parana\\900bc64b-3910-4430-8ea7-62fa4b1c5ccb\\scratchpad", "-p", "8098", "-c-1"],
+      "port": 8098
+    },
+    {
       "name": "portfolio",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "D:\\portifolio\\portifolio_", "--", "-p", "3020"],

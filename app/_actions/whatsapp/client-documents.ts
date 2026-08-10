@@ -5,6 +5,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
+import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
 
 // Documentos pessoais anexados na ficha do cliente (dentro do atendimento de
 // WhatsApp). Se o contato já tem User vinculado, viram Document de verdade
@@ -140,6 +141,32 @@ export async function attachConversationMediaToCard(messageId: string): Promise<
   }
 
   return listClientDocuments(msg.contactId);
+}
+
+/**
+ * Renomeia um documento do cliente. Registrado (com User vinculado) reaproveita
+ * o rename "de verdade" do resto do sistema (copia a chave no S3, preserva a
+ * extensão). Rascunho (ainda sem User) só troca o nome de exibição no JSON —
+ * não precisa mexer no S3 porque a chave nunca é exposta pro cliente.
+ */
+export async function renameClientDocument(contactId: string, docId: string, newName: string): Promise<ClientDocumentDTO[]> {
+  await requireTeamMember();
+  const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
+  if (!contact) throw new Error('Contato não encontrado.');
+  const trimmed = newName.trim();
+  if (!trimmed) throw new Error('Nome inválido.');
+
+  if (contact.userId) {
+    await updateDocumentName({ id: docId, newName: trimmed });
+  } else {
+    const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];
+    const idx = drafts.findIndex((d) => d.key === docId);
+    if (idx === -1) throw new Error('Documento não encontrado.');
+    drafts[idx] = { ...drafts[idx], name: trimmed };
+    await db.whatsAppContact.update({ where: { id: contactId }, data: { draftDocuments: drafts as unknown as object } });
+  }
+
+  return listClientDocuments(contactId);
 }
 
 export async function deleteClientDocument(contactId: string, ref: string): Promise<ClientDocumentDTO[]> {

@@ -10,7 +10,7 @@ import {
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
-  MoreVertical, Eye,
+  MoreVertical, Eye, RotateCcw, MessageSquareOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -43,7 +43,6 @@ import { CardDialog } from '@/app/nova-dash/CardDialog';
 import type { ExtendedKanbanCard } from '@/app/nova-dash/card-dialog/types';
 import { WhatsAppComposer } from './WhatsAppComposer';
 import { CopilotPanel } from './CopilotPanel';
-import { ClientInfoModal } from './ClientInfoModal';
 import { WhatsAppTagsModal } from './WhatsAppTagsModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { formatWaText, stripWaMarkup } from './wa-format';
@@ -151,10 +150,12 @@ export function WhatsAppInbox() {
   const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
 
   const [search, setSearch] = useState('');
-  const [clientModalOpen, setClientModalOpen] = useState(false);
   // Coluna Copiloto (lg+) e CardDialog do cliente vinculado.
   const [copilotOpen, setCopilotOpen] = useState(true);
   const [cardDialogOpen, setCardDialogOpen] = useState(false);
+  // Clique no nome do contato: abre o Copiloto (se fechado) e força a aba
+  // Ficha — incrementar o token é o sinal que o CopilotPanel escuta.
+  const [fichaFocusToken, setFichaFocusToken] = useState(0);
 
   // Tags livres pra organizar/filtrar conversas.
   const [allTags, setAllTags] = useState<WhatsAppTagDTO[]>([]);
@@ -170,20 +171,41 @@ export function WhatsAppInbox() {
   }
   useEffect(() => { reloadTags(); }, []);
 
-  // Sidebar por prioridade: Fila de espera → Conversas ativas → Bot →
-  // Recuperação ficam sempre visíveis; os desfechos (encerradas etc.) moram
-  // atrás de um select único no rodapé — acessíveis, mas fora do caminho.
-  const OTHER_GROUPS = [
-    { key: 'qualified', label: 'Qualificadas' },
-    { key: 'unqualified', label: 'Não qualificadas' },
-    { key: 'sem_resposta', label: 'Sem resposta' },
-    { key: 'perguntas', label: CLOSE_CATEGORY_LABELS.perguntas },
-    { key: 'novo_acidente', label: CLOSE_CATEGORY_LABELS.novo_acidente },
-    { key: 'transferido', label: CLOSE_CATEGORY_LABELS.transferido },
-    { key: 'descartado', label: CLOSE_CATEGORY_LABELS.descartado },
+  // Rail de pastas: "Conversas ativas" abre selecionada por padrão; Fila, Bot
+  // e Recuperação vêm em seguida; os desfechos (encerradas) ficam cada um com
+  // seu próprio ícone, sem nada escondido atrás de um select.
+  const ACTIVE_FOLDERS = [
+    { key: 'ativas', label: 'Ativas', title: 'Conversas ativas', icon: MessageCircle },
+    { key: 'queued', label: 'Fila', title: 'Fila de espera', icon: Clock },
+    { key: 'bot', label: 'Bot', title: 'Bot atendendo', icon: Bot },
+    { key: 'standby', label: 'Recup.', title: 'Em recuperação', icon: RotateCcw },
   ] as const;
-  type OtherKey = (typeof OTHER_GROUPS)[number]['key'];
-  const [otherFilter, setOtherFilter] = useState<'' | OtherKey>('');
+  const CLOSED_FOLDERS = [
+    { key: 'qualified', label: 'Qualific.', title: 'Qualificadas', icon: BadgeCheck },
+    { key: 'unqualified', label: 'Não qual.', title: 'Não qualificadas', icon: XCircle },
+    { key: 'sem_resposta', label: 'S/ resp.', title: 'Sem resposta', icon: MessageSquareOff },
+    { key: 'perguntas', label: 'Dúvidas', title: CLOSE_CATEGORY_LABELS.perguntas, icon: HelpCircle },
+    { key: 'novo_acidente', label: 'Novo acid.', title: CLOSE_CATEGORY_LABELS.novo_acidente, icon: AlertTriangle },
+    { key: 'transferido', label: 'Transf.', title: CLOSE_CATEGORY_LABELS.transferido, icon: Headset },
+    { key: 'descartado', label: 'Descart.', title: CLOSE_CATEGORY_LABELS.descartado, icon: Trash2 },
+  ] as const;
+  const ALL_FOLDERS = [...ACTIVE_FOLDERS, ...CLOSED_FOLDERS];
+  type FolderKey = (typeof ALL_FOLDERS)[number]['key'];
+  const FOLDER_TITLE: Record<FolderKey, string> = Object.fromEntries(
+    ALL_FOLDERS.map((f) => [f.key, f.title]),
+  ) as Record<FolderKey, string>;
+  // Cor do cabeçalho de cada pasta quando várias seções aparecem empilhadas
+  // (busca global por tag) — pastas de desfecho ficam com o tom neutro padrão.
+  const FOLDER_ACCENT: Record<FolderKey, keyof typeof GROUP_ACCENT | undefined> = {
+    ativas: 'ativas', queued: 'fila', bot: 'bot', standby: 'recup',
+    qualified: undefined, unqualified: undefined, sem_resposta: undefined,
+    perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined,
+  };
+  const [activeFolder, setActiveFolder] = useState<FolderKey>('ativas');
+
+  // Paginação client-side: cada pasta mostra 200 por vez, com "Carregar mais".
+  // Reinicia ao trocar de pasta, buscar ou filtrar por tag.
+  const [visibleCount, setVisibleCount] = useState(200);
 
   // Envio otimista: a mensagem entra na thread como "sending" na hora e o
   // input fica livre; quando a action confirma, o registro real substitui.
@@ -332,11 +354,21 @@ export function WhatsAppInbox() {
     };
   }, [filtered]);
 
-  const otherItems: Record<OtherKey, WhatsAppConversationDTO[]> = {
+  // Itens de cada pasta do rail (mesma fonte que os contadores dos ícones).
+  const FOLDER_ITEMS: Record<FolderKey, WhatsAppConversationDTO[]> = {
+    ativas: groups.ativas, queued: groups.queued, bot: groups.bot, standby: groups.standby,
     qualified: groups.qualified, unqualified: groups.unqualified, sem_resposta: groups.sem_resposta,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
     descartado: groups.descartado,
   };
+  const unreadInFolder = (key: FolderKey) => FOLDER_ITEMS[key].filter((c) => c.unread).length;
+
+  // Filtro de tag é global: ignora a pasta selecionada e busca em TODAS as
+  // conversas (ativas e encerradas) — não precisa entrar em pasta nenhuma.
+  const tagFilterActive = tagFilter.length > 0;
+  const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
+
+  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter]);
 
   // Janela de 24h: sem mensagem recebida recente, a Meta só aceita template.
   const windowExpired = !!active && (
@@ -535,119 +567,165 @@ export function WhatsAppInbox() {
           Mobile: padrão WhatsApp — mostra a LISTA em tela cheia; ao abrir uma
           conversa, a lista some e a thread ocupa tudo (botão voltar no header).
           Desktop (md+): lista e thread lado a lado como sempre. */}
-      <aside className={`${activeContactId ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] shrink-0 flex-col border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader`}>
-        {/* Cabeçalho fixo: título + busca + tags (não rola com a lista) */}
-        <div className="shrink-0 border-b border-[#16362c] bg-[#1f3d33]/95 px-3 pb-3 pt-3 backdrop-blur dark:border-zinc-800 whatsapp-darkreader">
-          <div className="mb-2 flex items-center gap-2 px-1">
-            <MessageCircle className="h-4 w-4 text-[#6fd6ad]" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[#6fd6ad]">WhatsApp</span>
-            {(conversationsTotal || conversations.length) > 0 && (
-              <span className="ml-auto rounded-full bg-[#1d9e75] px-1.5 text-[11px] font-bold text-white">
-                {conversationsTotal || conversations.length}
-              </span>
-            )}
-          </div>
-
-          {/* Busca por nome ou celular */}
-          <div className="flex items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-[#6fd6ad]">
-            <Search className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome ou celular..."
-              className="w-full bg-transparent text-base text-white outline-none placeholder:text-[#8fbcac]"
+      <aside className={`${activeContactId ? 'hidden md:flex' : 'flex'} w-full md:w-[360px] shrink-0 border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader`}>
+        {/* Rail de pastas: cada status/desfecho é um ícone próprio, sempre à
+            vista — nada mais escondido atrás de um select. */}
+        <div className="wa-scroll flex w-14 shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r border-[#14332a] bg-[#183129] py-2">
+          <span className="px-1 pb-1 text-center text-[8px] font-bold uppercase tracking-wider text-[#4f7a68]">Ativos</span>
+          {ACTIVE_FOLDERS.map((f) => (
+            <RailButton
+              key={f.key}
+              icon={f.icon}
+              label={f.label}
+              title={f.title}
+              count={FOLDER_ITEMS[f.key].length}
+              unread={unreadInFolder(f.key)}
+              active={!tagFilterActive && activeFolder === f.key}
+              onClick={() => { setTagFilter([]); setActiveFolder(f.key); }}
             />
-            {search && (
-              <button onClick={() => setSearch('')} title="Limpar busca" className="text-[#8fbcac] hover:text-white">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Filtro por tags */}
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-[#8fbcac] hover:bg-[#2e5749] hover:text-white">
-              <Settings2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          {allTags.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {allTags.map((t) => {
-                const on = tagFilter.includes(t.id);
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setTagFilter((prev) => (on ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
-                    className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition-colors"
-                    style={on
-                      ? { backgroundColor: t.color, borderColor: t.color, color: 'white' }
-                      : { borderColor: t.color, color: t.color }}
-                  >
-                    {t.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {allTags.length === 0 && (
-            <div className="mt-2">
-              <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-[#8fbcac] hover:text-white">
-                <TagIcon className="h-3 w-3" /> Criar tags
-              </button>
-            </div>
-          )}
+          ))}
+          <div className="mx-2.5 my-1.5 h-px bg-[#14332a]" />
+          <span className="px-1 pb-1 text-center text-[8px] font-bold uppercase tracking-wider text-[#4f7a68]">Encerrados</span>
+          {CLOSED_FOLDERS.map((f) => (
+            <RailButton
+              key={f.key}
+              icon={f.icon}
+              label={f.label}
+              title={f.title}
+              count={FOLDER_ITEMS[f.key].length}
+              unread={unreadInFolder(f.key)}
+              active={!tagFilterActive && activeFolder === f.key}
+              onClick={() => { setTagFilter([]); setActiveFolder(f.key); }}
+            />
+          ))}
         </div>
 
-        {/* Área rolável: só a lista de conversas rola */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
-          {conversations.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
-              <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
-              <p className="text-base">Nenhuma conversa ainda.</p>
-              <p className="mt-1 text-sm">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Cabeçalho fixo: título + busca + tags (não rola com a lista) */}
+          <div className="shrink-0 border-b border-[#16362c] bg-[#1f3d33]/95 px-2.5 pb-2.5 pt-2.5 backdrop-blur dark:border-zinc-800 whatsapp-darkreader">
+            <div className="mb-1.5 flex items-center gap-1.5 px-0.5">
+              <MessageCircle className="h-3.5 w-3.5 text-[#6fd6ad]" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#6fd6ad]">WhatsApp</span>
+              {(conversationsTotal || conversations.length) > 0 && (
+                <span className="ml-auto rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">
+                  {conversationsTotal || conversations.length}
+                </span>
+              )}
             </div>
-          )}
-          {conversations.length > 0 && filtered.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
-              <Search className="mb-2 h-6 w-6 opacity-40" />
-              <p className="text-base">Nada encontrado com esse filtro.</p>
+
+            {/* Busca por nome ou celular */}
+            <div className="flex items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2 py-1.5 focus-within:ring-2 focus-within:ring-[#6fd6ad]">
+              <Search className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por nome ou celular..."
+                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#8fbcac]"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} title="Limpar busca" className="text-[#8fbcac] hover:text-white">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-          )}
 
-          {/* Grupos por prioridade: quem chega novo (ou o bot transfere) entra
-              na Fila de espera lá em cima, visível pra equipe inteira. */}
-          <ConversationGroup title="Fila de espera" accent="fila" items={groups.queued} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
-          <ConversationGroup title="Conversas ativas" accent="ativas" items={groups.ativas} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
-          <ConversationGroup title="Bot atendendo" accent="bot" items={groups.bot} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
-          <ConversationGroup title="Em recuperação" accent="recup" items={groups.standby} activeContactId={activeContactId} onSelect={setActiveContactId} meId={meId} meName={session?.user?.name ?? ''} />
-
-          {/* Desfechos (encerradas, sem resposta…) atrás de um select único. */}
-          <div className="mt-3 border-t border-[#14332a] px-3 pb-1 pt-3 dark:border-zinc-800">
-            <select
-              value={otherFilter}
-              onChange={(e) => setOtherFilter(e.target.value as '' | OtherKey)}
-              className="h-8 w-full cursor-pointer rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2 text-sm font-semibold text-[#cfe6db] outline-none focus:ring-2 focus:ring-[#6fd6ad]"
-            >
-              <option value="">Outras conversas…</option>
-              {OTHER_GROUPS.map((g) => (
-                <option key={g.key} value={g.key}>
-                  {g.label} ({otherItems[g.key].length})
-                </option>
-              ))}
-            </select>
+            {/* Filtro por tags — busca em TODAS as conversas, sem depender da pasta selecionada */}
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-[#8fbcac] hover:bg-[#2e5749] hover:text-white">
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {allTags.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {allTags.map((t) => {
+                  const on = tagFilter.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setTagFilter((prev) => (on ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
+                      className="flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold transition-colors"
+                      style={on
+                        ? { backgroundColor: t.color, borderColor: t.color, color: 'white' }
+                        : { borderColor: t.color, color: t.color }}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {allTags.length === 0 && (
+              <div className="mt-1.5">
+                <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-[11px] font-semibold text-[#8fbcac] hover:text-white">
+                  <TagIcon className="h-3 w-3" /> Criar tags
+                </button>
+              </div>
+            )}
+            {tagFilterActive && (
+              <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#26483c] px-2 py-1.5 text-[11px] font-semibold text-[#a9f2d8]">
+                <Search className="h-3 w-3 shrink-0" />
+                {filtered.length} conversa{filtered.length === 1 ? '' : 's'} com essa{tagFilter.length > 1 ? 's' : ''} tag{tagFilter.length > 1 ? 's' : ''}, em <b>todas as pastas</b>.
+              </div>
+            )}
           </div>
-          {otherFilter && (
-            <ConversationGroup
-              title={OTHER_GROUPS.find((g) => g.key === otherFilter)!.label}
-              items={otherItems[otherFilter]}
-              activeContactId={activeContactId}
-              onSelect={setActiveContactId}
-              meId={meId}
-              meName={session?.user?.name ?? ''}
-              forceShow
-              emptyLabel={`Nenhuma conversa em "${OTHER_GROUPS.find((g) => g.key === otherFilter)!.label}".`}
-            />
-          )}
+
+          {/* Área rolável: só a lista de conversas rola */}
+          <div className="wa-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
+            {conversations.length === 0 && (
+              <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
+                <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
+                <p className="text-sm">Nenhuma conversa ainda.</p>
+                <p className="mt-1 text-xs">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
+              </div>
+            )}
+            {conversations.length > 0 && visibleItems.length === 0 && (
+              <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
+                <Search className="mb-2 h-6 w-6 opacity-40" />
+                <p className="text-sm">Nada encontrado com esse filtro.</p>
+              </div>
+            )}
+
+            {/* Com tag marcada: mostra cada pasta em sua própria seção (só as
+                conversas QUE TÊM a tag), igual era antes — só que agora sem
+                precisar entrar em pasta nenhuma pra ver os resultados. */}
+            {tagFilterActive ? (
+              ALL_FOLDERS.map((f) => (
+                <ConversationGroup
+                  key={f.key}
+                  title={f.title}
+                  accent={FOLDER_ACCENT[f.key]}
+                  items={FOLDER_ITEMS[f.key]}
+                  activeContactId={activeContactId}
+                  onSelect={setActiveContactId}
+                  meId={meId}
+                  meName={session?.user?.name ?? ''}
+                />
+              ))
+            ) : (
+              <ConversationGroup
+                title={FOLDER_TITLE[activeFolder]}
+                items={visibleItems}
+                limit={visibleCount}
+                activeContactId={activeContactId}
+                onSelect={setActiveContactId}
+                meId={meId}
+                meName={session?.user?.name ?? ''}
+                forceShow
+                emptyLabel="Nenhuma conversa aqui."
+              />
+            )}
+
+            {!tagFilterActive && visibleItems.length > visibleCount && (
+              <div className="px-3 pt-1">
+                <button
+                  onClick={() => setVisibleCount((v) => v + 200)}
+                  className="w-full rounded-lg border border-[#3a6b58] bg-[#2e5749] py-1.5 text-[11px] font-bold text-[#6fd6ad] hover:bg-[#356b57]"
+                >
+                  Mostrando {Math.min(visibleCount, visibleItems.length)} de {visibleItems.length} · Carregar mais
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -660,7 +738,7 @@ export function WhatsAppInbox() {
           </div>
         ) : (
           <>
-            <header className="flex items-center gap-3 border-b border-gray-100 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900 md:px-5">
+            <header className="flex items-center gap-2.5 border-b border-gray-100 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900 md:px-4">
               {/* Voltar para a lista (só no celular) */}
               <button
                 onClick={() => setActiveContactId(null)}
@@ -669,14 +747,14 @@ export function WhatsAppInbox() {
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
-              <Avatar className="h-8 w-8 border border-gray-100 dark:border-zinc-800">
-                <AvatarFallback className="bg-emerald-100 text-[11px] font-bold text-emerald-700">
+              <Avatar className="h-7 w-7 border border-gray-100 dark:border-zinc-800">
+                <AvatarFallback className="bg-emerald-100 text-[10px] font-bold text-emerald-700">
                   {initials(active.contactName ?? active.contactPhone)}
                 </AvatarFallback>
               </Avatar>
               <button
-                onClick={() => setClientModalOpen(true)}
-                title="Abrir ficha do cliente"
+                onClick={() => { setCopilotOpen(true); setFichaFocusToken((n) => n + 1); }}
+                title="Abrir ficha do cliente no Copiloto"
                 className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800"
               >
                 <p className="truncate font-bold text-gray-900 underline-offset-2 hover:underline dark:text-zinc-100">
@@ -720,7 +798,7 @@ export function WhatsAppInbox() {
               {/* Tags da conversa */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button title="Tags" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  <button title="Tags" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     <TagIcon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Tags</span>
                   </button>
                 </DropdownMenuTrigger>
@@ -756,7 +834,7 @@ export function WhatsAppInbox() {
               {active.status !== 'closed' ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button title="Encerrar conversa" className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    <button title="Encerrar conversa" className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
                       <Archive className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span> <ChevronDown className="h-3 w-3" />
                     </button>
                   </DropdownMenuTrigger>
@@ -815,7 +893,7 @@ export function WhatsAppInbox() {
               )}
             </header>
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+            <div ref={scrollRef} className="wa-scroll flex-1 overflow-y-auto px-4 py-4">
               {/* Carregar histórico anterior em blocos (evita puxar tudo de uma vez) */}
               {hasMore && (
                 <div className="mb-2 flex justify-center">
@@ -900,12 +978,6 @@ export function WhatsAppInbox() {
               />
             </div>
 
-            <ClientInfoModal
-              open={clientModalOpen}
-              onOpenChange={setClientModalOpen}
-              contactId={active.contactId}
-              contactLabel={active.contactName ?? formatPhone(active.contactPhone)}
-            />
             <WhatsAppSendTemplateModal
               open={sendTemplateOpen}
               onOpenChange={setSendTemplateOpen}
@@ -925,6 +997,7 @@ export function WhatsAppInbox() {
           onClientInfoChanged={(info) => { mutateClientInfo(info, { revalidate: false }); }}
           onOpenCard={() => setCardDialogOpen(true)}
           onRefreshMessages={async () => { await mutateMessages(); }}
+          focusFicha={fichaFocusToken}
         />
       )}
 
@@ -968,29 +1041,64 @@ function windowPill(c: WhatsAppConversationDTO): string | null {
   return null;
 }
 
+// Botão do rail de pastas: ícone + rótulo curto + total, com selo vermelho de
+// "chegou agora" (não-lidas) quando a pasta tem alguma — igual em todas as
+// pastas, não só na Fila.
+function RailButton({
+  icon: Icon, label, title, count, unread, active, onClick,
+}: {
+  icon: React.ElementType; label: string; title: string; count: number; unread: number;
+  active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={`${title} — ${count}${unread > 0 ? ` (${unread} nova${unread > 1 ? 's' : ''})` : ''}`}
+      className={`relative mx-1.5 mb-0.5 flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-center transition-colors ${active ? 'bg-[#1a6649] text-white' : 'text-[#8fbcac] hover:bg-[#204a3c] hover:text-white'
+        }`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="text-[8px] font-bold uppercase leading-tight tracking-wide">{label}</span>
+      <span className="text-[9px] font-semibold text-[#8fbcac]">{count}</span>
+      {unread > 0 && (
+        <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-bold text-white">
+          {unread}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function ConversationGroup({
-  title, items, activeContactId, onSelect, accent, meId, meName, headerExtra, forceShow, hideTitle, emptyLabel,
+  title, items, activeContactId, onSelect, accent, meId, meName, headerExtra, forceShow, hideTitle, emptyLabel, limit, folderLabel,
 }: {
   title: string; items: WhatsAppConversationDTO[]; activeContactId: string | null;
   onSelect: (contactId: string) => void; accent?: keyof typeof GROUP_ACCENT;
   meId?: string; meName?: string;
   headerExtra?: React.ReactNode; forceShow?: boolean; hideTitle?: boolean; emptyLabel?: string;
+  // Corta a RENDERIZAÇÃO em `limit` itens (paginação client-side); o cabeçalho
+  // continua mostrando o total real de `items`.
+  limit?: number;
+  // Quando informado, mostra de qual pasta cada conversa veio — usado na
+  // busca global por tag, que mistura itens de todas as pastas.
+  folderLabel?: (c: WhatsAppConversationDTO) => string;
 }) {
   if (!items.length && !forceShow && !hideTitle) return null;
   const colors = accent ? GROUP_ACCENT[accent] : { header: 'text-[#8fbcac]', chip: 'bg-[#2e5749] text-[#cfe6db]' };
+  const visible = limit != null ? items.slice(0, limit) : items;
   return (
     <div>
       {!hideTitle && (
-        <div className={`flex items-center gap-1.5 px-4 pb-1 pt-4 text-xs font-bold uppercase tracking-wider ${colors.header}`}>
+        <div className={`flex items-center gap-1.5 px-3 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider ${colors.header}`}>
           {title}
-          <span className={`rounded-full px-1.5 text-[11px] font-bold ${colors.chip}`}>{items.length}</span>
+          <span className={`rounded-full px-1.5 text-[10px] font-bold ${colors.chip}`}>{items.length}</span>
           {headerExtra}
         </div>
       )}
       {!items.length && (
-        <p className="px-4 pb-1 text-sm text-[#8fbcac]">{emptyLabel ?? 'Nenhuma conversa aqui.'}</p>
+        <p className="px-3 pb-1 text-xs text-[#8fbcac]">{emptyLabel ?? 'Nenhuma conversa aqui.'}</p>
       )}
-      {items.map((c) => {
+      {visible.map((c) => {
         const isActive = c.contactId === activeContactId;
         // Selinho sobre o avatar: quem está com a conversa agora. Bot/standby
         // mostram o robô; humano mostra as iniciais de quem falou por último
@@ -1003,24 +1111,24 @@ function ConversationGroup({
           <button
             key={c.id}
             onClick={() => onSelect(c.contactId)}
-            className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${isActive ? 'bg-[#1a6649] text-white' : 'text-[#d3e2db] hover:bg-[#26483c]'
+            className={`mx-1.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${isActive ? 'bg-[#1a6649] text-white' : 'text-[#d3e2db] hover:bg-[#26483c]'
               }`}
           >
             <span className="relative shrink-0">
-              <Avatar className="h-8 w-8 border border-[#3a6b58]">
-                <AvatarFallback className="bg-[#356b57] text-[11px] font-bold text-[#c5ecdb]">
+              <Avatar className="h-7 w-7 border border-[#3a6b58]">
+                <AvatarFallback className="bg-[#356b57] text-[10px] font-bold text-[#c5ecdb]">
                   {initials(c.contactName ?? c.contactPhone)}
                 </AvatarFallback>
               </Avatar>
               {isBotSide && (
-                <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#1f3d33] bg-sky-600 text-white">
-                  <Bot className="h-2.5 w-2.5" />
+                <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#1f3d33] bg-sky-600 text-white">
+                  <Bot className="h-2 w-2" />
                 </span>
               )}
               {!isBotSide && attName && (
                 <span
                   title={attIsMe ? 'Você' : attName}
-                  className={`absolute -bottom-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full border-2 border-[#1f3d33] px-px text-[7px] font-bold text-white ${attIsMe ? 'bg-emerald-600' : attendantBadgeColor(attName)
+                  className={`absolute -bottom-1 -right-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full border-2 border-[#1f3d33] px-px text-[6.5px] font-bold text-white ${attIsMe ? 'bg-emerald-600' : attendantBadgeColor(attName)
                     }`}
                 >
                   {attIsMe ? 'EU' : initials(attName)}
@@ -1030,42 +1138,45 @@ function ConversationGroup({
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline justify-between gap-2">
                 <span className="flex min-w-0 items-baseline gap-1.5">
-                  <span className="truncate text-base font-semibold">{c.contactName ?? formatPhone(c.contactPhone)}</span>
+                  <span className="truncate text-[13px] font-semibold">{c.contactName ?? formatPhone(c.contactPhone)}</span>
                   {c.urgent && c.status !== 'closed' && (
-                    <span className="shrink-0 animate-pulse rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    <span className="shrink-0 animate-pulse rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                       Urgente
                     </span>
                   )}
                   {c.status === 'standby' && c.recoveryAttempts > 0 && (
-                    <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                    <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
                       {Math.min(c.recoveryAttempts, 3)}ª de 3
                     </span>
                   )}
                   {pill && (
-                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
                       {pill}
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 text-xs text-[#8fbcac]">
+                <span className="shrink-0 text-[10.5px] text-[#8fbcac]">
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
               </span>
-              <span className="block truncate text-sm text-[#a7c9bc]">
+              <span className="block truncate text-[11.5px] text-[#a7c9bc]">
                 {c.lastMessagePreview ? stripWaMarkup(c.lastMessagePreview) : '—'}
               </span>
-              {c.tags.length > 0 && (
-                <span className="mt-1 flex flex-wrap gap-1">
+              {(c.tags.length > 0 || folderLabel) && (
+                <span className="mt-0.5 flex flex-wrap items-center gap-1">
                   {c.tags.map((t) => (
-                    <span key={t.id} className="rounded-full px-1.5 py-0.5 text-[11px] font-bold text-white" style={{ backgroundColor: t.color }}>
+                    <span key={t.id} className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.color }}>
                       {t.name}
                     </span>
                   ))}
+                  {folderLabel && (
+                    <span className="text-[9.5px] font-bold uppercase tracking-wide text-[#7fae9c]">{folderLabel(c)}</span>
+                  )}
                 </span>
               )}
             </span>
             {c.unread && c.status !== 'closed' && (
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
             )}
           </button>
         );
@@ -1561,7 +1672,7 @@ function HeaderButton({ icon: Icon, label, onClick }: { icon: React.ElementType;
     <button
       onClick={onClick}
       title={label}
-      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
     >
       {/* No celular o rótulo some (só ícone) para o header não estourar. */}
       <Icon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{label}</span>
