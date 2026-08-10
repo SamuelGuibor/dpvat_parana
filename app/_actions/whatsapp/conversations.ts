@@ -106,7 +106,11 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
 
   const conversations = await db.whatsAppConversation.findMany({
     orderBy: { lastMessageAt: 'desc' },
-    take: 200,
+    // O dropdown de encerradas e o filtro por tag contam em cima DESTA lista:
+    // com take menor que o total de conversas, encerradas antigas sumiam da
+    // contagem (ex.: "Contratados" mostrava 19 de 26). 1000 cobre a base atual
+    // (~450) com folga; quando chegar perto disso, paginar de verdade.
+    take: 1000,
     include: {
       contact: { select: { id: true, name: true, phone: true, optedOut: true, userId: true } },
       tags: { include: { tag: true } },

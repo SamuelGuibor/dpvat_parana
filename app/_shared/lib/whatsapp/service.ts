@@ -77,6 +77,9 @@ export interface IncomingWaMessage {
   contacts?: { name?: { formatted_name?: string }; phones?: { phone?: string }[] }[];
   // Presente quando o cliente RESPONDE (quote) uma mensagem.
   context?: { id?: string };
+  // Presente em type="unsupported": a Meta não entrega o conteúdo (enquete,
+  // evento, edição, visualização única...), mas manda o motivo aqui.
+  errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[];
   // Presente quando a conversa começou por um anúncio Click-to-WhatsApp
   // (Facebook/Instagram). Base da atribuição de origem do lead.
   referral?: {
@@ -114,7 +117,19 @@ function extractBody(msg: IncomingWaMessage): string | null {
     // Tipos sem texto: representação legível pro balão do inbox E pra IA
     // (antes viravam body=null → balão vazio + handoff cego pra fila).
     case "reaction":
-      return msg.reaction?.emoji ? `${msg.reaction.emoji} (reação)` : "(reação removida)";
+      return msg.reaction?.emoji ? `Reagiu com ${msg.reaction.emoji}` : "Removeu a reação";
+    // A Meta manda type="unsupported" quando o cliente usa um recurso que a
+    // Cloud API não entrega: enquete, evento, mensagem editada, visualização
+    // única etc. O conteúdo NÃO chega — só dá pra ver no aparelho.
+    case "unsupported": {
+      const err = msg.errors?.[0];
+      const detail = err?.error_data?.details ?? err?.message ?? err?.title;
+      return (
+        "⚠️ O cliente enviou algo que o WhatsApp não entrega pela API (enquete, evento, mensagem editada ou visualização única). " +
+        "Peça para reenviar como texto ou foto normal." +
+        (detail ? `\n(Detalhe da Meta: ${detail}${err?.code ? ` — código ${err.code}` : ""})` : "")
+      );
+    }
     case "location": {
       const loc = msg.location;
       const label = [loc?.name, loc?.address].filter(Boolean).join(" — ");

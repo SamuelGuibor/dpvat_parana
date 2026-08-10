@@ -7,10 +7,14 @@ import {
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
   UserRound, Undo2, StickyNote, ShieldAlert, ShieldCheck,
   Info, Facebook, Instagram, Megaphone, Globe, Send, CheckCircle2, BellRing,
+  Tag as TagIcon, Users,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
-import { getChatbotAnalytics, getAdLeadOutcomes, type ChatbotAnalytics, type AdLeadOutcome } from '@/app/_actions/analytics/get-chatbot-analytics';
+import {
+  getChatbotAnalytics, getAdLeadOutcomes, getLeadFunnel,
+  type ChatbotAnalytics, type AdLeadOutcome, type LeadFunnelData, type LeadFunnelRange,
+} from '@/app/_actions/analytics/get-chatbot-analytics';
 // import { SystemMap } from './SystemMap';
 import { AiCorner } from './AiCorner';
 import { formatDistanceToNow } from 'date-fns';
@@ -217,6 +221,10 @@ export function ChatbotDashboard({ numberId = null }: { numberId?: string | null
               periodDays: period,
             }}
           />
+
+          {/* Funil de leads: contagem por tag + desfechos do bot, com filtro
+              de período próprio (hoje/ontem/7/15/30/90 dias). */}
+          <LeadFunnelSection numberId={numberId} />
 
           {/* Origem dos leads: de qual anúncio/plataforma cada lead veio */}
           <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -806,6 +814,103 @@ export function ChatbotDashboard({ numberId = null }: { numberId?: string | null
    Qualificados e não qualificados em colunas SEPARADAS (verde × vermelho),
    cada uma com o próprio placar e motivo por lead; "em andamento" numa faixa
    discreta embaixo. */
+
+// Filtro de período do funil (independente do filtro geral do dashboard —
+// aqui interessa "hoje"/"ontem", que o filtro de 7/30/90 não oferece).
+const FUNNEL_RANGES: { key: LeadFunnelRange; label: string }[] = [
+  { key: 'today', label: 'Hoje' },
+  { key: 'yesterday', label: 'Ontem' },
+  { key: '7d', label: '7 dias' },
+  { key: '15d', label: '15 dias' },
+  { key: '30d', label: '30 dias' },
+  { key: '90d', label: '90 dias' },
+];
+
+function LeadFunnelSection({ numberId }: { numberId: string | null }) {
+  const [range, setRange] = useState<LeadFunnelRange>('today');
+  const [data, setData] = useState<LeadFunnelData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    getLeadFunnel(range, numberId)
+      .then((d) => { if (alive) setData(d); })
+      .catch(() => { if (alive) setData(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [range, numberId]);
+
+  return (
+    <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white">
+              <Users className="h-5 w-5" />
+            </span>
+            Funil de leads
+          </h2>
+          <p className="mt-1 text-xs text-gray-400">
+            Leads novos, decisões do bot e todas as tags aplicadas — pela data em que a tag foi colocada na conversa.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
+          {FUNNEL_RANGES.map((r) => (
+            <Button key={r.key} size="sm" variant={range === r.key ? 'default' : 'ghost'} onClick={() => setRange(r.key)} className="h-7 px-3 text-xs">
+              {r.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {loading || !data ? (
+        <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border-2 border-gray-200 px-4 py-3 text-center dark:border-zinc-700">
+              <p className="text-3xl font-extrabold tabular-nums text-gray-800 dark:text-zinc-100">{data.newLeads}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">leads novos</p>
+            </div>
+            <div className="rounded-2xl border-2 border-emerald-300 px-4 py-3 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
+              <p className="text-3xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">{data.bot.qualified}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70 dark:text-emerald-400/70">qualificadas (bot)</p>
+            </div>
+            <div className="rounded-2xl border-2 border-rose-300 px-4 py-3 text-center dark:border-rose-800 dark:bg-rose-950/30">
+              <p className="text-3xl font-extrabold tabular-nums text-rose-700 dark:text-rose-300">{data.bot.disqualified}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600/70 dark:text-rose-400/70">desqualificadas (bot)</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+              <TagIcon className="h-3.5 w-3.5" /> Tags aplicadas no período
+            </p>
+            {data.tags.length === 0 ? (
+              <p className="text-sm text-gray-400">Nenhuma tag cadastrada ainda.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {data.tags.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 rounded-2xl border-2 px-4 py-3 dark:bg-zinc-900" style={{ borderColor: t.color }}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
+                      <span className="truncate text-sm font-semibold text-gray-700 dark:text-zinc-200">{t.name}</span>
+                    </span>
+                    <span className="text-2xl font-extrabold tabular-nums text-gray-800 dark:text-zinc-100">{t.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-[11px] text-gray-400">
+            Tags aplicadas antes de 03/08/2026 herdaram a data da migração — períodos que cruzam essa data podem inflar a contagem.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
 
 function LeadOutcomesDialog({
   title, periodDays, rows, onClose,

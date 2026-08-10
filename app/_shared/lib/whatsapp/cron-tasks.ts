@@ -170,7 +170,8 @@ const ACK_WORDS = new Set([
 
 function isClosingAck(body: string | null, mediaType: string | null): boolean {
   const text = (body ?? '').trim();
-  if (/\(rea[çc][ãa]o( removida)?\)$/i.test(text)) return true; // "👍 (reação)"
+  if (/\(rea[çc][ãa]o( removida)?\)$/i.test(text)) return true; // formato antigo: "👍 (reação)"
+  if (/^(reagiu com\s|removeu a rea[çc][ãa]o$)/i.test(text)) return true; // "Reagiu com 👍"
   if (!text) return !mediaType || /webp/i.test(mediaType); // figurinha
   if (mediaType) return false; // legenda em cima de anexo = pendência
   const words = text

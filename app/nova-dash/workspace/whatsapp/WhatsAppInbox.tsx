@@ -861,6 +861,7 @@ export function WhatsAppInbox() {
                       onDiscard={() => removePending(msg.id)}
                       onJumpToReply={() => jumpToMessage(msg.replyToId)}
                       onAttachToCard={() => handleAttachMedia(msg)}
+                      contactName={active?.contactName}
                     />
                   </Fragment>
                 );
@@ -1081,10 +1082,22 @@ function StatusTicks({ status }: { status: string }) {
   return <Check className="h-3.5 w-3.5 text-white/70" />;
 }
 
+// Reação do cliente vira uma mensagem com body "Reagiu com 👍" (formato antigo:
+// "👍 (reação)"). Detecta os dois pra renderizar como evento, não como balão.
+function parseReactionBody(body: string | null): { emoji: string | null; removed: boolean } | null {
+  if (!body) return null;
+  let m = body.match(/^Reagiu com (\S{1,8})$/u);
+  if (m) return { emoji: m[1], removed: false };
+  m = body.match(/^(\S{1,8}) \(rea[çc][ãa]o\)$/u);
+  if (m) return { emoji: m[1], removed: false };
+  if (/^(\(rea[çc][ãa]o removida\)|Removeu a rea[çc][ãa]o)$/iu.test(body.trim())) return { emoji: null, removed: true };
+  return null;
+}
+
 function ThreadMessageRow({
-  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard,
+  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard, contactName,
 }: {
-  msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean;
+  msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean; contactName?: string | null;
   setRowRef: (el: HTMLDivElement | null) => void;
   onReply: () => void; onEdit: () => void; onDelete: () => void;
   onRetry: () => void; onDiscard: () => void; onJumpToReply: () => void;
@@ -1119,6 +1132,30 @@ function ThreadMessageRow({
           </span>
           <span className="whitespace-pre-wrap break-words">{msg.body}</span>
         </div>
+      </div>
+    );
+  }
+
+  // Reação (estilo WhatsApp): evento discreto centralizado — "Fulana reagiu
+  // com 👍 a '...'"; clique pula pra mensagem reagida.
+  const reaction = !mine && !msg.mediaKey ? parseReactionBody(msg.body) : null;
+  if (reaction) {
+    const who = (contactName ?? '').trim() || 'Cliente';
+    return (
+      <div ref={setRowRef} className={`flex justify-center ${grouped ? 'mt-1' : 'mt-2'} ${highlighted ? 'rounded-xl bg-amber-100/70 dark:bg-amber-900/30' : ''}`}>
+        <button
+          onClick={msg.replyToId ? onJumpToReply : undefined}
+          disabled={!msg.replyToId}
+          className="flex max-w-[85%] items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-500 shadow-sm transition-colors enabled:hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-400 dark:enabled:hover:bg-zinc-800"
+        >
+          {reaction.emoji && <span className="text-base leading-none">{reaction.emoji}</span>}
+          <span className="truncate">
+            <span className="font-semibold">{who}</span>
+            {reaction.removed ? ' removeu a reação' : ` reagiu com ${reaction.emoji}`}
+            {msg.replyToBody && <span className="opacity-70"> a “{msg.replyToBody.length > 48 ? `${msg.replyToBody.slice(0, 48)}…` : msg.replyToBody}”</span>}
+          </span>
+          <span className="shrink-0 text-[11px] opacity-60">{timeShort(msg.createdAt)}</span>
+        </button>
       </div>
     );
   }
