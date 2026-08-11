@@ -707,6 +707,20 @@ model WhatsAppTag {
   @@map("whatsapp_tags")
 }
 
+// Sub-motivos de "não qualificado" editáveis pela equipe (menu Encerrar).
+// A key vira o closeCategory da conversa (sempre com prefixo "nq_", que é o
+// que marca qualified=false); apagar um motivo NÃO mexe nas conversas já
+// encerradas com ele — o rótulo salvo continua resolvível pelo histórico.
+model WhatsAppCloseReason {
+  id        String   @id @default(cuid())
+  key       String   @unique // ex.: nq_sem_fratura
+  label     String // ex.: "Não qualificada — sem fratura"
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("whatsapp_close_reasons")
+}
+
 model WhatsAppConversationTag {
   conversationId String
   tagId          String

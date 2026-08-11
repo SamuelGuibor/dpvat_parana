@@ -7,7 +7,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
-import { CLOSE_CATEGORY_LABELS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
+import { CLOSE_CATEGORY_LABELS, CLOSE_CATEGORY_OPTIONS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
@@ -78,8 +78,12 @@ export interface WhatsAppConversationDTO {
   status: string; // bot | queued | human | closed
   qualified: boolean | null; // só relevante quando status="closed"
   // Categoria do desfecho (só relevante quando status="closed"): qualificado |
-  // nao_qualificado | perguntas | novo_acidente | transferido.
+  // nao_qualificado | nq_* (sub-motivo) | perguntas | novo_acidente | transferido.
   closeCategory: string | null;
+  // Rótulo humano do desfecho, já resolvido no servidor (inclui os motivos
+  // dinâmicos da tabela whatsapp_close_reasons) — ex.: "Não qualificada — sem
+  // cobertura INSS". Vai no chip "Encerrada · {label}" e nos grupos da pasta.
+  closeCategoryLabel: string | null;
   // Urgência detectada pela IA — some quando um atendente assume/encerra.
   urgent: boolean;
   assignedToId: string | null;
@@ -92,13 +96,64 @@ export interface WhatsAppConversationDTO {
   // atendente da última mensagem enviada, ou null se foi o cliente.
   lastMessageAuthorName: string | null;
   lastMessageFromBot: boolean;
+  // A última mensagem foi do CLIENTE (direction "in") — usado pra destacar na
+  // lista quem está esperando resposta da equipe.
+  lastMessageFromClient: boolean;
+  // Status da ÚLTIMA mensagem quando ela é nossa (sent/delivered/read) — o
+  // "radar de vácuo": read + horas sem resposta = cliente viu e ignorou.
+  lastMessageStatus: string | null;
+  // Tipo de mídia da última mensagem (image/*, video/*, audio/*, application/*),
+  // null quando é só texto — vira ícone na prévia da lista.
+  lastMessageMediaType: string | null;
+  // Última nota interna que o BOT deixou ao transferir pra fila (o "por que
+  // caiu na fila" que hoje só aparecia dentro do Copiloto) — mostrado direto
+  // na linha da Fila pra decidir quem atender primeiro sem abrir a conversa.
+  handoffReason: string | null;
+  // Ficha do cliente tem o básico preenchido (nome, CPF, endereço) — vira um
+  // selo de alerta no avatar quando falta algo.
+  fichaComplete: boolean;
+  // Origem do lead (first-touch de Click-to-WhatsApp ads): facebook | instagram
+  // | null (orgânico). Vira o logo no canto do avatar.
+  adPlatform: string | null;
+  // Quando a conversa começou — âncora da linha de jornada na thread.
+  createdAt: string;
+  // Resumo do caso pro card rico (direto da ficha, sem chamada de IA):
+  caseLesoes: string | null;
+  caseCidade: string | null;
+  caseDataAcidente: string | null;
+  // O que trava o CONTRATO (única pendência que aparece na tela): CPF e docs.
+  hasCpf: boolean;
+  docsCount: number;
   // Provocações do ciclo de recuperação já enviadas (0-3) — exibido quando
   // status="standby" como "1ª de 3".
   recoveryAttempts: number;
   unread: boolean;
+  // Quantas mensagens RECEBIDAS desde a última leitura de qualquer atendente —
+  // o badge verde de contagem (estilo WhatsApp) na lista.
+  unreadCount: number;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
   tags: { id: string; name: string; color: string }[];
+}
+
+interface DraftFichaShape {
+  name?: string | null; cpf?: string | null; cep?: string | null; rua?: string | null; cidade?: string | null;
+  lesoes?: string | null; data_acidente?: string | null;
+}
+
+function isFichaComplete(f: DraftFichaShape | null | undefined): boolean {
+  if (!f) return false;
+  const hasAddress = !!(f.cep?.trim() || f.rua?.trim() || f.cidade?.trim());
+  return !!(f.name?.trim() && f.cpf?.trim() && hasAddress);
+}
+
+/** Rótulo de fallback quando a última mensagem é mídia sem legenda — o
+ * client mostra um ícone do tipo na frente, então aqui só o nome curto. */
+function mediaTypeLabel(mediaType: string): string {
+  if (mediaType.startsWith('image/')) return 'Foto';
+  if (mediaType.startsWith('video/')) return 'Vídeo';
+  if (mediaType.startsWith('audio/')) return 'Áudio';
+  return 'Documento';
 }
 
 export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
@@ -112,7 +167,12 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     // (~450) com folga; quando chegar perto disso, paginar de verdade.
     take: 1000,
     include: {
-      contact: { select: { id: true, name: true, phone: true, optedOut: true, userId: true } },
+      contact: {
+        select: {
+          id: true, name: true, phone: true, optedOut: true, userId: true,
+          clientDraft: true, adPlatform: true, draftDocuments: true,
+        },
+      },
       tags: { include: { tag: true } },
       // Leitura GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa
       // de contar como não-lida para o resto da equipe.
@@ -123,14 +183,15 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
 
   const contactIds = conversations.map((c) => c.contactId);
 
-  // Última mensagem (preview) e última mensagem RECEBIDA (janela de 24h) por
-  // contato — distinct + orderBy desc devolve a primeira linha de cada grupo.
-  const [lastMessages, lastInbound, assignees] = await Promise.all([
+  // Última mensagem (preview), última mensagem RECEBIDA (janela de 24h) e
+  // última nota interna do BOT (motivo do handoff) por contato — distinct +
+  // orderBy desc devolve a primeira linha de cada grupo.
+  const [lastMessages, lastInbound, assignees, handoffNotes] = await Promise.all([
     db.whatsAppMessage.findMany({
       where: { contactId: { in: contactIds } },
       orderBy: { createdAt: 'desc' },
       distinct: ['contactId'],
-      select: { contactId: true, body: true, mediaType: true, direction: true, sentByBot: true, authorId: true },
+      select: { contactId: true, body: true, mediaType: true, direction: true, sentByBot: true, authorId: true, status: true },
     }),
     db.whatsAppMessage.findMany({
       where: { contactId: { in: contactIds }, direction: 'in' },
@@ -141,6 +202,12 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     db.user.findMany({
       where: { id: { in: conversations.map((c) => c.assignedToId).filter(Boolean) as string[] } },
       select: { id: true, name: true },
+    }),
+    db.whatsAppMessage.findMany({
+      where: { contactId: { in: contactIds }, internal: true, sentByBot: true },
+      orderBy: { createdAt: 'desc' },
+      distinct: ['contactId'],
+      select: { contactId: true, body: true },
     }),
   ]);
 
@@ -161,23 +228,64 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
   const linkedUserIds = [...new Set(
     conversations.map((c) => c.contact.userId).filter((id): id is string => !!id),
   )];
-  const cardNameById = new Map(
-    linkedUserIds.length
-      ? (await db.user.findMany({
-          where: { id: { in: linkedUserIds } },
-          select: { id: true, name: true },
-        })).map((u) => [u.id, u.name])
-      : [],
-  );
+  const linkedUsers = linkedUserIds.length
+    ? await db.user.findMany({
+        where: { id: { in: linkedUserIds } },
+        select: { id: true, name: true, cpf: true, cep: true, rua: true, cidade: true, lesoes: true, data_acidente: true },
+      })
+    : [];
+  const cardNameById = new Map(linkedUsers.map((u) => [u.id, u.name]));
+  // Ficha completa (nome+CPF+endereço) pra registrado vem do User; pra
+  // rascunho (ainda sem cadastro) vem do clientDraft salvo no contato.
+  const fichaByUserId = new Map(linkedUsers.map((u) => [u.id, u]));
+
+  // Documentos pessoais por cliente vinculado (uma query agregada, não N+1);
+  // pra rascunho a contagem sai do próprio draftDocuments no map abaixo.
+  const docCounts = linkedUserIds.length
+    ? await db.document.groupBy({
+        by: ['userId'],
+        where: { userId: { in: linkedUserIds }, processId: null },
+        _count: { _all: true },
+      })
+    : [];
+  const docsByUserId = new Map(docCounts.map((d) => [d.userId, d._count._all]));
 
   const previewByContact = new Map(lastMessages.map((m) => [m.contactId, m]));
   const inboundByContact = new Map(lastInbound.map((m) => [m.contactId, m.createdAt]));
+  const handoffByContact = new Map(handoffNotes.map((m) => [m.contactId, m.body]));
   const nameById = new Map([...assignees, ...extraAuthors].map((u) => [u.id, u.name ?? 'Atendente']));
+
+  // Contagem de não-lidas por conversa (badge verde estilo WhatsApp): mensagens
+  // RECEBIDAS depois da leitura mais recente (global legado OU de qualquer
+  // atendente). Uma query agregada pra lista inteira — sem N+1.
+  const unreadRows = await db.$queryRaw<{ contactId: string; cnt: number }[]>`
+    SELECT c."contactId" AS "contactId", COUNT(m.id)::int AS cnt
+    FROM whatsapp_conversations c
+    JOIN whatsapp_messages m
+      ON m."contactId" = c."contactId" AND m.direction = 'in' AND m.internal = false
+    LEFT JOIN LATERAL (
+      SELECT MAX(r."lastReadAt") AS read_at
+      FROM whatsapp_conversation_reads r
+      WHERE r."conversationId" = c.id
+    ) rr ON true
+    WHERE c."contactId" = ANY(${contactIds})
+      AND m."createdAt" > COALESCE(GREATEST(c."lastReadAt", rr.read_at), to_timestamp(0))
+    GROUP BY c."contactId"
+  `;
+  const unreadCountByContact = new Map(unreadRows.map((r) => [r.contactId, Number(r.cnt)]));
+
+  // Rótulos dos motivos dinâmicos (nq_*) — uma query, cache pro map abaixo.
+  const reasonRows = await db.whatsAppCloseReason.findMany({ select: { key: true, label: true } });
+  const reasonLabelByKey = new Map(reasonRows.map((r) => [r.key, r.label]));
+  const closeLabelOf = (cat: string | null): string | null => {
+    if (!cat) return null;
+    return CLOSE_CATEGORY_LABELS[cat] ?? reasonLabelByKey.get(cat) ?? cat;
+  };
 
   return conversations.map((c) => {
     const last = previewByContact.get(c.contactId);
     const preview = last
-      ? last.body ?? (last.mediaType ? '📎 Anexo' : null)
+      ? last.body ?? (last.mediaType ? mediaTypeLabel(last.mediaType) : null)
       : null;
     const inboundAt = inboundByContact.get(c.contactId) ?? null;
     // Leitura efetiva: a leitura mais recente de QUALQUER atendente, com o
@@ -186,6 +294,11 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
     const effectiveReadAt = anyReadAt && c.lastReadAt
       ? (anyReadAt > c.lastReadAt ? anyReadAt : c.lastReadAt)
       : anyReadAt ?? c.lastReadAt;
+    // Ficha do caso: do User quando o contato já virou cliente, senão do
+    // rascunho coletado no atendimento (clientDraft).
+    const ficha: DraftFichaShape | null = c.contact.userId
+      ? fichaByUserId.get(c.contact.userId) ?? null
+      : (c.contact.clientDraft as unknown as DraftFichaShape | null);
     return {
       id: c.id,
       contactId: c.contactId,
@@ -195,6 +308,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       status: c.status,
       qualified: c.qualified,
       closeCategory: c.closeCategory,
+      closeCategoryLabel: c.status === 'closed' ? closeLabelOf(c.closeCategory) : null,
       urgent: c.urgent,
       assignedToId: c.assignedToId,
       assignedToName: c.assignedToId ? nameById.get(c.assignedToId) ?? null : null,
@@ -207,8 +321,25 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
           ? nameById.get(last.authorId) ?? null
           : null,
       lastMessageFromBot: !!last?.sentByBot,
+      lastMessageFromClient: last?.direction === 'in',
+      lastMessageStatus: last?.direction === 'out' ? last.status ?? null : null,
+      lastMessageMediaType: last?.mediaType ?? null,
+      handoffReason: c.status === 'queued' ? handoffByContact.get(c.contactId) ?? null : null,
+      fichaComplete: c.contact.userId
+        ? isFichaComplete(fichaByUserId.get(c.contact.userId) ?? null)
+        : isFichaComplete((c.contact.clientDraft as unknown as DraftFichaShape | null) ?? null),
+      adPlatform: c.contact.adPlatform ?? null,
+      createdAt: c.createdAt.toISOString(),
+      caseLesoes: ficha?.lesoes?.trim() || null,
+      caseCidade: ficha?.cidade?.trim() || null,
+      caseDataAcidente: ficha?.data_acidente?.trim() || null,
+      hasCpf: !!ficha?.cpf?.trim(),
+      docsCount: c.contact.userId
+        ? docsByUserId.get(c.contact.userId) ?? 0
+        : ((c.contact.draftDocuments as unknown as unknown[] | null)?.length ?? 0),
       recoveryAttempts: c.recoveryAttempts,
       unread: !effectiveReadAt || c.lastMessageAt > effectiveReadAt,
+      unreadCount: unreadCountByContact.get(c.contactId) ?? 0,
       optedOut: c.contact.optedOut,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
@@ -305,9 +436,14 @@ export async function closeConversation(
   const before = await convContact(conversationId);
 
   const cat = typeof category === 'boolean' ? (category ? 'qualificado' : 'nao_qualificado') : category;
-  const closeCategory = cat in QUALIFIED_BY_CATEGORY ? cat : 'nao_qualificado';
-  const qualified = QUALIFIED_BY_CATEGORY[closeCategory];
-  const label = CLOSE_CATEGORY_LABELS[closeCategory] ?? closeCategory;
+  // Motivos dinâmicos criados pela equipe têm prefixo "nq_" — todos contam
+  // como não qualificado; o resto precisa estar no mapa estático.
+  const closeCategory = cat in QUALIFIED_BY_CATEGORY || cat.startsWith('nq_') ? cat : 'nao_qualificado';
+  const qualified = QUALIFIED_BY_CATEGORY[closeCategory] ?? (closeCategory.startsWith('nq_') ? false : null);
+  const reasonRow = closeCategory.startsWith('nq_')
+    ? await db.whatsAppCloseReason.findUnique({ where: { key: closeCategory } })
+    : null;
+  const label = CLOSE_CATEGORY_LABELS[closeCategory] ?? reasonRow?.label ?? closeCategory;
 
   // Cérebro: snapshot ANTES do update (que zera botMemory/botState abaixo).
   if (before) await captureConversation(before.contactId, 'manual', { closeCategory, qualified });
@@ -319,6 +455,11 @@ export async function closeConversation(
     // Desfecho real → ciclo de recuperação zerado por completo.
     data: { status: 'closed', assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
+
+  // Tag automática = o próprio desfecho ("Não qualificada — sem cobertura
+  // INSS"), pra tag e desfecho andarem SEMPRE juntos. Ao mudar o desfecho,
+  // as tags de desfecho anteriores saem — as tags manuais ficam intactas.
+  await syncCloseTag(conversationId, closeCategory, label);
   if (before) {
     await logWhatsAppEvent({
       action: 'wa_close',
@@ -333,6 +474,60 @@ export async function closeConversation(
     // Devolve pra Meta o desfecho decidido pelo atendente (qualificado /
     // não qualificado). Fire-and-forget; outras categorias são ignoradas.
     void reportLeadStageToMeta(before.contactId, closeCategory);
+  }
+}
+
+// Cor da tag automática de desfecho, por família de categoria.
+const CLOSE_TAG_COLORS: Record<string, string> = {
+  qualificado: '#10b981',
+  contratado_perdido: '#f43f5e',
+  perguntas: '#3b82f6',
+  novo_acidente: '#f59e0b',
+  transferido: '#8b5cf6',
+  sem_resposta: '#64748b',
+  descartado: '#6b7280',
+};
+
+/**
+ * Mantém a tag da conversa em sincronia com o desfecho: remove as tags de
+ * desfecho anteriores (identificadas pelo conjunto de rótulos conhecidos —
+ * estáticos + motivos da tabela) e aplica a tag com o rótulo completo atual.
+ * Best-effort: falha de tag nunca impede o encerramento.
+ */
+async function syncCloseTag(conversationId: string, closeCategory: string, label: string): Promise<void> {
+  try {
+    // Todos os rótulos que já foram (ou podem ter sido) tag de desfecho.
+    const reasonLabels = (await db.whatsAppCloseReason.findMany({ select: { label: true } })).map((r) => r.label);
+    const knownLabels = new Set<string>([
+      ...Object.values(CLOSE_CATEGORY_LABELS),
+      ...CLOSE_CATEGORY_OPTIONS.map((o) => o.label),
+      ...reasonLabels,
+    ]);
+    knownLabels.delete(label); // a atual fica
+
+    const current = await db.whatsAppConversationTag.findMany({
+      where: { conversationId },
+      include: { tag: { select: { id: true, name: true } } },
+    });
+    const toRemove = current.filter((ct) => knownLabels.has(ct.tag.name)).map((ct) => ct.tagId);
+    if (toRemove.length) {
+      await db.whatsAppConversationTag.deleteMany({ where: { conversationId, tagId: { in: toRemove } } });
+    }
+
+    const color = CLOSE_TAG_COLORS[closeCategory]
+      ?? (closeCategory.startsWith('nq_') || closeCategory === 'nao_qualificado' ? '#e05252' : '#6b7280');
+    const tag = await db.whatsAppTag.upsert({
+      where: { name: label },
+      update: {},
+      create: { name: label, color },
+    });
+    await db.whatsAppConversationTag.upsert({
+      where: { conversationId_tagId: { conversationId, tagId: tag.id } },
+      update: {},
+      create: { conversationId, tagId: tag.id },
+    });
+  } catch (err) {
+    console.error('[WA] Falha ao sincronizar a tag de desfecho:', err);
   }
 }
 

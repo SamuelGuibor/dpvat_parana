@@ -295,8 +295,16 @@ function MentionRow({
   );
 }
 
-/** Etiqueta de origem: card do Kanban (com nº) ou canal do chat. */
+/** Etiqueta de origem: card do Kanban (com nº), canal do chat ou WhatsApp. */
 function OriginBadge({ m }: { m: MentionDTO }) {
+  if (m.source === 'whatsapp') {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{m.targetName.replace(/^WhatsApp · /, '') || 'WhatsApp'}</span>
+      </span>
+    );
+  }
   if (m.source === 'chat') {
     return (
       <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-100 dark:bg-violet-950/40 dark:text-violet-300">
@@ -500,8 +508,17 @@ export function MentionsInbox() {
     }
   }, [items, counts.DONE, confirm]);
 
-  /** Clique na linha: abre o card no Kanban ou a conversa no chat. */
+  /** Clique na linha: abre o card no Kanban, a conversa no chat ou o WhatsApp. */
   const handleOpen = useCallback((m: MentionDTO) => {
+    if (m.source === 'whatsapp') {
+      if (!m.channelId) return; // channelId = contactId da conversa
+      // Mesmo padrão do chat: sessionStorage cobre o caso do inbox ainda não
+      // estar montado (usuário precisa trocar pra aba WhatsApp).
+      try { sessionStorage.setItem('wa-open-contact', m.channelId); } catch { /* noop */ }
+      window.dispatchEvent(new CustomEvent('open-whatsapp-conversation', { detail: { contactId: m.channelId } }));
+      toast.info('Abra a aba WhatsApp — a conversa já fica selecionada.');
+      return;
+    }
     if (m.source === 'chat') {
       if (!m.channelId) return;
       // sessionStorage cobre o caso do chat ainda não estar montado na troca de aba.

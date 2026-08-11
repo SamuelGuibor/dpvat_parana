@@ -27,9 +27,12 @@ export function cleanExcerpt(text: string, max = 500): string {
 interface RecordMentionsInput {
   /** Já expandido (setor/everyone) e sem o próprio autor. */
   recipientIds: string[];
-  authorId: string;
+  /** Null quando o autor é o bot (tarefas geradas pela IA). */
+  authorId: string | null;
   authorName: string;
-  source: "comment" | "chat";
+  // "whatsapp": tarefa do bot (lead qualificado precisa de card/contrato) —
+  // o channelId carrega o contactId da conversa pra abrir direto no inbox.
+  source: "comment" | "chat" | "whatsapp";
   /** Texto cru da mensagem/comentário — o trecho é limpo aqui. */
   text: string;
   /** Nome do card ou do canal. */

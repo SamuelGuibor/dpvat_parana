@@ -1,8 +1,75 @@
 'use server';
 
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { requirePermission } from '@/app/_shared/lib/permissions-server';
+
+const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
+
+/**
+ * Cria um contato manualmente (fora do fluxo de webhook) e a conversa dele,
+ * já em atendimento humano com quem criou. Fora da janela de 24h da Meta o
+ * primeiro contato precisa sair por template — o composer já cuida disso.
+ */
+export async function createWhatsAppContact(phoneRaw: string, name: string): Promise<{ contactId: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id || !TEAM_ROLES.includes(session.user.role ?? '')) {
+    throw new Error('Sem permissão para o atendimento de WhatsApp.');
+  }
+
+  // Normaliza pra E.164 BR: só dígitos; sem DDI, assume 55.
+  let phone = phoneRaw.replace(/\D/g, '');
+  if (!phone) throw new Error('Informe o celular.');
+  if (!phone.startsWith('55')) phone = `55${phone}`;
+  if (phone.length < 12 || phone.length > 13) throw new Error('Celular inválido — use DDD + número (ex.: 41 99999-9999).');
+
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new Error('Informe o nome do contato.');
+
+  // Número da empresa: o default (ou o primeiro ativo) atende o contato novo.
+  const number = await db.whatsAppNumber.findFirst({
+    where: { active: true },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true },
+  });
+
+  const existing = await db.whatsAppContact.findFirst({ where: { phone } });
+  if (existing) {
+    // Contato já existe: garante a conversa e devolve — a UI só abre o chat.
+    await db.whatsAppConversation.upsert({
+      where: { contactId: existing.id },
+      update: {},
+      create: { contactId: existing.id, numberId: existing.numberId, status: 'human', assignedToId: session.user.id, lastMessageAt: new Date() },
+    });
+    return { contactId: existing.id };
+  }
+
+  const contact = await db.whatsAppContact.create({
+    data: {
+      phone,
+      name: trimmedName,
+      numberId: number?.id ?? null,
+      optedInAt: new Date(),
+      optInSource: 'manual',
+    },
+  });
+  await db.whatsAppConversation.create({
+    data: { contactId: contact.id, numberId: number?.id ?? null, status: 'human', assignedToId: session.user.id, lastMessageAt: new Date() },
+  });
+  await logWhatsAppEvent({
+    action: 'wa_contact',
+    message: `Contato criado manualmente: ${trimmedName} (+${phone})`,
+    authorId: session.user.id,
+    authorName: session.user.name ?? 'Equipe',
+    contactId: contact.id,
+    contactName: trimmedName,
+    contactPhone: phone,
+    metadata: { operation: 'create_manual' },
+  });
+  return { contactId: contact.id };
+}
 
 // Ações destrutivas sobre CONTATOS do WhatsApp (bloquear/desbloquear/excluir).
 // Todas exigem a permissão "manage_wa_contacts" (padrão: só ADMIN++; o Super

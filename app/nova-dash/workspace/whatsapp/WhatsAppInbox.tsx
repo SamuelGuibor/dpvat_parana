@@ -10,11 +10,13 @@ import {
   Clock, Pencil, Trash2, Reply as ReplyIcon, Ban, Loader2, Tag as TagIcon,
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
-  MoreVertical, Eye, RotateCcw, MessageSquareOff,
+  MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import { Avatar, AvatarFallback } from '@/app/_shared/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/app/_shared/ui/dialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuCheckboxItem,
@@ -32,6 +34,8 @@ import {
   editWhatsAppMessage, deleteWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
+import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
@@ -162,6 +166,69 @@ export function WhatsAppInbox() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
+  // "Só minhas": em Ativas, esconde o atendimento humano de outros atendentes
+  // (a fila continua visível pra todo mundo — ninguém é "dono" dela ainda).
+  const [onlyMine, setOnlyMine] = useState(false);
+  // Carga da equipe: clicar no chip de um atendente filtra o atendimento
+  // humano pelas conversas dele (a fila continua visível).
+  const [attendantFilter, setAttendantFilter] = useState<string | null>(null);
+
+  // Motivos de "não qualificada" editáveis (menu Encerrar + modal de gestão).
+  const { data: closeReasons, mutate: mutateCloseReasons } = useSWR<CloseReasonDTO[]>(
+    'wa-close-reasons',
+    () => listCloseReasons(),
+    { revalidateOnFocus: false },
+  );
+  const [reasonsModalOpen, setReasonsModalOpen] = useState(false);
+  const [addContactOpen, setAddContactOpen] = useState(false);
+  // Menu de encerrar: estático (sem os nq_* hardcoded, que agora moram na
+  // tabela) + motivos dinâmicos logo depois de "Não qualificada (genérico)".
+  const closeMenuOptions = useMemo(() => {
+    const base = CLOSE_CATEGORY_OPTIONS.filter((o) => !o.category.startsWith('nq_'));
+    const idx = base.findIndex((o) => o.category === 'nao_qualificado');
+    const dynamic = (closeReasons ?? []).map((r) => ({ category: r.key, label: r.label }));
+    return [...base.slice(0, idx + 1), ...dynamic, ...base.slice(idx + 1)];
+  }, [closeReasons]);
+
+  // Larguras redimensionáveis (estilo WhatsApp Web): arrastar a borda da
+  // lista e do Copiloto, com limites pra não engolir a thread. Persistidas.
+  const SIDEBAR_MIN = 300; const SIDEBAR_MAX = 520;
+  const COPILOT_MIN = 240; const COPILOT_MAX = 420;
+  const [sidebarW, setSidebarW] = useState(400);
+  const [copilotW, setCopilotW] = useState(300);
+  useEffect(() => {
+    const s = Number(localStorage.getItem('wa-sidebar-w'));
+    const c = Number(localStorage.getItem('wa-copilot-w'));
+    if (s >= SIDEBAR_MIN && s <= SIDEBAR_MAX) setSidebarW(s);
+    if (c >= COPILOT_MIN && c <= COPILOT_MAX) setCopilotW(c);
+  }, []);
+  const startResize = useCallback((e: React.MouseEvent, which: 'sidebar' | 'copilot') => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = which === 'sidebar' ? sidebarW : copilotW;
+    function onMove(ev: MouseEvent) {
+      const delta = ev.clientX - startX;
+      if (which === 'sidebar') {
+        const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + delta));
+        setSidebarW(w);
+      } else {
+        const w = Math.min(COPILOT_MAX, Math.max(COPILOT_MIN, startW - delta));
+        setCopilotW(w);
+      }
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setSidebarW((w) => { localStorage.setItem('wa-sidebar-w', String(w)); return w; });
+      setCopilotW((w) => { localStorage.setItem('wa-copilot-w', String(w)); return w; });
+    }
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [sidebarW, copilotW]);
 
   const { confirm, confirmDialog } = useConfirm();
   const { perms } = usePermissions();
@@ -176,6 +243,7 @@ export function WhatsAppInbox() {
   // vêm em seguida; os desfechos (encerradas) ficam cada um com seu próprio
   // ícone, sem nada escondido atrás de um select.
   const ACTIVE_FOLDERS = [
+    { key: 'todos', label: 'Todos', title: 'Todas as conversas', icon: InboxIcon },
     { key: 'ativas', label: 'Ativas', title: 'Conversas ativas', icon: MessageCircle },
     { key: 'bot', label: 'Bot', title: 'Bot atendendo', icon: Bot },
     { key: 'standby', label: 'Recup.', title: 'Em recuperação', icon: RotateCcw },
@@ -197,11 +265,11 @@ export function WhatsAppInbox() {
   // Cor do cabeçalho de cada pasta quando várias seções aparecem empilhadas
   // (busca global por tag) — pastas de desfecho ficam com o tom neutro padrão.
   const FOLDER_ACCENT: Record<FolderKey, keyof typeof GROUP_ACCENT | undefined> = {
-    ativas: 'ativas', bot: 'bot', standby: 'recup',
+    todos: 'ativas', ativas: 'ativas', bot: 'bot', standby: 'recup',
     qualified: undefined, unqualified: undefined, sem_resposta: undefined,
     perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined,
   };
-  const [activeFolder, setActiveFolder] = useState<FolderKey>('ativas');
+  const [activeFolder, setActiveFolder] = useState<FolderKey>('todos');
 
   // Paginação client-side: cada pasta mostra 200 por vez, com "Carregar mais".
   // Reinicia ao trocar de pasta, buscar ou filtrar por tag.
@@ -346,7 +414,8 @@ export function WhatsAppInbox() {
       standby: filtered.filter((c) => c.status === 'standby'),
       sem_resposta: byCategory('sem_resposta'),
       qualified: closed.filter((c) => c.closeCategory === 'qualificado' || (!c.closeCategory && c.qualified === true)),
-      unqualified: closed.filter((c) => c.closeCategory === 'nao_qualificado' || (!c.closeCategory && c.qualified !== true)),
+      // Inclui os sub-motivos dinâmicos (nq_*) — tudo que é "não qualificado".
+      unqualified: closed.filter((c) => c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_') || (!c.closeCategory && c.qualified !== true)),
       perguntas: byCategory('perguntas'),
       novo_acidente: byCategory('novo_acidente'),
       transferido: byCategory('transferido'),
@@ -356,18 +425,42 @@ export function WhatsAppInbox() {
 
   // Itens de cada pasta do rail (mesma fonte que os contadores dos ícones).
   // "Ativas" junta fila + atendimento humano — quem está na fila sempre
-  // aparece primeiro (e entre os da fila, urgente primeiro).
+  // aparece primeiro (e entre os da fila, urgente primeiro). "Só minhas"
+  // esconde o atendimento humano de outros atendentes, mas a fila (de
+  // ninguém ainda) continua visível pra não perder a visão geral.
+  const humanFilter = (c: WhatsAppConversationDTO) => {
+    if (onlyMine) return c.assignedToId === meId;
+    if (attendantFilter) return c.assignedToId === attendantFilter;
+    return true;
+  };
+  const ativasItems = [...groups.queued, ...groups.ativas.filter(humanFilter)];
+  // "Todos" (estilo Botconversa): a lista inteira, de qualquer status, na
+  // ordem da última mensagem — os filtros de atendente valem só pro humano.
+  const todosItems = filtered.filter((c) => c.status !== 'human' || humanFilter(c));
+  // Carga por atendente (chips da "equipe"): conta o atendimento humano SEM
+  // os filtros de atendente, senão o número muda ao clicar no próprio chip.
+  const teamLoad = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    for (const c of groups.ativas) {
+      if (!c.assignedToId) continue;
+      const cur = map.get(c.assignedToId);
+      if (cur) cur.count += 1;
+      else map.set(c.assignedToId, { name: c.assignedToName ?? 'Atendente', count: 1 });
+    }
+    return [...map.entries()].sort((a, b) => b[1].count - a[1].count);
+  }, [groups.ativas]);
   const FOLDER_ITEMS: Record<FolderKey, WhatsAppConversationDTO[]> = {
-    ativas: [...groups.queued, ...groups.ativas], bot: groups.bot, standby: groups.standby,
+    todos: todosItems, ativas: ativasItems, bot: groups.bot, standby: groups.standby,
     qualified: groups.qualified, unqualified: groups.unqualified, sem_resposta: groups.sem_resposta,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
     descartado: groups.descartado,
   };
   const unreadInFolder = (key: FolderKey) => FOLDER_ITEMS[key].filter((c) => c.unread).length;
 
-  // Filtro de tag é global: ignora a pasta selecionada e busca em TODAS as
-  // conversas (ativas e encerradas) — não precisa entrar em pasta nenhuma.
-  const tagFilterActive = tagFilter.length > 0;
+  // Filtro de tag E busca são globais: ignoram a pasta selecionada e procuram
+  // em TODAS as conversas — pesquisar um número acha o cliente mesmo que ele
+  // esteja em outra aba.
+  const tagFilterActive = tagFilter.length > 0 || search.trim().length > 0;
   const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
 
   useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter]);
@@ -569,11 +662,14 @@ export function WhatsAppInbox() {
           Mobile: padrão WhatsApp — mostra a LISTA em tela cheia; ao abrir uma
           conversa, a lista some e a thread ocupa tudo (botão voltar no header).
           Desktop (md+): lista e thread lado a lado como sempre. */}
-      <aside className={`${activeContactId ? 'hidden md:flex' : 'flex'} w-full md:w-[360px] shrink-0 border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader`}>
+      <aside
+        style={{ ['--wa-sb-w' as string]: `${sidebarW}px` }}
+        className={`${activeContactId ? 'hidden md:flex' : 'flex'} relative w-full shrink-0 border-r border-[#14332a] bg-[#1f3d33] dark:border-zinc-800 whatsapp-darkreader md:w-[var(--wa-sb-w)]`}
+      >
         {/* Rail de pastas: cada status/desfecho é um ícone próprio, sempre à
             vista — nada mais escondido atrás de um select. */}
-        <div className="wa-scroll flex w-14 shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r border-[#14332a] bg-[#183129] py-2">
-          <span className="px-1 pb-1 text-center text-[8px] font-bold uppercase tracking-wider text-[#4f7a68]">Ativos</span>
+        <div className="wa-scroll flex w-[72px] shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r border-[#14332a] bg-[#183129] py-2.5">
+          <span className="px-1 pb-1.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4f7a68]">Ativos</span>
           {ACTIVE_FOLDERS.map((f) => (
             <RailButton
               key={f.key}
@@ -583,11 +679,11 @@ export function WhatsAppInbox() {
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
               active={!tagFilterActive && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setActiveFolder(f.key); }}
+              onClick={() => { setTagFilter([]); setAttendantFilter(null); setActiveFolder(f.key); }}
             />
           ))}
-          <div className="mx-2.5 my-1.5 h-px bg-[#14332a]" />
-          <span className="px-1 pb-1 text-center text-[8px] font-bold uppercase tracking-wider text-[#4f7a68]">Encerrados</span>
+          <div className="mx-3 my-2 h-px bg-[#14332a]" />
+          <span className="px-1 pb-1.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4f7a68]">Encerrados</span>
           {CLOSED_FOLDERS.map((f) => (
             <RailButton
               key={f.key}
@@ -597,7 +693,7 @@ export function WhatsAppInbox() {
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
               active={!tagFilterActive && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setActiveFolder(f.key); }}
+              onClick={() => { setTagFilter([]); setAttendantFilter(null); setActiveFolder(f.key); }}
             />
           ))}
         </div>
@@ -615,58 +711,116 @@ export function WhatsAppInbox() {
               )}
             </div>
 
-            {/* Busca por nome ou celular */}
-            <div className="flex items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2 py-1.5 focus-within:ring-2 focus-within:ring-[#6fd6ad]">
-              <Search className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nome ou celular..."
-                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#8fbcac]"
-              />
-              {search && (
-                <button onClick={() => setSearch('')} title="Limpar busca" className="text-[#8fbcac] hover:text-white">
-                  <X className="h-3.5 w-3.5" />
+            {/* Busca por nome ou celular (procura em TODAS as pastas) + novo contato */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-2 py-1.5 focus-within:ring-2 focus-within:ring-[#6fd6ad]">
+                <Search className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar por nome ou celular..."
+                  className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#8fbcac]"
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} title="Limpar busca" className="text-[#8fbcac] hover:text-white">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => setAddContactOpen(true)}
+                title="Adicionar contato"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#3a6b58] bg-[#2e5749] text-lg font-bold leading-none text-[#6fd6ad] transition-colors hover:bg-[#356b57]"
+              >
+                +
+              </button>
+            </div>
+
+            {/* Filtro por tags (dropdown — a fileira de pills ocupava a sidebar
+                inteira) — busca em TODAS as conversas, independente da pasta */}
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${tagFilter.length
+                      ? 'border-[#6fd6ad] bg-[#1a6649] text-white'
+                      : 'border-[#3a6b58] text-[#8fbcac] hover:bg-[#2e5749] hover:text-white'
+                      }`}
+                  >
+                    <TagIcon className="h-3 w-3" />
+                    {tagFilter.length ? `Tags (${tagFilter.length})` : 'Filtrar por tag'}
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-60 overflow-y-auto">
+                  <DropdownMenuLabel className="text-xs text-gray-400">Filtrar por tag</DropdownMenuLabel>
+                  {allTags.length === 0 && (
+                    <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
+                  )}
+                  {allTags.map((t) => (
+                    <DropdownMenuCheckboxItem
+                      key={t.id}
+                      checked={tagFilter.includes(t.id)}
+                      onCheckedChange={() =>
+                        setTagFilter((prev) => (prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
+                      onSelect={(e) => e.preventDefault()}
+                      className="text-sm"
+                    >
+                      <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: t.color }} />
+                      {t.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  {tagFilter.length > 0 && (
+                    <DropdownMenuItem onClick={() => setTagFilter([])} className="text-sm">
+                      <X className="mr-2 h-3.5 w-3.5" /> Limpar filtro
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => setTagsModalOpen(true)} className="text-sm">
+                    <Settings2 className="mr-2 h-3.5 w-3.5" /> Gerenciar tags
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && (
+                <button
+                  onClick={() => setOnlyMine((v) => !v)}
+                  title="Mostrar só o atendimento humano atribuído a mim (a fila continua visível pra todo mundo)"
+                  className={`ml-auto flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold transition-colors ${onlyMine
+                      ? 'border-[#6fd6ad] bg-[#1a6649] text-white'
+                      : 'border-[#3a6b58] text-[#8fbcac] hover:bg-[#2e5749] hover:text-white'
+                    }`}
+                >
+                  <UserCheck className="h-3 w-3" /> Só minhas
                 </button>
               )}
             </div>
-
-            {/* Filtro por tags — busca em TODAS as conversas, sem depender da pasta selecionada */}
-            <div className="mt-1.5 flex items-center justify-between gap-2">
-              <button onClick={() => setTagsModalOpen(true)} title="Gerenciar tags" className="rounded-full p-1 text-[#8fbcac] hover:bg-[#2e5749] hover:text-white">
-                <Settings2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {allTags.length > 0 && (
+            {/* Carga da equipe: quantas conversas humanas cada atendente carrega.
+                Clique filtra; sobrecarregado (10+) fica âmbar. */}
+            {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {allTags.map((t) => {
-                  const on = tagFilter.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setTagFilter((prev) => (on ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
-                      className="flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold transition-colors"
-                      style={on
-                        ? { backgroundColor: t.color, borderColor: t.color, color: 'white' }
-                        : { borderColor: t.color, color: t.color }}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {allTags.length === 0 && (
-              <div className="mt-1.5">
-                <button onClick={() => setTagsModalOpen(true)} className="flex items-center gap-1 text-[11px] font-semibold text-[#8fbcac] hover:text-white">
-                  <TagIcon className="h-3 w-3" /> Criar tags
-                </button>
+                <span className="text-[8.5px] font-bold uppercase tracking-wider text-[#5c8977]">Equipe</span>
+                {teamLoad.map(([id, t]) => (
+                  <button
+                    key={id}
+                    onClick={() => { setOnlyMine(false); setAttendantFilter((cur) => (cur === id ? null : id)); }}
+                    title={`${t.name} — ${t.count} conversa${t.count === 1 ? '' : 's'} · clique para filtrar`}
+                    className={`flex items-center gap-1 rounded-full border py-0.5 pl-0.5 pr-2 transition-colors ${attendantFilter === id
+                      ? 'border-[#6fd6ad] bg-[#1a6649]'
+                      : t.count >= 10 ? 'border-[#8a5a20] hover:bg-[#2e5749]' : 'border-[#3a6b58] hover:bg-[#2e5749]'
+                      }`}
+                  >
+                    <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[7px] font-bold text-white ${attendantBadgeColor(t.name)}`}>
+                      {initials(t.name)}
+                    </span>
+                    <span className={`text-[9px] font-bold ${t.count >= 10 ? 'text-amber-400' : 'text-[#d3e2db]'}`}>{t.count}</span>
+                  </button>
+                ))}
               </div>
             )}
             {tagFilterActive && (
               <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#26483c] px-2 py-1.5 text-[11px] font-semibold text-[#a9f2d8]">
                 <Search className="h-3 w-3 shrink-0" />
-                {filtered.length} conversa{filtered.length === 1 ? '' : 's'} com essa{tagFilter.length > 1 ? 's' : ''} tag{tagFilter.length > 1 ? 's' : ''}, em <b>todas as pastas</b>.
+                {filtered.length} resultado{filtered.length === 1 ? '' : 's'} {search.trim() ? 'pra essa busca' : 'com essas tags'}, em <b>todas as pastas</b>.
               </div>
             )}
           </div>
@@ -687,11 +841,11 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Com tag marcada: mostra cada pasta em sua própria seção (só as
-                conversas QUE TÊM a tag), igual era antes — só que agora sem
-                precisar entrar em pasta nenhuma pra ver os resultados. */}
+            {/* Com tag/busca ativa: mostra cada pasta em sua própria seção
+                (sem a "Todos", que duplicaria tudo) — os resultados aparecem
+                sem precisar entrar em pasta nenhuma. */}
             {tagFilterActive ? (
-              ALL_FOLDERS.map((f) => (
+              ALL_FOLDERS.filter((f) => f.key !== 'todos').map((f) => (
                 <ConversationGroup
                   key={f.key}
                   title={f.title}
@@ -703,6 +857,28 @@ export function WhatsAppInbox() {
                   meName={session?.user?.name ?? ''}
                 />
               ))
+            ) : activeFolder === 'unqualified' ? (
+              // Não qualificadas agrupadas POR MOTIVO de descarte — identifica
+              // de cara por que cada lead não fechou.
+              (() => {
+                const byReason = new Map<string, WhatsAppConversationDTO[]>();
+                for (const c of visibleItems) {
+                  const label = c.closeCategoryLabel ?? 'Não qualificada (motivo genérico)';
+                  const arr = byReason.get(label);
+                  if (arr) arr.push(c); else byReason.set(label, [c]);
+                }
+                return [...byReason.entries()].sort((a, b) => b[1].length - a[1].length).map(([label, items]) => (
+                  <ConversationGroup
+                    key={label}
+                    title={label.replace(/^Não qualif(icada|\.)?\s*[—-]\s*/i, '')}
+                    items={items}
+                    activeContactId={activeContactId}
+                    onSelect={setActiveContactId}
+                    meId={meId}
+                    meName={session?.user?.name ?? ''}
+                  />
+                ));
+              })()
             ) : (
               <ConversationGroup
                 title={FOLDER_TITLE[activeFolder]}
@@ -713,6 +889,7 @@ export function WhatsAppInbox() {
                 meId={meId}
                 meName={session?.user?.name ?? ''}
                 forceShow
+                hideTitle
                 emptyLabel="Nenhuma conversa aqui."
               />
             )}
@@ -729,6 +906,12 @@ export function WhatsAppInbox() {
             )}
           </div>
         </div>
+        {/* Alça de redimensionar a lista (só desktop) */}
+        <div
+          onMouseDown={(e) => startResize(e, 'sidebar')}
+          title="Arraste para redimensionar"
+          className="absolute -right-1 bottom-0 top-0 z-10 hidden w-2 cursor-col-resize hover:bg-[#6fd6ad]/20 md:block"
+        />
       </aside>
 
       {/* ---------- Thread ---------- */}
@@ -762,11 +945,11 @@ export function WhatsAppInbox() {
                 <p className="truncate font-bold text-gray-900 underline-offset-2 hover:underline dark:text-zinc-100">
                   {active.contactName ?? formatPhone(active.contactPhone)}
                 </p>
-                <p className="text-xs text-gray-400">
+                {/* <p className="text-xs text-gray-400">
                   {formatPhone(active.contactPhone)}
                   {active.assignedToName ? ` · com ${active.assignedToName}` : ''}
                   {' · clique para ver a ficha'}
-                </p>
+                </p> */}
                 {active.tags.length > 0 && (
                   <span className="mt-1 flex flex-wrap gap-1">
                     {active.tags.map((t) => (
@@ -794,7 +977,7 @@ export function WhatsAppInbox() {
               )}
               <span className={`hidden rounded-full px-2 py-0.5 text-xs font-semibold sm:inline ${STATUS_CHIP[active.status] ?? ''}`}>
                 {STATUS_LABEL[active.status] ?? active.status}
-                {active.status === 'closed' && (active.qualified ? ' · Qualificada' : ' · Não qualificada')}
+                {active.status === 'closed' && ` · ${active.closeCategoryLabel ?? (active.qualified ? 'Qualificada' : 'Não qualificada')}`}
               </span>
 
               {/* Tags da conversa */}
@@ -833,30 +1016,39 @@ export function WhatsAppInbox() {
               {active.status === 'human' && (
                 <HeaderButton icon={Undo2} label="Devolver pro bot" onClick={() => runAction(() => returnConversationToBot(active.id), 'Conversa devolvida pro bot.')} />
               )}
-              {active.status !== 'closed' ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button title="Encerrar conversa" className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                      <Archive className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span> <ChevronDown className="h-3 w-3" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel className="text-xs text-gray-400">Encerrar como…</DropdownMenuLabel>
-                    {CLOSE_CATEGORY_OPTIONS.map(({ category, label }) => {
-                      const { Icon, color } = CLOSE_MENU_META[category] ?? { Icon: Archive, color: 'text-gray-400' };
-                      return (
-                        <DropdownMenuItem
-                          key={category}
-                          onClick={() => runAction(() => closeConversation(active.id, category), `Encerrado: ${label}.`)}
-                          className="text-base"
-                        >
-                          <Icon className={`mr-2 h-3.5 w-3.5 ${color}`} /> {label}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
+              {/* Encerrar (aberta) / Alterar desfecho (encerrada — a IA às
+                  vezes desqualifica errado, e aqui a equipe corrige na mão). */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button title={active.status !== 'closed' ? 'Encerrar conversa' : 'Alterar o desfecho'} className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    <Archive className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{active.status !== 'closed' ? 'Encerrar' : 'Alterar desfecho'}</span> <ChevronDown className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-[70vh] overflow-y-auto">
+                  <DropdownMenuLabel className="text-xs text-gray-400">
+                    {active.status !== 'closed' ? 'Encerrar como…' : 'Mudar o desfecho para…'}
+                  </DropdownMenuLabel>
+                  {closeMenuOptions.map(({ category, label }) => {
+                    const { Icon, color } = CLOSE_MENU_META[category]
+                      ?? (category.startsWith('nq_') ? CLOSE_MENU_META.nao_qualificado : { Icon: Archive, color: 'text-gray-400' });
+                    return (
+                      <DropdownMenuItem
+                        key={category}
+                        onClick={() => runAction(() => closeConversation(active.id, category), `Encerrado: ${label}.`)}
+                        className="text-base"
+                      >
+                        <Icon className={`mr-2 h-3.5 w-3.5 ${color}`} /> {label}
+                        {active.status === 'closed' && active.closeCategory === category && <Check className="ml-2 h-3.5 w-3.5 text-emerald-600" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setReasonsModalOpen(true)} className="text-base">
+                    <Settings2 className="mr-2 h-3.5 w-3.5" /> Gerenciar motivos…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {active.status === 'closed' && (
                 <HeaderButton icon={Headset} label="Reabrir" onClick={() => runAction(() => assumeConversation(active.id), 'Atendimento reaberto.')} />
               )}
 
@@ -895,7 +1087,7 @@ export function WhatsAppInbox() {
               )}
             </header>
 
-            <div ref={scrollRef} className="wa-scroll flex-1 overflow-y-auto px-4 py-4">
+            <div ref={scrollRef} className="wa-scroll flex-1 overflow-y-auto px-5 py-5 md:px-7">
               {/* Carregar histórico anterior em blocos (evita puxar tudo de uma vez) */}
               {hasMore && (
                 <div className="mb-2 flex justify-center">
@@ -992,15 +1184,23 @@ export function WhatsAppInbox() {
 
       {/* ---------- Copiloto (coluna direita, lg+) ---------- */}
       {active && copilotOpen && (
-        <CopilotPanel
-          conversation={active}
-          messages={displayMessages}
-          clientInfo={clientInfo ?? null}
-          onClientInfoChanged={(info) => { mutateClientInfo(info, { revalidate: false }); }}
-          onOpenCard={() => setCardDialogOpen(true)}
-          onRefreshMessages={async () => { await mutateMessages(); }}
-          focusFicha={fichaFocusToken}
-        />
+        <div style={{ width: copilotW }} className="relative hidden shrink-0 lg:flex">
+          {/* Alça de redimensionar o Copiloto */}
+          <div
+            onMouseDown={(e) => startResize(e, 'copilot')}
+            title="Arraste para redimensionar"
+            className="absolute -left-1 bottom-0 top-0 z-10 w-2 cursor-col-resize hover:bg-[#6fd6ad]/20"
+          />
+          <CopilotPanel
+            conversation={active}
+            messages={displayMessages}
+            clientInfo={clientInfo ?? null}
+            onClientInfoChanged={(info) => { mutateClientInfo(info, { revalidate: false }); }}
+            onOpenCard={() => setCardDialogOpen(true)}
+            onRefreshMessages={async () => { await mutateMessages(); }}
+            focusFicha={fichaFocusToken}
+          />
+        </div>
       )}
 
       {/* CardDialog do cliente vinculado — aberto pelo atalho "Card #N" ou
@@ -1018,6 +1218,20 @@ export function WhatsAppInbox() {
       )}
 
       <WhatsAppTagsModal open={tagsModalOpen} onOpenChange={setTagsModalOpen} onChanged={reloadTags} />
+      <CloseReasonsModal
+        open={reasonsModalOpen}
+        onOpenChange={setReasonsModalOpen}
+        reasons={closeReasons ?? []}
+        onChanged={(updated) => mutateCloseReasons(updated, { revalidate: false })}
+      />
+      <AddContactDialog
+        open={addContactOpen}
+        onOpenChange={setAddContactOpen}
+        onCreated={async (contactId) => {
+          await refreshConversations();
+          setActiveContactId(contactId);
+        }}
+      />
     </div>
   );
 }
@@ -1043,6 +1257,195 @@ function windowPill(c: WhatsAppConversationDTO): string | null {
   return null;
 }
 
+/** Ícone do tipo de mídia da última mensagem, pra prévia da lista não
+ * depender só de texto cru quando é foto/áudio/documento. */
+function mediaKindIcon(mediaType: string | null): React.ElementType | null {
+  if (!mediaType) return null;
+  if (mediaType.startsWith('image/')) return ImageIconWA;
+  if (mediaType.startsWith('video/')) return Video;
+  if (mediaType.startsWith('audio/')) return Mic;
+  return FileText;
+}
+
+/** Logo da origem do lead (first-touch de Click-to-WhatsApp ads) no canto do
+ * avatar. Orgânico não ganha selo — a ausência já diz. */
+function SourceBadge({ platform }: { platform: string | null }) {
+  if (platform === 'instagram') {
+    return (
+      <span title="Veio de anúncio no Instagram" className="absolute -left-1 -top-1 h-[15px] w-[15px] overflow-hidden rounded-full border-2 border-[#1f3d33]">
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <defs>
+            <radialGradient id="wa-ig-grad" cx="30%" cy="107%" r="150%">
+              <stop offset="0%" stopColor="#fdf497" /><stop offset="30%" stopColor="#fd5949" />
+              <stop offset="60%" stopColor="#d6249f" /><stop offset="90%" stopColor="#285AEB" />
+            </radialGradient>
+          </defs>
+          <rect width="24" height="24" rx="7" fill="url(#wa-ig-grad)" />
+          <rect x="6" y="6" width="12" height="12" rx="4" fill="none" stroke="#fff" strokeWidth="1.6" />
+          <circle cx="12" cy="12" r="2.6" fill="none" stroke="#fff" strokeWidth="1.6" />
+          <circle cx="16.2" cy="7.8" r="1" fill="#fff" />
+        </svg>
+      </span>
+    );
+  }
+  if (platform === 'facebook') {
+    return (
+      <span title="Veio de anúncio no Facebook" className="absolute -left-1 -top-1 h-[15px] w-[15px] overflow-hidden rounded-full border-2 border-[#1f3d33]">
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <rect width="24" height="24" rx="12" fill="#1877f2" />
+          <path d="M15.5 12.5h-2.3V19h-2.8v-6.5H8.7V10h1.7V8.6c0-1.9 1-3 3-3 .8 0 1.5.1 1.7.1v2.1h-1.2c-.8 0-1 .4-1 1V10h2.3l-.3 2.5z" fill="#fff" />
+        </svg>
+      </span>
+    );
+  }
+  return null;
+}
+
+/** Modal de gestão dos motivos de "não qualificada" — a equipe adiciona e
+ * remove sem depender de deploy. Apagar um motivo não mexe em conversas já
+ * encerradas com ele (o rótulo histórico continua resolvível). */
+function CloseReasonsModal({
+  open, onOpenChange, reasons, onChanged,
+}: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  reasons: CloseReasonDTO[]; onChanged: (updated: CloseReasonDTO[]) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleAdd() {
+    const value = draft.trim();
+    if (!value || busy) return;
+    setBusy(true);
+    try {
+      onChanged(await createCloseReason(value));
+      setDraft('');
+      toast.success('Motivo criado.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao criar o motivo.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      onChanged(await deleteCloseReason(id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao excluir.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Motivos de não qualificada</DialogTitle>
+          <DialogDescription>
+            Cada motivo vira uma opção no menu Encerrar e um grupo próprio na pasta Não qual.
+            Apagar um motivo não altera conversas já encerradas com ele.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+            placeholder="Novo motivo (ex.: já recebe benefício)"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <button
+            onClick={handleAdd}
+            disabled={busy || !draft.trim()}
+            className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Adicionar
+          </button>
+        </div>
+        <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+          {reasons.length === 0 && <p className="text-sm text-gray-400">Nenhum motivo cadastrado ainda.</p>}
+          {reasons.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 px-3 py-2 text-sm dark:border-zinc-800">
+              <span className="min-w-0 truncate">{r.label}</span>
+              <button onClick={() => handleDelete(r.id)} title="Excluir motivo" className="shrink-0 text-gray-400 transition-colors hover:text-red-500">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Dialog de novo contato: cria contato + conversa em atendimento humano e
+ * abre o chat. Fora da janela de 24h, o primeiro envio sai por template. */
+function AddContactDialog({
+  open, onOpenChange, onCreated,
+}: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  onCreated: (contactId: string) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleCreate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { contactId } = await createWhatsAppContact(phone, name);
+      await onCreated(contactId);
+      onOpenChange(false);
+      setName(''); setPhone('');
+      toast.success('Contato criado — a conversa já está aberta com você.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao criar o contato.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Adicionar contato</DialogTitle>
+          <DialogDescription>
+            A conversa nasce em atendimento com você. Fora da janela de 24h da Meta, o primeiro contato sai por template aprovado.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Nome do contato"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+            placeholder="Celular com DDD (ex.: 41 99999-9999)"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <button
+            onClick={handleCreate}
+            disabled={busy || !name.trim() || !phone.trim()}
+            className="mt-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {busy ? 'Criando…' : 'Criar e abrir conversa'}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Botão do rail de pastas: ícone + rótulo curto + total, com selo vermelho de
 // "chegou agora" (não-lidas) quando a pasta tem alguma — igual em todas as
 // pastas, não só na Fila.
@@ -1056,14 +1459,14 @@ function RailButton({
     <button
       onClick={onClick}
       title={`${title} — ${count}${unread > 0 ? ` (${unread} nova${unread > 1 ? 's' : ''})` : ''}`}
-      className={`relative mx-1.5 mb-0.5 flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-center transition-colors ${active ? 'bg-[#1a6649] text-white' : 'text-[#8fbcac] hover:bg-[#204a3c] hover:text-white'
+      className={`relative mx-1.5 mb-1 flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-center transition-colors ${active ? 'bg-[#1a6649] text-white' : 'text-[#8fbcac] hover:bg-[#204a3c] hover:text-white'
         }`}
     >
-      <Icon className="h-4 w-4" />
-      <span className="text-[8px] font-bold uppercase leading-tight tracking-wide">{label}</span>
-      <span className="text-[9px] font-semibold text-[#8fbcac]">{count}</span>
+      <Icon className="h-[18px] w-[18px]" />
+      <span className="text-[9.5px] font-bold uppercase leading-tight tracking-wide">{label}</span>
+      <span className="text-[10px] font-semibold text-[#8fbcac]">{count}</span>
       {unread > 0 && (
-        <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-bold text-white">
+        <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-0.5 text-[9px] font-bold text-white">
           {unread}
         </span>
       )}
@@ -1109,76 +1512,114 @@ function ConversationGroup({
         const attIsMe = !!attName && (attName === meName || (!c.lastMessageAuthorName && c.assignedToId === meId));
         const isBotSide = c.status === 'bot' || c.status === 'standby';
         const pill = windowPill(c);
+        const MediaIcon = mediaKindIcon(c.lastMessageMediaType);
+        // Fila: mostra o motivo que o bot deixou ao transferir em vez do
+        // preview genérico — ajuda a decidir quem atender primeiro sem abrir.
+        const previewText = c.status === 'queued' && c.handoffReason
+          ? c.handoffReason
+          : (c.lastMessagePreview ? stripWaMarkup(c.lastMessagePreview) : '—');
+        const hasUnread = c.unread && c.status !== 'closed';
+        // Fila de espera: destaque âmbar (bolinha + hora) até alguém assumir.
+        const isQueued = c.status === 'queued';
         return (
           <button
             key={c.id}
             onClick={() => onSelect(c.contactId)}
-            className={`mx-1.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${isActive ? 'bg-[#1a6649] text-white' : 'text-[#d3e2db] hover:bg-[#26483c]'
+            className={`mx-1.5 mb-0.5 flex w-[calc(100%-12px)] flex-col rounded-lg px-2 py-2 text-left transition-colors ${isActive
+              ? 'bg-[#1a6649] text-white'
+              : hasUnread
+                ? 'bg-[#27503f] text-white hover:bg-[#2c5a47]'
+                : 'text-[#d3e2db] hover:bg-[#26483c]'
               }`}
           >
-            <span className="relative shrink-0">
-              <Avatar className="h-7 w-7 border border-[#3a6b58]">
-                <AvatarFallback className="bg-[#356b57] text-[10px] font-bold text-[#c5ecdb]">
-                  {initials(c.contactName ?? c.contactPhone)}
-                </AvatarFallback>
-              </Avatar>
-              {isBotSide && (
-                <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#1f3d33] bg-sky-600 text-white">
-                  <Bot className="h-2 w-2" />
+            {/* linha 1: avatar + nome + hora */}
+            <span className="flex w-full items-center gap-2.5">
+              <span className="relative shrink-0">
+                <Avatar className="h-9 w-9 border border-[#3a6b58]">
+                  <AvatarFallback className="bg-[#356b57] text-[11px] font-bold text-[#c5ecdb]">
+                    {initials(c.contactName ?? c.contactPhone)}
+                  </AvatarFallback>
+                </Avatar>
+                <SourceBadge platform={c.adPlatform} />
+                {isBotSide && (
+                  <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#1f3d33] bg-sky-600 text-white">
+                    <Bot className="h-2 w-2" />
+                  </span>
+                )}
+                {!isBotSide && attName && (
+                  <span
+                    title={attIsMe ? 'Você' : attName}
+                    className={`absolute -bottom-1 -right-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full border-2 border-[#1f3d33] px-px text-[6.5px] font-bold text-white ${attIsMe ? 'bg-emerald-600' : attendantBadgeColor(attName)
+                      }`}
+                  >
+                    {attIsMe ? 'EU' : initials(attName)}
+                  </span>
+                )}
+              </span>
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className={`truncate text-[13px] ${hasUnread ? 'font-bold text-white' : isQueued ? 'font-bold text-amber-200' : 'font-semibold'}`}>{c.contactName ?? formatPhone(c.contactPhone)}</span>
+              </span>
+              {c.urgent && c.status !== 'closed' && (
+                <span className="shrink-0 animate-pulse rounded-full bg-red-500/20 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wide text-red-300 ring-1 ring-red-500/40">Urgente</span>
+              )}
+              {c.status === 'standby' && c.recoveryAttempts > 0 && (
+                <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-violet-300 ring-1 ring-violet-400/30">
+                  {Math.min(c.recoveryAttempts, 3)}ª de 3
                 </span>
               )}
-              {!isBotSide && attName && (
-                <span
-                  title={attIsMe ? 'Você' : attName}
-                  className={`absolute -bottom-1 -right-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full border-2 border-[#1f3d33] px-px text-[6.5px] font-bold text-white ${attIsMe ? 'bg-emerald-600' : attendantBadgeColor(attName)
-                    }`}
-                >
-                  {attIsMe ? 'EU' : initials(attName)}
-                </span>
+              {pill && (
+                <span className="shrink-0 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-amber-300 ring-1 ring-amber-400/30">{pill}</span>
               )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-baseline justify-between gap-2">
-                <span className="flex min-w-0 items-baseline gap-1.5">
-                  <span className="truncate text-[13px] font-semibold">{c.contactName ?? formatPhone(c.contactPhone)}</span>
-                  {c.urgent && c.status !== 'closed' && (
-                    <span className="shrink-0 animate-pulse rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
-                      Urgente
-                    </span>
-                  )}
-                  {c.status === 'standby' && c.recoveryAttempts > 0 && (
-                    <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
-                      {Math.min(c.recoveryAttempts, 3)}ª de 3
-                    </span>
-                  )}
-                  {pill && (
-                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                      {pill}
-                    </span>
-                  )}
-                </span>
-                <span className="shrink-0 text-[10.5px] text-[#8fbcac]">
+              {/* coluna direita estilo WhatsApp: hora em cima, badge embaixo.
+                  Verde = mensagens não lidas; âmbar = esperando na fila. */}
+              <span className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className={`text-[10px] font-semibold ${hasUnread ? 'text-[#6fd6ad]' : isQueued ? 'text-amber-400' : 'text-[#8fbcac]'}`}>
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
+                {hasUnread && c.unreadCount > 0 ? (
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#1d9e75] px-1 text-[10px] font-bold text-white">
+                    {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                  </span>
+                ) : hasUnread ? (
+                  <span className="h-[9px] w-[9px] rounded-full bg-[#6fd6ad]" />
+                ) : isQueued ? (
+                  <span title="Na fila de espera — ninguém assumiu ainda" className="h-[9px] w-[9px] rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,.6)]" />
+                ) : null}
               </span>
-              <span className="block truncate text-[11.5px] text-[#a7c9bc]">
-                {c.lastMessagePreview ? stripWaMarkup(c.lastMessagePreview) : '—'}
-              </span>
-              {(c.tags.length > 0 || folderLabel) && (
-                <span className="mt-0.5 flex flex-wrap items-center gap-1">
-                  {c.tags.map((t) => (
-                    <span key={t.id} className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.color }}>
-                      {t.name}
-                    </span>
-                  ))}
-                  {folderLabel && (
-                    <span className="text-[9.5px] font-bold uppercase tracking-wide text-[#7fae9c]">{folderLabel(c)}</span>
-                  )}
-                </span>
-              )}
             </span>
-            {c.unread && c.status !== 'closed' && (
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+
+            {/* linha 2: ticks (quando a última é nossa, estilo WhatsApp) + prévia */}
+            <span className="mt-0.5 flex w-full items-center gap-1 pl-[46px] text-[11px] text-[#a7c9bc]">
+              {!c.lastMessageFromClient && c.lastMessageStatus && (
+                c.lastMessageStatus === 'read'
+                  ? <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                  : c.lastMessageStatus === 'delivered'
+                    ? <CheckCheck className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
+                    : c.lastMessageStatus === 'failed'
+                      ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                      : <Check className="h-3.5 w-3.5 shrink-0 text-[#8fbcac]" />
+              )}
+              {MediaIcon && <MediaIcon className="h-3 w-3 shrink-0" />}
+              <span className="truncate">{previewText}</span>
+            </span>
+
+            {/* linha 3: tags (só quando existem) */}
+            {(c.tags.length > 0 || folderLabel) && (
+              <span className="mt-1 flex w-full items-center gap-1.5 pl-[46px]">
+                {c.tags.slice(0, 2).map((t) => (
+                  <span key={t.id} className="rounded-md px-1.5 py-0.5 text-[9px] font-bold text-white" style={{ backgroundColor: t.color }}>
+                    {t.name}
+                  </span>
+                ))}
+                {c.tags.length > 2 && (
+                  <span title={c.tags.slice(2).map((t) => t.name).join(', ')} className="rounded-md bg-[#33544a] px-1.5 py-0.5 text-[9px] font-bold text-[#a7c9bc]">
+                    +{c.tags.length - 2}
+                  </span>
+                )}
+                {folderLabel && (
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-[#7fae9c]">{folderLabel(c)}</span>
+                )}
+              </span>
             )}
           </button>
         );
@@ -1223,7 +1664,7 @@ function ThreadMessageRow({
 
   if (msg.deletedAt) {
     return (
-      <div ref={setRowRef} className={`flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-0.5' : 'mt-2'}`}>
+      <div ref={setRowRef} className={`flex items-end gap-2 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-1' : 'mt-3'}`}>
         <div className="flex items-center gap-1.5 rounded-2xl border border-dashed border-gray-200 px-3 py-1.5 text-sm italic text-gray-400 dark:border-zinc-700">
           <Ban className="h-3 w-3" /> Mensagem apagada
         </div>
@@ -1276,7 +1717,7 @@ function ThreadMessageRow({
   return (
     <div
       ref={setRowRef}
-      className={`group flex items-end gap-2 rounded-xl transition-colors duration-700 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-0.5' : 'mt-2'} ${highlighted ? 'bg-amber-100/70 dark:bg-amber-900/30' : ''}`}
+      className={`group flex items-end gap-2 rounded-xl transition-colors duration-700 ${mine ? 'flex-row-reverse' : ''} ${grouped ? 'mt-1' : 'mt-3'} ${highlighted ? 'bg-amber-100/70 dark:bg-amber-900/30' : ''}`}
     >
       <div className={`flex max-w-[85%] flex-col md:max-w-[72%] ${mine ? 'items-end' : 'items-start'}`}>
         {mine && !grouped && (
@@ -1285,7 +1726,7 @@ function ThreadMessageRow({
           </span>
         )}
         <div
-          className={`rounded-2xl px-3 py-2 text-base shadow-sm ${mine
+          className={`rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm ${mine
               ? msg.sentByBot
                 ? 'rounded-br-md bg-violet-600 text-white'
                 : 'rounded-br-md bg-emerald-600 text-white'

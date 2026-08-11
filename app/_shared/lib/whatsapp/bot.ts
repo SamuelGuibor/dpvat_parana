@@ -463,9 +463,45 @@ async function qualifyToQueue(contactId: string, contactLabel: string, reason: s
 
   await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}`);
   await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId);
+  // Lead qualificado SEM card ainda: cria a tarefa na caixa de Menções e
+  // Tarefas da equipe — criar o card e enviar o contrato pra assinatura não
+  // pode depender de alguém lembrar do aviso volátil do sino.
+  void createCardTaskForTeam(contactId, contactLabel, reason);
   // Devolve pra Meta (API de Conversões) que este lead qualificou — otimiza
   // as campanhas por qualidade. Fire-and-forget, nunca quebra o fluxo.
   void reportLeadStageToMeta(contactId, "qualificado");
+}
+
+/**
+ * Tarefa "criar card + enviar contrato" na caixa de Menções e Tarefas quando a
+ * IA qualifica um lead que ainda não tem card. Best-effort: nunca quebra o
+ * fluxo de qualificação.
+ */
+async function createCardTaskForTeam(contactId: string, contactLabel: string, reason: string): Promise<void> {
+  try {
+    const contact = await db.whatsAppContact.findUnique({
+      where: { id: contactId },
+      select: { userId: true },
+    });
+    if (!contact || contact.userId) return; // já tem card — nada a fazer
+
+    const team = await db.user.findMany({
+      where: { role: { in: ["ADMIN", "ADMIN+", "ADMIN++"] } },
+      select: { id: true },
+    });
+    const { recordMentions } = await import("@/app/_shared/lib/mention-inbox");
+    await recordMentions({
+      recipientIds: team.map((u) => u.id),
+      authorId: null,
+      authorName: "Bot WhatsApp",
+      source: "whatsapp",
+      text: `Lead qualificado pela IA — criar o card e enviar o contrato pra assinatura. Motivo: ${reason}`,
+      targetName: `WhatsApp · ${contactLabel}`,
+      channelId: contactId, // abre a conversa direto no inbox
+    });
+  } catch (err) {
+    console.error("[WA BOT] Falha ao criar a tarefa de card do lead qualificado:", err);
+  }
 }
 
 /** Cliente NÃO elegível: encerra o ticket como "não qualificada". */

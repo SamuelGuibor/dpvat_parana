@@ -264,7 +264,7 @@ export function CopilotPanel({
   }
 
   return (
-    <aside className="hidden w-[270px] shrink-0 flex-col border-l border-gray-200 bg-gray-50 dark:border-zinc-800 lg:flex">
+    <aside className="flex w-full min-w-0 flex-col border-l border-gray-200 bg-gray-50 dark:border-zinc-800">
       {/* Abas da coluna */}
       <div className="flex shrink-0 border-b border-gray-200 bg-white dark:border-zinc-800">
         {([
@@ -294,6 +294,77 @@ export function CopilotPanel({
         {/* ================= COPILOTO ================= */}
         {tab === 'copiloto' && (
           <>
+            {/* Jornada do lead: situa quem pega a conversa no meio, em 2s. */}
+            <CopilotCard title="Jornada do lead">
+              {/* Telefone + atendente saíram do cabeçalho da thread pra cá. */}
+              <p className="mb-1.5 text-xs text-gray-500 dark:text-zinc-400">
+                {formatPhone(conversation.contactPhone)}
+                {conversation.assignedToName ? ` · com ${conversation.assignedToName}` : ''}
+              </p>
+              <div className="flex flex-col gap-1">
+                {(() => {
+                  const origem = conversation.adPlatform === 'instagram' ? 'anúncio (Instagram)'
+                    : conversation.adPlatform === 'facebook' ? 'anúncio (Facebook)' : 'orgânico';
+                  const chegou = new Date(conversation.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                  const fichaOk = !!(conversation.caseLesoes || (docs?.length ?? 0) > 0);
+                  const statusLabel: Record<string, string> = {
+                    bot: 'bot atendendo', queued: 'na fila de espera', human: 'em atendimento',
+                    standby: 'em recuperação', closed: 'encerrada',
+                  };
+                  const contratoOk = conversation.hasCpf && (docs?.length ?? 0) > 0;
+                  const steps: { label: string; on: boolean }[] = [
+                    { label: `chegou por ${origem} · ${chegou}`, on: true },
+                    { label: 'bot coletou ficha', on: fichaOk },
+                    { label: statusLabel[conversation.status] ?? conversation.status, on: true },
+                    { label: 'contrato', on: contratoOk },
+                  ];
+                  return steps.map((s) => (
+                    <span key={s.label} className={`flex items-center gap-2 text-sm ${s.on ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400'}`}>
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.on ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-zinc-600'}`} />
+                      {s.label}
+                    </span>
+                  ));
+                })()}
+              </div>
+            </CopilotCard>
+
+            {/* Contrato: identifica item a item o que já tem e o que trava. */}
+            <CopilotCard title="Contrato" highlight={!conversation.hasCpf || (docs?.length ?? 0) === 0}>
+              {(conversation.caseLesoes || conversation.caseCidade || conversation.caseDataAcidente) && (
+                <p className="mb-1.5 text-xs text-gray-500 dark:text-zinc-400">
+                  {[conversation.caseLesoes, conversation.caseCidade, conversation.caseDataAcidente].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              <div className="flex flex-col gap-1">
+                {([
+                  { label: 'Caso informado (lesões/data)', done: !!(conversation.caseLesoes || conversation.caseDataAcidente) },
+                  { label: `Documentos (${docs?.length ?? 0})`, done: (docs?.length ?? 0) > 0 },
+                  { label: 'CPF', done: conversation.hasCpf },
+                ] as { label: string; done: boolean }[]).map((item) => (
+                  <span key={item.label} className={`flex items-center gap-2 text-sm ${item.done ? 'text-gray-700 dark:text-zinc-200' : 'text-amber-600 dark:text-amber-400'}`}>
+                    <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${item.done ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-amber-400 bg-white dark:bg-zinc-900'
+                      }`}>
+                      {item.done && <Check className="h-3 w-3" />}
+                    </span>
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+              {!conversation.hasCpf && conversation.status !== 'closed' && (
+                <button
+                  onClick={() => {
+                    const first = (conversation.contactName ?? '').trim().split(/\s+/)[0];
+                    const text = `${first ? `${first}, ` : ''}pra eu finalizar a análise do seu caso, pode me enviar o seu CPF, por favor?`;
+                    window.dispatchEvent(new CustomEvent('wa-composer-insert', { detail: { text } }));
+                    toast.success('Mensagem no campo — revise antes de enviar.');
+                  }}
+                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 transition-colors hover:bg-violet-100"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Pedir CPF com 1 clique
+                </button>
+              )}
+            </CopilotCard>
+
             <CopilotCard
               title="Resumo da conversa"
               action={summary

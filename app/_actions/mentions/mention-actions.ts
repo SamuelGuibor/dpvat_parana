@@ -12,7 +12,9 @@ export interface MentionDTO {
   authorId: string | null;
   authorName: string;
   authorImage: string | null;
-  source: 'comment' | 'chat';
+  // "whatsapp": tarefa criada pelo bot (ex.: lead qualificado pela IA que
+  // precisa de card + contrato) — abrir leva pra conversa do WhatsApp.
+  source: 'comment' | 'chat' | 'whatsapp';
   excerpt: string;
   commentId: string | null;
   /** Card do tipo "usuário" (lead) — usado para abrir o card no Kanban. */
@@ -119,7 +121,7 @@ async function enrich(rows: MentionRow[]): Promise<MentionDTO[]> {
       authorId: r.authorId,
       authorName: r.authorName,
       authorImage: r.authorId ? authorMap.get(r.authorId) ?? null : null,
-      source: r.source === 'chat' ? 'chat' : 'comment',
+      source: r.source === 'chat' ? 'chat' : r.source === 'whatsapp' ? 'whatsapp' : 'comment',
       excerpt: r.excerpt,
       commentId: r.commentId,
       userId: r.userId,
