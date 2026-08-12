@@ -20,7 +20,7 @@ export const CLOSE_CATEGORY_LABELS: Record<string, string> = {
   perguntas: 'Perguntas / dúvidas',
   novo_acidente: 'Novo acidente (cadastrado)',
   transferido: 'Transferidos ao atendente',
-  // Desfecho do ciclo de recuperação (status "standby"): 3 provocações do
+  // Desfecho do ciclo de recuperação (status "standby"): 5 provocações do
   // cron sem nenhuma resposta do cliente.
   sem_resposta: 'Sem resposta (não recuperado)',
   // Lixo/spam/engano — separado dos "não qualificados" de verdade para não

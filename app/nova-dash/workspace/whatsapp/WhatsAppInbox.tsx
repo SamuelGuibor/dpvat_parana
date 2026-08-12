@@ -1594,7 +1594,7 @@ function ConversationGroup({
               )}
               {c.status === 'standby' && c.recoveryAttempts > 0 && (
                 <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-violet-300 ring-1 ring-violet-400/30">
-                  {Math.min(c.recoveryAttempts, 3)}ª de 3
+                  {Math.min(c.recoveryAttempts, 5)}ª de 5
                 </span>
               )}
               {pill && (
@@ -1607,7 +1607,14 @@ function ConversationGroup({
                 <span className={`text-[10px] font-semibold ${isQueued ? 'text-amber-400' : hasUnread ? 'text-[#6fd6ad]' : 'text-[#8fbcac]'}`}>
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
-                {hasUnread && c.unreadCount > 0 ? (
+                {hasUnread && c.manualUnread ? (
+                  <span
+                    title="Marcada como não lida por alguém da equipe"
+                    className="flex h-[18px] items-center rounded-full bg-[#1d9e75]/20 px-1.5 text-[9px] font-bold uppercase tracking-wide text-[#6fd6ad] ring-1 ring-[#1d9e75]"
+                  >
+                    não lida
+                  </span>
+                ) : hasUnread && c.unreadCount > 0 ? (
                   <span className={`flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${isQueued ? 'bg-amber-400 text-[#1f3d33] shadow-[0_0_6px_rgba(251,191,36,.6)]' : 'bg-[#1d9e75] text-white'}`}>
                     {c.unreadCount > 99 ? '99+' : c.unreadCount}
                   </span>

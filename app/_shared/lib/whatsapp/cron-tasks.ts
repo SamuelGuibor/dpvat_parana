@@ -42,9 +42,14 @@ const OVERDUE_AUTHOR_ID = 'kanban-overdue';
 const OVERDUE_MAX_CARDS = 60; // teto por rodada (os mais atrasados primeiro)
 
 // ---- Ciclo de RECUPERAÇÃO (status "standby") --------------------------------
-const RECOVERY_MAX_ATTEMPTS = 3;
-const RECOVERY_FIRST_AFTER_MS = 22 * 60 * 60_000; // após a última msg do cliente
-const RECOVERY_GAP_MS = 24 * 60 * 60_000;         // entre tentativas
+// 12/08/2026: 5 provocações no total — as 3 primeiras DENTRO da janela de 24h
+// da Meta (texto livre, sem gastar template), as 2 últimas por template
+// (recuperacao_triagem_1 e depois a final), espaçadas de 24h como antes.
+const RECOVERY_MAX_ATTEMPTS = 5;
+const RECOVERY_EARLY_ATTEMPTS = 3;                // texto livre na janela de 24h
+const RECOVERY_FIRST_AFTER_MS = 4 * 60 * 60_000;  // 1ª provocação: 4h após a última msg do cliente
+const RECOVERY_EARLY_GAP_MS = 8 * 60 * 60_000;    // entre as provocações da janela (4h, 12h, 20h)
+const RECOVERY_GAP_MS = 24 * 60 * 60_000;         // entre as tentativas por template
 const RECOVERY_RETRY_MS = 6 * 60 * 60_000;        // re-tenta envios que falharam
 const RECOVERY_TEMPLATE_1 = 'recuperacao_triagem_1';
 const RECOVERY_TEMPLATE_FINAL = 'recuperacao_triagem_final';
@@ -376,13 +381,15 @@ async function buildRecoveryMessage(
 ): Promise<{ message: string; pending: string }> {
   const first = (contactName ?? '').trim().split(/\s+/)[0] ?? '';
   const oi = first ? `Oi, ${first}!` : 'Oi!';
-  const fallbackMessages: Record<number, string> = {
-    1: `${oi} Vi que a gente começou seu atendimento sobre o acidente, mas ficou faltando bem pouco pra concluir. Posso continuar de onde paramos? É rapidinho. 😊`,
-    2: `${oi} Ainda dá tempo de dar andamento no seu caso — falta muito pouco pra gente concluir sua análise. É só me responder por aqui que eu continuo na hora. 🙏`,
-    3: `${first ? `${first}, essa` : 'Essa'} é minha última mensagem, tá? Seu atendimento está quase pronto e seria uma pena parar agora que falta tão pouco. Se ainda tiver interesse, é só responder que a gente termina juntos. 🙏`,
-  };
+  // 1ª = retomada leve; do meio = insistência; a ÚLTIMA (5ª) é a despedida.
+  const fallbackMessage =
+    attempt >= RECOVERY_MAX_ATTEMPTS
+      ? `${first ? `${first}, essa` : 'Essa'} é minha última mensagem, tá? Seu atendimento está quase pronto e seria uma pena parar agora que falta tão pouco. Se ainda tiver interesse, é só responder que a gente termina juntos. 🙏`
+      : attempt === 1
+        ? `${oi} Vi que a gente começou seu atendimento sobre o acidente, mas ficou faltando bem pouco pra concluir. Posso continuar de onde paramos? É rapidinho. 😊`
+        : `${oi} Ainda dá tempo de dar andamento no seu caso — falta muito pouco pra gente concluir sua análise. É só me responder por aqui que eu continuo na hora. 🙏`;
   const fallback = {
-    message: fallbackMessages[Math.min(attempt, 3)] ?? fallbackMessages[3],
+    message: fallbackMessage,
     pending: pendingFromState(botState),
   };
   if (!CHATBOT_URL || !CHATBOT_SECRET) return fallback;
@@ -604,7 +611,7 @@ export async function runRecoveryPhase(): Promise<CronResults> {
         results.closed++;
         return;
       }
-      // 3 provocações e mais 24h de silêncio → não há o que fazer.
+      // 5 provocações e mais 24h de silêncio → não há o que fazer.
       if (conv.recoveryAttempts >= RECOVERY_MAX_ATTEMPTS) {
         await recordRecoveryEvent({
           contactId: conv.contactId,
@@ -668,8 +675,10 @@ export async function runRecoveryPhase(): Promise<CronResults> {
       );
       const firstName = (conv.contact.name ?? '').trim().split(/\s+/)[0] || 'amigo(a)';
       const isFinal = attempt >= RECOVERY_MAX_ATTEMPTS;
-      // A partir da 2ª tentativa o template já é o FINAL (não repetir template).
-      const useFinalTemplate = attempt >= 2;
+      // Só a ÚLTIMA (5ª) usa o template final; a 4ª usa o template 1. As
+      // tentativas 1-3 devem sair como texto livre (janela de 24h aberta) —
+      // o template abaixo é só o fallback caso a janela já tenha fechado.
+      const useFinalTemplate = isFinal;
       const sent = await sendSystemWhatsApp({
         phone: conv.contact.phone,
         clientName: conv.contact.name,
@@ -683,7 +692,15 @@ export async function runRecoveryPhase(): Promise<CronResults> {
 
       if (sent.sent) {
         const sentFinalTemplate = sent.via === 'template' && useFinalTemplate;
-        const attemptsAfter = sentFinalTemplate ? RECOVERY_MAX_ATTEMPTS : attempt;
+        // Se uma tentativa "da janela" (1-3) acabou saindo por template, a
+        // janela fechou — não faz sentido insistir em texto livre: pula
+        // direto pra fase de templates (próxima = final, em 24h). Template
+        // final enviado = ciclo completo, não repetir template.
+        const attemptsAfter = sentFinalTemplate
+          ? RECOVERY_MAX_ATTEMPTS
+          : sent.via === 'template'
+            ? Math.max(attempt, RECOVERY_MAX_ATTEMPTS - 1)
+            : attempt;
         await recordRecoveryEvent({
           contactId: conv.contactId,
           contactName: conv.contact.name,
@@ -691,14 +708,16 @@ export async function runRecoveryPhase(): Promise<CronResults> {
           action: 'attempt',
           attempt,
           detail: sent.via === 'template'
-            ? `template ${useFinalTemplate ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1}${useFinalTemplate ? ` (pendência: ${pending})` : ''}${sentFinalTemplate && !isFinal ? ' — ciclo encerrado antecipadamente (não repetir template)' : ''}`
-            : `texto livre: ${message.slice(0, 200)}`,
+            ? `template ${useFinalTemplate ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1}${useFinalTemplate ? ` (pendência: ${pending})` : ''}${!isFinal ? ' — janela de 24h fechada, ciclo pulou pra fase de templates' : ''}`
+            : `texto livre (janela de 24h): ${message.slice(0, 200)}`,
         });
+        // Dentro da janela o intervalo é curto (8h); na fase de template, 24h.
+        const gapMs = attemptsAfter < RECOVERY_EARLY_ATTEMPTS ? RECOVERY_EARLY_GAP_MS : RECOVERY_GAP_MS;
         await db.whatsAppConversation.update({
           where: { id: conv.id },
           data: {
             recoveryAttempts: attemptsAfter,
-            recoveryNextAt: nextBusinessSlot(now + RECOVERY_GAP_MS),
+            recoveryNextAt: nextBusinessSlot(now + gapMs),
           },
         });
         results.recoverySent++;

@@ -124,13 +124,16 @@ export interface WhatsAppConversationDTO {
   // O que trava o CONTRATO (única pendência que aparece na tela): CPF e docs.
   hasCpf: boolean;
   docsCount: number;
-  // Provocações do ciclo de recuperação já enviadas (0-3) — exibido quando
-  // status="standby" como "1ª de 3".
+  // Provocações do ciclo de recuperação já enviadas (0-5) — exibido quando
+  // status="standby" como "1ª de 5".
   recoveryAttempts: number;
   unread: boolean;
   // Quantas mensagens RECEBIDAS desde a última leitura de qualquer atendente —
   // o badge verde de contagem (estilo WhatsApp) na lista.
   unreadCount: number;
+  // Alguém usou "Marcar como não lida" (12/08/2026): o badge vira um marcador
+  // próprio em vez da contagem (que seria o histórico inteiro, "99+").
+  manualUnread: boolean;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
   tags: { id: string; name: string; color: string }[];
@@ -340,6 +343,9 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       recoveryAttempts: c.recoveryAttempts,
       unread: !effectiveReadAt || c.lastMessageAt > effectiveReadAt,
       unreadCount: unreadCountByContact.get(c.contactId) ?? 0,
+      // Sentinela da época (epoch) = "Marcar como não lida" — a UI mostra um
+      // marcador próprio em vez da contagem do histórico inteiro.
+      manualUnread: (effectiveReadAt?.getTime() ?? -1) === 0,
       optedOut: c.contact.optedOut,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
@@ -586,8 +592,10 @@ export async function markConversationRead(conversationId: string): Promise<void
 export async function markConversationUnread(conversationId: string): Promise<void> {
   await requireTeamMember();
   await db.whatsAppConversationRead.deleteMany({ where: { conversationId } });
+  // Sentinela da época (não null): marca "não lida MANUAL" — a lista mostra um
+  // marcador próprio em vez de contar o histórico inteiro como não lido (99+).
   await db.whatsAppConversation.update({
     where: { id: conversationId },
-    data: { lastReadAt: null },
+    data: { lastReadAt: new Date(0) },
   });
 }

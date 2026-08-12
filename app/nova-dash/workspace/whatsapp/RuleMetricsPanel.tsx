@@ -278,7 +278,7 @@ export function RuleMetricsPanel() {
             <LifeBuoy className="h-3 w-3" /> Recuperação de clientes (standby)
           </p>
           <p className="mb-2 text-[10px] text-gray-400 dark:text-zinc-500">
-            Quem sumiu no meio da triagem recebe até 3 provocações em ~3 dias (janela de 24h aberta → texto da IA; fechada → template aprovado). Aqui: quantos foram provocados, quantos voltaram e quantos pediram pra sair.
+            Quem sumiu no meio da triagem recebe até 5 provocações: 3 dentro da janela de 24h (texto da IA) e mais 2 por template aprovado, espaçadas de 24h. Aqui: quantos foram provocados, quantos voltaram e quantos pediram pra sair.
           </p>
           <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             <StatCard icon={BellRing} label="Clientes provocados" value={data.recovery.notified}
