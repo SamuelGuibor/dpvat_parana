@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
-import { Button } from '@/app/_shared/ui/button';
 import { Input } from '@/app/_shared/ui/input';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -26,6 +25,13 @@ import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { checkFileForWhatsApp } from './media-rules';
 
 const MAX_FILES = 10;
+
+// Botões do composer: só o ícone fica visível; o rótulo desliza suave no
+// hover (mesmo padrão dos chips de filtro da sidebar do inbox, 12/08/2026).
+const iconPillCls = (extra: string) =>
+  `group flex h-8 shrink-0 items-center overflow-hidden rounded-full px-2 transition-colors disabled:opacity-40 ${extra}`;
+const iconPillLabelCls =
+  'ml-0 max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold opacity-0 transition-all duration-300 ease-out group-hover:ml-1.5 group-hover:max-w-[140px] group-hover:opacity-100';
 
 export const FLOW_KIND_ICON: Record<WhatsAppFlowStep['kind'], React.ElementType> = {
   text: FileText, image: ImageIcon, video: Video, audio: Mic, document: FileText,
@@ -114,6 +120,15 @@ export function WhatsAppComposer({
   useEffect(() => {
     if (replyTo) textareaRef.current?.focus();
   }, [replyTo]);
+
+  // Campo de 1 linha que cresce com o texto (até ~6 linhas) — parte do
+  // redesign compacto de 12/08/2026.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [value]);
 
   // "Usar no campo" do Copiloto: a coluna direita injeta a sugestão aqui via
   // CustomEvent (mesmo padrão do open-whatsapp-conversation).
@@ -209,7 +224,7 @@ export function WhatsAppComposer({
       setRunningFlow({ name: flow.name, step: 1, total: flow.steps.length });
       // Log de auditoria: quem disparou qual fluxo (os passos individuais
       // também geram seus próprios logs de texto/mídia).
-      logFlowDispatched(contactId, flow.name, flow.steps.length).catch(() => {});
+      logFlowDispatched(contactId, flow.name, flow.steps.length).catch(() => { });
       for (let i = 0; i < flow.steps.length; i++) {
         const step = flow.steps[i];
         setRunningFlow({ name: flow.name, step: i + 1, total: flow.steps.length });
@@ -241,11 +256,10 @@ export function WhatsAppComposer({
   }
 
   return (
-    <div className={`overflow-visible rounded-xl border bg-white transition-all focus-within:ring-2 dark:bg-zinc-900 ${
-      noteMode && !editing
+    <div className={`overflow-visible rounded-xl border bg-white transition-all focus-within:ring-2 dark:bg-zinc-900 ${noteMode && !editing
         ? 'border-amber-300 focus-within:ring-amber-500 dark:border-amber-800'
         : 'border-gray-200 focus-within:ring-emerald-500 dark:border-zinc-800'
-    }`}>
+      }`}>
       {confirmDialog}
       {/* Barra do modo nota interna */}
       {noteMode && !editing && (
@@ -303,9 +317,11 @@ export function WhatsAppComposer({
         </div>
       )}
 
-      {/* Ferramentas de envio — chips com rótulo visível (redesign aprovado):
-          o que antes era uma fileira de ícones soltos agora se apresenta. */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+      {/* Linha ÚNICA (12/08/2026, redesign aprovado): ícones com tooltip à
+          esquerda, campo que cresce com o texto, IA + enviar à direita. Os
+          rótulos e a dica "Enter envia" viram tooltips — a conversa ganha o
+          espaço que a barra de botões de 2 andares ocupava. */}
+      <div className="flex items-end gap-0.5 px-2 py-1.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -317,9 +333,10 @@ export function WhatsAppComposer({
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || editing || noteMode}
           title="Anexar arquivos (pode selecionar vários)"
-          className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+          className={iconPillCls('text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-zinc-400 dark:hover:bg-zinc-800')}
         >
-          <ImagePlus className="h-4 w-4" /> <span className="hidden sm:inline">Anexar</span>
+          <ImagePlus className="h-[18px] w-[18px] shrink-0" />
+          <span className={iconPillLabelCls}>Anexar</span>
         </button>
 
         {/* Respostas rápidas: insere o texto no input com um clique */}
@@ -328,159 +345,159 @@ export function WhatsAppComposer({
             <button
               disabled={(disabled && !noteMode) || editing}
               title="Respostas rápidas"
-              className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+              className={iconPillCls('text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-zinc-400 dark:hover:bg-zinc-800')}
             >
-              <Zap className="h-4 w-4" /> <span className="hidden sm:inline">Respostas rápidas</span>
+              <Zap className="h-[18px] w-[18px] shrink-0" />
+              <span className={iconPillLabelCls}>Respostas rápidas</span>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-72">
-            <DropdownMenuLabel className="text-sm">Respostas rápidas</DropdownMenuLabel>
-            {quickReplies.length > 0 && (
-              <div className="relative px-2 pb-1.5">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <Input
-                  value={replySearch}
-                  onChange={(e) => setReplySearch(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder="Buscar resposta..."
-                  className="h-8 pl-7 text-sm"
-                />
-              </div>
-            )}
-            {quickReplies.length === 0 && (
-              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta criada ainda.</DropdownMenuItem>
-            )}
-            {quickReplies.length > 0 && filteredQuickReplies.length === 0 && (
-              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta encontrada.</DropdownMenuItem>
-            )}
-            {filteredQuickReplies.map((q) => (
-              <DropdownMenuItem
-                key={q.id}
-                onClick={() => {
-                  setValue((prev) => (prev.trim() ? `${prev}\n${q.body}` : q.body));
-                  textareaRef.current?.focus();
-                }}
-                className="flex-col items-start gap-0.5 text-base"
-              >
-                <span className="w-full truncate font-semibold">{q.title}</span>
-                <span className="w-full truncate text-[11px] text-gray-400">{q.body}</span>
+            <DropdownMenuContent align="start" className="w-72">
+              <DropdownMenuLabel className="text-sm">Respostas rápidas</DropdownMenuLabel>
+              {quickReplies.length > 0 && (
+                <div className="relative px-2 pb-1.5">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={replySearch}
+                    onChange={(e) => setReplySearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Buscar resposta..."
+                    className="h-8 pl-7 text-sm"
+                  />
+                </div>
+              )}
+              {quickReplies.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta criada ainda.</DropdownMenuItem>
+              )}
+              {quickReplies.length > 0 && filteredQuickReplies.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma resposta encontrada.</DropdownMenuItem>
+              )}
+              {filteredQuickReplies.map((q) => (
+                <DropdownMenuItem
+                  key={q.id}
+                  onClick={() => {
+                    setValue((prev) => (prev.trim() ? `${prev}\n${q.body}` : q.body));
+                    textareaRef.current?.focus();
+                  }}
+                  className="flex-col items-start gap-0.5 text-base"
+                >
+                  <span className="w-full truncate font-semibold">{q.title}</span>
+                  <span className="w-full truncate text-[11px] text-gray-400">{q.body}</span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setQuickRepliesOpen(true)} className="text-base">
+                <Settings2 className="mr-2 h-4 w-4" /> Gerenciar respostas
               </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setQuickRepliesOpen(true)} className="text-base">
-              <Settings2 className="mr-2 h-4 w-4" /> Gerenciar respostas
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        <DropdownMenu onOpenChange={(o) => { if (!o) setFlowSearch(''); }}>
+          <DropdownMenu onOpenChange={(o) => { if (!o) setFlowSearch(''); }}>
           <DropdownMenuTrigger asChild>
             <button
               disabled={disabled || editing || !!runningFlow}
               title="Fluxos de mensagens"
-              className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+              className={iconPillCls('text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-zinc-400 dark:hover:bg-zinc-800')}
             >
-              <Workflow className="h-4 w-4" /> <span className="hidden sm:inline">Fluxos</span>
+              <Workflow className="h-[18px] w-[18px] shrink-0" />
+              <span className={iconPillLabelCls}>Fluxos</span>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel className="text-sm">Fluxos de mensagens</DropdownMenuLabel>
-            {flows.length > 0 && (
-              <div className="relative px-2 pb-1.5">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <Input
-                  value={flowSearch}
-                  onChange={(e) => setFlowSearch(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder="Buscar fluxo..."
-                  className="h-8 pl-7 text-sm"
-                />
-              </div>
-            )}
-            {flows.length === 0 && (
-              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo criado ainda.</DropdownMenuItem>
-            )}
-            {flows.length > 0 && filteredFlows.length === 0 && (
-              <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo encontrado.</DropdownMenuItem>
-            )}
-            {filteredFlows.map((f) => (
-              <DropdownMenuItem key={f.id} onClick={() => runFlow(f)} className="gap-2 text-base">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-semibold">{f.name}</span>
-                  <span className="flex items-center gap-1 text-[11px] text-gray-400">
-                    {f.steps.slice(0, 6).map((s, i) => {
-                      const Icon = FLOW_KIND_ICON[s.kind] ?? FileText;
-                      return <Icon key={i} className="h-3 w-3" />;
-                    })}
-                    {f.steps.length > 6 && `+${f.steps.length - 6}`}
-                    <span className="ml-1">{f.steps.length} passo(s)</span>
+            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuLabel className="text-sm">Fluxos de mensagens</DropdownMenuLabel>
+              {flows.length > 0 && (
+                <div className="relative px-2 pb-1.5">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={flowSearch}
+                    onChange={(e) => setFlowSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Buscar fluxo..."
+                    className="h-8 pl-7 text-sm"
+                  />
+                </div>
+              )}
+              {flows.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo criado ainda.</DropdownMenuItem>
+              )}
+              {flows.length > 0 && filteredFlows.length === 0 && (
+                <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhum fluxo encontrado.</DropdownMenuItem>
+              )}
+              {filteredFlows.map((f) => (
+                <DropdownMenuItem key={f.id} onClick={() => runFlow(f)} className="gap-2 text-base">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-semibold">{f.name}</span>
+                    <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                      {f.steps.slice(0, 6).map((s, i) => {
+                        const Icon = FLOW_KIND_ICON[s.kind] ?? FileText;
+                        return <Icon key={i} className="h-3 w-3" />;
+                      })}
+                      {f.steps.length > 6 && `+${f.steps.length - 6}`}
+                      <span className="ml-1">{f.steps.length} passo(s)</span>
+                    </span>
                   </span>
-                </span>
-                <Send className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  <Send className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setFlowsOpen(true)} className="text-base">
+                <Settings2 className="mr-2 h-4 w-4" /> Gerenciar fluxos
               </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setFlowsOpen(true)} className="text-base">
-              <Settings2 className="mr-2 h-4 w-4" /> Gerenciar fluxos
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Template: sempre visível — é o único envio que funciona com a
-            janela de 24h expirada, por isso o contorno verde de destaque. */}
+        {/* Template: único envio que funciona com a janela de 24h expirada —
+            por isso mantém a cor verde de destaque. */}
         <button
           onClick={() => setTemplateModalOpen(true)}
           disabled={editing}
           title="Enviar mensagem de template (funciona mesmo com a janela de 24h expirada)"
-          className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:bg-zinc-900 dark:text-emerald-400"
+          className={iconPillCls('text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30')}
         >
-          <FileBadge className="h-4 w-4" /> <span className="hidden sm:inline">Template</span>
+          <FileBadge className="h-[18px] w-[18px] shrink-0" />
+          <span className={iconPillLabelCls}>Template</span>
         </button>
 
-        {/* Toggle nota interna */}
+        {/* Toggle nota interna — ativo fica âmbar preenchido (e o contorno da
+            caixa toda fica âmbar pra ninguém confundir com mensagem). */}
         <button
           onClick={() => setNoteMode((v) => !v)}
           disabled={editing}
           title={noteMode ? 'Voltar a responder o cliente' : 'Nota interna (só a equipe vê)'}
-          className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold transition-colors disabled:opacity-50 ${
-            noteMode
-              ? 'border-amber-400 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-              : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-400'
-          }`}
+          className={iconPillCls(noteMode
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+            : 'text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30')}
         >
-          <StickyNote className="h-4 w-4" /> <span className="hidden sm:inline">Nota interna</span>
+          <StickyNote className="h-[18px] w-[18px] shrink-0" />
+          <span className={iconPillLabelCls}>Nota interna</span>
         </button>
 
-        <p className="ml-auto hidden text-[11px] text-gray-400 md:block">Enter envia · Shift+Enter nova linha</p>
-      </div>
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter envia; Shift+Enter quebra linha (dica no tooltip do enviar).
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+            if (e.key === 'Escape' && editing) {
+              onCancelEdit();
+              setValue('');
+            }
+          }}
+          disabled={disabled && !noteMode}
+          placeholder={editing
+            ? 'Novo texto da mensagem...'
+            : noteMode
+              ? 'Nota interna (o cliente não recebe)...'
+              : attachments.length
+                ? 'Legenda do primeiro anexo (opcional)...'
+                : placeholder ?? 'Mensagem... (*negrito* _itálico_ ~tachado~)'}
+          rows={1}
+          className="max-h-40 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-base outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
+        />
 
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          // Enter envia; Shift+Enter quebra linha.
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-          if (e.key === 'Escape' && editing) {
-            onCancelEdit();
-            setValue('');
-          }
-        }}
-        disabled={disabled && !noteMode}
-        placeholder={editing
-          ? 'Novo texto da mensagem...'
-          : noteMode
-            ? 'Escreva uma nota interna para a equipe (o cliente não recebe)...'
-            : attachments.length
-              ? 'Legenda do primeiro anexo (opcional)...'
-              : placeholder ?? 'Escreva uma mensagem para o cliente... (*negrito* _itálico_ ~tachado~)'}
-        rows={2}
-        className="w-full resize-none bg-transparent p-3 text-base outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
-      />
-      <div className="flex items-center justify-end gap-1.5 border-t bg-gray-50 px-3 py-2 dark:bg-zinc-950">
         {/* Sugestão de resposta pela IA (propõe → humano revisa → envia) */}
         <button
           onClick={async () => {
@@ -499,26 +516,34 @@ export function WhatsAppComposer({
           }}
           disabled={disabled || editing || noteMode || suggesting}
           title="Sugerir resposta com IA (você revisa antes de enviar)"
-          className={`rounded-lg p-1.5 transition-colors disabled:opacity-50 ${
-            suggesting
-              ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'
-              : 'text-gray-400 hover:bg-violet-100 hover:text-violet-600 dark:hover:bg-violet-900/40 dark:hover:text-violet-300'
-          }`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${suggesting
+            ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300'
+            : 'text-gray-400 hover:bg-violet-100 hover:text-violet-600 dark:hover:bg-violet-900/40 dark:hover:text-violet-300'
+            }`}
         >
-          {suggesting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+          {suggesting ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Sparkles className="h-[18px] w-[18px]" />}
         </button>
-        <Button
+        <button
           onClick={submit}
           disabled={(disabled && !noteMode) || savingEdit || savingNote || (!value.trim() && !attachments.length)}
-          size="sm"
-          className={`h-8 px-4 ${editing || noteMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-        >
-          {editing
-            ? <>{savingEdit ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Check className="mr-2 h-3 w-3" />} Salvar edição</>
+          title={editing
+            ? 'Salvar edição (Enter)'
             : noteMode
-              ? <>{savingNote ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <StickyNote className="mr-2 h-3 w-3" />} Salvar nota</>
-              : <><Send className="mr-2 h-3 w-3" /> Enviar</>}
-        </Button>
+              ? 'Salvar nota interna (Enter)'
+              : 'Enviar (Enter · Shift+Enter quebra linha)'}
+          className={`ml-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-colors disabled:opacity-40 ${editing || noteMode
+            ? 'bg-amber-600 hover:bg-amber-700'
+            : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
+        >
+          {savingEdit || savingNote
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : editing
+              ? <Check className="h-4 w-4" />
+              : noteMode
+                ? <StickyNote className="h-4 w-4" />
+                : <Send className="h-4 w-4" />}
+        </button>
       </div>
 
       <WhatsAppFlowsModal open={flowsOpen} onOpenChange={setFlowsOpen} onChanged={reloadFlows} />

@@ -11,7 +11,7 @@ import {
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
-  UserCheck,
+  UserCheck, Columns3, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -135,6 +135,18 @@ const STATUS_CHIP: Record<string, string> = {
   closed: 'bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400',
 };
 
+// Chips de filtro compactos (12/08/2026): só o ícone fica visível; o rótulo
+// desliza suavemente no hover (e fica aberto enquanto o filtro está ativo) —
+// o espaço economizado vai pra lista de conversas.
+const chipCls = (active: boolean) =>
+  `group flex h-7 shrink-0 items-center overflow-hidden rounded-full border px-2 text-[11px] font-bold transition-colors ${active
+    ? 'border-[#6fd6ad] bg-[#1a6649] text-white'
+    : 'border-[#3a6b58] text-[#8fbcac] hover:bg-[#2e5749] hover:text-white'}`;
+const chipLabelCls = (expanded: boolean) =>
+  `whitespace-nowrap transition-all duration-300 ease-out ${expanded
+    ? 'ml-1.5 max-w-[150px] opacity-100'
+    : 'ml-0 max-w-0 opacity-0 group-hover:ml-1.5 group-hover:max-w-[150px] group-hover:opacity-100'}`;
+
 // Cor determinística do selinho de atendente na lista (por nome).
 const ATTENDANT_BADGE_COLORS = ['bg-emerald-600', 'bg-violet-600', 'bg-amber-600', 'bg-sky-600', 'bg-rose-600'];
 function attendantBadgeColor(name: string) {
@@ -172,6 +184,10 @@ export function WhatsAppInbox() {
   // Carga da equipe: clicar no chip de um atendente filtra o atendimento
   // humano pelas conversas dele (a fila continua visível).
   const [attendantFilter, setAttendantFilter] = useState<string | null>(null);
+  // Filtros novos (12/08/2026): "Hoje" = conversas que começaram no dia;
+  // "Coluna do Kanban" = estágio do card do cliente vinculado.
+  const [todayOnly, setTodayOnly] = useState(false);
+  const [columnFilter, setColumnFilter] = useState<string | null>(null);
 
   // Motivos de "não qualificada" editáveis (menu Encerrar + modal de gestão).
   const { data: closeReasons, mutate: mutateCloseReasons } = useSWR<CloseReasonDTO[]>(
@@ -383,7 +399,13 @@ export function WhatsAppInbox() {
     await loadOlder();
   }
 
-  // Busca por nome ou celular + filtro por tags (basta bater em uma das selecionadas).
+  // Busca por nome ou celular + filtro por tags (basta bater em uma das
+  // selecionadas) + "Hoje" + coluna do Kanban.
+  const isToday = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  };
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     const digits = term.replace(/\D/g, '');
@@ -394,9 +416,25 @@ export function WhatsAppInbox() {
         if (!nameMatch && !phoneMatch) return false;
       }
       if (tagFilter.length && !c.tags.some((t) => tagFilter.includes(t.id))) return false;
+      if (todayOnly && !isToday(c.createdAt)) return false;
+      if (columnFilter && c.kanbanColumn !== columnFilter) return false;
       return true;
     });
-  }, [conversations, search, tagFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations, search, tagFilter, todayOnly, columnFilter]);
+
+  // Contagem do chip "Hoje" (independe dos outros filtros, senão o número
+  // mudaria ao clicar no próprio chip) e colunas disponíveis pro seletor.
+  const todayCount = useMemo(() => conversations.filter((c) => isToday(c.createdAt)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversations]);
+  const kanbanColumns = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of conversations) {
+      if (c.kanbanColumn) map.set(c.kanbanColumn, (map.get(c.kanbanColumn) ?? 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [conversations]);
 
   const groups = useMemo(() => {
     const closed = filtered.filter((c) => c.status === 'closed');
@@ -740,24 +778,93 @@ export function WhatsAppInbox() {
               </button>
             </div>
 
-            {/* Filtro por tags (dropdown — a fileira de pills ocupava a sidebar
-                inteira) — busca em TODAS as conversas, independente da pasta */}
-            <div className="mt-1.5 flex items-center gap-1.5">
+            {/* Filtros compactos: só ícones — o rótulo desliza no hover. Hoje,
+                Coluna do Kanban, Tags e Só minhas numa linha só. */}
+            <p className="truncate text-[13px] font-bold text-white pt-2">Filtros</p>
+            <div className="mt-1.5 flex items-center gap-1">
+              {/* Novas do dia */}
+              <button
+                onClick={() => setTodayOnly((v) => !v)}
+                title="Só as conversas que começaram hoje"
+                className={chipCls(todayOnly)}
+              >
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span className={chipLabelCls(todayOnly)}>Hoje</span>
+                {todayOnly && (
+                  <span className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">{todayCount}</span>
+                )}
+              </button>
+
+              {/* Coluna do Kanban (só conversas já vinculadas a um card) */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
-                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${tagFilter.length
-                      ? 'border-[#6fd6ad] bg-[#1a6649] text-white'
-                      : 'border-[#3a6b58] text-[#8fbcac] hover:bg-[#2e5749] hover:text-white'
-                      }`}
-                  >
-                    <TagIcon className="h-3 w-3" />
-                    {tagFilter.length ? `Tags (${tagFilter.length})` : 'Filtrar por tag'}
-                    <ChevronDown className="h-3 w-3" />
+                  <button title="Filtrar pela coluna do card no Kanban" className={chipCls(!!columnFilter)}>
+                    <Columns3 className="h-3.5 w-3.5 shrink-0" />
+                    <span className={chipLabelCls(!!columnFilter)}>
+                      {columnFilter ?? 'Coluna do Kanban'}
+                    </span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <DropdownMenuLabel className="p-0 text-xs text-gray-400">Coluna do Kanban</DropdownMenuLabel>
+                    {columnFilter && (
+                      <button
+                        onClick={() => setColumnFilter(null)}
+                        className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                  <DropdownMenuSeparator />
+                  {kanbanColumns.length === 0 && (
+                    <DropdownMenuItem disabled className="text-sm text-gray-400">
+                      Nenhuma conversa vinculada a card ainda.
+                    </DropdownMenuItem>
+                  )}
+                  {kanbanColumns.map(([col, n]) => (
+                    <DropdownMenuCheckboxItem
+                      key={col}
+                      checked={columnFilter === col}
+                      onCheckedChange={() => setColumnFilter((cur) => (cur === col ? null : col))}
+                      onSelect={(e) => e.preventDefault()}
+                      className="text-sm"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{col}</span>
+                      <span className="ml-2 text-xs text-gray-400">{n}</span>
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  
+                  <p className="px-2 py-1.5 text-[10px] leading-snug text-gray-400">
+                    Só conversas já vinculadas a um card do Kanban entram neste filtro.
+                  </p>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Tags */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button title="Filtrar por tag (busca em todas as pastas)" className={chipCls(tagFilter.length > 0)}>
+                    <TagIcon className="h-3.5 w-3.5 shrink-0" />
+                    <span className={chipLabelCls(tagFilter.length > 0)}>
+                      {tagFilter.length ? `Tags (${tagFilter.length})` : 'Tags'}
+                    </span>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-72 w-60 overflow-y-auto">
-                  <DropdownMenuLabel className="text-xs text-gray-400">Filtrar por tag</DropdownMenuLabel>
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <DropdownMenuLabel className="p-0 text-xs text-gray-400">Filtrar por tag</DropdownMenuLabel>
+                    {tagFilter.length > 0 && (
+                      <button
+                        onClick={() => setTagFilter([])}
+                        className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                  <DropdownMenuSeparator />
                   {allTags.length === 0 && (
                     <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
                   )}
@@ -775,52 +882,72 @@ export function WhatsAppInbox() {
                     </DropdownMenuCheckboxItem>
                   ))}
                   <DropdownMenuSeparator />
-                  {tagFilter.length > 0 && (
-                    <DropdownMenuItem onClick={() => setTagFilter([])} className="text-sm">
-                      <X className="mr-2 h-3.5 w-3.5" /> Limpar filtro
-                    </DropdownMenuItem>
-                  )}
                   <DropdownMenuItem onClick={() => setTagsModalOpen(true)} className="text-sm">
                     <Settings2 className="mr-2 h-3.5 w-3.5" /> Gerenciar tags
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {/* Equipe: dropdown em vez da fileira de pills (que ocupava uma
+                  linha inteira e não cabia com muitos atendentes) — clique
+                  abre a lista, com quem está selecionado destacado. */}
+              {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button title="Filtrar pelo atendente" className={chipCls(!!attendantFilter)}>
+                      {attendantFilter ? (
+                        <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[7px] font-bold text-white ${attendantBadgeColor(teamLoad.find(([id]) => id === attendantFilter)?.[1].name ?? '')}`}>
+                          {initials(teamLoad.find(([id]) => id === attendantFilter)?.[1].name ?? '')}
+                        </span>
+                      ) : (
+                        <Users className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className={chipLabelCls(!!attendantFilter)}>
+                        {attendantFilter ? teamLoad.find(([id]) => id === attendantFilter)?.[1].name ?? 'Equipe' : 'Equipe'}
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
+                    <div className="flex items-center justify-between px-2 py-1.5">
+                      <DropdownMenuLabel className="p-0 text-xs text-gray-400">Equipe</DropdownMenuLabel>
+                      {attendantFilter && (
+                        <button
+                          onClick={() => setAttendantFilter(null)}
+                          className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <DropdownMenuSeparator />
+                    {teamLoad.map(([id, t]) => (
+                      <DropdownMenuItem
+                        key={id}
+                        onClick={() => { setOnlyMine(false); setAttendantFilter((cur) => (cur === id ? null : id)); }}
+                        className={`text-sm ${attendantFilter === id ? 'bg-emerald-50 dark:bg-emerald-900/30' : ''}`}
+                      >
+                        <span className={`mr-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white ${attendantBadgeColor(t.name)}`}>
+                          {initials(t.name)}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        <span className={`ml-2 text-xs font-semibold ${t.count >= 10 ? 'text-amber-500' : 'text-gray-400'}`}>{t.count}</span>
+                        {attendantFilter === id && <Check className="ml-1.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
               {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && (
                 <button
                   onClick={() => setOnlyMine((v) => !v)}
                   title="Mostrar só o atendimento humano atribuído a mim (a fila continua visível pra todo mundo)"
-                  className={`ml-auto flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold transition-colors ${onlyMine
-                      ? 'border-[#6fd6ad] bg-[#1a6649] text-white'
-                      : 'border-[#3a6b58] text-[#8fbcac] hover:bg-[#2e5749] hover:text-white'
-                    }`}
+                  className={`ml-auto ${chipCls(onlyMine)}`}
                 >
-                  <UserCheck className="h-3 w-3" /> Só minhas
+                  <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                  <span className={chipLabelCls(onlyMine)}>Só minhas</span>
                 </button>
               )}
             </div>
-            {/* Carga da equipe: quantas conversas humanas cada atendente carrega.
-                Clique filtra; sobrecarregado (10+) fica âmbar. */}
-            {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[8.5px] font-bold uppercase tracking-wider text-[#5c8977]">Equipe</span>
-                {teamLoad.map(([id, t]) => (
-                  <button
-                    key={id}
-                    onClick={() => { setOnlyMine(false); setAttendantFilter((cur) => (cur === id ? null : id)); }}
-                    title={`${t.name} — ${t.count} conversa${t.count === 1 ? '' : 's'} · clique para filtrar`}
-                    className={`flex items-center gap-1 rounded-full border py-0.5 pl-0.5 pr-2 transition-colors ${attendantFilter === id
-                      ? 'border-[#6fd6ad] bg-[#1a6649]'
-                      : t.count >= 10 ? 'border-[#8a5a20] hover:bg-[#2e5749]' : 'border-[#3a6b58] hover:bg-[#2e5749]'
-                      }`}
-                  >
-                    <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[7px] font-bold text-white ${attendantBadgeColor(t.name)}`}>
-                      {initials(t.name)}
-                    </span>
-                    <span className={`text-[9px] font-bold ${t.count >= 10 ? 'text-amber-400' : 'text-[#d3e2db]'}`}>{t.count}</span>
-                  </button>
-                ))}
-              </div>
-            )}
             {tagFilterActive && (
               <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#26483c] px-2 py-1.5 text-[11px] font-semibold text-[#a9f2d8]">
                 <Search className="h-3 w-3 shrink-0" />

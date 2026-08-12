@@ -723,7 +723,14 @@ async function callBrainOnce(payload: object, baseUrl: string = CHATBOT_URL): Pr
       signal: controller.signal,
       cache: "no-store",
     });
-    if (!res.ok) throw new Error(`chatbot HTTP ${res.status}`);
+    if (!res.ok) {
+      // O microserviço já manda `detail` traduzido pro humano (sobrecarga da
+      // Anthropic, saldo insuficiente, chave inválida etc — ver
+      // classifyClaudeError em bot.js); sem isso só chegava "chatbot HTTP 500"
+      // no dashboard, escondendo a causa real.
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.detail ? `chatbot HTTP ${res.status}: ${body.detail}` : `chatbot HTTP ${res.status}`);
+    }
     return sanitizeDecision((await res.json()) as BotDecision);
   } finally {
     clearTimeout(timer);

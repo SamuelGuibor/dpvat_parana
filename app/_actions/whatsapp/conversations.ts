@@ -134,6 +134,9 @@ export interface WhatsAppConversationDTO {
   // Alguém usou "Marcar como não lida" (12/08/2026): o badge vira um marcador
   // próprio em vez da contagem (que seria o histórico inteiro, "99+").
   manualUnread: boolean;
+  // Coluna do kanban do cliente vinculado (null quando a conversa ainda não
+  // virou card) — filtro "Coluna do Kanban" do inbox.
+  kanbanColumn: string | null;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
   tags: { id: string; name: string; color: string }[];
@@ -234,10 +237,13 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
   const linkedUsers = linkedUserIds.length
     ? await db.user.findMany({
         where: { id: { in: linkedUserIds } },
-        select: { id: true, name: true, cpf: true, cep: true, rua: true, cidade: true, lesoes: true, data_acidente: true },
+        select: { id: true, name: true, role: true, cpf: true, cep: true, rua: true, cidade: true, lesoes: true, data_acidente: true },
       })
     : [];
   const cardNameById = new Map(linkedUsers.map((u) => [u.id, u.name]));
+  // Coluna do kanban do cliente vinculado (User.role guarda o nome da coluna)
+  // — alimenta o filtro "Coluna do Kanban" do inbox (12/08/2026).
+  const columnByUserId = new Map(linkedUsers.map((u) => [u.id, u.role]));
   // Ficha completa (nome+CPF+endereço) pra registrado vem do User; pra
   // rascunho (ainda sem cadastro) vem do clientDraft salvo no contato.
   const fichaByUserId = new Map(linkedUsers.map((u) => [u.id, u]));
@@ -346,6 +352,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       // Sentinela da época (epoch) = "Marcar como não lida" — a UI mostra um
       // marcador próprio em vez da contagem do histórico inteiro.
       manualUnread: (effectiveReadAt?.getTime() ?? -1) === 0,
+      kanbanColumn: c.contact.userId ? columnByUserId.get(c.contact.userId) ?? null : null,
       optedOut: c.contact.optedOut,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
