@@ -26,7 +26,7 @@ import {
   useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
-  assumeConversation, returnConversationToBot, closeConversation, markConversationRead,
+  assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
 import {
@@ -435,8 +435,12 @@ export function WhatsAppInbox() {
   };
   const ativasItems = [...groups.queued, ...groups.ativas.filter(humanFilter)];
   // "Todos" (estilo Botconversa): a lista inteira, de qualquer status, na
-  // ordem da última mensagem — os filtros de atendente valem só pro humano.
-  const todosItems = filtered.filter((c) => c.status !== 'human' || humanFilter(c));
+  // ordem da última mensagem. Com um filtro de atendente ativo ("Só minhas"
+  // ou chip da equipe), vale pra TODOS os status — mostra só as conversas
+  // atribuídas àquele atendente (11/08/2026).
+  const todosItems = (onlyMine || attendantFilter)
+    ? filtered.filter(humanFilter)
+    : filtered;
   // Carga por atendente (chips da "equipe"): conta o atendimento humano SEM
   // os filtros de atendente, senão o número muda ao clicar no próprio chip.
   const teamLoad = useMemo(() => {
@@ -1064,27 +1068,51 @@ export function WhatsAppInbox() {
                 <Sparkles className="h-4 w-4" />
               </button>
 
-              {/* Ações destrutivas do contato — exigem manage_wa_contacts */}
-              {perms.manage_wa_contacts && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button title="Mais ações" className="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel className="text-xs text-gray-400">Contato</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => handleBlockContact(active)} className="text-base">
-                      <Ban className={`mr-2 h-3.5 w-3.5 ${active.optedOut ? 'text-emerald-600' : 'text-amber-500'}`} />
-                      {active.optedOut ? 'Desbloquear contato' : 'Bloquear contato'}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleDeleteContact(active)} className="text-base text-red-600 focus:text-red-600">
-                      <Trash2 className="mr-2 h-3.5 w-3.5 text-red-500" /> Excluir contato e histórico
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              {/* Mais ações: lida/não lida pra todo mundo; as destrutivas do
+                  contato continuam exigindo manage_wa_contacts. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button title="Mais ações" className="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="text-xs text-gray-400">Conversa</DropdownMenuLabel>
+                  {/* Abriu sem querer a conversa de outro atendente? Marcar como
+                      não lida devolve o badge e FECHA a thread (senão o
+                      auto-read remarcaria como lida na hora). */}
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const id = active.id;
+                      setActiveContactId(null);
+                      runAction(() => markConversationUnread(id), 'Conversa marcada como não lida.');
+                    }}
+                    className="text-base"
+                  >
+                    <MessageCircle className="mr-2 h-3.5 w-3.5 text-emerald-600" /> Marcar como não lida
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => runAction(() => markConversationRead(active.id), 'Conversa marcada como lida.')}
+                    className="text-base"
+                  >
+                    <CheckCheck className="mr-2 h-3.5 w-3.5 text-sky-500" /> Marcar como lida
+                  </DropdownMenuItem>
+                  {perms.manage_wa_contacts && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs text-gray-400">Contato</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => handleBlockContact(active)} className="text-base">
+                        <Ban className={`mr-2 h-3.5 w-3.5 ${active.optedOut ? 'text-emerald-600' : 'text-amber-500'}`} />
+                        {active.optedOut ? 'Desbloquear contato' : 'Bloquear contato'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleDeleteContact(active)} className="text-base text-red-600 focus:text-red-600">
+                        <Trash2 className="mr-2 h-3.5 w-3.5 text-red-500" /> Excluir contato e histórico
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </header>
 
             <div ref={scrollRef} className="wa-scroll flex-1 overflow-y-auto px-5 py-5 md:px-7">
@@ -1527,9 +1555,11 @@ function ConversationGroup({
             onClick={() => onSelect(c.contactId)}
             className={`mx-1.5 mb-0.5 flex w-[calc(100%-12px)] flex-col rounded-lg px-2 py-2 text-left transition-colors ${isActive
               ? 'bg-[#1a6649] text-white'
-              : hasUnread
-                ? 'bg-[#27503f] text-white hover:bg-[#2c5a47]'
-                : 'text-[#d3e2db] hover:bg-[#26483c]'
+              : isQueued && hasUnread
+                ? 'bg-amber-400/15 text-white ring-1 ring-inset ring-amber-400/30 hover:bg-amber-400/20'
+                : hasUnread
+                  ? 'bg-[#27503f] text-white hover:bg-[#2c5a47]'
+                  : 'text-[#d3e2db] hover:bg-[#26483c]'
               }`}
           >
             {/* linha 1: avatar + nome + hora */}
@@ -1557,7 +1587,7 @@ function ConversationGroup({
                 )}
               </span>
               <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                <span className={`truncate text-[13px] ${hasUnread ? 'font-bold text-white' : isQueued ? 'font-bold text-amber-200' : 'font-semibold'}`}>{c.contactName ?? formatPhone(c.contactPhone)}</span>
+                <span className={`truncate text-[13px] ${isQueued ? 'font-bold text-amber-200' : hasUnread ? 'font-bold text-white' : 'font-semibold'}`}>{c.contactName ?? formatPhone(c.contactPhone)}</span>
               </span>
               {c.urgent && c.status !== 'closed' && (
                 <span className="shrink-0 animate-pulse rounded-full bg-red-500/20 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wide text-red-300 ring-1 ring-red-500/40">Urgente</span>
@@ -1571,17 +1601,18 @@ function ConversationGroup({
                 <span className="shrink-0 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-amber-300 ring-1 ring-amber-400/30">{pill}</span>
               )}
               {/* coluna direita estilo WhatsApp: hora em cima, badge embaixo.
-                  Verde = mensagens não lidas; âmbar = esperando na fila. */}
+                  Âmbar = esperando na fila (mesmo com não-lidas — em qualquer
+                  pasta, inclusive "Todos"); verde = não lida fora da fila. */}
               <span className="flex shrink-0 flex-col items-end gap-0.5">
-                <span className={`text-[10px] font-semibold ${hasUnread ? 'text-[#6fd6ad]' : isQueued ? 'text-amber-400' : 'text-[#8fbcac]'}`}>
+                <span className={`text-[10px] font-semibold ${isQueued ? 'text-amber-400' : hasUnread ? 'text-[#6fd6ad]' : 'text-[#8fbcac]'}`}>
                   {formatDistanceToNow(new Date(c.lastMessageAt), { locale: ptBR, addSuffix: false })}
                 </span>
                 {hasUnread && c.unreadCount > 0 ? (
-                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#1d9e75] px-1 text-[10px] font-bold text-white">
+                  <span className={`flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${isQueued ? 'bg-amber-400 text-[#1f3d33] shadow-[0_0_6px_rgba(251,191,36,.6)]' : 'bg-[#1d9e75] text-white'}`}>
                     {c.unreadCount > 99 ? '99+' : c.unreadCount}
                   </span>
                 ) : hasUnread ? (
-                  <span className="h-[9px] w-[9px] rounded-full bg-[#6fd6ad]" />
+                  <span className={`h-[9px] w-[9px] rounded-full ${isQueued ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,.6)]' : 'bg-[#6fd6ad]'}`} />
                 ) : isQueued ? (
                   <span title="Na fila de espera — ninguém assumiu ainda" className="h-[9px] w-[9px] rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,.6)]" />
                 ) : null}

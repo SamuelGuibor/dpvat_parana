@@ -1,5 +1,5 @@
 import { db } from '@/app/_shared/lib/prisma';
-import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
+import { sendBotReply, postInternalNote } from '@/app/_shared/lib/whatsapp/bot';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
@@ -22,7 +22,9 @@ const FAREWELL =
   'Como não tivemos retorno, vou encerrar nosso atendimento por aqui, tá bom? Qualquer coisa é só mandar uma mensagem que a gente continua.';
 
 const NUDGE_AFTER_MS = 30 * 60_000; // 30min sem resposta → pergunta
-const CLOSE_AFTER_MS = 10 * 60_000; // +10min sem resposta → encerra
+// +60min (era +10min) sem resposta → encerra. O ritmo antigo mandava nudge e
+// despedida em ~40min e o lead "sumia" da triagem rápido demais (11/08/2026).
+const CLOSE_AFTER_MS = 60 * 60_000;
 const QUEUE_SLA_MS = 10 * 60_000;   // 10min na fila sem atendente → alerta
 const QUEUE_REALERT_MS = 60 * 60_000; // repete o alerta a cada 1h
 const HUMAN_SLA_MS = 30 * 60_000;   // 30min sem resposta do atendente → cobra o dono
@@ -484,7 +486,9 @@ export async function runNudgePhase(): Promise<CronResults> {
             console.error('[WHATSAPP CRON] Fecho suave não entregue (encerrando mesmo assim):', conv.contactId, err);
           }
         }
-        await finalizeClose(conv);
+        // Sem closeCategory a conversa caía na pasta "Não qualificadas" pelo
+        // fallback do inbox — lead bom parecia desqualificado (11/08/2026).
+        await finalizeClose(conv, { closeCategory: conv.closeCategory ?? 'sem_resposta' });
         results.closed++;
         return;
       }
@@ -528,6 +532,23 @@ export async function runNudgePhase(): Promise<CronResults> {
       if (!block) {
         await enterStandby(conv);
         results.standby++;
+      } else if (conv.qualified === true && conv.closeCategory !== 'qualificado') {
+        // Lead QUALIFICADO que parou de responder NUNCA é encerrado pelo cron
+        // (ele aparecia como "desqualificado" pra equipe) — vai pra fila
+        // humana pra alguém retomar o contato. (11/08/2026)
+        await recordCodeIntervention({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'fila_lead_qualificado',
+          detail: 'Lead qualificado ficou em silêncio — enviado pra fila humana em vez de encerrar.',
+        });
+        await db.whatsAppConversation.update({
+          where: { id: conv.id },
+          data: { status: 'queued', queuedAt: new Date(), assignedToId: null, botNudge30At: null },
+        });
+        // O motivo na linha da Fila vem da última nota interna do bot.
+        await postInternalNote(conv.contactId, '🤖 Transferido para atendimento humano — lead qualificado parou de responder; retomar contato.');
       } else {
         await recordCodeIntervention({
           contactId: conv.contactId,
@@ -536,7 +557,9 @@ export async function runNudgePhase(): Promise<CronResults> {
           action: 'recuperacao_bloqueada',
           detail: `Conversa encerrada sem entrar no ciclo de recuperação: ${block}.`,
         });
-        await finalizeClose(conv);
+        // closeCategory de fallback: sem ela o inbox mostrava a conversa como
+        // "não qualificada" mesmo quando o lead só ficou em silêncio.
+        await finalizeClose(conv, { closeCategory: conv.closeCategory ?? 'sem_resposta' });
         results.closed++;
       }
     } catch (err) {
@@ -598,6 +621,23 @@ export async function runRecoveryPhase(): Promise<CronResults> {
       // Rede de segurança: nunca deveria ter entrado no ciclo.
       const block = await standbyBlockReason(conv);
       if (block) {
+        // Lead qualificado no meio do ciclo → fila humana, nunca encerrar
+        // silenciosamente (parecia desqualificado pra equipe). (11/08/2026)
+        if (conv.qualified === true && conv.closeCategory !== 'qualificado') {
+          await recordCodeIntervention({
+            contactId: conv.contactId,
+            contactName: conv.contact.name,
+            botState: conv.botState,
+            action: 'fila_lead_qualificado',
+            detail: 'Lead qualificado saiu do ciclo de recuperação — enviado pra fila humana.',
+          });
+          await db.whatsAppConversation.update({
+            where: { id: conv.id },
+            data: { status: 'queued', queuedAt: new Date(), assignedToId: null, recoveryNextAt: null },
+          });
+          await postInternalNote(conv.contactId, '🤖 Transferido para atendimento humano — lead qualificado parou de responder; retomar contato.');
+          return;
+        }
         await recordCodeIntervention({
           contactId: conv.contactId,
           contactName: conv.contact.name,
@@ -605,7 +645,10 @@ export async function runRecoveryPhase(): Promise<CronResults> {
           action: 'recuperacao_bloqueada',
           detail: `Ciclo de recuperação interrompido antes da provocação: ${block}.`,
         });
-        await finalizeClose(conv, { recoveryOutcome: 'bloqueado' });
+        await finalizeClose(conv, {
+          recoveryOutcome: 'bloqueado',
+          closeCategory: conv.closeCategory ?? 'sem_resposta',
+        });
         results.closed++;
         return;
       }

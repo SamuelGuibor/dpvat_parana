@@ -496,6 +496,15 @@ export interface LeadFunnelData {
   // TODAS as tags cadastradas, com quantas conversas receberam cada uma NO
   // período (pela data de aplicação da tag) — inclui as zeradas.
   tags: { id: string; name: string; color: string; count: number }[];
+  // Funil por etapa no estilo Botconversa (11/08/2026) — cada número é de
+  // CONTATOS DISTINTOS no período (decisões repetidas do bot não inflam).
+  steps: {
+    iniciados: number;       // contatos novos que escreveram
+    docsEnviados: number;    // receberam fluxo com "documento" no nome
+    qualificados: number;    // bot qualificou
+    desqualificados: number; // bot desqualificou
+    contratados: number;     // tag "Contratado*" aplicada no período
+  };
 }
 
 function leadFunnelWindow(range: LeadFunnelRange): { since: Date; until: Date | null } {
@@ -522,7 +531,7 @@ export async function getLeadFunnel(
   const { since, until } = leadFunnelWindow(range);
   const createdAt = until ? { gte: since, lt: until } : { gte: since };
 
-  const [allTags, tagApplications, newLeads, botLogs] = await Promise.all([
+  const [allTags, tagApplications, newLeads, botLogs, flowLogs] = await Promise.all([
     db.whatsAppTag.findMany({ select: { id: true, name: true, color: true }, orderBy: { name: 'asc' } }),
     // Data de APLICAÇÃO da tag (não da conversa): "quantos contratados neste
     // período". Atenção: linhas anteriores a 03/08/2026 herdaram a data da
@@ -536,6 +545,12 @@ export async function getLeadFunnel(
     }),
     db.log.findMany({
       where: { action: 'wa_bot', createdAt },
+      select: { metadata: true },
+    }),
+    // Disparos de fluxo (bot e equipe): "enviada lista de documentos" =
+    // fluxo com "documento"/"doc" no nome disparado pro contato.
+    db.log.findMany({
+      where: { action: 'wa_flow', createdAt },
       select: { metadata: true },
     }),
   ]);
@@ -557,17 +572,52 @@ export async function getLeadFunnel(
   }
 
   const bot = { qualified: 0, disqualified: 0 };
+  const qualifiedContacts = new Set<string>();
+  const disqualifiedContacts = new Set<string>();
   for (const l of logs) {
-    const outcome = (l.metadata as any)?.outcome;
-    if (outcome === 'qualify') bot.qualified += 1;
-    else if (outcome === 'disqualify') bot.disqualified += 1;
+    const meta = l.metadata as any;
+    const outcome = meta?.outcome;
+    const cid = typeof meta?.contactId === 'string' ? meta.contactId : null;
+    if (outcome === 'qualify') {
+      bot.qualified += 1;
+      if (cid) qualifiedContacts.add(cid);
+    } else if (outcome === 'disqualify') {
+      bot.disqualified += 1;
+      if (cid) disqualifiedContacts.add(cid);
+    }
   }
+
+  // "Enviada lista de documentos": fluxos de docs disparados no período,
+  // por contato distinto. Também conta os send_flow do próprio bot (wa_bot).
+  const docsContacts = new Set<string>();
+  const isDocsFlow = (name: unknown) => typeof name === 'string' && /doc/i.test(name);
+  for (const l of flowLogs) {
+    const meta = l.metadata as any;
+    if (isDocsFlow(meta?.flowName) && typeof meta?.contactId === 'string') docsContacts.add(meta.contactId);
+  }
+  for (const l of logs) {
+    const meta = l.metadata as any;
+    if (isDocsFlow(meta?.flowName) && typeof meta?.contactId === 'string') docsContacts.add(meta.contactId);
+  }
+
+  const tags = allTags.map((t) => ({ ...t, count: countByTag.get(t.id) ?? 0 }));
+  // "Contratado" = assinou o contrato (tag aplicada quando o link é assinado).
+  const contratados = tags
+    .filter((t) => /contratad/i.test(t.name))
+    .reduce((a, t) => a + t.count, 0);
 
   return {
     range,
     newLeads,
     bot,
-    tags: allTags.map((t) => ({ ...t, count: countByTag.get(t.id) ?? 0 })),
+    tags,
+    steps: {
+      iniciados: newLeads,
+      docsEnviados: docsContacts.size,
+      qualificados: qualifiedContacts.size,
+      desqualificados: disqualifiedContacts.size,
+      contratados,
+    },
   };
 }
 

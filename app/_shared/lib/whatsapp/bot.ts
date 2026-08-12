@@ -331,7 +331,7 @@ async function runLookup(kind: string, contactId: string, card: LinkedCard | nul
  * e eventos do bot inline na conversa, pro atendente ter contexto na hora.
  * Best-effort — falha aqui não interrompe o fluxo.
  */
-async function postInternalNote(contactId: string, body: string): Promise<void> {
+export async function postInternalNote(contactId: string, body: string): Promise<void> {
   try {
     const message = await db.whatsAppMessage.create({
       data: { contactId, direction: "out", body, sentByBot: true, internal: true, status: "sent" },

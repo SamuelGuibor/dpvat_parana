@@ -868,18 +868,29 @@ function LeadFunnelSection({ numberId }: { numberId: string | null }) {
         <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {/* Funil por etapa (estilo Botconversa, 11/08/2026): contatos
+              DISTINTOS em cada passo do fluxo do bot. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div className="rounded-2xl border-2 border-gray-200 px-4 py-3 text-center dark:border-zinc-700">
-              <p className="text-3xl font-extrabold tabular-nums text-gray-800 dark:text-zinc-100">{data.newLeads}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">leads novos</p>
+              <p className="text-3xl font-extrabold tabular-nums text-gray-800 dark:text-zinc-100">{data.steps.iniciados}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">iniciados</p>
             </div>
-            <div className="rounded-2xl border-2 border-emerald-300 px-4 py-3 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
-              <p className="text-3xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">{data.bot.qualified}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70 dark:text-emerald-400/70">qualificadas (bot)</p>
+            <div className="rounded-2xl border-2 border-sky-300 px-4 py-3 text-center dark:border-sky-800 dark:bg-sky-950/30">
+              <p className="text-3xl font-extrabold tabular-nums text-sky-700 dark:text-sky-300">{data.steps.docsEnviados}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-sky-600/70 dark:text-sky-400/70">lista de docs enviada</p>
             </div>
             <div className="rounded-2xl border-2 border-rose-300 px-4 py-3 text-center dark:border-rose-800 dark:bg-rose-950/30">
-              <p className="text-3xl font-extrabold tabular-nums text-rose-700 dark:text-rose-300">{data.bot.disqualified}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600/70 dark:text-rose-400/70">desqualificadas (bot)</p>
+              <p className="text-3xl font-extrabold tabular-nums text-rose-700 dark:text-rose-300">{data.steps.desqualificados}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600/70 dark:text-rose-400/70">não qualificados</p>
+            </div>
+            <div className="rounded-2xl border-2 border-emerald-300 px-4 py-3 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
+              <p className="text-3xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">{data.steps.qualificados}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70 dark:text-emerald-400/70">qualificados</p>
+            </div>
+            <div className="rounded-2xl border-2 border-violet-300 px-4 py-3 text-center dark:border-violet-800 dark:bg-violet-950/30">
+              <p className="text-3xl font-extrabold tabular-nums text-violet-700 dark:text-violet-300">{data.steps.contratados}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-violet-600/70 dark:text-violet-400/70">contratados</p>
+              <p className="text-[9px] text-gray-400">após assinar o contrato</p>
             </div>
           </div>
 

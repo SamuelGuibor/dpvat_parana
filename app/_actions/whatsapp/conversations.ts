@@ -576,3 +576,18 @@ export async function markConversationRead(conversationId: string): Promise<void
     }).catch(() => {});
   }
 }
+
+/**
+ * Marca a conversa como NÃO LIDA para a equipe toda — o caso clássico é abrir
+ * sem querer a conversa que outra pessoa está atendendo: marcar como não lida
+ * devolve o badge verde pra quem realmente vai atender. Apaga as linhas de
+ * leitura por atendente e zera o legado global.
+ */
+export async function markConversationUnread(conversationId: string): Promise<void> {
+  await requireTeamMember();
+  await db.whatsAppConversationRead.deleteMany({ where: { conversationId } });
+  await db.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: { lastReadAt: null },
+  });
+}

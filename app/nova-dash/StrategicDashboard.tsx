@@ -23,6 +23,8 @@ import {
 } from '@/app/_actions/analytics/get-funnel-analytics';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { getContratadosTagCount } from '@/app/_actions/whatsapp/tags';
+import { KanbanFlowPanel } from './KanbanFlowPanel';
+import { ChatbotPanel } from './workspace/chatbot/ChatbotPanel';
 
 type Counts = {
   contratado?: number;
@@ -224,7 +226,9 @@ function KanbanFunnel({ range }: { range: DateRange }) {
   );
 }
 
-export const StrategicDashboard: React.FC = () => {
+// showChatbot: fusão de 11/08/2026 — o "Desempenho do Chatbot" deixou de ser
+// seção própria da sidebar e virou aba aqui dentro (mesma allowlist).
+export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showChatbot = false }) => {
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const [counts, setCounts] = useState<Counts>({});
   const [loading, setLoading] = useState(true);
@@ -367,8 +371,10 @@ export const StrategicDashboard: React.FC = () => {
       <Tabs defaultValue="analytics" className="space-y-4">
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="fluxo">Fluxo do Kanban</TabsTrigger>
+          {showChatbot && <TabsTrigger value="chatbot">Chatbot</TabsTrigger>}
           <TabsTrigger value="form-leads">Leads</TabsTrigger>
-          <TabsTrigger value="calendario">Calendário</TabsTrigger>
+          {/* <TabsTrigger value="calendario">Calendário</TabsTrigger> */}
         </TabsList>
 
         <TabsContent value="analytics" className="space-y-4">
@@ -451,6 +457,16 @@ export const StrategicDashboard: React.FC = () => {
 
           <MiniKanban data={kanbanItems} />
         </TabsContent>
+
+        <TabsContent value="fluxo" className="space-y-4">
+          <KanbanFlowPanel range={dateRange} />
+        </TabsContent>
+
+        {showChatbot && (
+          <TabsContent value="chatbot">
+            <ChatbotPanel />
+          </TabsContent>
+        )}
 
         <TabsContent value="form-leads" className="space-y-4">
           <LeadsTable />

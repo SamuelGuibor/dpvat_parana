@@ -1,9 +1,9 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Bot, Phone } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone } from 'lucide-react';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'chatbot' | 'numeros';
+export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros';
 
 interface Props {
   active: WorkspaceSection;
@@ -13,8 +13,6 @@ interface Props {
   canReviewAi: boolean;
   /** Permissão view_costs — hoje só o ADMIN++ enxerga os custos do projeto. */
   canViewCosts: boolean;
-  /** Allowlist do Desempenho do Chatbot (métricas de IA + custo da API). */
-  canViewChatbot: boolean;
   /** manage_team (ADMIN++) — gestão de números/API keys do WhatsApp. */
   canManageNumbers: boolean;
   chatUnread: number;
@@ -34,7 +32,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canViewChatbot, canManageNumbers, chatUnread, reviewPending }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -56,11 +54,7 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
         ...(canViewCosts
           ? [{ key: 'custos' as const, label: 'Custos', desc: 'Gastos do projeto', icon: Wallet }]
           : []),
-        // Desempenho do Chatbot por número — saiu da Visão do Gestor
-        // (multi-tenant, 07/08/2026); acesso pela mesma allowlist de sempre.
-        ...(canViewChatbot
-          ? [{ key: 'chatbot' as const, label: 'Chatbot', desc: 'Desempenho por número', icon: Bot }]
-          : []),
+        // "Chatbot" agora é aba dentro do Dashboard (fusão de 11/08/2026).
         // Números do WhatsApp (API keys da Meta) — exclusivo do ADMIN++.
         ...(canManageNumbers
           ? [{ key: 'numeros' as const, label: 'Números', desc: 'WhatsApp e API keys', icon: Phone }]
