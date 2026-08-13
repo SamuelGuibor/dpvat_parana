@@ -4,8 +4,8 @@
 // quanto por server actions.
 
 export const CLOSE_CATEGORY_LABELS: Record<string, string> = {
-  qualificado: 'Qualificados',
-  nao_qualificado: 'Não qualificados',
+  qualificado: 'Qualificada',
+  nao_qualificado: 'Não qualificado',
   // Sub-motivos de "não qualificado" — separam no dashboard POR QUE o lead
   // não fechou (a categoria genérica continua válida para casos antigos ou
   // quando o motivo não se encaixa).

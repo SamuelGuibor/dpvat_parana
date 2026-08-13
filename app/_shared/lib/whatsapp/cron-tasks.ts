@@ -1,5 +1,5 @@
 import { db } from '@/app/_shared/lib/prisma';
-import { sendBotReply, postInternalNote } from '@/app/_shared/lib/whatsapp/bot';
+import { sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
@@ -410,6 +410,19 @@ async function finalizeClose(
   });
 }
 
+/**
+ * Desfecho de quem simplesmente ficou em silêncio.
+ *
+ * Lead JÁ qualificado nunca pode virar "sem resposta" (aparecia como
+ * desqualificado pra equipe), mas também NÃO vai mais pra fila humana:
+ * silêncio depois de uma pergunta respondida é o fim natural da conversa, não
+ * um lead pra alguém perseguir — a fila enchia de conversa sem pendência
+ * nenhuma. (13/08/2026, revertendo o "fila_lead_qualificado" de 11/08.)
+ */
+function silentCloseCategory(conv: { qualified: boolean | null; closeCategory: string | null }): string {
+  return conv.closeCategory ?? (conv.qualified === true ? 'qualificado' : 'sem_resposta');
+}
+
 /** Entrada no STANDBY (ciclo de recuperação): agenda a 1ª provocação. */
 async function enterStandby(conv: { id: string; contactId: string }): Promise<void> {
   const lastInbound = await db.whatsAppMessage.findFirst({
@@ -620,23 +633,6 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       if (!block) {
         await enterStandby(conv);
         results.standby++;
-      } else if (conv.qualified === true && conv.closeCategory !== 'qualificado') {
-        // Lead QUALIFICADO que parou de responder NUNCA é encerrado pelo cron
-        // (ele aparecia como "desqualificado" pra equipe) — vai pra fila
-        // humana pra alguém retomar o contato. (11/08/2026)
-        await recordCodeIntervention({
-          contactId: conv.contactId,
-          contactName: conv.contact.name,
-          botState: conv.botState,
-          action: 'fila_lead_qualificado',
-          detail: 'Lead qualificado ficou em silêncio — enviado pra fila humana em vez de encerrar.',
-        });
-        await db.whatsAppConversation.update({
-          where: { id: conv.id },
-          data: { status: 'queued', queuedAt: new Date(), assignedToId: null, botNudge30At: null },
-        });
-        // O motivo na linha da Fila vem da última nota interna do bot.
-        await postInternalNote(conv.contactId, '🤖 Transferido para atendimento humano — lead qualificado parou de responder; retomar contato.');
       } else {
         await recordCodeIntervention({
           contactId: conv.contactId,
@@ -645,9 +641,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
           action: 'recuperacao_bloqueada',
           detail: `Conversa encerrada sem entrar no ciclo de recuperação: ${block}.`,
         });
-        // closeCategory de fallback: sem ela o inbox mostrava a conversa como
-        // "não qualificada" mesmo quando o lead só ficou em silêncio.
-        await finalizeClose(conv, { closeCategory: conv.closeCategory ?? 'sem_resposta' });
+        await finalizeClose(conv, { closeCategory: silentCloseCategory(conv) });
         results.closed++;
       }
     } catch (err) {
@@ -711,23 +705,6 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
       // Rede de segurança: nunca deveria ter entrado no ciclo.
       const block = await standbyBlockReason(conv);
       if (block) {
-        // Lead qualificado no meio do ciclo → fila humana, nunca encerrar
-        // silenciosamente (parecia desqualificado pra equipe). (11/08/2026)
-        if (conv.qualified === true && conv.closeCategory !== 'qualificado') {
-          await recordCodeIntervention({
-            contactId: conv.contactId,
-            contactName: conv.contact.name,
-            botState: conv.botState,
-            action: 'fila_lead_qualificado',
-            detail: 'Lead qualificado saiu do ciclo de recuperação — enviado pra fila humana.',
-          });
-          await db.whatsAppConversation.update({
-            where: { id: conv.id },
-            data: { status: 'queued', queuedAt: new Date(), assignedToId: null, recoveryNextAt: null },
-          });
-          await postInternalNote(conv.contactId, '🤖 Transferido para atendimento humano — lead qualificado parou de responder; retomar contato.');
-          return;
-        }
         await recordCodeIntervention({
           contactId: conv.contactId,
           contactName: conv.contact.name,
@@ -737,7 +714,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         });
         await finalizeClose(conv, {
           recoveryOutcome: 'bloqueado',
-          closeCategory: conv.closeCategory ?? 'sem_resposta',
+          closeCategory: silentCloseCategory(conv),
         });
         results.closed++;
         return;
