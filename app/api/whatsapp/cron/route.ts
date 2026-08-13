@@ -23,9 +23,12 @@ export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  // SLA primeiro (alertas críticos), depois as fases com IA.
+  // SLA primeiro (alertas críticos), depois as fases com IA. As duas fases
+  // com marcapasso de envio (30–40s entre mensagens) dividem o tempo da
+  // invocação — 110s cada — pra rota agregadora não estourar os 300s.
+  const PHASE_BUDGET_MS = 110_000;
   const sla = await runSlaPhase();
-  const nudge = await runNudgePhase();
-  const recovery = await runRecoveryPhase();
+  const nudge = await runNudgePhase(PHASE_BUDGET_MS);
+  const recovery = await runRecoveryPhase(PHASE_BUDGET_MS);
   return NextResponse.json({ ok: true, ...mergeResults(sla, nudge, recovery) });
 }

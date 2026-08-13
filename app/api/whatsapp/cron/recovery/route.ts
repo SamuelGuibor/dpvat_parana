@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runRecoveryPhase } from '@/app/_shared/lib/whatsapp/cron-tasks';
 import { isCronAuthorized } from '../auth';
 
-// Cron RECOVERY (de hora em hora): ciclo de recuperação standby. As janelas
-// do ciclo são de 22–24h — rodar a cada 15min era invocação jogada fora; de
-// hora em hora o atraso máximo de uma provocação é irrelevante.
+// Cron RECOVERY (a cada 15min): ciclo de recuperação standby. Voltou pra
+// 15min em 13/08/2026: com o marcapasso de envio (30–40s entre provocações)
+// cada invocação manda ~7 mensagens, então rodar de hora em hora virava
+// gargalo quando a fila de standby crescia.
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;

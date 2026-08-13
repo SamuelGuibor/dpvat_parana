@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/whatsapp/cron/recovery",
-      "schedule": "0 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/afastamentos/check",

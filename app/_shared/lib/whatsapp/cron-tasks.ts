@@ -10,9 +10,10 @@ import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/out
 // tudo num passe só e sequencial; com multi-número o volume multiplica e as
 // chamadas de IA (despedida/recuperação, até 15s cada) estouravam os 300s.
 // Agora cada fase é uma função exportada, consumida por 3 rotas de cron
-// separadas (sla / nudge / recovery), e o trabalho com IA roda em LOTES de
-// BATCH_SIZE conversas em paralelo (Promise.allSettled — o try/catch por
-// conversa continua valendo dentro de cada item).
+// separadas (sla / nudge / recovery). Desde 13/08/2026 as fases que mandam
+// mensagem pro cliente rodam UMA CONVERSA POR VEZ, com o marcapasso de envio
+// (30–40s entre mensagens) — antes eram lotes de 4 em paralelo, o que fazia
+// dezenas de disparos no mesmo minuto (cara de spam pra Meta).
 //
 // A rota antiga /api/whatsapp/cron segue existindo e roda as 3 fases em
 // sequência — é o disparo manual de dev (whatsapp-cron.cmd) e o fallback.
@@ -61,15 +62,63 @@ const NON_RECOVERABLE_CATEGORIES = new Set([
 ]);
 const HUMAN_TOUCH_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
 
-// Concorrência das seções com IA: 4-5 chamadas simultâneas é seguro pro
-// cérebro na Railway; mais que isso arrisca rate limit e timeouts em cascata.
-const BATCH_SIZE = 4;
+// MARCAPASSO DE ENVIO (13/08/2026): o cron disparava dezenas de provocações
+// no mesmo minuto (lotes de 4 em paralelo) — padrão que a Meta lê como spam e
+// que derruba a qualidade do número. Agora as mensagens AUTOMÁTICAS pro
+// cliente saem uma a uma, com 10–40s aleatórios entre elas — faixa larga de
+// propósito: cadência irregular parece menos robô que um intervalo fixo.
+// Ajustável sem deploy por WA_SEND_GAP_MIN_S / WA_SEND_GAP_MAX_S (segundos).
+function envSeconds(key: string, fallbackMs: number): number {
+  const raw = Number(process.env[key]);
+  return Number.isFinite(raw) && raw > 0 ? raw * 1000 : fallbackMs;
+}
+const SEND_GAP_MIN_MS = envSeconds('WA_SEND_GAP_MIN_S', 7_000);
+const SEND_GAP_MAX_MS = Math.max(SEND_GAP_MIN_MS, envSeconds('WA_SEND_GAP_MAX_S', 15_000));
+// Teto de 300s por invocação (maxDuration): para em 4min e deixa o resto da
+// fila pra próxima rodada do cron.
+const RUN_BUDGET_MS = 240_000;
 
-/** Roda fn para cada item, BATCH_SIZE por vez (falha de um não derruba o lote). */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface Pacer {
+  // eslint-disable-next-line no-unused-vars
+  slot(): Promise<boolean>;
+  skipped(): number;
+}
+
+/**
+ * Fila de envio: `slot()` segura a execução até o próximo horário livre e
+ * devolve false quando o orçamento da rodada acabou (aí a conversa fica pra
+ * próxima invocação, sem enviar nada).
+ */
+function createPacer(budgetMs = RUN_BUDGET_MS): Pacer {
+  const startedAt = Date.now();
+  let nextAt = 0; // o primeiro envio da rodada sai na hora
+  let skipped = 0;
+  return {
+    async slot() {
+      const waitMs = Math.max(0, nextAt - Date.now());
+      if (Date.now() - startedAt + waitMs > budgetMs) {
+        skipped++;
+        return false;
+      }
+      if (waitMs) await sleep(waitMs);
+      nextAt = Date.now() + SEND_GAP_MIN_MS + Math.floor(Math.random() * (SEND_GAP_MAX_MS - SEND_GAP_MIN_MS + 1));
+      return true;
+    },
+    skipped: () => skipped,
+  };
+}
+
+/** Uma conversa por vez — obrigatório onde o marcapasso controla o ritmo. */
 // eslint-disable-next-line no-unused-vars
-async function inBatches<T>(items: T[], fn: (item: T) => Promise<void>): Promise<void> {
-  for (let i = 0; i < items.length; i += BATCH_SIZE) {
-    await Promise.allSettled(items.slice(i, i + BATCH_SIZE).map(fn));
+async function inSequence<T>(items: T[], fn: (item: T) => Promise<void>): Promise<void> {
+  for (const item of items) {
+    try {
+      await fn(item);
+    } catch (err) {
+      console.error('[WHATSAPP CRON] Item da fila falhou:', err);
+    }
   }
 }
 
@@ -462,9 +511,10 @@ async function buildRecoveryMessage(
 // FASE NUDGE (a cada 15min): silêncio de 30min + encerramento por inatividade.
 // Tem chamadas de IA (followup-decision/farewell) → roda em lotes de 4.
 // ---------------------------------------------------------------------------
-export async function runNudgePhase(): Promise<CronResults> {
+export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   const now = Date.now();
   const results = emptyResults();
+  const pacer = createPacer(budgetMs);
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   const silent30 = await db.whatsAppConversation.findMany({
@@ -477,7 +527,7 @@ export async function runNudgePhase(): Promise<CronResults> {
     take: 25,
   });
 
-  await timed(`nudge30 (${silent30.length} conversas)`, () => inBatches(silent30, async (conv) => {
+  await timed(`nudge30 (${silent30.length} conversas)`, () => inSequence(silent30, async (conv) => {
     try {
       // Só cutuca se a ÚLTIMA mensagem foi do bot (pergunta sem resposta).
       const last = await db.whatsAppMessage.findFirst({
@@ -494,6 +544,9 @@ export async function runNudgePhase(): Promise<CronResults> {
         await db.whatsAppConversation.update({ where: { id: conv.id }, data: { botNudge30At: new Date() } });
         return;
       }
+      // Daqui pra frente a conversa vai receber mensagem: pega uma vaga na
+      // fila de envio. Sem vaga, fica intacta pra próxima rodada do cron.
+      if (!(await pacer.slot())) return;
       const decision = await decideFollowup(conv.contactId, conv.contact.name, last.body);
       await recordFollowupDecision({
         contactId: conv.contactId,
@@ -543,7 +596,7 @@ export async function runNudgePhase(): Promise<CronResults> {
     take: 25,
   });
 
-  await timed(`close (${silentAfterNudge.length} conversas)`, () => inBatches(silentAfterNudge, async (conv) => {
+  await timed(`close (${silentAfterNudge.length} conversas)`, () => inSequence(silentAfterNudge, async (conv) => {
     try {
       try {
         // Só se despede se a ÚLTIMA mensagem foi do PRÓPRIO BOT (caso Víctor).
@@ -554,6 +607,9 @@ export async function runNudgePhase(): Promise<CronResults> {
         });
         const botAskedLast = lastMsg?.direction === 'out' && lastMsg.sentByBot;
         if (botAskedLast && (await isWindowOpen(conv.contactId))) {
+          // Sem vaga na fila de envio: adia a conversa inteira (a despedida
+          // faz parte do encerramento, não pode sair "solta" depois).
+          if (!(await pacer.slot())) return;
           const farewell = await buildFarewell(conv.contactId, conv.contact.name);
           await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, farewell);
         }
@@ -600,6 +656,7 @@ export async function runNudgePhase(): Promise<CronResults> {
     }
   }));
 
+  if (pacer.skipped()) console.log(`[WHATSAPP CRON] nudge: ${pacer.skipped()} conversa(s) adiadas pra próxima rodada (fila de envio).`);
   return results;
 }
 
@@ -607,9 +664,10 @@ export async function runNudgePhase(): Promise<CronResults> {
 // FASE RECOVERY (de hora em hora): ciclo de recuperação standby. As janelas
 // são de 22–24h — rodar a cada 15min era desperdício de invocação.
 // ---------------------------------------------------------------------------
-export async function runRecoveryPhase(): Promise<CronResults> {
+export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> {
   const now = Date.now();
   const results = emptyResults();
+  const pacer = createPacer(budgetMs);
 
   const dueRecovery = await db.whatsAppConversation.findMany({
     where: {
@@ -620,7 +678,7 @@ export async function runRecoveryPhase(): Promise<CronResults> {
     take: 15,
   });
 
-  await timed(`recovery (${dueRecovery.length} conversas)`, () => inBatches(dueRecovery, async (conv) => {
+  await timed(`recovery (${dueRecovery.length} conversas)`, () => inSequence(dueRecovery, async (conv) => {
     try {
       // Descadastrou no meio do ciclo → encerra sem provocar.
       if (conv.contact.optedOut) {
@@ -690,6 +748,10 @@ export async function runRecoveryPhase(): Promise<CronResults> {
         await db.whatsAppConversation.update({ where: { id: conv.id }, data: { recoveryNextAt: slot } });
         return;
       }
+
+      // Vaga na fila de envio (30–40s entre provocações). Sem vaga, a
+      // conversa continua "due" e sai na próxima rodada do cron.
+      if (!(await pacer.slot())) return;
 
       const attempt = conv.recoveryAttempts + 1;
       const { message, pending } = await buildRecoveryMessage(
@@ -781,6 +843,7 @@ export async function runRecoveryPhase(): Promise<CronResults> {
     }
   }));
 
+  if (pacer.skipped()) console.log(`[WHATSAPP CRON] recovery: ${pacer.skipped()} conversa(s) adiadas pra próxima rodada (fila de envio).`);
   return results;
 }
 
