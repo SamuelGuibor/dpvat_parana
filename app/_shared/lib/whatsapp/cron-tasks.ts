@@ -111,6 +111,10 @@ async function standbyBlockReason(conv: {
     return `desfecho "${conv.closeCategory}" não é triagem incompleta`;
   }
   if (conv.contact.userId) return 'contato já é cliente cadastrado (card no kanban)';
+  // Atendimento humano só bloqueia a recuperação se o cliente RESPONDEU o
+  // atendente — aí a conversa está viva e o bot não deve atropelar. Se o
+  // humano falou e o cliente sumiu, é exatamente o lead que a recuperação
+  // existe para resgatar. (13/08/2026 — casos "sem resposta" sem provocação.)
   const humanReply = await db.whatsAppMessage.findFirst({
     where: {
       contactId: conv.contactId,
@@ -121,9 +125,22 @@ async function standbyBlockReason(conv: {
       deletedAt: null,
       createdAt: { gte: new Date(Date.now() - HUMAN_TOUCH_LOOKBACK_MS) },
     },
-    select: { id: true },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
   });
-  if (humanReply) return 'conversa teve atendimento humano nos últimos 7 dias';
+  if (humanReply) {
+    const clientAnswered = await db.whatsAppMessage.findFirst({
+      where: {
+        contactId: conv.contactId,
+        direction: 'in',
+        internal: false,
+        deletedAt: null,
+        createdAt: { gt: humanReply.createdAt },
+      },
+      select: { id: true },
+    });
+    if (clientAnswered) return 'conversa humana ativa (cliente respondeu o atendente)';
+  }
   return null;
 }
 
@@ -492,6 +509,14 @@ export async function runNudgePhase(): Promise<CronResults> {
           } catch (err) {
             console.error('[WHATSAPP CRON] Fecho suave não entregue (encerrando mesmo assim):', conv.contactId, err);
           }
+        }
+        // Silêncio SEM desfecho real não pode virar "sem resposta" direto: é
+        // lead que sumiu na triagem, tem que passar pelo ciclo de recuperação.
+        // (13/08/2026 — caso Ambrosio, encerrado com 0 provocações.)
+        if (!conv.closeCategory && !(await standbyBlockReason(conv))) {
+          await enterStandby(conv);
+          results.standby++;
+          return;
         }
         // Sem closeCategory a conversa caía na pasta "Não qualificadas" pelo
         // fallback do inbox — lead bom parecia desqualificado (11/08/2026).
