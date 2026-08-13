@@ -75,7 +75,7 @@ export function WhatsAppTagsModal({ open, onOpenChange, onChanged }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {confirmDialog}
-      <DialogContent className="max-w-md">
+      <DialogContent className="flex max-h-[85vh] max-w-md flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TagIcon className="h-5 w-5 text-emerald-600" /> Tags de conversa
@@ -86,7 +86,7 @@ export function WhatsAppTagsModal({ open, onOpenChange, onChanged }: Props) {
         {loading ? (
           <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
         ) : (
-          <div className="space-y-1.5">
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
             {tags.length === 0 && <p className="text-sm text-gray-400">Nenhuma tag criada ainda.</p>}
             {tags.map((t) => (
               <div key={t.id} className="flex items-center gap-2 rounded-lg border border-gray-100 px-2.5 py-1.5 dark:border-zinc-800">
