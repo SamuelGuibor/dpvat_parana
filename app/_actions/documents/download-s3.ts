@@ -35,7 +35,10 @@ const ALLOWED_KEY_PREFIXES = [
 ];
 
 async function isAllowedKey(key: string): Promise<boolean> {
-  if (key.includes('..')) return false;
+  // Traversal é um segmento de caminho igual a ".." — não qualquer ".." na
+  // string: nome de arquivo legítimo pode ter ponto duplo ("DOC-123..pdf") e
+  // a checagem por substring bloqueava o download desses anexos.
+  if (key.split('/').includes('..')) return false;
   if (ALLOWED_KEY_PREFIXES.some((p) => key.startsWith(p))) return true;
   // Documentos antigos podem ter chave fora dos prefixos atuais: se a chave
   // está registrada na tabela de documentos, o download continua liberado.

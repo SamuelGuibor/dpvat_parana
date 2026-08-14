@@ -471,7 +471,11 @@ export async function downloadMediaToS3(
 
     const mimeType: string = meta.mime_type ?? "application/octet-stream";
     const ext = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
-    const safeName = (filenameHint ?? `midia.${ext}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+    // Pontos repetidos viram um só: o celular às vezes manda "DOC-123..pdf" e
+    // ponto duplo na chave atrapalha quem valida caminho por substring "..".
+    const safeName = (filenameHint ?? `midia.${ext}`)
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .replace(/\.{2,}/g, ".");
     const key = `whatsapp/${contactId}/${Date.now()}-${safeName}`;
 
     await s3.send(
