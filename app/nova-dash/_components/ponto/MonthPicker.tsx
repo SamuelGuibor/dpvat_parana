@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 'use client';
 
 // Seletor de mês com setas — substitui o <input type="month"> nativo, cujo
