@@ -98,6 +98,12 @@ export const PERMISSION_DEFS = [
       "Vê a caixa de Menções e Tarefas de todo mundo (quem foi marcado, o que ainda está pendente).",
   },
   {
+    key: "manage_ponto",
+    label: "Ponto da equipe",
+    description:
+      "Vê o ponto de toda a equipe, corrige batidas esquecidas e exporta a folha do mês.",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -131,6 +137,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_wa_contacts: false,
     view_costs: false,
     view_all_mentions: false,
+    manage_ponto: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -157,6 +164,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Ver a caixa de menções dos outros é supervisão — nasce exclusiva do
     // ADMIN++, concedível ao ADMIN+ por override.
     view_all_mentions: false,
+    // Ponto da equipe é dado de RH — nasce exclusivo do ADMIN++, concedível
+    // ao ADMIN+ por override.
+    manage_ponto: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -175,6 +185,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_wa_contacts: true,
     view_costs: true,
     view_all_mentions: true,
+    manage_ponto: true,
     manage_team: true,
   },
 };

@@ -17,7 +17,7 @@ import { Workspace } from '@/app/nova-dash/workspace/Workspace';
 import { MentionsInbox } from '@/app/nova-dash/mentions/MentionsInbox';
 import { WhatsAppInbox } from '@/app/nova-dash/workspace/whatsapp/WhatsAppInbox';
 import Team from '@/app/nova-dash/_components/team_dash';
-import { WorkSessionPanel } from '@/app/nova-dash/_components/WorkSession';
+import { WorkSessionPanel } from '@/app/nova-dash/_components/ponto';
 import { TicketsBoard } from '@/app/nova-dash/tickets/TicketsBoard';
 
 import Link from 'next/link';
@@ -138,6 +138,7 @@ function PageInner() {
   const isWorkspace = activeTab === 'meu-espaco';
   const isWhatsApp = activeTab === 'whatsapp';
   const kanban = activeTab === 'kanban';
+  const ponto = activeTab === 'ponto';
 
   // Permissões vêm do servidor (cargo + overrides do ADMIN++) via
   // PermissionsProvider — nada mais de listas de IDs hardcoded aqui.
@@ -147,11 +148,11 @@ function PageInner() {
   // Kanban + Espaço de Trabalho + Menções + WhatsApp são fixos; Arquivados e Tickets Dev
   // entram conforme a permissão. Classes literais para o Tailwind não perder o JIT.
   // Mobile: as abas viram uma linha com scroll lateral; o grid só vale no md+.
-  const visibleTabs = 4 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
+  const visibleTabs = 5 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
   const tabsGridCols =
-    visibleTabs === 6 ? "md:grid-cols-6"
-      : visibleTabs === 5 ? "md:grid-cols-5"
-        : "md:grid-cols-4";
+    visibleTabs === 7 ? "md:grid-cols-7"
+      : visibleTabs === 6 ? "md:grid-cols-6"
+        : "md:grid-cols-5";
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
@@ -289,13 +290,13 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
-            {/* <TabsTrigger
+            <TabsTrigger
               value="ponto"
               className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
             >
               <Clock className="w-4 h-4 mr-2" />
               Controle de Ponto
-            </TabsTrigger> */}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
@@ -335,12 +336,12 @@ function PageInner() {
             <TicketsBoard />
           </TabsContent>
           <TabsContent value="ponto">
-            <WorkSessionPanel isDark={isDark} role={session?.user?.role} userId={session?.user?.id} />
+            <WorkSessionPanel />
           </TabsContent>
         </Tabs>
       </main>
 
-      {!isWorkspace && !isWhatsApp && !kanban && (
+      {!isWorkspace && !isWhatsApp && !kanban && !ponto && (
         <footer className={`shrink-0 border-t transition-colors ${
           isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
         }`}>

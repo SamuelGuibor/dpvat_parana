@@ -92,6 +92,8 @@ model User {
   permissions         Json?
   // Progresso do tutorial de onboarding: { dash: { step, done }, client: { step, done } }
   onboarding          Json?
+  // Jornada esperada no controle de ponto: { dailyMinutes: 480, days: [1,2,3,4,5] }
+  workSchedule        Json?
   sectorId            String?
   sector              Sector?        @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
   accounts            Account[]
@@ -1026,15 +1028,28 @@ model WorkSession {
   discordId  String
   date       String
   startedAt  DateTime?
+  // pausedAt/resumedAt são o par legado (uma pausa só por dia). Continuam
+  // gravados como espelho da PRIMEIRA pausa; a fonte de verdade é `breaks`.
   pausedAt   DateTime?
   resumedAt  DateTime?
   finishedAt DateTime?
   isActive   Boolean   @default(false)
   isPaused   Boolean   @default(false)
+  // Lista de pausas do dia: [{ start, end|null, kind: "almoco"|"pausa" }]
+  breaks     Json?
+  // Justificativa do colaborador ou do gestor (correção de esquecimento etc).
+  note       String?
+  // Turno que virou o dia aberto e foi fechado pelo sistema na virada.
+  autoClosed Boolean   @default(false)
+  // Auditoria da correção manual feita por quem tem `manage_ponto`.
+  editedById String?
+  editedAt   DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
   @@unique([discordId, date])
+  @@index([date])
+  @@index([userId, date])
 }
 
 model AdminChecklistItem {

@@ -27,6 +27,7 @@ const NO_PERMISSIONS: PermissionMap = {
   manage_wa_contacts: false,
   view_costs: false,
   view_all_mentions: false,
+  manage_ponto: false,
   manage_team: false,
 };
 
