@@ -44,6 +44,40 @@ const TEST_NUMBERS = (process.env.WHATSAPP_TEST_NUMBERS ?? "")
   .map((s) => s.replace(/\D/g, ""))
   .filter(Boolean);
 
+/**
+ * Texto de uma mensagem no histórico enviado ao cérebro.
+ *
+ * Anexo sem legenda tem `body` vazio: antes ele era simplesmente filtrado fora
+ * e o cérebro NUNCA ficava sabendo que a foto/PDF existiu — nem no turno em que
+ * chegou, nem em nenhum turno seguinte. Na coleta de documentos isso vira loop:
+ * o bot cobra pra sempre um RG que o cliente já mandou. O marcador abaixo
+ * mantém o anexo visível no histórico (e a transcrição do áudio junto).
+ */
+function historyText(m: {
+  body: string | null;
+  mediaType: string | null;
+  transcript: string | null;
+}): string {
+  const body = m.body?.trim() ?? "";
+  if (!m.mediaType) return body;
+  // WhatsApp manda "audio/ogg; codecs=opus" — o parâmetro depois do ";" atrapalha.
+  const mime = m.mediaType.split(";")[0].trim();
+  const label = mime.startsWith("image/")
+    ? "imagem/foto"
+    : mime === "application/pdf"
+      ? "PDF"
+      : mime.startsWith("audio/")
+        ? "áudio"
+        : mime.startsWith("video/")
+          ? "vídeo"
+          : `arquivo (${mime || "tipo desconhecido"})`;
+  const transcript = m.transcript?.trim();
+  const marker = transcript
+    ? `[anexo: ${label} — transcrição: ${transcript}]`
+    : `[anexo: ${label}]`;
+  return [body, marker].filter(Boolean).join(" ");
+}
+
 /** Cérebro a usar para este telefone: staging para números de teste, senão produção. */
 function brainUrlFor(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -835,28 +869,10 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       return;
     }
 
-    // ---- Mídia ----------------------------------------------------------
-    // TUDO vai pra IA com URL pré-assinada: áudio é transcrito (Gemini) e
-    // imagem/PDF o Claude LÊ direto (visão). O que fazer com o arquivo —
-    // confirmar recebimento, validar, pedir o próximo, transferir com resumo —
-    // é regido pelas INSTRUÇÕES editáveis + playbook, não mais por atalho de
-    // código (decisão de 25/07/2026; antes, qualquer arquivo não-áudio
-    // transferia pra fila na hora, atropelando as regras aprendidas).
-    let media: { url: string; mimeType: string } | null = null;
-    if (message.mediaKey && message.mediaType) {
-      const url = await getSignedUrl(
-        s3,
-        new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: message.mediaKey }),
-        { expiresIn: 600 },
-      );
-      media = { url, mimeType: message.mediaType };
-    }
-
     // ---- Lote da rajada ---------------------------------------------------
     // Todas as mensagens do cliente desde a nossa última resposta formam UM
-    // "turno" só: os textos são agregados numa única mensagem pra IA. (Mídia
-    // de mensagens anteriores do lote não é reprocessada — só a da mensagem
-    // que disparou esta invocação, tratada acima.)
+    // "turno" só: os textos são agregados numa única mensagem pra IA e o anexo
+    // sai do LOTE INTEIRO — não só da mensagem que disparou esta invocação.
     const lastOut = await db.whatsAppMessage.findFirst({
       where: { contactId, direction: "out", internal: false, deletedAt: null },
       orderBy: { createdAt: "desc" },
@@ -871,12 +887,51 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       },
       orderBy: { createdAt: "asc" },
       take: 12,
-      select: { id: true, body: true },
+      select: { id: true, body: true, mediaKey: true, mediaType: true },
     });
     const burstIds = burst.length ? burst.map((b) => b.id) : [message.id];
-    const clientText = (burst.length ? burst.map((b) => b.body?.trim()).filter(Boolean) : [message.body?.trim()])
+    let clientText = (burst.length ? burst.map((b) => b.body?.trim()).filter(Boolean) : [message.body?.trim()])
       .filter(Boolean)
       .join("\n");
+
+    // ---- Mídia ----------------------------------------------------------
+    // TUDO vai pra IA com URL pré-assinada: áudio é transcrito (Gemini) e
+    // imagem/PDF o Claude LÊ direto (visão). O que fazer com o arquivo —
+    // confirmar recebimento, validar, pedir o próximo, transferir com resumo —
+    // é regido pelas INSTRUÇÕES editáveis + playbook, não mais por atalho de
+    // código (decisão de 25/07/2026; antes, qualquer arquivo não-áudio
+    // transferia pra fila na hora, atropelando as regras aprendidas).
+    //
+    // O anexo vem do LOTE, não da mensagem que disparou: quem manda a foto do
+    // RG e emenda um "bom dia" faz o TEXTO ganhar o debounce, e a foto — que
+    // tem `body` vazio — sumia do turno inteiro. O bot então repetia o pedido
+    // do documento que já estava na tela do cliente (caso Zico, 15/08/2026).
+    const attachments = (burst.length ? burst : [message]).filter(
+      (m) => m.mediaKey && m.mediaType,
+    );
+    // O cérebro ainda lê UM anexo por chamada: manda o mais recente do lote e
+    // avisa por texto quando vieram vários (RG frente e verso é o caso comum).
+    const attachment = attachments.at(-1) ?? null;
+    let media: { url: string; mimeType: string } | null = null;
+    if (attachment?.mediaKey && attachment.mediaType) {
+      const url = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: attachment.mediaKey }),
+        { expiresIn: 600 },
+      );
+      media = { url, mimeType: attachment.mediaType };
+    }
+    if (attachments.length > 1) {
+      clientText = [
+        clientText,
+        `[NOTA DO SISTEMA: o cliente enviou ${attachments.length} arquivos seguidos nesta mesma ` +
+          "leva; você só consegue abrir o último. Considere os outros como RECEBIDOS (podem ser " +
+          "frente e verso do mesmo documento) e NÃO peça de novo — se precisar conferir, o " +
+          "atendente humano vê todos.]",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    }
 
     // ---- Mensagem que CRUZOU com a última resposta do bot ------------------
     // O cliente enviou esta mensagem ANTES (ou no exato instante) de a nossa
@@ -905,7 +960,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         where: { contactId, internal: false, id: { notIn: burstIds }, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 30,
-        select: { direction: true, sentByBot: true, body: true },
+        select: { direction: true, sentByBot: true, body: true, mediaType: true, transcript: true },
       }),
       findLinkedCard(contactId),
       // Fluxos cadastrados COM descrição — a IA escolhe qual se encaixa.
@@ -923,11 +978,11 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       flows,
       history: history
         .reverse()
-        .filter((h) => h.body)
         .map((h) => ({
           role: h.direction === "in" ? "client" : h.sentByBot ? "bot" : "agent",
-          text: h.body,
-        })),
+          text: historyText(h),
+        }))
+        .filter((h) => h.text),
       message: crossedWithLastOut ? `${clientText}\n\n${crossNote}` : clientText,
       media,
       memory: conversation?.botMemory ?? null,
