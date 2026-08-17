@@ -1,8 +1,10 @@
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
-import { sendText, sendTemplate } from "./client";
+import { sendText, sendTemplate, type TemplateHeaderMedia } from "./client";
 import { OPT_OUT_FOOTER } from "./opt-out";
 import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 import { renderTemplateThreadText } from "./template-text";
@@ -385,7 +387,46 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
     const vars = (input.templateVars ?? []).slice(0, template.bodyVars);
     while (vars.length < template.bodyVars) vars.push("");
 
-    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId);
+    // Cabeçalho de MÍDIA: a Meta exige a mídia em todo envio — usa a mídia
+    // padrão do template (S3). Sem mídia definida, pula com aviso em vez de
+    // deixar a Meta recusar sem contexto.
+    let headerMedia: TemplateHeaderMedia | null = null;
+    const mediaKind = template.headerFormat === "IMAGE" ? "image"
+      : template.headerFormat === "VIDEO" ? "video"
+        : template.headerFormat === "DOCUMENT" ? "document" : null;
+    if (mediaKind) {
+      if (!template.headerMediaKey) {
+        await logWhatsAppEvent({
+          action: "wa_text",
+          message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: template "${template.name}" tem cabeçalho de mídia sem mídia definida`,
+          authorId: input.authorId,
+          authorName: input.authorName,
+          contactId: contact.id,
+          contactName: contact.name,
+          contactPhone: contact.phone,
+          metadata: { source: input.source, automated: true, skipped: true, reason: "sem mídia do cabeçalho" },
+        });
+        return { sent: false, via: "template", reason: `template "${template.name}" tem cabeçalho de mídia — defina a mídia em Templates → Gerenciar` };
+      }
+      const s3ForHeader = new S3Client({
+        region: process.env.AWS_REGION,
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        },
+      });
+      headerMedia = {
+        kind: mediaKind,
+        link: await getSignedUrl(
+          s3ForHeader,
+          new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: template.headerMediaKey }),
+          { expiresIn: 3600 },
+        ),
+        filename: template.headerMediaKey.split("/").pop()?.replace(/^\d{10,}-/, ""),
+      };
+    }
+
+    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId, headerMedia);
     if (!result.waMessageId) {
       await logWhatsAppEvent({
         action: "wa_text",

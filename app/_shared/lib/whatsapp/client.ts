@@ -206,6 +206,63 @@ export async function sendVoiceNote(
   }, numberId);
 }
 
+/**
+ * Resumable Upload API da Meta: sobe a mídia de EXEMPLO do cabeçalho de um
+ * template (imagem/vídeo/documento) e retorna o `header_handle` exigido na
+ * criação. É uma API diferente do /media de mensagens — o handle só serve
+ * para criação de template. Usa o alias `app` (resolve o app dono do token).
+ */
+export async function uploadTemplateHeaderMedia(
+  buffer: ArrayBuffer,
+  mimeType: string,
+  filename: string,
+  numberId?: string | null,
+): Promise<{ handle: string | null; error?: string }> {
+  const c = await getCreds(numberId);
+  if (!c?.token) return { handle: null, error: "WhatsApp Cloud API não configurada." };
+  try {
+    const startRes = await fetch(
+      `${graphBase(c)}/app/uploads?file_length=${buffer.byteLength}&file_type=${encodeURIComponent(mimeType)}&file_name=${encodeURIComponent(filename)}`,
+      { method: "POST", headers: { Authorization: `Bearer ${c.token}` }, cache: "no-store" },
+    );
+    const startData = await startRes.json().catch(() => null);
+    if (!startRes.ok || !startData?.id) {
+      const msg = startData?.error?.message ?? `Meta respondeu HTTP ${startRes.status} ao abrir a sessão de upload.`;
+      console.error("[WHATSAPP TEMPLATES] Falha ao abrir upload de mídia do cabeçalho:", msg);
+      return { handle: null, error: msg };
+    }
+    // startData.id vem como "upload:XYZ" — vira o path da segunda chamada.
+    const uploadRes = await fetch(`${graphBase(c)}/${startData.id}`, {
+      method: "POST",
+      headers: {
+        // A Resumable Upload API usa "OAuth", não "Bearer" (documentado assim).
+        Authorization: `OAuth ${c.token}`,
+        file_offset: "0",
+        "Content-Type": "application/octet-stream",
+      },
+      body: buffer,
+      cache: "no-store",
+    });
+    const uploadData = await uploadRes.json().catch(() => null);
+    if (!uploadRes.ok || !uploadData?.h) {
+      const msg = uploadData?.error?.message ?? `Meta respondeu HTTP ${uploadRes.status} no upload da mídia.`;
+      console.error("[WHATSAPP TEMPLATES] Falha no upload da mídia do cabeçalho:", msg);
+      return { handle: null, error: msg };
+    }
+    return { handle: uploadData.h };
+  } catch (err) {
+    console.error("[WHATSAPP TEMPLATES] Falha de rede no upload da mídia do cabeçalho:", err);
+    return { handle: null, error: String(err) };
+  }
+}
+
+/** Mídia do cabeçalho na hora do ENVIO de um template aprovado. */
+export interface TemplateHeaderMedia {
+  kind: "image" | "video" | "document";
+  link: string;
+  filename?: string;
+}
+
 // Erros mais comuns da Graph API ao enviar template, traduzidos pra equipe.
 // https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
 const TEMPLATE_ERROR_HINTS: Record<number, string> = {
@@ -236,15 +293,27 @@ export async function sendTemplate(
   language = "pt_BR",
   headerVar?: string | null,
   numberId?: string | null,
+  headerMedia?: TemplateHeaderMedia | null,
 ): Promise<SendResult> {
   // A Meta rejeita variáveis com \n, \t ou 4+ espaços consecutivos (erro 132012).
   const clean = (v: string) => v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim();
   const cleanVars = vars.map(clean);
 
   // Cabeçalho vem antes do corpo e é um componente próprio: sem ele, um
-  // template com {{1}} no cabeçalho é recusado por nº de parâmetros.
+  // template com {{1}} no cabeçalho (ou mídia) é recusado por nº de parâmetros.
   const components: Record<string, unknown>[] = [];
-  if (headerVar?.trim()) {
+  if (headerMedia) {
+    components.push({
+      type: "header",
+      parameters: [{
+        type: headerMedia.kind,
+        [headerMedia.kind]: {
+          link: headerMedia.link,
+          ...(headerMedia.kind === "document" && headerMedia.filename ? { filename: headerMedia.filename } : {}),
+        },
+      }],
+    });
+  } else if (headerVar?.trim()) {
     components.push({ type: "header", parameters: [{ type: "text", text: clean(headerVar) }] });
   }
   if (cleanVars.length) {
@@ -280,6 +349,7 @@ export interface MetaTemplate {
   status: string; // APPROVED | PENDING | REJECTED | PAUSED ...
   category: string; // UTILITY | MARKETING | AUTHENTICATION
   headerText: string | null; // só cabeçalho de TEXTO; mídia vem como null
+  headerFormat: string | null; // TEXT | IMAGE | VIDEO | DOCUMENT | null (sem cabeçalho)
   bodyText: string | null;
   footerText: string | null;
   bodyVars: number;
@@ -324,6 +394,7 @@ export async function fetchMetaTemplates(numberId?: string | null): Promise<Meta
       // Cabeçalho de mídia não tem `text` — fica null e a tela mostra só o corpo.
       const header = components.find((c) => c.type === "HEADER");
       const headerText: string | null = header?.format === "TEXT" ? header.text ?? null : null;
+      const headerFormat: string | null = header?.format ?? null;
       // "NONE" é como a Meta diz "não foi reprovado" — não vira motivo na tela.
       const rejected = String(t.rejected_reason ?? "");
       templates.push({
@@ -333,6 +404,7 @@ export async function fetchMetaTemplates(numberId?: string | null): Promise<Meta
         status: t.status,
         category: t.category ?? "UTILITY",
         headerText,
+        headerFormat,
         bodyText,
         footerText,
         bodyVars: countTemplateVars(bodyText),
@@ -360,6 +432,10 @@ export async function createMetaTemplate(input: {
   category: string;
   headerText?: string | null;
   headerExample?: string | null;
+  // Cabeçalho de MÍDIA: formato + handle da Resumable Upload API
+  // (uploadTemplateHeaderMedia). Quando presente, headerText é ignorado.
+  headerFormat?: "IMAGE" | "VIDEO" | "DOCUMENT" | null;
+  headerHandle?: string | null;
   bodyText: string;
   bodyExamples: string[];
   footerText?: string | null;
@@ -372,9 +448,16 @@ export async function createMetaTemplate(input: {
   const components: Record<string, unknown>[] = [];
 
   // O cabeçalho vem ANTES do corpo — a Meta valida a ordem dos componentes.
-  // No header o exemplo é `example.header_text` (array simples), diferente do
-  // corpo, que usa `body_text` (array de arrays).
-  if (input.headerText?.trim()) {
+  // Mídia usa `example.header_handle` (upload resumable); texto usa
+  // `example.header_text` (array simples), diferente do corpo (`body_text`,
+  // array de arrays).
+  if (input.headerFormat && input.headerHandle) {
+    components.push({
+      type: "HEADER",
+      format: input.headerFormat,
+      example: { header_handle: [input.headerHandle] },
+    });
+  } else if (input.headerText?.trim()) {
     components.push({
       type: "HEADER",
       format: "TEXT",

@@ -36,6 +36,7 @@ export type LogAction =
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
   | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
   | "sheets_export"     // automação registrou o card numa planilha do Google
+  | "tag_add"           // automação adicionou uma tag ao card
   | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
   | "ai_audit_feedback"; // feedback humano sobre uma auditoria da IA
 

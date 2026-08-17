@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  breakMinutes, clockToIso, dayEndMs, daysOfMonth, fmtHm, fmtSigned,
+  bankSummary, breakMinutes, clockToIso, dayEndMs, daysOfMonth, fmtHm, fmtSigned,
   monthSummary, parseBreaks, parseSchedule, statusOf, targetMinutes,
   weekdayOf, workedMinutes,
   type PontoSession,
@@ -111,7 +111,16 @@ describe("jornada esperada", () => {
 
   it("cai no padrão diante de JSON inválido", () => {
     expect(parseSchedule(null)).toEqual({ dailyMinutes: 480, days: [1, 2, 3, 4, 5] });
-    expect(parseSchedule({ dailyMinutes: -5, days: [] })).toEqual({ dailyMinutes: 480, days: [1, 2, 3, 4, 5] });
+    expect(parseSchedule({ dailyMinutes: -5, days: [] })).toMatchObject({ dailyMinutes: 480, days: [1, 2, 3, 4, 5] });
+  });
+
+  it("escala com horários é preservada e validada", () => {
+    const s = parseSchedule({ dailyMinutes: 300, days: [1, 2, 3, 4, 5], startTime: "08:30", endTime: "14:30", breakMinutes: 60 });
+    expect(s.startTime).toBe("08:30");
+    expect(s.endTime).toBe("14:30");
+    expect(s.breakMinutes).toBe(60);
+    // Horário fora do formato HH:MM é descartado.
+    expect(parseSchedule({ dailyMinutes: 300, days: [1], startTime: "25:99" }).startTime).toBeNull();
   });
 
   it("agosto/2026 tem 31 dias", () => {
@@ -185,5 +194,57 @@ describe("formatação", () => {
     expect(fmtSigned(80)).toBe("+1h20");
     expect(fmtSigned(-35)).toBe("−0h35");
     expect(fmtSigned(0)).toBe("0h00");
+  });
+});
+
+describe("bankSummary (banco de horas acumulado)", () => {
+  const schedule = parseSchedule({ dailyMinutes: 300, days: [1, 2, 3, 4, 5] }); // 5h/dia (caso Luana)
+
+  function sessOn(date: string, start: string, end: string): PontoSession {
+    return {
+      ...ws({ start, end, pausas: [] }),
+      id: `s-${date}`, date,
+      startedAt: clockToIso(date, start),
+      finishedAt: clockToIso(date, end),
+    } as PontoSession;
+  }
+
+  it("acumula saldo positivo e negativo entre dias", () => {
+    const sessions = [
+      sessOn("2026-08-12", "08:30", "14:30"), // 6h → +1h
+      sessOn("2026-08-13", "08:30", "12:30"), // 4h → −1h
+      sessOn("2026-08-14", "08:30", "13:30"), // 5h → 0
+    ];
+    const bank = bankSummary(sessions, [], schedule, "2026-08-16");
+    expect(bank.accumulated).toBe(0);
+    expect(bank.startKey).toBe("2026-08-12");
+  });
+
+  it("compensação abate o crédito e aparece em horas compensadas", () => {
+    const sessions = [sessOn("2026-08-12", "08:30", "16:30")]; // 8h → +3h
+    const bank = bankSummary(
+      sessions,
+      [{ date: "2026-08-14", minutes: -120, kind: "compensation" }],
+      schedule,
+      "2026-08-16",
+    );
+    expect(bank.accumulated).toBe(60); // +3h − 2h compensadas
+    expect(bank.compensated).toBe(120);
+  });
+
+  it("sessões anteriores ao início do ciclo ficam de fora", () => {
+    const sessions = [
+      sessOn("2026-07-01", "08:30", "16:30"), // fora do ciclo
+      sessOn("2026-08-12", "08:30", "15:30"), // 7h → +2h
+    ];
+    const withCycle = { ...schedule, bankStartKey: "2026-08-01" };
+    const bank = bankSummary(sessions, [], withCycle, "2026-08-16");
+    expect(bank.accumulated).toBe(120);
+  });
+
+  it("alerta a partir de 5 meses de ciclo", () => {
+    const withCycle = { ...schedule, bankStartKey: "2026-03-10" };
+    expect(bankSummary([], [], withCycle, "2026-08-16").alert).toBe(true);   // 5 meses
+    expect(bankSummary([], [], { ...schedule, bankStartKey: "2026-04-20" }, "2026-08-16").alert).toBe(false); // 3 meses
   });
 });

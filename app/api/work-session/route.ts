@@ -10,6 +10,8 @@ import {
   targetMinutes,
   workedMinutes,
   breakMinutes,
+  bankSummary,
+  statusOf,
   fmtHm,
   fmtSigned,
   fmtClock,
@@ -54,6 +56,22 @@ function toDto(ws: NonNullable<DbSession>): PontoSession {
     autoClosed: ws.autoClosed,
     editedById: ws.editedById,
     editedAt: ws.editedAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * Estado do dia SEM horários — é o que o colaborador comum recebe. A regra
+ * (16/08/2026) é o funcionário só ver os botões de bater ponto; horários e
+ * histórico ficam restritos a quem tem `manage_ponto`.
+ */
+function limitedState(ws: NonNullable<DbSession> | null) {
+  if (!ws) return { status: 'nao_iniciado' as const, breaksCount: 0, autoClosed: false, note: null as string | null };
+  const dto = toDto(ws);
+  return {
+    status: statusOf(dto),
+    breaksCount: parseBreaks(dto).length,
+    autoClosed: !!ws.autoClosed,
+    note: ws.note ?? null,
   };
 }
 
@@ -127,35 +145,70 @@ export async function GET(req: NextRequest) {
     });
     await closeStale({ discordId: { in: team.map((u) => u.id) } });
 
-    const sessions = await db.workSession.findMany({
-      where: { date: { startsWith: month } },
-      orderBy: { date: 'desc' },
-    });
+    // TODAS as sessões da equipe (não só o mês): o banco de horas é acumulado
+    // desde o início do ciclo de cada colaborador. Tabela pequena — sem drama.
+    const [allSessions, adjustments] = await Promise.all([
+      db.workSession.findMany({
+        where: { discordId: { in: team.map((u) => u.id) } },
+        orderBy: { date: 'desc' },
+      }),
+      db.pontoAdjustment.findMany({
+        where: { userId: { in: team.map((u) => u.id) } },
+        orderBy: { date: 'desc' },
+      }),
+    ]);
 
     const byUser = new Map<string, PontoSession[]>();
-    for (const s of sessions) {
-      const list = byUser.get(s.discordId) ?? [];
-      list.push(toDto(s));
-      byUser.set(s.discordId, list);
+    const byUserMonth = new Map<string, PontoSession[]>();
+    for (const s of allSessions) {
+      const dto = toDto(s);
+      (byUser.get(s.discordId) ?? byUser.set(s.discordId, []).get(s.discordId)!).push(dto);
+      if (s.date.startsWith(month)) {
+        (byUserMonth.get(s.discordId) ?? byUserMonth.set(s.discordId, []).get(s.discordId)!).push(dto);
+      }
+    }
+    const adjByUser = new Map<string, typeof adjustments>();
+    for (const a of adjustments) {
+      (adjByUser.get(a.userId) ?? adjByUser.set(a.userId, []).get(a.userId)!).push(a);
     }
 
+    const today = todayStr();
     const members = team
       .filter((u) => u.name?.trim())
-      .map((u) => ({
-        user: { id: u.id, name: u.name, role: u.role, image: u.image },
-        schedule: parseSchedule(u.workSchedule),
-        sessions: byUser.get(u.id) ?? [],
-      }))
+      .map((u) => {
+        const schedule = parseSchedule(u.workSchedule);
+        return {
+          user: { id: u.id, name: u.name, role: u.role, image: u.image },
+          schedule,
+          sessions: byUserMonth.get(u.id) ?? [],
+          bank: bankSummary(byUser.get(u.id) ?? [], adjByUser.get(u.id) ?? [], schedule, today),
+        };
+      })
       .sort((a, b) => (a.user.name ?? '').localeCompare(b.user.name ?? '', 'pt-BR'));
 
     if (searchParams.get('format') === 'csv') {
       return csvResponse(members, month);
     }
 
-    return NextResponse.json({ month, today: todayStr(), members });
+    return NextResponse.json({ month, today, members });
   }
 
   await closeStale({ discordId: ctx.userId });
+
+  const today = todayStr();
+
+  // Colaborador comum: SÓ o estado dos botões — sem horários, sem histórico,
+  // sem escala. Os horários ficam restritos a quem gerencia o ponto.
+  if (!canManage) {
+    const ws = await db.workSession.findFirst({ where: { discordId: ctx.userId, date: today } });
+    return NextResponse.json({
+      month,
+      today,
+      canManageTeam: false,
+      restricted: true,
+      todayState: limitedState(ws),
+    });
+  }
 
   const me = await db.user.findUnique({
     where: { id: ctx.userId },
@@ -167,7 +220,6 @@ export async function GET(req: NextRequest) {
     orderBy: { date: 'desc' },
   });
 
-  const today = todayStr();
   const dtos = sessions.map(toDto);
 
   // O turno de hoje aparece mesmo quando o histórico está em outro mês.
@@ -180,7 +232,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     month,
     today,
-    canManageTeam: canManage,
+    canManageTeam: true,
+    restricted: false,
     schedule: parseSchedule(me?.workSchedule),
     todaySession,
     sessions: dtos,
@@ -205,6 +258,11 @@ export async function POST(req: NextRequest) {
   const { action } = body;
   const date = todayStr();
   const now = new Date();
+  const canManage = canManagePonto(ctx.userId, ctx.permissions);
+
+  // Colaborador comum não recebe horários nem na resposta da batida.
+  const respond = (ws: NonNullable<DbSession>) =>
+    NextResponse.json(canManage ? toDto(ws) : limitedState(ws));
 
   await closeStale({ discordId: ctx.userId });
 
@@ -228,7 +286,7 @@ export async function POST(req: NextRequest) {
         breaks: [],
       },
     });
-    return NextResponse.json(toDto(ws));
+    return respond(ws);
   }
 
   if (!existing) return NextResponse.json({ error: 'Nenhum turno registrado hoje.' }, { status: 400 });
@@ -241,7 +299,7 @@ export async function POST(req: NextRequest) {
       where: { id: existing.id },
       data: { note: (body.note ?? '').trim().slice(0, 500) || null },
     });
-    return NextResponse.json(toDto(ws));
+    return respond(ws);
   }
 
   if (action === 'pause') {
@@ -250,7 +308,7 @@ export async function POST(req: NextRequest) {
     const kind = body.kind === 'almoco' ? 'almoco' : 'pausa';
     const next = [...breaks, { start: now.toISOString(), end: null, kind } as PontoBreak];
     const ws = await db.workSession.update({ where: { id: existing.id }, data: derived(next, false) });
-    return NextResponse.json(toDto(ws));
+    return respond(ws);
   }
 
   if (action === 'resume') {
@@ -258,7 +316,7 @@ export async function POST(req: NextRequest) {
     if (openIdx < 0) return NextResponse.json({ error: 'Nenhuma pausa em curso.' }, { status: 400 });
     const next = breaks.map((b, i) => (i === openIdx ? { ...b, end: now.toISOString() } : b));
     const ws = await db.workSession.update({ where: { id: existing.id }, data: derived(next, false) });
-    return NextResponse.json(toDto(ws));
+    return respond(ws);
   }
 
   if (action === 'finish') {
@@ -270,7 +328,7 @@ export async function POST(req: NextRequest) {
       where: { id: existing.id },
       data: { ...derived(next, true), finishedAt: now },
     });
-    return NextResponse.json(toDto(ws));
+    return respond(ws);
   }
 
   if (action === 'reopen') {
@@ -279,7 +337,7 @@ export async function POST(req: NextRequest) {
       where: { id: existing.id },
       data: { ...derived(breaks, false), finishedAt: null, autoClosed: false },
     });
-    return NextResponse.json(toDto(ws));
+    return respond(ws);
   }
 
   return NextResponse.json({ error: 'Ação inválida' }, { status: 400 });
@@ -304,8 +362,10 @@ export async function PATCH(req: NextRequest) {
     finishedAt?: string | null;
     breaks?: PontoBreak[];
     note?: string | null;
-    /** Jornada esperada do colaborador — definida só por quem gerencia o ponto. */
-    schedule?: { dailyMinutes?: number; days?: number[] };
+    /** Jornada/escala do colaborador — definida só por quem gerencia o ponto.
+     *  Aceita também startTime/endTime/breakMinutes (escala com horários) e
+     *  bankStartKey (início do ciclo do banco de horas). */
+    schedule?: Record<string, unknown>;
   };
 
   // Configuração de jornada de um colaborador (sem mexer em batidas).

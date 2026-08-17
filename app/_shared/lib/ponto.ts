@@ -183,11 +183,28 @@ export interface WorkSchedule {
   dailyMinutes: number;
   /** Dias da semana que contam como úteis (0=domingo). */
   days: number[];
+  /**
+   * Escala de referência (16/08/2026): horários previstos de entrada/saída e
+   * intervalo. Quando presentes, `dailyMinutes` = (saída − entrada) − intervalo
+   * — a ScheduleDialog calcula; aqui só armazenamos e validamos.
+   */
+  startTime?: string | null;    // "08:30"
+  endTime?: string | null;      // "14:30"
+  breakMinutes?: number | null; // intervalo em minutos (ex.: 60)
+  /**
+   * Início do ciclo do banco de horas (YYYY-MM-DD). Sessões e compensações
+   * anteriores a esta data ficam fora do saldo acumulado. Null = desde o
+   * primeiro registro do colaborador.
+   */
+  bankStartKey?: string | null;
 }
 
 export const DEFAULT_SCHEDULE: WorkSchedule = { dailyMinutes: 480, days: [1, 2, 3, 4, 5] };
 
 export const WEEKDAY_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+const HHMM_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+const DAYKEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function parseSchedule(raw: unknown): WorkSchedule {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_SCHEDULE };
@@ -198,7 +215,20 @@ export function parseSchedule(raw: unknown): WorkSchedule {
   const days = Array.isArray(o.days)
     ? [...new Set(o.days.filter((d): d is number => typeof d === 'number' && d >= 0 && d <= 6))].sort()
     : DEFAULT_SCHEDULE.days;
-  return { dailyMinutes: daily, days: days.length ? days : DEFAULT_SCHEDULE.days };
+  const startTime = typeof o.startTime === 'string' && HHMM_RE.test(o.startTime) ? o.startTime : null;
+  const endTime = typeof o.endTime === 'string' && HHMM_RE.test(o.endTime) ? o.endTime : null;
+  const breakMin = typeof o.breakMinutes === 'number' && o.breakMinutes >= 0 && o.breakMinutes <= 720
+    ? Math.round(o.breakMinutes)
+    : null;
+  const bankStartKey = typeof o.bankStartKey === 'string' && DAYKEY_RE.test(o.bankStartKey) ? o.bankStartKey : null;
+  return {
+    dailyMinutes: daily,
+    days: days.length ? days : DEFAULT_SCHEDULE.days,
+    startTime,
+    endTime,
+    breakMinutes: breakMin,
+    bankStartKey,
+  };
 }
 
 /** Dia da semana (0=domingo) de uma chave "YYYY-MM-DD", sem susto de fuso. */
@@ -281,6 +311,84 @@ export function monthSummary(
     missingDays,
     avgPerDay: daysWorked ? Math.round(worked / daysWorked) : 0,
     breakTotal,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Banco de horas acumulado                                            */
+/* ------------------------------------------------------------------ */
+
+export interface PontoAdjustmentLite {
+  /** Chave de dia "YYYY-MM-DD". */
+  date: string;
+  /** Minutos COM SINAL: compensação nasce negativa, abono positivo. */
+  minutes: number;
+  /** compensation (folga que abate crédito) | credit (abono que credita). */
+  kind: string;
+}
+
+export interface BankSummary {
+  /** Saldo acumulado do ciclo: Σ(trabalhado − meta) dos dias com registro + ajustes. */
+  accumulated: number;
+  /** Horas compensadas no ciclo (valor absoluto das compensações). */
+  compensated: number;
+  /** Início do ciclo (bankStartKey da escala, ou o primeiro registro). */
+  startKey: string | null;
+  /** Meses completos desde o início do ciclo. */
+  monthsOld: number;
+  /** true a partir de 5 meses de ciclo (CLT: banco fecha em 6). */
+  alert: boolean;
+}
+
+function monthsBetween(startKey: string, todayKey: string): number {
+  const [sy, sm, sd] = startKey.split('-').map(Number);
+  const [ty, tm, td] = todayKey.split('-').map(Number);
+  let months = (ty - sy) * 12 + (tm - sm);
+  if (td < sd) months -= 1;
+  return Math.max(0, months);
+}
+
+/**
+ * Saldo do banco de horas de um colaborador desde o início do ciclo.
+ * Dias SEM registro não geram débito (férias/atestado não penalizam) — falta
+ * injustificada entra no banco via compensação/ajuste manual do gestor.
+ */
+export function bankSummary(
+  allSessions: PontoSession[],
+  adjustments: PontoAdjustmentLite[],
+  schedule: WorkSchedule,
+  todayKey: string,
+  now = Date.now(),
+): BankSummary {
+  const firstSession = allSessions.reduce<string | null>(
+    (min, s) => (s.startedAt && (!min || s.date < min) ? s.date : min),
+    null,
+  );
+  const startKey = schedule.bankStartKey ?? firstSession;
+
+  let accumulated = 0;
+  let compensated = 0;
+
+  if (startKey) {
+    for (const s of allSessions) {
+      if (!s.startedAt || s.date < startKey || s.date > todayKey) continue;
+      accumulated += workedMinutes(s, now) - targetMinutes(s.date, schedule);
+    }
+    for (const a of adjustments) {
+      if (a.date < startKey || a.date > todayKey) continue;
+      accumulated += a.minutes;
+      if (a.kind === 'compensation') compensated += Math.abs(a.minutes);
+    }
+  }
+
+  const monthsOld = startKey ? monthsBetween(startKey, todayKey) : 0;
+
+  return {
+    accumulated,
+    compensated,
+    startKey,
+    monthsOld,
+    alert: !!startKey && monthsOld >= 5,
   };
 }
 

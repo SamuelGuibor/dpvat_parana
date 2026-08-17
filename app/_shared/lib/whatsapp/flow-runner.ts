@@ -111,6 +111,13 @@ export async function runFlowForContact(
     const steps = (flow.steps as unknown as FlowStep[]) ?? [];
     if (!steps.length) return false;
 
+    // Multi-número: o fluxo sai pelo número que atende ESTE contato (sem isso
+    // a resposta sairia pelo número default e a Meta recusaria fora da janela).
+    const numberId = (await db.whatsAppContact.findUnique({
+      where: { id: contact.id },
+      select: { numberId: true },
+    }))?.numberId ?? null;
+
     let sentAny = false;
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
@@ -118,7 +125,7 @@ export async function runFlowForContact(
 
       if (step.kind === "text") {
         if (!step.body?.trim()) continue;
-        const res = await sendText(contact.phone, step.body);
+        const res = await sendText(contact.phone, step.body, undefined, numberId);
         if (res.waMessageId) {
           await persistAndBroadcast(contact, res.waMessageId, step.body, null, null);
           sentAny = true;
@@ -136,8 +143,8 @@ export async function runFlowForContact(
       const kind = step.kind as "image" | "video" | "audio" | "document";
       // Áudio ogg/opus vai como mensagem de voz (PTT); os demais, por link.
       const res = kind === "audio" && (step.mediaType ?? "").includes("ogg")
-        ? await sendVoiceNote(contact.phone, link, step.fileName ?? undefined)
-        : await sendMedia(contact.phone, kind, link, step.body?.trim() || undefined, step.fileName ?? undefined);
+        ? await sendVoiceNote(contact.phone, link, step.fileName ?? undefined, undefined, numberId)
+        : await sendMedia(contact.phone, kind, link, step.body?.trim() || undefined, step.fileName ?? undefined, undefined, numberId);
       if (res.waMessageId) {
         await persistAndBroadcast(contact, res.waMessageId, step.body?.trim() || null, step.mediaKey, step.mediaType ?? null);
         sentAny = true;

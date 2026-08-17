@@ -8,6 +8,8 @@ import { db } from '@/app/_shared/lib/prisma';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
 import { sendText, sendMedia, sendVoiceNote } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
+import { extractMentions } from '@/app/_shared/utils/mentions';
+import { recordMentions } from '@/app/_shared/lib/mention-inbox';
 import {
   whatsappChannelId,
   whatsappRecipients,
@@ -141,7 +143,7 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
   const contact = await requireContact(contactId);
   const replyTo = await resolveReply(contactId, replyToId);
 
-  const result = await sendText(contact.phone, text, replyTo?.waMessageId ?? undefined);
+  const result = await sendText(contact.phone, text, replyTo?.waMessageId ?? undefined, contact.numberId);
   if (!result.waMessageId) {
     throw new Error(result.error ?? 'Falha ao enviar pela WhatsApp API.');
   }
@@ -218,6 +220,53 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
   const recipients = await whatsappRecipients();
   await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
 
+  // @menções na nota: sino + caixa de menções pro colega citado. Nunca pode
+  // derrubar o salvamento da nota — erro é logado e engolido.
+  try {
+    const mentions = extractMentions(text);
+    if (mentions.length > 0) {
+      const targetIds = new Set<string>();
+      const sectorIds = mentions.filter((m) => m.id.startsWith('sector:')).map((m) => m.id.slice(7));
+      if (sectorIds.length > 0) {
+        const sectorUsers = await db.user.findMany({
+          where: { sectorId: { in: sectorIds } },
+          select: { id: true },
+        });
+        sectorUsers.forEach((u) => targetIds.add(u.id));
+      }
+      for (const m of mentions) {
+        if (m.id === 'everyone') recipients.forEach((id) => targetIds.add(id));
+        else if (!m.id.startsWith('sector:')) targetIds.add(m.id);
+      }
+      targetIds.delete(me.id);
+
+      const contactLabel = contact.name ?? contact.phone;
+      for (const recipientId of targetIds) {
+        await db.notification.create({
+          data: {
+            recipientId,
+            authorId: me.id,
+            authorName: me.name,
+            targetName: `WhatsApp · ${contactLabel}`,
+            message: `Você foi mencionado por ${me.name} em uma nota interna`,
+            contactId,
+          },
+        });
+      }
+      await recordMentions({
+        recipientIds: [...targetIds],
+        authorId: me.id,
+        authorName: me.name,
+        source: 'whatsapp',
+        text,
+        targetName: `WhatsApp · ${contactLabel}`,
+        channelId: contactId,
+      });
+    }
+  } catch (err) {
+    console.error('[WA NOTE] Falha ao processar menções da nota interna:', err);
+  }
+
   await logWhatsAppEvent({
     action: 'wa_note',
     message: `registrou uma nota interna na conversa de ${contact.name ?? contact.phone}`,
@@ -289,8 +338,8 @@ export async function sendWhatsAppMedia({ contactId, key, mimeType, fileName, ca
   const replyTo = await resolveReply(contactId, replyToId);
   // Áudio ogg/opus vai como mensagem de voz (PTT); os demais anexos, por link.
   const result = kind === 'audio' && mimeType.includes('ogg')
-    ? await sendVoiceNote(contact.phone, link, fileName, replyTo?.waMessageId ?? undefined)
-    : await sendMedia(contact.phone, kind, link, caption?.trim() || undefined, fileName, replyTo?.waMessageId ?? undefined);
+    ? await sendVoiceNote(contact.phone, link, fileName, replyTo?.waMessageId ?? undefined, contact.numberId)
+    : await sendMedia(contact.phone, kind, link, caption?.trim() || undefined, fileName, replyTo?.waMessageId ?? undefined, contact.numberId);
   if (!result.waMessageId) {
     throw new Error(result.error ?? 'Falha ao enviar o anexo pela WhatsApp API.');
   }

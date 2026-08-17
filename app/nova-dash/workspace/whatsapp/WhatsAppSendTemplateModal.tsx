@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Send, FileBadge, Settings2, Search, Check } from 'lucide-react';
+import { Loader2, Send, FileBadge, Settings2, Search, Check, Image as ImageIcon, Video, FileText, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -93,7 +93,12 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
     }
   }
 
-  const canSend = !!selected && !sending && !(headerHasVar && !headerVar.trim());
+  // Cabeçalho de mídia: o envio usa a mídia padrão definida no gerenciador —
+  // sem ela a Meta recusa, então o botão fica travado com o aviso.
+  const isMediaHeader = !!selected?.headerFormat && selected.headerFormat !== 'TEXT';
+  const missingHeaderMedia = isMediaHeader && !selected!.hasHeaderMedia;
+
+  const canSend = !!selected && !sending && !(headerHasVar && !headerVar.trim()) && !missingHeaderMedia;
 
   return (
     <>
@@ -165,6 +170,25 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
               {/* Coluna 2: variáveis + prévia (rola) e rodapé fixo */}
               <div className="flex min-h-0 flex-col">
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                  {isMediaHeader && (
+                    <div className={`flex items-start gap-2 rounded-xl p-3 text-sm leading-relaxed ${
+                      missingHeaderMedia
+                        ? 'bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-300'
+                        : 'bg-sky-50 text-sky-800 dark:bg-sky-950/20 dark:text-sky-300'
+                    }`}>
+                      {missingHeaderMedia
+                        ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        : selected?.headerFormat === 'IMAGE'
+                          ? <ImageIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                          : selected?.headerFormat === 'VIDEO'
+                            ? <Video className="mt-0.5 h-4 w-4 shrink-0" />
+                            : <FileText className="mt-0.5 h-4 w-4 shrink-0" />}
+                      {missingHeaderMedia
+                        ? 'Este template tem cabeçalho de mídia, mas nenhuma mídia foi definida. Abra "Gerenciar" e clique em "Definir mídia".'
+                        : `O cliente recebe este template com ${selected?.headerFormat === 'IMAGE' ? 'a imagem' : selected?.headerFormat === 'VIDEO' ? 'o vídeo' : 'o PDF'} do cabeçalho definido no gerenciador.`}
+                    </div>
+                  )}
+
                   {headerHasVar && (
                     <div>
                       <span className="mb-1.5 block text-sm font-semibold text-gray-600 dark:text-zinc-300">

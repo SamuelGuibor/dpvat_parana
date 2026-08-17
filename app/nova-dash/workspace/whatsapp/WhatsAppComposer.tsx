@@ -8,8 +8,11 @@ import {
   StickyNote, Zap, Search, Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MentionsInput, Mention } from 'react-mentions';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import { Input } from '@/app/_shared/ui/input';
+import { mentionsStyles } from '@/app/nova-dash/card-dialog/constants';
+import { renderMentionSuggestion } from '@/app/nova-dash/workspace/chat/mention-suggestion';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -23,6 +26,7 @@ import { WhatsAppFlowsModal } from './WhatsAppFlowsModal';
 import { WhatsAppQuickRepliesModal } from './WhatsAppQuickRepliesModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { checkFileForWhatsApp } from './media-rules';
+import { useVoiceRecorder, formatRecordingTime } from './use-voice-recorder';
 
 const MAX_FILES = 10;
 
@@ -85,8 +89,21 @@ export function WhatsAppComposer({
   const [noteMode, setNoteMode] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
 
+  // Equipe mencionável nas notas internas (@fulano) — carregada uma vez.
+  const [mentionUsers, setMentionUsers] = useState<{ id: string; display: string }[]>([]);
+  useEffect(() => {
+    fetch('/api/admins')
+      .then((r) => r.json())
+      .then((list: { id: string; display: string }[]) =>
+        setMentionUsers([{ id: 'everyone', display: 'everyone' }, ...list.map((u) => ({ id: u.id, display: u.display }))]))
+      .catch(() => { /* sem lista: o @ simplesmente não sugere ninguém */ });
+  }, []);
+
   // Sugestão de resposta pela IA: preenche o input; o humano revisa e envia.
   const [suggesting, setSuggesting] = useState(false);
+
+  // Gravação de áudio (ogg/opus → chega como mensagem de voz no cliente).
+  const voice = useVoiceRecorder({ onFinish: (file) => onSendMedia([file], '') });
 
   // Respostas rápidas (snippets) — inseridas no input com um clique.
   const [quickReplies, setQuickReplies] = useState<WhatsAppQuickReplyDTO[]>([]);
@@ -122,13 +139,16 @@ export function WhatsAppComposer({
   }, [replyTo]);
 
   // Campo de 1 linha que cresce com o texto (até ~6 linhas) — parte do
-  // redesign compacto de 12/08/2026.
+  // redesign compacto de 12/08/2026. No modo nota o campo é o MentionsInput,
+  // que cuida da própria altura — mexer no style dele desalinharia o overlay
+  // de destaque das menções.
   useEffect(() => {
+    if (noteMode && !editing) return;
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [value]);
+  }, [value, noteMode, editing]);
 
   // "Usar no campo" do Copiloto: a coluna direita injeta a sugestão aqui via
   // CustomEvent (mesmo padrão do open-whatsapp-conversation).
@@ -317,11 +337,41 @@ export function WhatsAppComposer({
         </div>
       )}
 
+      {/* Barra de gravação de áudio: substitui a linha do composer enquanto
+          o microfone está aberto. Parar = envia; lixeira = descarta. */}
+      {voice.recording && (
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <span className="relative flex h-3 w-3 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
+          </span>
+          <span className="text-sm font-semibold text-red-600 dark:text-red-400">
+            Gravando áudio... {formatRecordingTime(voice.seconds)}
+          </span>
+          <span className="ml-auto flex items-center gap-1">
+            <button
+              onClick={voice.cancel}
+              title="Descartar gravação"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <button
+              onClick={voice.stopAndSend}
+              title="Parar e enviar"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white transition-colors hover:bg-emerald-700"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* Linha ÚNICA (12/08/2026, redesign aprovado): ícones com tooltip à
           esquerda, campo que cresce com o texto, IA + enviar à direita. Os
           rótulos e a dica "Enter envia" viram tooltips — a conversa ganha o
           espaço que a barra de botões de 2 andares ocupava. */}
-      <div className="flex items-end gap-0.5 px-2 py-1.5">
+      <div className={`flex items-end gap-0.5 px-2 py-1.5 ${voice.recording ? 'hidden' : ''}`}>
         <input
           ref={fileInputRef}
           type="file"
@@ -471,32 +521,69 @@ export function WhatsAppComposer({
           <span className={iconPillLabelCls}>Nota interna</span>
         </button>
 
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter envia; Shift+Enter quebra linha (dica no tooltip do enviar).
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-            if (e.key === 'Escape' && editing) {
-              onCancelEdit();
-              setValue('');
-            }
-          }}
-          disabled={disabled && !noteMode}
-          placeholder={editing
-            ? 'Novo texto da mensagem...'
-            : noteMode
-              ? 'Nota interna (o cliente não recebe)...'
+        {noteMode && !editing ? (
+          /* Nota interna: input com @menção (react-mentions). Enter com a
+             lista de sugestões aberta seleciona o colega; fechado, salva. */
+          <div className="min-w-0 flex-1 px-1.5 py-0.5 text-base">
+            <MentionsInput
+              value={value}
+              onChange={(e: { target: { value: string } }) => setValue(e.target.value)}
+              onKeyDown={(e: React.KeyboardEvent) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder="Nota interna (o cliente não recebe)... Use @ para mencionar"
+              style={mentionsStyles}
+              forceSuggestionsAboveCursor
+            >
+              <Mention
+                trigger="@"
+                data={mentionUsers}
+                markup="@[__display__](__id__)"
+                displayTransform={(_id: string, display: string) => `@${display}`}
+                renderSuggestion={renderMentionSuggestion}
+                appendSpaceOnAdd
+              />
+            </MentionsInput>
+          </div>
+        ) : (
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter envia; Shift+Enter quebra linha (dica no tooltip do enviar).
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+              if (e.key === 'Escape' && editing) {
+                onCancelEdit();
+                setValue('');
+              }
+            }}
+            disabled={disabled && !noteMode}
+            placeholder={editing
+              ? 'Novo texto da mensagem...'
               : attachments.length
                 ? 'Legenda do primeiro anexo (opcional)...'
                 : placeholder ?? 'Mensagem... (*negrito* _itálico_ ~tachado~)'}
-          rows={1}
-          className="max-h-40 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-base outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
-        />
+            rows={1}
+            className="max-h-40 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-base outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-100"
+          />
+        )}
+
+        {/* Gravar áudio: vira mensagem de voz (PTT) no celular do cliente */}
+        <button
+          onClick={voice.start}
+          disabled={disabled || editing || noteMode}
+          title="Gravar áudio (o cliente recebe como mensagem de voz)"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+        >
+          <Mic className="h-[18px] w-[18px]" />
+        </button>
 
         {/* Sugestão de resposta pela IA (propõe → humano revisa → envia) */}
         <button

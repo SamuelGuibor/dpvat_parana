@@ -991,9 +991,14 @@ model WhatsAppTemplate {
   // Id do template na Graph API — chega na criação e no webhook de status.
   metaId      String?
   // Cabeçalho de TEXTO (a Meta permite no máx. 1 variável e 60 caracteres).
-  // Cabeçalho de mídia (imagem/vídeo/documento) não é suportado aqui: exige
-  // subir um arquivo de exemplo pela Resumable Upload API.
   headerText  String?
+  // Cabeçalho de MÍDIA (16/08/2026): formato aprovado na Meta (TEXT | IMAGE |
+  // VIDEO | DOCUMENT | null = sem cabeçalho). A mídia padrão enviada em cada
+  // disparo fica no S3 (headerMediaKey) — a Meta exige a mídia em TODO envio,
+  // o exemplo da criação (Resumable Upload) não é reaproveitado.
+  headerFormat    String?
+  headerMediaKey  String?
+  headerMediaType String?
   footerText  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
@@ -1056,6 +1061,24 @@ model WorkSession {
   @@unique([discordId, date])
   @@index([date])
   @@index([userId, date])
+}
+
+// Ajustes do BANCO DE HORAS (16/08/2026): lançados por quem tem manage_ponto.
+// "compensation" = folga/compensação que abate o crédito (minutos negativos);
+// "credit" = abono que credita horas (minutos positivos). O saldo acumulado é
+// Σ(trabalhado − meta) das sessões do ciclo + Σ(minutes) dos ajustes do ciclo.
+model PontoAdjustment {
+  id          String   @id @default(cuid())
+  userId      String
+  date        String // chave "YYYY-MM-DD" (Brasília)
+  minutes     Int    // com sinal: compensação < 0, abono > 0
+  kind        String   @default("compensation") // compensation | credit
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, date])
+  @@map("ponto_adjustments")
 }
 
 model AdminChecklistItem {

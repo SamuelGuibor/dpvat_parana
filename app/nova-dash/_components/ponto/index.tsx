@@ -12,14 +12,18 @@ import { DEFAULT_SCHEDULE, type PontoSession, type WorkSchedule } from '@/app/_s
 import { MyPonto, type PontoAction } from './MyPonto';
 import { MyHistory } from './MyHistory';
 import { TeamPonto } from './TeamPonto';
+import { SimplePunch, type LimitedTodayState } from './SimplePunch';
 
 interface PersonalData {
   month: string;
   today: string;
   canManageTeam: boolean;
-  schedule: WorkSchedule;
-  todaySession: PontoSession | null;
-  sessions: PontoSession[];
+  /** Colaborador comum: a API não devolve horários nem histórico. */
+  restricted?: boolean;
+  todayState?: LimitedTodayState;
+  schedule?: WorkSchedule;
+  todaySession?: PontoSession | null;
+  sessions?: PontoSession[];
 }
 
 export function WorkSessionPanel() {
@@ -107,6 +111,10 @@ export function WorkSessionPanel() {
 
       {isAdmin ? (
         <TeamPonto month={month} today={today} onMonthChange={setMonth} refreshKey={refreshKey} />
+      ) : data?.restricted ? (
+        // Colaborador comum: só os botões de bater ponto — sem horários nem
+        // histórico (restritos a quem tem manage_ponto).
+        <SimplePunch state={data.todayState ?? null} onAction={act} busy={busy} />
       ) : (
         <div className="space-y-5">
           <MyPonto

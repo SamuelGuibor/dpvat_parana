@@ -1,10 +1,11 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Loader2, Plus, Trash2, FileBadge, RefreshCw, Clock, CheckCircle2, XCircle,
-  PauseCircle, ArrowLeft, Send, AlertTriangle,
+  PauseCircle, ArrowLeft, Send, AlertTriangle, Image as ImageIcon, Video,
+  FileText, Type, Ban, Upload, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -15,7 +16,8 @@ import { Button } from '@/app/_shared/ui/button';
 import { Input } from '@/app/_shared/ui/input';
 import {
   listWhatsAppTemplates, createWhatsAppTemplate, deleteWhatsAppTemplate,
-  syncWhatsAppTemplatesFromMeta, type WhatsAppTemplateDTO,
+  syncWhatsAppTemplatesFromMeta, getTemplateMediaUploadUrl, setTemplateHeaderMedia,
+  type WhatsAppTemplateDTO,
 } from '@/app/_actions/whatsapp/templates';
 
 // Gerenciador de templates espelhando o ciclo de vida da Meta: criar (vai pra
@@ -50,6 +52,35 @@ function statusOf(status: string) {
   return STATUS_META[status] ?? { label: status, badge: 'bg-gray-200 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300', icon: Clock };
 }
 
+// Tipos de cabeçalho do form de criação (a Meta chama de "format").
+const HEADER_KINDS = [
+  { key: 'none', label: 'Nenhum', icon: Ban },
+  { key: 'text', label: 'Texto', icon: Type },
+  { key: 'IMAGE', label: 'Imagem', icon: ImageIcon },
+  { key: 'VIDEO', label: 'Vídeo', icon: Video },
+  { key: 'DOCUMENT', label: 'PDF', icon: FileText },
+] as const;
+type HeaderKind = (typeof HEADER_KINDS)[number]['key'];
+
+const HEADER_MEDIA_ACCEPT: Record<string, string> = {
+  IMAGE: 'image/jpeg,image/png',
+  VIDEO: 'video/mp4',
+  DOCUMENT: 'application/pdf',
+};
+
+const HEADER_FORMAT_LABEL: Record<string, string> = {
+  IMAGE: 'imagem', VIDEO: 'vídeo', DOCUMENT: 'documento (PDF)',
+};
+
+/** Sobe a mídia do cabeçalho direto ao S3 e devolve a chave. */
+async function uploadHeaderMediaToS3(file: File): Promise<{ key: string; mimeType: string }> {
+  const mimeType = file.type || 'application/octet-stream';
+  const { url, key } = await getTemplateMediaUploadUrl(file.name, mimeType);
+  const put = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mimeType } });
+  if (!put.ok) throw new Error('Falha no upload da mídia.');
+  return { key, mimeType };
+}
+
 function categoryLabel(value: string) {
   return CATEGORIES.find((c) => c.value === value)?.label ?? value;
 }
@@ -69,7 +100,9 @@ interface Props {
 
 const EMPTY_DRAFT = {
   name: '', language: 'pt_BR', category: 'UTILITY',
+  headerKind: 'none' as HeaderKind,
   headerText: '', headerExample: '',
+  headerMediaKey: '', headerMediaType: '', headerMediaName: '',
   bodyText: '', footerText: '', examples: {} as Record<number, string>,
 };
 
@@ -82,6 +115,11 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
   const [filter, setFilter] = useState('ALL');
   const [view, setView] = useState<'list' | 'create'>('list');
   const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const [uploadingHeader, setUploadingHeader] = useState(false);
+  const headerFileRef = useRef<HTMLInputElement>(null);
+  // "Definir mídia" de um template de mídia já existente (ex.: sincronizado).
+  const [settingMediaFor, setSettingMediaFor] = useState<WhatsAppTemplateDTO | null>(null);
+  const listMediaFileRef = useRef<HTMLInputElement>(null);
 
   async function reload() {
     setLoading(true);
@@ -109,7 +147,47 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
     }
   }
 
+  // Escolheu o arquivo do cabeçalho no form de criação: sobe já pro S3.
+  async function handleHeaderFile(file: File | null) {
+    if (!file) return;
+    setUploadingHeader(true);
+    try {
+      const { key, mimeType } = await uploadHeaderMediaToS3(file);
+      setDraft((d) => ({ ...d, headerMediaKey: key, headerMediaType: mimeType, headerMediaName: file.name }));
+      toast.success('Mídia do cabeçalho pronta.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha no upload da mídia.');
+    } finally {
+      setUploadingHeader(false);
+      if (headerFileRef.current) headerFileRef.current.value = '';
+    }
+  }
+
+  // "Definir mídia" na lista (template de mídia sem mídia padrão definida).
+  async function handleListMediaFile(file: File | null) {
+    const target = settingMediaFor;
+    setSettingMediaFor(null);
+    if (!file || !target) return;
+    try {
+      const { key, mimeType } = await uploadHeaderMediaToS3(file);
+      const { error } = await setTemplateHeaderMedia(target.id, key, mimeType);
+      if (error) { toast.error(error, { duration: 10000 }); return; }
+      toast.success(`Mídia do cabeçalho de "${target.name}" definida.`);
+      await reload();
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao definir a mídia.');
+    } finally {
+      if (listMediaFileRef.current) listMediaFileRef.current.value = '';
+    }
+  }
+
   async function handleCreate() {
+    const isMediaHeader = draft.headerKind === 'IMAGE' || draft.headerKind === 'VIDEO' || draft.headerKind === 'DOCUMENT';
+    if (isMediaHeader && !draft.headerMediaKey) {
+      toast.error('Anexe a mídia do cabeçalho antes de criar.');
+      return;
+    }
     setCreating(true);
     try {
       const nums = varNumbers(draft.bodyText);
@@ -117,8 +195,13 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
         name: draft.name,
         language: draft.language,
         category: draft.category,
-        headerText: draft.headerText,
-        headerExample: draft.headerExample,
+        headerText: draft.headerKind === 'text' ? draft.headerText : '',
+        headerExample: draft.headerKind === 'text' ? draft.headerExample : '',
+        ...(isMediaHeader ? {
+          headerFormat: draft.headerKind as 'IMAGE' | 'VIDEO' | 'DOCUMENT',
+          headerMediaKey: draft.headerMediaKey,
+          headerMediaType: draft.headerMediaType,
+        } : {}),
         bodyText: draft.bodyText,
         bodyExamples: nums.map((n) => draft.examples[n] ?? ''),
         footerText: draft.footerText,
@@ -167,11 +250,15 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
     (acc, n) => acc.replaceAll(`{{${n}}}`, draft.examples[n]?.trim() || `{{${n}}}`),
     draft.bodyText,
   );
-  const headerHasVar = varNumbers(draft.headerText).length > 0;
-  const headerPreview = headerHasVar
-    ? draft.headerText.replaceAll('{{1}}', draft.headerExample.trim() || '{{1}}')
-    : draft.headerText;
-  const headerTooLong = draft.headerText.trim().length > 60;
+  const isTextHeader = draft.headerKind === 'text';
+  const isMediaHeader = draft.headerKind === 'IMAGE' || draft.headerKind === 'VIDEO' || draft.headerKind === 'DOCUMENT';
+  const headerHasVar = isTextHeader && varNumbers(draft.headerText).length > 0;
+  const headerPreview = !isTextHeader
+    ? ''
+    : headerHasVar
+      ? draft.headerText.replaceAll('{{1}}', draft.headerExample.trim() || '{{1}}')
+      : draft.headerText;
+  const headerTooLong = isTextHeader && draft.headerText.trim().length > 60;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,6 +277,14 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
 
         {view === 'list' ? (
           <>
+            {/* Input oculto do "Definir mídia" — o accept segue o formato do template. */}
+            <input
+              ref={listMediaFileRef}
+              type="file"
+              accept={settingMediaFor ? HEADER_MEDIA_ACCEPT[settingMediaFor.headerFormat ?? ''] ?? undefined : undefined}
+              className="hidden"
+              onChange={(e) => handleListMediaFile(e.target.files?.[0] ?? null)}
+            />
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-1.5">
                 {FILTERS.map((f) => (
@@ -246,10 +341,28 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                             <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 dark:bg-zinc-800 dark:text-zinc-300">
                               {categoryLabel(t.category)}
                             </span>
+                            {t.headerFormat && t.headerFormat !== 'TEXT' && (
+                              <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                t.hasHeaderMedia
+                                  ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                              }`}>
+                                {t.headerFormat === 'IMAGE' ? <ImageIcon className="h-3.5 w-3.5" /> : t.headerFormat === 'VIDEO' ? <Video className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                                {HEADER_FORMAT_LABEL[t.headerFormat] ?? t.headerFormat}
+                                {!t.hasHeaderMedia && ' · sem mídia'}
+                              </span>
+                            )}
                             <span className="text-xs text-gray-400">
                               {t.language} · {t.bodyVars} variável(is)
                             </span>
                           </div>
+
+                          {t.headerFormat && t.headerFormat !== 'TEXT' && !t.hasHeaderMedia && (
+                            <p className="mt-1.5 flex items-start gap-1.5 text-sm leading-relaxed text-red-600 dark:text-red-400">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                              A Meta exige a mídia do cabeçalho em todo envio — clique em &quot;Definir mídia&quot; para poder disparar este template.
+                            </p>
+                          )}
 
                           {t.status === 'REJECTED' && t.rejectedReason ? (
                             <p className="mt-1.5 flex items-start gap-1.5 text-sm leading-relaxed text-red-600 dark:text-red-400">
@@ -277,6 +390,15 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                         </div>
 
                         <div className="flex shrink-0 items-center gap-1">
+                          {t.headerFormat && t.headerFormat !== 'TEXT' && (
+                            <button
+                              onClick={() => { setSettingMediaFor(t); listMediaFileRef.current?.click(); }}
+                              title={t.hasHeaderMedia ? 'Trocar a mídia do cabeçalho' : 'Definir a mídia do cabeçalho'}
+                              className="rounded-md px-2 py-1.5 text-xs font-semibold text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/30"
+                            >
+                              {t.hasHeaderMedia ? 'Trocar mídia' : 'Definir mídia'}
+                            </button>
+                          )}
                           {t.status === 'APPROVED' && (
                             <span title="Pronto para envio" className="text-emerald-600">
                               <Send className="h-4 w-4" />
@@ -344,20 +466,93 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                   {CATEGORIES.find((c) => c.value === draft.category)?.hint}
                 </p>
 
-                <label className="block">
+                <div className="block">
                   <span className="mb-1.5 block text-base font-semibold text-gray-600 dark:text-zinc-300">
-                    Cabeçalho <span className="font-normal text-gray-400">opcional · título em negrito acima da mensagem</span>
+                    Cabeçalho <span className="font-normal text-gray-400">opcional · texto em negrito ou mídia acima da mensagem</span>
                   </span>
-                  <Input
-                    value={draft.headerText}
-                    onChange={(e) => setDraft((d) => ({ ...d, headerText: e.target.value }))}
-                    placeholder="Seu pedido no INSS"
-                    className={`h-11 text-base ${headerTooLong ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
-                  />
-                  <span className={`mt-1 block text-xs ${headerTooLong ? 'font-semibold text-red-500' : 'text-gray-400'}`}>
-                    {draft.headerText.trim().length}/60 caracteres · aceita no máximo 1 variável, e ela tem que ser {'{{1}}'}
-                  </span>
-                </label>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {HEADER_KINDS.map((k) => {
+                      const KindIcon = k.icon;
+                      const active = draft.headerKind === k.key;
+                      return (
+                        <button
+                          key={k.key}
+                          type="button"
+                          onClick={() => setDraft((d) => ({
+                            ...d, headerKind: k.key,
+                            headerText: '', headerExample: '',
+                            headerMediaKey: '', headerMediaType: '', headerMediaName: '',
+                          }))}
+                          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
+                            active
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300'
+                          }`}
+                        >
+                          <KindIcon className="h-3.5 w-3.5" /> {k.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {isTextHeader && (
+                    <>
+                      <Input
+                        value={draft.headerText}
+                        onChange={(e) => setDraft((d) => ({ ...d, headerText: e.target.value }))}
+                        placeholder="Seu pedido no INSS"
+                        className={`h-11 text-base ${headerTooLong ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                      />
+                      <span className={`mt-1 block text-xs ${headerTooLong ? 'font-semibold text-red-500' : 'text-gray-400'}`}>
+                        {draft.headerText.trim().length}/60 caracteres · aceita no máximo 1 variável, e ela tem que ser {'{{1}}'}
+                      </span>
+                    </>
+                  )}
+
+                  {isMediaHeader && (
+                    <>
+                      <input
+                        ref={headerFileRef}
+                        type="file"
+                        accept={HEADER_MEDIA_ACCEPT[draft.headerKind]}
+                        className="hidden"
+                        onChange={(e) => handleHeaderFile(e.target.files?.[0] ?? null)}
+                      />
+                      {draft.headerMediaKey ? (
+                        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-900/20">
+                          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                            <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{draft.headerMediaName}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDraft((d) => ({ ...d, headerMediaKey: '', headerMediaType: '', headerMediaName: '' }))}
+                            className="text-gray-400 hover:text-red-500"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => headerFileRef.current?.click()}
+                          disabled={uploadingHeader}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 py-4 text-sm text-gray-500 transition-colors hover:border-emerald-400 hover:text-emerald-600 dark:border-zinc-600 dark:text-zinc-400"
+                        >
+                          {uploadingHeader
+                            ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando...</>
+                            : <><Upload className="h-4 w-4" /> Anexar {HEADER_FORMAT_LABEL[draft.headerKind]}</>}
+                        </button>
+                      )}
+                      <span className="mt-1 block text-xs text-gray-400">
+                        {draft.headerKind === 'IMAGE' && 'JPG ou PNG, até 5 MB.'}
+                        {draft.headerKind === 'VIDEO' && 'MP4, até 16 MB.'}
+                        {draft.headerKind === 'DOCUMENT' && 'PDF, até 100 MB.'}
+                        {' '}Esta mídia vira o exemplo da análise e a mídia padrão dos envios (dá pra trocar depois).
+                      </span>
+                    </>
+                  )}
+                </div>
 
                 {headerHasVar && (
                   <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -420,6 +615,16 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                 <p className="mb-1.5 text-base font-semibold text-gray-600 dark:text-zinc-300">Prévia</p>
                 <div className="rounded-xl bg-gray-100 p-3 dark:bg-zinc-900/60">
                   <div className="rounded-xl rounded-tl-sm bg-emerald-50 p-3 dark:bg-emerald-950/30">
+                    {isMediaHeader && (
+                      <div className="mb-2 flex h-24 items-center justify-center gap-2 rounded-lg bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        {draft.headerKind === 'IMAGE' && <ImageIcon className="h-6 w-6" />}
+                        {draft.headerKind === 'VIDEO' && <Video className="h-6 w-6" />}
+                        {draft.headerKind === 'DOCUMENT' && <FileText className="h-6 w-6" />}
+                        <span className="text-sm font-semibold">
+                          {draft.headerMediaName || `Cabeçalho de ${HEADER_FORMAT_LABEL[draft.headerKind]}`}
+                        </span>
+                      </div>
+                    )}
                     {headerPreview.trim() && (
                       <p className="mb-1.5 whitespace-pre-wrap text-base font-bold leading-snug text-gray-900 dark:text-zinc-50">
                         {headerPreview}
@@ -443,7 +648,7 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
 
                 <Button
                   onClick={handleCreate}
-                  disabled={creating || !draft.name.trim() || !draft.bodyText.trim() || headerTooLong}
+                  disabled={creating || uploadingHeader || !draft.name.trim() || !draft.bodyText.trim() || headerTooLong || (isMediaHeader && !draft.headerMediaKey)}
                   className="mt-3 w-full bg-emerald-600 text-base hover:bg-emerald-700"
                 >
                   {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

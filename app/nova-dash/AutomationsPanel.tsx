@@ -45,6 +45,7 @@ import {
   MoveRight,
   Sparkles,
   Table,
+  Tag,
 } from "lucide-react";
 import { listWhatsAppTemplates } from "../_actions/whatsapp/templates";
 import { toast } from "sonner";
@@ -65,7 +66,7 @@ type Condition = {
 };
 
 type Action = {
-  type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets";
+  type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets" | "add_tag";
   auditType?: "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
   sheetsSpreadsheetId?: string;
   sheetsTab?: string;
@@ -77,6 +78,7 @@ type Action = {
   waTemplateName?: string;
   waTemplateVars?: string[];
   moveLabelId?: string;
+  tagId?: string;
 };
 
 type CardTagOption = { id: string; name: string; color: string };
@@ -358,6 +360,7 @@ function ActionRow({
   waTemplates,
   labels,
   triggerLabelId,
+  cardTags,
 }: {
   action: Action;
   index: number;
@@ -367,6 +370,7 @@ function ActionRow({
   waTemplates: WaTemplateOption[];
   labels: Label[];
   triggerLabelId: string;
+  cardTags: CardTagOption[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -411,8 +415,8 @@ function ActionRow({
           </span>
           <Select
             value={action.type}
-            onValueChange={(v: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets") =>
-              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [], moveLabelId: undefined, auditType: v === "ai_audit" ? "documento_pessoal" : undefined, sheetsSpreadsheetId: undefined, sheetsTab: undefined, sheetsColumns: undefined })
+            onValueChange={(v: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets" | "add_tag") =>
+              onChange({ type: v, templateText: "", templateFileKey: undefined, templateFileName: undefined, waText: "", waTemplateName: undefined, waTemplateVars: [], moveLabelId: undefined, auditType: v === "ai_audit" ? "documento_pessoal" : undefined, sheetsSpreadsheetId: undefined, sheetsTab: undefined, sheetsColumns: undefined, tagId: undefined })
             }
           >
             <SelectTrigger className="h-7 text-xs w-[160px]">
@@ -447,6 +451,11 @@ function ActionRow({
               <SelectItem value="sheets" className="text-xs">
                 <span className="flex items-center gap-1.5">
                   <Table className="w-3 h-3" /> Planilha Google
+                </span>
+              </SelectItem>
+              <SelectItem value="add_tag" className="text-xs">
+                <span className="flex items-center gap-1.5">
+                  <Tag className="w-3 h-3" /> Adicionar Tag
                 </span>
               </SelectItem>
             </SelectContent>
@@ -714,6 +723,42 @@ function ActionRow({
           </div>
         )}
 
+        {action.type === "add_tag" && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+              Tag a adicionar no card
+            </label>
+            <Select
+              value={action.tagId ?? ""}
+              onValueChange={(v) => onChange({ ...action, tagId: v })}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Selecionar tag..." />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {cardTags.length === 0 ? (
+                  <div className="px-2 py-1.5 text-xs text-gray-400">Nenhuma tag cadastrada</div>
+                ) : (
+                  cardTags.map((t) => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                          style={{ background: t.color }}
+                        />
+                        {t.name}
+                      </span>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-400 dark:text-zinc-500">
+              A tag é adicionada ao card quando ele entra na coluna (se já tiver a tag, nada muda).
+            </p>
+          </div>
+        )}
+
         {action.type === "move" && (
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
@@ -817,6 +862,9 @@ function AutomationEditor({
 
     const moveToSelf = actions.some((a) => a.type === "move" && a.moveLabelId === triggerLabelId);
     if (moveToSelf) { toast.error("A ação de mover não pode apontar para a própria coluna que dispara"); return; }
+
+    const invalidTag = actions.some((a) => a.type === "add_tag" && !a.tagId);
+    if (invalidTag) { toast.error("Selecione a tag da ação de adicionar tag"); return; }
 
     const invalidTagCond = conditions.some(
       (c) => c.field === "tags" && ["hasTag", "notHasTag"].includes(c.operator) && !c.value
@@ -970,6 +1018,7 @@ function AutomationEditor({
                   waTemplates={waTemplates}
                   labels={labels}
                   triggerLabelId={triggerLabelId}
+                  cardTags={cardTags}
                   onChange={(updated) =>
                     setActions((p) => p.map((x, xi) => (xi === i ? updated : x)))
                   }
@@ -998,12 +1047,14 @@ function AutomationEditor({
 function AutomationCard({
   auto,
   labels,
+  cardTags,
   onToggle,
   onEdit,
   onDelete,
 }: {
   auto: AutomationData;
   labels: Label[];
+  cardTags: CardTagOption[];
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -1143,6 +1194,13 @@ function AutomationCard({
                         Mover para: {labels.find((l) => l.id === a.moveLabelId)?.name ?? "(coluna removida)"}
                       </span>
                     </>
+                  ) : a.type === "add_tag" ? (
+                    <>
+                      <Tag className="w-3.5 h-3.5 text-pink-500 shrink-0 mt-0.5" />
+                      <span className="text-gray-600 dark:text-zinc-300">
+                        Adicionar tag: {cardTags.find((t) => t.id === a.tagId)?.name ?? "(tag removida)"}
+                      </span>
+                    </>
                   ) : (
                     <>
                       <FileText className="w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5" />
@@ -1165,6 +1223,8 @@ function AutomationCard({
 
 export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProps) {
   const [automations, setAutomations] = useState<AutomationData[]>([]);
+  // Nomes das tags para o resumo das ações "add_tag" na listagem.
+  const { data: panelCardTags = [] } = useSWR<CardTagOption[]>("/api/card-tags", fetcher);
   const { confirm, confirmDialog } = useConfirm();
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -1290,6 +1350,7 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
                   key={auto.id}
                   auto={auto}
                   labels={labels}
+                  cardTags={panelCardTags}
                   onToggle={() => handleToggle(auto)}
                   onEdit={() => { setEditTarget(auto); setEditorOpen(true); }}
                   onDelete={() => handleDelete(auto.id)}

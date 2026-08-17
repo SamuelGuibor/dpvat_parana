@@ -50,6 +50,7 @@ import { CopilotPanel } from './CopilotPanel';
 import { WhatsAppTagsModal } from './WhatsAppTagsModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { formatWaText, stripWaMarkup } from './wa-format';
+import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -1849,7 +1850,7 @@ function ThreadMessageRow({
             {msg.sentByBot ? 'Bot' : msg.authorName ?? 'Equipe'} · nota interna
             <span className="font-normal opacity-60">{timeShort(msg.createdAt)}</span>
           </span>
-          <span className="whitespace-pre-wrap break-words">{msg.body}</span>
+          <span className="whitespace-pre-wrap break-words">{renderFormattedText(msg.body ?? '')}</span>
         </div>
       </div>
     );

@@ -82,6 +82,7 @@
     "next-video": "^2.6.0",
     "node-fetch": "^3.3.2",
     "openssl": "^2.0.0",
+    "opus-recorder": "^8.0.5",
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.17.0",
     "pdfmake": "^0.3.10",

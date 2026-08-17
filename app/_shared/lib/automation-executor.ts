@@ -237,6 +237,35 @@ export async function runAutomations({
           });
         }
 
+        // Adiciona uma tag ao card. O connect é idempotente (tag já presente
+        // não duplica); tag apagada é ignorada com aviso.
+        if (action.type === "add_tag" && action.tagId) {
+          try {
+            const tag = await db.cardTag.findUnique({ where: { id: action.tagId } });
+            if (!tag) {
+              console.warn(`[AUTOMATION] Tag não existe mais (auto ${auto.id}) — ação de tag ignorada.`);
+            } else {
+              const tagOp = { cardTags: { connect: { id: tag.id } } };
+              if (isProcess) {
+                await db.process.update({ where: { id: cardId }, data: tagOp });
+              } else {
+                await db.user.update({ where: { id: cardId }, data: tagOp });
+              }
+              await createLog({
+                action: "tag_add",
+                message: `adicionou a tag "${tag.name}" (automação: ${auto.name})`,
+                authorId,
+                authorName: `🤖 Bot (Automação)`,
+                userId: isProcess ? null : cardId,
+                processId: isProcess ? cardId : null,
+                metadata: { automationId: auto.id, automationName: auto.name, tagId: tag.id, tagName: tag.name },
+              });
+            }
+          } catch (err) {
+            console.error(`[AUTOMATION] Erro ao adicionar tag (auto ${auto.id}):`, err);
+          }
+        }
+
         // Ação TERMINAL: move o card pra outra coluna e dispara as automações
         // dela. Nada mais roda depois (nem as demais ações desta automação,
         // nem outras automações da coluna antiga) — o card já não está aqui.

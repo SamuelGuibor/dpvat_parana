@@ -10,6 +10,10 @@ import {
   ChevronDown, ChevronUp, Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MentionsInput, Mention } from 'react-mentions';
+import { mentionsStyles } from '@/app/nova-dash/card-dialog/constants';
+import { renderMentionSuggestion } from '@/app/nova-dash/workspace/chat/mention-suggestion';
+import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { suggestWhatsAppReply, summarizeWhatsAppConversation, fillClientInfoWithAI } from '@/app/_actions/whatsapp/assist';
 import {
   saveClientInfo, addClientFromConversation, getClientInfo,
@@ -223,6 +227,16 @@ export function CopilotPanel({
   );
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+
+  // Equipe mencionável (@fulano) nas notas — mesma lista do composer.
+  const [mentionUsers, setMentionUsers] = useState<{ id: string; display: string }[]>([]);
+  useEffect(() => {
+    fetch('/api/admins')
+      .then((r) => r.json())
+      .then((list: { id: string; display: string }[]) =>
+        setMentionUsers([{ id: 'everyone', display: 'everyone' }, ...list.map((u) => ({ id: u.id, display: u.display }))]))
+      .catch(() => { /* sem lista: o @ não sugere ninguém */ });
+  }, []);
 
   async function handleSaveNote() {
     const body = noteDraft.trim();
@@ -499,13 +513,24 @@ export function CopilotPanel({
         {tab === 'notas' && (
           <>
             <div className="rounded-xl border border-amber-200 bg-white p-2.5">
-              <textarea
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                placeholder="Nova nota interna (só a equipe vê)…"
-                rows={2}
-                className="w-full resize-none rounded-lg border border-amber-100 bg-amber-50/50 p-2 text-sm outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-amber-400"
-              />
+              <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-1 focus-within:ring-2 focus-within:ring-amber-400">
+                <MentionsInput
+                  value={noteDraft}
+                  onChange={(e: { target: { value: string } }) => setNoteDraft(e.target.value)}
+                  placeholder="Nova nota interna (só a equipe vê)… Use @ para mencionar"
+                  style={mentionsStyles}
+                  allowSuggestionsAboveCursor
+                >
+                  <Mention
+                    trigger="@"
+                    data={mentionUsers}
+                    markup="@[__display__](__id__)"
+                    displayTransform={(_id: string, display: string) => `@${display}`}
+                    renderSuggestion={renderMentionSuggestion}
+                    appendSpaceOnAdd
+                  />
+                </MentionsInput>
+              </div>
               <button
                 onClick={handleSaveNote}
                 disabled={savingNote || !noteDraft.trim()}
@@ -527,7 +552,7 @@ export function CopilotPanel({
                   </span>
                   <span className="font-normal opacity-70">{timeStamp(n.createdAt)}</span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-zinc-200">{n.body}</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-zinc-200">{renderFormattedText(n.body ?? '')}</p>
               </div>
             ))}
             <p className="px-1 text-[11px] text-gray-400">

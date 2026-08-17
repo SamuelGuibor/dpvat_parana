@@ -87,13 +87,25 @@ export function MyHistory({ sessions, schedule, month, today, onMonthChange, onE
 
                 <div className="font-mono tabular-nums">
                   {session?.startedAt ? (
-                    <span>
-                      <span className="text-emerald-600">{fmtClock(session.startedAt)}</span>
-                      <span className="text-gray-300"> → </span>
-                      <span className={open ? 'text-blue-500' : 'text-gray-600'}>
-                        {session.finishedAt ? fmtClock(session.finishedAt) : 'agora'}
+                    // Dia corrigido manualmente fica em VERMELHO — pedido de
+                    // 16/08/2026: toda correção precisa saltar aos olhos.
+                    session.editedById ? (
+                      <span>
+                        <span className="font-semibold text-red-500">{fmtClock(session.startedAt)}</span>
+                        <span className="text-red-300"> → </span>
+                        <span className="font-semibold text-red-500">
+                          {session.finishedAt ? fmtClock(session.finishedAt) : 'agora'}
+                        </span>
                       </span>
-                    </span>
+                    ) : (
+                      <span>
+                        <span className="text-emerald-600">{fmtClock(session.startedAt)}</span>
+                        <span className="text-gray-300"> → </span>
+                        <span className={open ? 'text-blue-500' : 'text-gray-600'}>
+                          {session.finishedAt ? fmtClock(session.finishedAt) : 'agora'}
+                        </span>
+                      </span>
+                    )
                   ) : (
                     <span className="text-gray-300">sem registro</span>
                   )}
@@ -114,11 +126,11 @@ export function MyHistory({ sessions, schedule, month, today, onMonthChange, onE
                   {(session?.autoClosed || session?.editedById) && (
                     <span
                       className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
-                        session.autoClosed ? 'bg-amber-50 text-amber-500' : 'bg-blue-50 text-blue-500'
+                        session.editedById ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'
                       }`}
-                      title={session.autoClosed ? 'Encerrado automaticamente na virada do dia' : 'Corrigido manualmente'}
+                      title={session.editedById ? 'Corrigido manualmente' : 'Encerrado automaticamente na virada do dia'}
                     >
-                      {session.autoClosed ? 'auto' : 'corrigido'}
+                      {session.editedById ? 'corrigido' : 'auto'}
                     </span>
                   )}
                   <span className="font-mono font-semibold text-gray-800 tabular-nums">

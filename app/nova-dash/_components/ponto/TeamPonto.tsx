@@ -8,20 +8,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Download, RefreshCw, ChevronDown, CalendarCog, Search } from 'lucide-react';
+import { Download, RefreshCw, ChevronDown, CalendarCog, Search, AlertTriangle } from 'lucide-react';
 import {
-  STATUS_LABEL, fmtClock, fmtHm, monthSummary, statusOf, workedMinutes,
-  type PontoSession, type PontoStatus, type WorkSchedule,
+  STATUS_LABEL, fmtClock, fmtHm, fmtSigned, monthSummary, statusOf, workedMinutes,
+  type BankSummary, type PontoSession, type PontoStatus, type WorkSchedule,
 } from '@/app/_shared/lib/ponto';
 import { MyHistory } from './MyHistory';
 import { EditSessionDialog } from './EditSessionDialog';
 import { ScheduleDialog } from './ScheduleDialog';
 import { MonthPicker } from './MonthPicker';
+import { BankPanel } from './BankPanel';
 
 interface Member {
   user: { id: string; name: string | null; role: string; image: string | null };
   schedule: WorkSchedule;
   sessions: PontoSession[];
+  bank: BankSummary;
 }
 
 interface Props {
@@ -112,6 +114,7 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
       m,
       todaySession,
       status: statusOf(todaySession),
+      monthBalance: summary.balance,
       hours: { daily, weekly, monthly: summary.worked },
       max: {
         daily: m.schedule.dailyMinutes,
@@ -175,6 +178,18 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
         ))}
       </div>
 
+      {/* Alerta CLT: ciclos de banco de horas com 5+ meses (fecha em 6). */}
+      {rows.some((r) => r.m.bank?.alert) && (
+        <div className="flex items-start gap-2 rounded-2xl bg-red-50 p-4 text-sm text-red-600 ring-1 ring-red-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <b>Banco de horas com 5+ meses de ciclo:</b>{' '}
+            {rows.filter((r) => r.m.bank?.alert).map((r) => r.m.user.name).join(', ')}.
+            A CLT exige compensar em até 6 meses — programe as compensações ou reinicie o ciclo (na linha do colaborador).
+          </span>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div className="relative w-full max-w-[260px]">
@@ -235,6 +250,7 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
                   <th className="px-5 py-3 font-medium">Colaborador</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">{hoursHeader}</th>
+                  <th className="px-5 py-3 font-medium">Banco</th>
                   <th className="px-5 py-3 font-medium">Progresso</th>
                   <th className="px-5 py-3 font-medium" />
                 </tr>
@@ -266,7 +282,11 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
                           )}
                           <div className="leading-tight">
                             <p className="text-sm font-medium text-gray-800">{m.user.name}</p>
-                            <p className="text-[11px] text-gray-400">Jornada {fmtHm(m.schedule.dailyMinutes)}/dia</p>
+                            <p className="text-[11px] text-gray-400">
+                              {m.schedule.startTime && m.schedule.endTime
+                                ? `Escala ${m.schedule.startTime}–${m.schedule.endTime} · ${fmtHm(m.schedule.dailyMinutes)}/dia`
+                                : `Jornada ${fmtHm(m.schedule.dailyMinutes)}/dia`}
+                            </p>
                           </div>
                         </div>
                       </td>
@@ -282,6 +302,20 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
                       <td className="px-5 py-3.5">
                         <span className={`font-mono text-sm tabular-nums ${isOver ? 'text-amber-500' : 'text-gray-800'}`}>
                           {fmtHm(hours)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <span className={`font-mono text-sm tabular-nums ${
+                            m.bank.accumulated > 0 ? 'text-emerald-600' : m.bank.accumulated < 0 ? 'text-red-500' : 'text-gray-400'
+                          }`}>
+                            {fmtSigned(m.bank.accumulated)}
+                          </span>
+                          {m.bank.alert && (
+                            <span title={`Ciclo com ${m.bank.monthsOld} meses — compensar em até 6 (CLT)`}>
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                            </span>
+                          )}
                         </span>
                       </td>
                       <td className="min-w-[130px] px-5 py-3.5">
@@ -308,16 +342,27 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
                     </tr>,
                     open ? (
                       <tr key={`${m.user.id}-hist`}>
-                        <td colSpan={5} className="border-t border-gray-50 bg-gray-50/40 px-5 py-4">
-                          <MyHistory
-                            embedded
-                            sessions={m.sessions}
-                            schedule={m.schedule}
-                            month={month}
-                            today={today}
-                            onMonthChange={onMonthChange}
-                            onEdit={(session, date) => setEditing({ member: m, session, date })}
-                          />
+                        <td colSpan={6} className="border-t border-gray-50 bg-gray-50/40 px-5 py-4">
+                          <div className="space-y-4">
+                            <BankPanel
+                              userId={m.user.id}
+                              userName={m.user.name ?? ''}
+                              bank={m.bank}
+                              monthBalance={row.monthBalance}
+                              schedule={m.schedule}
+                              today={today}
+                              onChanged={load}
+                            />
+                            <MyHistory
+                              embedded
+                              sessions={m.sessions}
+                              schedule={m.schedule}
+                              month={month}
+                              today={today}
+                              onMonthChange={onMonthChange}
+                              onEdit={(session, date) => setEditing({ member: m, session, date })}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ) : null,

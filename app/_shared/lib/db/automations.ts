@@ -16,7 +16,7 @@ export type AutomationAction = {
   // vai em `auditType` (documento pessoal ou documentação do INSS).
   // "sheets": registra uma linha numa planilha do Google quando o card entra
   // na coluna (ex.: ENVIADO EMAIL CAIQUE → base de dados externa).
-  type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets";
+  type: "comment" | "file" | "whatsapp" | "move" | "ai_audit" | "sheets" | "add_tag";
   // "inss_roteiro" é o PRÉ-ROTEIRO (chave legada, ver ai-audit.ts);
   // "inss_pre_envio" é a auditoria da pasta antes do envio.
   auditType?: "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
@@ -36,6 +36,8 @@ export type AutomationAction = {
   // nada mais roda para a coluna antiga; as automações da coluna de destino
   // disparam em seguida (com limite de encadeamento contra loops).
   moveLabelId?: string;
+  // Ação "add_tag": adiciona uma tag ao card quando ele entra na coluna.
+  tagId?: string;
 };
 
 export type AutomationWithLabel = Awaited<ReturnType<typeof fetchAutomations>>[number];

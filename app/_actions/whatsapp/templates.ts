@@ -1,11 +1,14 @@
 'use server';
 
 import { getServerSession } from 'next-auth';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
 import {
   sendTemplate, fetchMetaTemplates, createMetaTemplate, deleteMetaTemplate, countTemplateVars,
+  uploadTemplateHeaderMedia, type TemplateHeaderMedia,
 } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import {
@@ -18,6 +21,21 @@ import { renderTemplateThreadText } from '@/app/_shared/lib/whatsapp/template-te
 // espelham o que já foi aprovado lá; cadastrar aqui não aprova nada na Meta.
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+// Formatos aceitos pela Meta no cabeçalho de mídia de template.
+const HEADER_MEDIA_RULES: Record<string, { mimes: string[]; maxMb: number; kind: TemplateHeaderMedia['kind'] }> = {
+  IMAGE: { mimes: ['image/jpeg', 'image/png'], maxMb: 5, kind: 'image' },
+  VIDEO: { mimes: ['video/mp4'], maxMb: 16, kind: 'video' },
+  DOCUMENT: { mimes: ['application/pdf'], maxMb: 100, kind: 'document' },
+};
 
 async function requireTeamMember(): Promise<{ id: string; name: string }> {
   const session = await getServerSession(authOptions);
@@ -40,18 +58,24 @@ export interface WhatsAppTemplateDTO {
   category: string;
   rejectedReason: string | null;
   headerText: string | null;
+  // TEXT | IMAGE | VIDEO | DOCUMENT | null (sem cabeçalho)
+  headerFormat: string | null;
+  // Cabeçalho de mídia: se true, o envio já tem a mídia padrão no S3.
+  hasHeaderMedia: boolean;
   footerText: string | null;
 }
 
 function toDTO(t: {
   id: string; name: string; language: string; bodyVars: number; bodyPreview: string | null;
   status: string; category: string; rejectedReason: string | null;
-  headerText: string | null; footerText: string | null;
+  headerText: string | null; headerFormat: string | null; headerMediaKey: string | null;
+  footerText: string | null;
 }): WhatsAppTemplateDTO {
   return {
     id: t.id, name: t.name, language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyPreview,
     status: t.status, category: t.category, rejectedReason: t.rejectedReason,
-    headerText: t.headerText, footerText: t.footerText,
+    headerText: t.headerText, headerFormat: t.headerFormat, hasHeaderMedia: !!t.headerMediaKey,
+    footerText: t.footerText,
   };
 }
 
@@ -74,9 +98,55 @@ export async function listWhatsAppTemplates(onlyApproved = false): Promise<Whats
  * O nome segue a regra da Meta (minúsculas, números e _) e cada variável
  * precisa de um exemplo, senão a Graph API recusa.
  */
+/**
+ * Presigned PUT para a mídia do cabeçalho de template (imagem/vídeo/PDF).
+ * O navegador sobe direto ao S3 (limite de 4.5 MB da Vercel) e passa a chave
+ * para createWhatsAppTemplate / setTemplateHeaderMedia.
+ */
+export async function getTemplateMediaUploadUrl(
+  fileName: string,
+  mimeType: string,
+): Promise<{ url: string; key: string }> {
+  await requireTeamMember();
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const key = `whatsapp/templates/${Date.now()}-${safeName}`;
+  const command = new PutObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME,
+    Key: key,
+    ContentType: mimeType,
+  });
+  const url = await getSignedUrl(s3, command, { expiresIn: 600 });
+  return { url, key };
+}
+
+function validateHeaderMedia(headerFormat: string, mimeType: string): string | null {
+  const rule = HEADER_MEDIA_RULES[headerFormat];
+  if (!rule) return 'Formato de cabeçalho inválido.';
+  if (!rule.mimes.includes(mimeType)) {
+    return headerFormat === 'IMAGE'
+      ? 'A Meta só aceita JPG ou PNG no cabeçalho de imagem.'
+      : headerFormat === 'VIDEO'
+        ? 'A Meta só aceita MP4 no cabeçalho de vídeo.'
+        : 'A Meta só aceita PDF no cabeçalho de documento.';
+  }
+  return null;
+}
+
+async function s3HeaderMediaLink(key: string): Promise<string> {
+  return getSignedUrl(
+    s3,
+    new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: key }),
+    { expiresIn: 3600 },
+  );
+}
+
 export async function createWhatsAppTemplate(input: {
   name: string; language: string; category: string;
   headerText?: string; headerExample?: string;
+  // Cabeçalho de mídia: formato + chave S3 (getTemplateMediaUploadUrl).
+  headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  headerMediaKey?: string;
+  headerMediaType?: string;
   bodyText: string; bodyExamples: string[]; footerText?: string;
 }): Promise<{ template?: WhatsAppTemplateDTO; error?: string }> {
   await requireTeamMember();
@@ -94,9 +164,22 @@ export async function createWhatsAppTemplate(input: {
     return { error: `A Meta exige um exemplo para cada variável — preencha as ${varCount} variável(is).` };
   }
 
+  // Cabeçalho de MÍDIA: valida o tipo e prepara o handle (Resumable Upload).
+  const wantsMediaHeader = !!input.headerFormat && !!input.headerMediaKey;
+  if (input.headerFormat && !input.headerMediaKey) {
+    return { error: 'Anexe a mídia do cabeçalho antes de criar o template.' };
+  }
+  if (wantsMediaHeader) {
+    const mediaError = validateHeaderMedia(input.headerFormat!, input.headerMediaType ?? '');
+    if (mediaError) return { error: mediaError };
+    if (!input.headerMediaKey!.startsWith('whatsapp/templates/')) {
+      return { error: 'Mídia do cabeçalho inválida.' };
+    }
+  }
+
   // Regras da Meta para cabeçalho de TEXTO: no máximo 60 caracteres, no
   // máximo 1 variável, e ela tem que ser {{1}}.
-  const headerText = input.headerText?.trim() || null;
+  const headerText = wantsMediaHeader ? null : input.headerText?.trim() || null;
   const headerExample = input.headerExample?.trim() || null;
   if (headerText) {
     if (headerText.length > 60) {
@@ -126,16 +209,45 @@ export async function createWhatsAppTemplate(input: {
     : 'UTILITY';
   const footerText = input.footerText?.trim() || null;
 
+  // Cabeçalho de mídia: baixa a mídia do S3 e sobe pela Resumable Upload API
+  // da Meta para obter o header_handle exigido na criação.
+  let headerHandle: string | null = null;
+  if (wantsMediaHeader) {
+    const link = await s3HeaderMediaLink(input.headerMediaKey!);
+    const bin = await fetch(link, { cache: 'no-store' });
+    if (!bin.ok) return { error: 'Falha ao ler a mídia do cabeçalho no S3.' };
+    const buffer = await bin.arrayBuffer();
+    const rule = HEADER_MEDIA_RULES[input.headerFormat!];
+    if (buffer.byteLength > rule.maxMb * 1024 * 1024) {
+      return { error: `A mídia do cabeçalho passa do limite da Meta (máx. ${rule.maxMb} MB).` };
+    }
+    const uploaded = await uploadTemplateHeaderMedia(
+      buffer,
+      input.headerMediaType!,
+      input.headerMediaKey!.split('/').pop() ?? 'header',
+    );
+    if (!uploaded.handle) {
+      return { error: uploaded.error ?? 'Falha ao subir a mídia de exemplo na Meta.' };
+    }
+    headerHandle = uploaded.handle;
+  }
+
   // Erro da Graph API volta como campo (não throw): em produção o Next mascara
   // exception de server action com 500 genérico e a equipe precisa ler o motivo.
   const created = await createMetaTemplate({
-    name, language, category, headerText, headerExample, bodyText, bodyExamples: examples, footerText,
+    name, language, category, headerText, headerExample,
+    headerFormat: wantsMediaHeader ? input.headerFormat : null,
+    headerHandle,
+    bodyText, bodyExamples: examples, footerText,
   });
   if (created.error) return { error: created.error };
 
   const template = await db.whatsAppTemplate.create({
     data: {
       name, language, category, headerText, footerText,
+      headerFormat: wantsMediaHeader ? input.headerFormat : headerText ? 'TEXT' : null,
+      headerMediaKey: wantsMediaHeader ? input.headerMediaKey : null,
+      headerMediaType: wantsMediaHeader ? input.headerMediaType : null,
       bodyVars: varCount,
       bodyPreview: bodyText,
       status: created.status || 'PENDING',
@@ -143,6 +255,33 @@ export async function createWhatsAppTemplate(input: {
     },
   });
   return { template: toDTO(template) };
+}
+
+/**
+ * Define/troca a mídia padrão do cabeçalho de um template de mídia já
+ * existente (ex.: sincronizado da Meta, que chega sem a mídia). A Meta exige
+ * a mídia em TODO envio — sem ela o template de mídia não pode ser disparado.
+ */
+export async function setTemplateHeaderMedia(
+  templateId: string,
+  key: string,
+  mimeType: string,
+): Promise<{ error?: string }> {
+  await requireTeamMember();
+  const template = await db.whatsAppTemplate.findUnique({ where: { id: templateId } });
+  if (!template) return { error: 'Template não encontrado.' };
+  if (!template.headerFormat || !HEADER_MEDIA_RULES[template.headerFormat]) {
+    return { error: 'Este template não tem cabeçalho de mídia.' };
+  }
+  const mediaError = validateHeaderMedia(template.headerFormat, mimeType);
+  if (mediaError) return { error: mediaError };
+  if (!key.startsWith('whatsapp/templates/')) return { error: 'Mídia inválida.' };
+
+  await db.whatsAppTemplate.update({
+    where: { id: templateId },
+    data: { headerMediaKey: key, headerMediaType: mimeType },
+  });
+  return {};
 }
 
 /**
@@ -173,6 +312,9 @@ export async function syncWhatsAppTemplatesFromMeta(): Promise<{
       bodyVars: t.bodyVars,
       bodyPreview: t.bodyText,
       headerText: t.headerText,
+      // headerMediaKey NÃO entra aqui: a mídia padrão definida localmente
+      // sobrevive à sincronização (a Meta não devolve mídia de exemplo).
+      headerFormat: t.headerFormat,
       footerText: t.footerText,
       status: t.status,
       category: t.category,
@@ -247,7 +389,24 @@ export async function sendWhatsAppTemplateMessage(
     throw new Error('Este template tem uma variável no cabeçalho — preencha antes de enviar.');
   }
 
-  const result = await sendTemplate(contact.phone, template.name, vars, template.language, headerVar);
+  // Cabeçalho de MÍDIA: a Meta exige a mídia em todo envio — vai por
+  // presigned GET da mídia padrão do template (S3).
+  let headerMedia: TemplateHeaderMedia | null = null;
+  const mediaRule = template.headerFormat ? HEADER_MEDIA_RULES[template.headerFormat] : null;
+  if (mediaRule) {
+    if (!template.headerMediaKey) {
+      throw new Error('Este template tem cabeçalho de mídia, mas nenhuma mídia foi definida — anexe em Templates → Gerenciar.');
+    }
+    headerMedia = {
+      kind: mediaRule.kind,
+      link: await s3HeaderMediaLink(template.headerMediaKey),
+      filename: template.headerMediaKey.split('/').pop()?.replace(/^\d{10,}-/, ''),
+    };
+  }
+
+  const result = await sendTemplate(
+    contact.phone, template.name, vars, template.language, headerVar, contact.numberId, headerMedia,
+  );
   if (!result.waMessageId) {
     throw new Error(result.error ?? 'Falha ao enviar o template pela WhatsApp API.');
   }
