@@ -103,7 +103,13 @@ async function findUserByPhone(phone: string): Promise<{ id: string } | null> {
 export async function findWhatsAppContactForCard(userId: string): Promise<string | null> {
   await requireTeamMember();
 
-  const linked = await db.whatsAppContact.findFirst({ where: { userId }, select: { id: true } });
+  // Só vale contato COM conversa: o inbox abre conversas, e contato sem
+  // conversa (211 no banco, ex.: criados na ficha sem nunca trocar mensagem)
+  // deixava o inbox parado no "Selecione uma conversa" — parecia bug do botão.
+  const linked = await db.whatsAppContact.findFirst({
+    where: { userId, conversation: { isNot: null } },
+    select: { id: true },
+  });
   if (linked) return linked.id;
 
   const user = await db.user.findUnique({
@@ -116,7 +122,7 @@ export async function findWhatsAppContactForCard(userId: string): Promise<string
     const last8 = (phone ?? '').replace(/\D/g, '').slice(-8);
     if (last8.length < 8) continue;
     const contact = await db.whatsAppContact.findFirst({
-      where: { phone: { endsWith: last8 } },
+      where: { phone: { endsWith: last8 }, conversation: { isNot: null } },
       select: { id: true },
     });
     if (contact) return contact.id;

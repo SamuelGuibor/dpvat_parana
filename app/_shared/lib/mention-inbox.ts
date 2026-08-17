@@ -32,7 +32,8 @@ interface RecordMentionsInput {
   authorName: string;
   // "whatsapp": tarefa do bot (lead qualificado precisa de card/contrato) —
   // o channelId carrega o contactId da conversa pra abrir direto no inbox.
-  source: "comment" | "chat" | "whatsapp";
+  // "botconversa": tarefa vinda do webhook do BotConversa (contratado).
+  source: "comment" | "chat" | "whatsapp" | "botconversa";
   /** Texto cru da mensagem/comentário — o trecho é limpo aqui. */
   text: string;
   /** Nome do card ou do canal. */
@@ -42,6 +43,9 @@ interface RecordMentionsInput {
   processId?: string | null;
   chatMessageId?: string | null;
   channelId?: string | null;
+  /** Tarefas por setor: snapshot do setor responsável (sector-tasks.ts). */
+  sectorId?: string | null;
+  sectorName?: string | null;
 }
 
 /**
@@ -60,6 +64,8 @@ export async function recordMentions({
   processId = null,
   chatMessageId = null,
   channelId = null,
+  sectorId = null,
+  sectorName = null,
 }: RecordMentionsInput): Promise<void> {
   const unique = [...new Set(recipientIds.filter(Boolean))];
   if (unique.length === 0) return;
@@ -80,6 +86,8 @@ export async function recordMentions({
         processId,
         chatMessageId,
         channelId,
+        sectorId,
+        sectorName,
       })),
     });
   } catch (err) {

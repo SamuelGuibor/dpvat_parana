@@ -47,7 +47,7 @@ export async function listClientDocuments(contactId: string): Promise<ClientDocu
 
   if (contact.userId) {
     const docs = await db.document.findMany({
-      where: { userId: contact.userId, processId: null },
+      where: { userId: contact.userId, processId: null, deletedAt: null },
       orderBy: { createdAt: 'asc' },
     });
     return docs.map((d) => ({ id: d.id, key: d.key, name: d.name, uploadedAt: d.uploadedAt.toISOString() }));
@@ -126,9 +126,16 @@ export async function attachConversationMediaToCard(messageId: string): Promise<
   if (contact.userId) {
     const dup = await db.document.findFirst({
       where: { userId: contact.userId, key: msg.mediaKey },
-      select: { id: true },
+      select: { id: true, deletedAt: true },
     });
-    if (!dup) await db.document.create({ data: { userId: contact.userId, key: msg.mediaKey, name } });
+    if (!dup) {
+      await db.document.create({ data: { userId: contact.userId, key: msg.mediaKey, name } });
+    } else if (dup.deletedAt) {
+      // O mesmo anexo já existe mas está na lixeira: restaurar em vez de criar
+      // uma segunda linha com a mesma key (a purga da linha antiga apagaria o
+      // objeto do S3 usado pela nova).
+      await db.document.update({ where: { id: dup.id }, data: { deletedAt: null, deletedBy: null } });
+    }
   } else {
     const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];
     if (!drafts.some((d) => d.key === msg.mediaKey)) {
@@ -177,7 +184,11 @@ export async function deleteClientDocument(contactId: string, ref: string): Prom
   if (contact.userId) {
     const doc = await db.document.findUnique({ where: { id: ref } });
     if (doc && doc.userId === contact.userId) {
-      await db.document.delete({ where: { id: ref } });
+      // Mesma lixeira da aba Arquivos: 30 dias restaurável antes da purga.
+      await db.document.update({
+        where: { id: ref },
+        data: { deletedAt: new Date(), deletedBy: null },
+      });
     }
   } else {
     const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];

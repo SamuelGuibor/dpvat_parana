@@ -13,9 +13,7 @@
     "middleware.ts"
   ],
   "project": ["app/**/*.{ts,tsx}"],
-  "ignore": [
-    "app/_bot/**"
-  ],
+  "ignore": [],
   "next": {
     "entry": [
       "app/**/page.tsx",

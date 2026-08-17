@@ -78,7 +78,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'userId ou processId é obrigatório' }, { status: 400 });
     }
 
-    const where = processId ? { processId } : { userId: userId! };
+    // deletedAt: null — itens na lixeira não aparecem na lista (trash.ts).
+    const where = processId
+      ? { processId, deletedAt: null }
+      : { userId: userId!, deletedAt: null };
 
     const documents = await db.document.findMany({
       where,

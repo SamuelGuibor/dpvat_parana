@@ -113,7 +113,7 @@ const NODES: NodeDef[] = [
   { id: 'eq_setores',  c: 'equipe', name: 'setores',           desc: 'Áreas da equipe (comercial, ADM…) com cor, dashboard de rendimento e tag no perfil.' },
   { id: 'eq_presenca', c: 'equipe', name: 'presenca_online',   desc: 'Quem está online agora, direto na sidebar do espaço de trabalho.' },
   { id: 'eq_avatar',   c: 'equipe', name: 'foto_de_perfil',    desc: 'Upload de avatar (JPEG/PNG) pros membros da equipe.' },
-  { id: 'eq_ponto',    c: 'equipe', name: 'sessoes_de_trabalho', desc: 'Início/pausa/fim de expediente registrados via Discord (WorkSession).' },
+  { id: 'eq_ponto',    c: 'equipe', name: 'sessoes_de_trabalho', desc: 'Início/pausa/fim de expediente registrados no próprio CRM (WorkSession).' },
 
   // ---- GESTÃO & MÉTRICAS ----
   { id: 'gs_gestor',   c: 'gestao', hot: true, name: 'visao_do_gestor',    desc: 'Ranking de atividade, heatmap semanal por hora e detalhe por colaborador.' },
@@ -135,7 +135,6 @@ const NODES: NodeDef[] = [
   { id: 'in_gemini',  c: 'integracoes', name: 'gemini_google',   desc: 'Transcrição de áudio multimodal — o ouvido do sistema.' },
   { id: 'in_s3',      c: 'integracoes', name: 'aws_s3',          desc: 'Todos os arquivos do sistema num bucket só, com URLs pré-assinadas.' },
   { id: 'in_relay',   c: 'integracoes', name: 'relay_sse_railway', desc: 'Servidor de eventos no Railway: chat e WhatsApp em tempo real, com polling de fallback.' },
-  { id: 'in_discord', c: 'integracoes', name: 'discord',         desc: 'Avisos da fila/entregas em canal do Discord + registro de expediente.' },
   { id: 'in_cron',    c: 'integracoes', name: 'cron_job_org',    desc: 'Batida a cada 15min: nudges do bot, SLA da fila, entregas travadas e cards estourados.' },
   { id: 'in_botconv', c: 'integracoes', name: 'botconversa_zapier', desc: 'Webhooks de entrada de leads (Botconversa) e integrações externas (Zapier).' },
   { id: 'in_infra',   c: 'integracoes', name: 'vercel_neon',     desc: 'App Next.js na Vercel + Postgres serverless no Neon (Prisma).' },
@@ -156,10 +155,10 @@ const LINKS: [string, string][] = [
   ['au_gatilho', 'kb_board'], ['au_wa', 'in_meta'], ['au_docx', 'dc_kit'],
   ['au_progresso', 'kb_status'], ['au_atraso', 'kb_timer'], ['au_atraso', 'gs_sino'], ['au_atraso', 'in_cron'],
   ['dc_pdf', 'dc_procuracao'], ['dc_pdf', 'dc_roteiro'], ['dc_s3', 'in_s3'], ['dc_roteiro', 'in_claude'],
-  ['eq_chat', 'in_relay'], ['eq_mencoes', 'eq_setores'], ['eq_mencoes', 'gs_sino'], ['eq_ponto', 'in_discord'],
+  ['eq_chat', 'in_relay'], ['eq_mencoes', 'eq_setores'], ['eq_mencoes', 'gs_sino'],
   ['gs_setores', 'eq_setores'], ['gs_gestor', 'gs_logs'], ['gs_chatbot', 'gs_mapa'],
   ['cl_status', 'kb_status'], ['cl_docs', 'dc_s3'], ['cl_site', 'in_botconv'],
-  ['in_cron', 'wa_fila'], ['in_discord', 'wa_fila'],
+  ['in_cron', 'wa_fila'],
 ];
 
 const MONO = '"Cascadia Code", "Consolas", ui-monospace, monospace';

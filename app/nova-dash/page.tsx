@@ -70,6 +70,24 @@ function PageInner() {
     try { localStorage.removeItem('nova-dash-theme'); } catch { /* noop */ }
   }, []);
 
+  // Link "Abrir conversa no WhatsApp" do CardDialog (aba nova): o contato vem
+  // no ?wa= porque sessionStorage/CustomEvent não atravessam abas do navegador.
+  // Grava no sessionStorage DESTA aba (o inbox lê no mount) e vai pro WhatsApp.
+  useEffect(() => {
+    const wa = new URLSearchParams(window.location.search).get('wa');
+    if (!wa) return;
+    try { sessionStorage.setItem('wa-open-contact', wa); } catch { /* noop */ }
+    setActiveTab('whatsapp');
+    // Mesmo padrão dual das notificações: o evento cobre o inbox já montado;
+    // o sessionStorage cobre o inbox que ainda vai montar.
+    const t = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('open-whatsapp-conversation', { detail: { contactId: wa } }));
+    }, 0);
+    // Limpa o param pra um F5 não "re-abrir" a conversa.
+    window.history.replaceState(null, '', window.location.pathname);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     function handleOpenCard() {
       setActiveTab('kanban');

@@ -6,7 +6,7 @@ import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
-  AtSign, CheckCheck, CheckCircle2, Circle, Clock, Eye, Hash, Inbox, ListChecks,
+  AtSign, Bot, Building2, CheckCheck, CheckCircle2, Circle, Clock, Eye, Hash, Inbox, ListChecks,
   MessageSquare, RotateCcw, Search, ShieldCheck, Sparkles, SquareArrowOutUpRight,
   Trash2, Trello, UserRound, Users,
 } from 'lucide-react';
@@ -22,6 +22,15 @@ import { notifyMentionsChanged } from '@/app/_shared/hooks/use-mentions';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 
 /* ---------- helpers ---------- */
+
+/** Glifo oficial do WhatsApp (o lucide não tem — MessageSquare não comunica). */
+function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413" />
+    </svg>
+  );
+}
 
 function initials(name?: string | null) {
   return (
@@ -63,7 +72,7 @@ function Excerpt({ text, muted }: { text: string; muted: boolean }) {
 }
 
 type FilterKey = 'PENDING' | 'ACK' | 'DONE' | 'ALL';
-type SourceKey = 'all' | 'comment' | 'chat';
+type SourceKey = 'all' | 'comment' | 'chat' | 'whatsapp' | 'botconversa';
 
 const FILTERS: { key: FilterKey; label: string; dot: string }[] = [
   { key: 'PENDING', label: 'Pendentes', dot: 'bg-amber-500' },
@@ -237,12 +246,24 @@ function MentionRow({
       {/* quem marcou + trecho */}
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Avatar className="h-6 w-6 border border-white shadow-sm dark:border-zinc-800">
-            {m.authorImage && <AvatarImage src={m.authorImage} alt={m.authorName} />}
-            <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-violet-600 text-[10px] font-bold text-white">
-              {initials(m.authorName)}
-            </AvatarFallback>
-          </Avatar>
+          {m.source === 'whatsapp' && m.authorId === null ? (
+            // Tarefa automática do bot da IA: avatar verde com o glifo do WhatsApp.
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-sm">
+              <WhatsAppIcon className="h-3.5 w-3.5" />
+            </span>
+          ) : m.source === 'botconversa' ? (
+            // Tarefa automática do BotConversa: avatar âmbar com o robô.
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm">
+              <Bot className="h-4 w-4" />
+            </span>
+          ) : (
+            <Avatar className="h-6 w-6 border border-white shadow-sm dark:border-zinc-800">
+              {m.authorImage && <AvatarImage src={m.authorImage} alt={m.authorName} />}
+              <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-violet-600 text-[10px] font-bold text-white">
+                {initials(m.authorName)}
+              </AvatarFallback>
+            </Avatar>
+          )}
           <span className="text-sm font-bold text-gray-800 dark:text-zinc-100">{m.authorName}</span>
           <span className="text-xs text-gray-400">marcou</span>
           {m.recipientName ? (
@@ -258,6 +279,7 @@ function MentionRow({
           ) : (
             <span className="text-xs text-gray-400">você</span>
           )}
+          {m.sectorName && <SectorChip name={m.sectorName} />}
           <span className="md:hidden"><StatusPill status={m.status} /></span>
         </div>
         <p className={`mt-1 line-clamp-2 text-sm leading-snug ${done ? 'text-gray-400' : 'text-gray-600 dark:text-zinc-300'}`}>
@@ -295,13 +317,31 @@ function MentionRow({
   );
 }
 
-/** Etiqueta de origem: card do Kanban (com nº), canal do chat ou WhatsApp. */
+/** Etiqueta de setor da tarefa (tarefas automáticas roteadas por setor). */
+function SectorChip({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-fuchsia-700 ring-1 ring-fuchsia-200 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
+      <Building2 className="h-3 w-3" />{name}
+    </span>
+  );
+}
+
+/** Etiqueta de origem: card do Kanban (com nº), canal do chat, WhatsApp ou BotConversa. */
 function OriginBadge({ m }: { m: MentionDTO }) {
   if (m.source === 'whatsapp') {
     return (
       <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300">
-        <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+        <WhatsAppIcon className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{m.targetName.replace(/^WhatsApp · /, '') || 'WhatsApp'}</span>
+        {m.authorId === null && <Sparkles className="h-3 w-3 shrink-0 opacity-70" aria-label="Tarefa criada pela IA" />}
+      </span>
+    );
+  }
+  if (m.source === 'botconversa') {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300">
+        <Bot className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{m.targetName.replace(/^BotConversa · /, '') || 'BotConversa'}</span>
       </span>
     );
   }
@@ -346,6 +386,8 @@ export function MentionsInbox() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('PENDING');
   const [sourceFilter, setSourceFilter] = useState<SourceKey>('all');
+  // Tarefas por setor: 'all' | nome do setor (snapshot gravado na menção).
+  const [sector, setSector] = useState<string>('all');
   const [query, setQuery] = useState('');
 
   const isTeam = scope === 'team' && canSeeTeam;
@@ -417,21 +459,29 @@ export function MentionsInbox() {
     return [...map.values()].sort((a, b) => b.PENDING - a.PENDING || b.total - a.total);
   }, [source, isTeam]);
 
+  // Setores presentes na caixa (para os chips de filtro por setor).
+  const sectors = useMemo(
+    () => [...new Set(scoped.map((m) => m.sectorName).filter((s): s is string => !!s))].sort(),
+    [scoped],
+  );
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return scoped.filter((m) => {
       if (filter !== 'ALL' && m.status !== filter) return false;
       if (sourceFilter !== 'all' && m.source !== sourceFilter) return false;
+      if (sector !== 'all' && m.sectorName !== sector) return false;
       if (!q) return true;
       return (
         m.excerpt.toLowerCase().includes(q)
         || m.authorName.toLowerCase().includes(q)
         || (m.recipientName ?? '').toLowerCase().includes(q)
+        || (m.sectorName ?? '').toLowerCase().includes(q)
         || m.targetName.toLowerCase().includes(q)
         || String(m.cardNumber ?? '').includes(q)
       );
     });
-  }, [scoped, filter, sourceFilter, query]);
+  }, [scoped, filter, sourceFilter, sector, query]);
 
   // Agrupamento por dia — a caixa lê como uma linha do tempo.
   const groups = useMemo(() => {
@@ -666,6 +716,8 @@ export function MentionsInbox() {
             { key: 'all' as const, label: 'Tudo', icon: ListChecks },
             { key: 'comment' as const, label: 'Cards', icon: Trello },
             { key: 'chat' as const, label: 'Chat', icon: MessageSquare },
+            { key: 'whatsapp' as const, label: 'WhatsApp', icon: WhatsAppIcon },
+            { key: 'botconversa' as const, label: 'BotConversa', icon: Bot },
           ]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -679,6 +731,36 @@ export function MentionsInbox() {
               <Icon className="h-3.5 w-3.5" />{label}
             </button>
           ))}
+
+          {/* Filtro por setor — só aparece se alguma tarefa tem setor. */}
+          {sectors.length > 0 && (
+            <>
+              <span className="mx-1 hidden h-5 w-px bg-gray-200 dark:bg-zinc-700 sm:block" />
+              <button
+                onClick={() => setSector('all')}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  sector === 'all'
+                    ? 'bg-fuchsia-600 text-white shadow-md shadow-fuchsia-600/20'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5" />Todos os setores
+              </button>
+              {sectors.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSector(sector === s ? 'all' : s)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    sector === s
+                      ? 'bg-fuchsia-600 text-white shadow-md shadow-fuchsia-600/20'
+                      : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

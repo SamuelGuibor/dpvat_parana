@@ -266,8 +266,6 @@ export const CardDialog: React.FC<CardDialogProps> = ({
     }
   }
 
-  // Atalho card → conversa: se o card tem contato de WhatsApp (vínculo direto
-  // ou telefone batendo), o cabeçalho ganha o botão "Abrir conversa".
   const { data: waContactId } = useSWR(
     open && !isProcess ? ['wa-contact-for-card', cardId] : null,
     () => findWhatsAppContactForCard(cardId),
@@ -276,11 +274,9 @@ export const CardDialog: React.FC<CardDialogProps> = ({
 
   function openWhatsAppConversation() {
     if (!waContactId) return;
-    // Mesmo canal usado pelas notificações: page.tsx troca pra aba WhatsApp e
-    // o inbox abre a conversa (pelo evento ou pelo sessionStorage).
-    sessionStorage.setItem('wa-open-contact', waContactId);
-    window.dispatchEvent(new CustomEvent('open-whatsapp-conversation', { detail: { contactId: waContactId } }));
-    handleDismiss();
+    // Aba nova do navegador: sessionStorage/CustomEvent não atravessam abas,
+    // então o contato vai na URL e a page.tsx lê o ?wa= no carregamento.
+    window.open(`/nova-dash?wa=${encodeURIComponent(waContactId)}`, '_blank', 'noopener');
   }
 
   return (
@@ -300,7 +296,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           {waContactId && (
             <button
               onClick={openWhatsAppConversation}
-              title="Abrir a conversa deste cliente no WhatsApp"
+              title="Abrir a conversa deste cliente no WhatsApp (aba nova)"
               className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
             >
               <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa no WhatsApp

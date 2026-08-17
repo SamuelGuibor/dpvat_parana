@@ -66,7 +66,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "userId ou processId é obrigatório" }, { status: 400 });
     }
 
-    const where = processId ? { processId } : { userId: userId! };
+    // Itens na lixeira ficam fora do zip.
+    const where = processId
+      ? { processId, deletedAt: null }
+      : { userId: userId!, deletedAt: null };
 
     const documents = await db.document.findMany({
       where,

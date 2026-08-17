@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "bot": "node app/_bot/index.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -62,7 +61,6 @@
     "cmdk": "^1.1.1",
     "darkreader": "^4.9.128",
     "date-fns": "^3.6.0",
-    "discord.js": "^14.26.0",
     "docxtemplater": "^3.67.6",
     "dotenv": "^16.4.7",
     "embla-carousel-react": "^8.6.0",

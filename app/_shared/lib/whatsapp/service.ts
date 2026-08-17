@@ -611,20 +611,4 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
       },
     });
   }
-
-  const discordUrl = process.env.DISCORD_WEBHOOK_URL_WHATSAPP;
-  if (discordUrl) {
-    await fetch(discordUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        embeds: [{
-          title: "⚠️ Mensagem de WhatsApp não entregue",
-          description: `**${label}**\n${cause}.\nVerificar: número correto? cliente bloqueou? janela de 24h expirada?`,
-          color: 0xf59e0b,
-          timestamp: new Date().toISOString(),
-        }],
-      }),
-    }).catch(() => {});
-  }
 }

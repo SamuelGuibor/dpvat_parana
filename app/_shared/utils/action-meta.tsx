@@ -3,6 +3,7 @@ import {
   Activity, ArrowRightLeft, Pencil, Plus, MessageSquare, FileUp, FileX,
   ListChecks, Archive, MessageCircle, Image as ImageIcon, FileText, Workflow,
   LayoutTemplate, StickyNote, Bot, UserCheck, RotateCcw, CheckCircle2, Code2, Sparkles,
+  FileClock, Trash2,
 } from 'lucide-react';
 
 /** Metadados visuais por tipo de ação de log (compartilhado por Meu Espaço e Gestor).
@@ -17,6 +18,8 @@ export const ACTION_META: Record<string, { label: string; icon: React.ElementTyp
   comment_add:     { label: 'Comentários', icon: MessageSquare,  tint: 'text-violet-600 bg-violet-50',   ring: 'ring-violet-100',  bar: 'bg-violet-500', hex: '#8b5cf6' },
   document_add:    { label: 'Documentos',  icon: FileUp,         tint: 'text-cyan-600 bg-cyan-50',       ring: 'ring-cyan-100',    bar: 'bg-cyan-500', hex: '#06b6d4' },
   document_remove: { label: 'Remoções',    icon: FileX,          tint: 'text-rose-600 bg-rose-50',       ring: 'ring-rose-100',    bar: 'bg-rose-500', hex: '#f43f5e' },
+  document_restore:{ label: 'Restaurações', icon: FileClock,     tint: 'text-teal-600 bg-teal-50',       ring: 'ring-teal-100',    bar: 'bg-teal-500', hex: '#14b8a6' },
+  document_purge:  { label: 'Exclusões definitivas', icon: Trash2, tint: 'text-red-700 bg-red-50',       ring: 'ring-red-100',     bar: 'bg-red-600', hex: '#dc2626' },
   // WhatsApp (auditoria do atendimento)
   wa_text:         { label: 'WhatsApp: mensagens', icon: MessageCircle,  tint: 'text-green-600 bg-green-50',   ring: 'ring-green-100',   bar: 'bg-green-500', hex: '#22c55e' },
   wa_media:        { label: 'WhatsApp: mídias',    icon: ImageIcon,      tint: 'text-teal-600 bg-teal-50',     ring: 'ring-teal-100',    bar: 'bg-teal-500', hex: '#14b8a6' },

@@ -11,6 +11,7 @@ import { CostsPanel } from './costs/CostsPanel';
 import { NumbersPanel } from './numbers/NumbersPanel';
 import { getChatbotDashboardAccess } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
+import { ContratadosPanel } from './botconversa/ContratadosPanel';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { isManager } from '@/app/_shared/lib/managers';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
@@ -71,6 +72,7 @@ export function Workspace() {
     || (section === 'revisao-ia' && !canReviewAi)
     || (section === 'custos' && !canViewCosts)
     || (section === 'numeros' && !canManageNumbers)
+    || (section === 'contratados' && !manager)
       ? 'meu-espaco'
       : section;
 
@@ -86,6 +88,7 @@ export function Workspace() {
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
         {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
         {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
+        {effective === 'contratados' && <div className="h-full overflow-y-auto"><ContratadosPanel /></div>}
       </div>
     </div>
   );

@@ -476,7 +476,9 @@ export async function runAiAudit({
     } catch { /* placeholder é cosmético */ }
 
     const docs = await db.document.findMany({
-      where: isProcess ? { processId: cardId } : { userId: cardId, processId: null },
+      where: isProcess
+        ? { processId: cardId, deletedAt: null }
+        : { userId: cardId, processId: null, deletedAt: null },
       orderBy: [{ sortOrder: "asc" }, { uploadedAt: "desc" }],
       select: { id: true, key: true, name: true },
     });

@@ -430,10 +430,17 @@ model Document {
   sortOrder  Int?
   uploadedAt DateTime  @default(now())
   processId  String?
+  // Lixeira (estilo galeria do celular): excluir marca deletedAt e o arquivo
+  // fica 30 dias restaurável; a purga definitiva (S3 + banco) é do cron
+  // /api/documents/trash/purge.
+  deletedAt  DateTime?
+  deletedBy  String?
   createdAt  DateTime? @default(now())
   updatedAt  DateTime? @updatedAt
   process    Process?  @relation(fields: [processId], references: [id], onDelete: Cascade)
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deletedAt])
 }
 
 model Contact {
@@ -473,8 +480,14 @@ model Mention {
   recipientId   String
   authorId      String?
   authorName    String
-  // "comment" (comentário de card) | "chat" (chat da equipe)
+  // "comment" (comentário de card) | "chat" (chat da equipe) | "whatsapp"
+  // (tarefa do bot da IA) | "botconversa" (webhook de contratado)
   source        String    @default("comment")
+  // Tarefas por setor: snapshot do setor responsável no momento da criação
+  // (sobrevive se o setor for renomeado/apagado). O roteamento de qual tarefa
+  // vai pra qual setor fica em app/_shared/lib/sector-tasks.ts.
+  sectorId      String?
+  sectorName    String?
   // Trecho já limpo do markup de menção/negrito, para render na tabela.
   excerpt       String
   // Origem — comentário de card (userId/processId é o card a abrir)
@@ -1014,23 +1027,11 @@ model Botconversa {
   telefone  String
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
-}
-
-model Discord {
-  id        String    @id @default(cuid())
-  message   String
-  channelId String
-  executeAt DateTime
-  sent      Boolean   @default(false)
-  nome      String?
-  telefone  String?
-  evento    String?
-  hours     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  firstSent Boolean   @default(false)
-
-  @@map("discord")
+  // Migração Botconversa → sistema próprio: a equipe marca manualmente os
+  // leads já tratados (aba "BotConversa" do Espaço de Trabalho).
+  marcado    Boolean   @default(false)
+  marcadoEm  DateTime?
+  marcadoPor String?
 }
 
 model WorkSession {

@@ -1,24 +1,20 @@
 "use server";
 
 import { db } from "../../_shared/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../_shared/lib/auth";
 import { createLog } from "../../_shared/lib/log";
-import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { requireTeam } from "../../_shared/lib/permissions-server";
 
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
-
+/**
+ * "Excluir" um documento agora manda pra LIXEIRA (estilo galeria do celular):
+ * marca deletedAt e o arquivo fica 30 dias restaurável na aba Arquivos. O
+ * objeto no S3 NÃO é tocado aqui — quem apaga de verdade (S3 + banco) é a
+ * purga em trash.ts (botão "excluir de vez" ou o cron dos 30 dias).
+ */
 export const deletDoc = async (docId: string) => {
+  const ctx = await requireTeam();
   try {
-    // Buscar o documento para obter a key do S3 e os dados para o histórico.
-    const document = await db.document.findUnique({
-      where: { id: docId },
+    const document = await db.document.findFirst({
+      where: { id: docId, deletedAt: null },
       select: { key: true, name: true, userId: true, processId: true },
     });
 
@@ -26,33 +22,22 @@ export const deletDoc = async (docId: string) => {
       throw new Error(`Documento com ID ${docId} não encontrado.`);
     }
 
-    // Deletar do S3
-    const deleteCommand = new DeleteObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET_NAME,
-      Key: document.key,
-    });
-    await s3Client.send(deleteCommand);
-
-    // Deletar do banco de dados
-    await db.document.delete({
+    await db.document.update({
       where: { id: docId },
+      data: { deletedAt: new Date(), deletedBy: ctx.name ?? null },
     });
 
-    // Registra no histórico do card quem removeu o documento.
-    const session = await getServerSession(authOptions);
-    if (session?.user?.id) {
-      await createLog({
-        action: "document_remove",
-        message: `removeu o documento "${document.name}"`,
-        authorId: session.user.id,
-        authorName: session.user.name ?? "Usuário",
-        userId: document.processId ? null : document.userId,
-        processId: document.processId ?? null,
-        metadata: { name: document.name },
-      });
-    }
+    await createLog({
+      action: "document_remove",
+      message: `moveu o documento "${document.name}" para a lixeira`,
+      authorId: ctx.userId,
+      authorName: ctx.name ?? "Usuário",
+      userId: document.processId ? null : document.userId,
+      processId: document.processId ?? null,
+      metadata: { name: document.name, key: document.key },
+    });
   } catch (error) {
-    console.error("Erro ao deletar documento:", error);
+    console.error("Erro ao mover documento pra lixeira:", error);
     throw error; // Re-lançar o erro para ser capturado no client-side
   }
 };

@@ -1,9 +1,9 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, Trophy } from 'lucide-react';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros';
+export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros' | 'contratados';
 
 interface Props {
   active: WorkspaceSection;
@@ -61,6 +61,16 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
           : []),
       ],
     },
+    // BotConversa (visível só para gestores). Leads/dia e campanhas moram na
+    // Origem dos leads do dashboard do chatbot.
+    ...(isManager
+      ? [{
+          title: 'BotConversa',
+          items: [
+            { key: 'contratados' as const, label: 'Contratados', desc: 'Fechamentos', icon: Trophy },
+          ],
+        }]
+      : []),
     {
       title: 'Chats',
       items: [

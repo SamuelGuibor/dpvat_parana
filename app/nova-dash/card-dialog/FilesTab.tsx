@@ -8,13 +8,17 @@ import { Separator } from '@/app/_shared/ui/separator';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
-import { Download, Loader2, Trash, FileArchive, Eye, FileText, ChevronUp, ChevronDown } from 'lucide-react';
+import {
+  Download, Loader2, Trash, FileArchive, Eye, FileText, ChevronUp, ChevronDown,
+  Trash2, ArchiveRestore, Clock,
+} from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
 import { toast } from 'sonner';
 import { getPresignedUrls } from '@/app/_actions/documents/upload-s3';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
 import { deletDoc } from '@/app/_actions/documents/delete-document';
+import { listTrashedDocs, restoreDoc, purgeDoc, type TrashedDocDTO } from '@/app/_actions/documents/trash';
 import { DeleteConfirmDialog } from '@/app/nova-dash/card-dialog/DeleteConfirmDialog';
 import { AdminChecklist } from './AdminChecklist';
 import type { FileWithBase64 } from './types';
@@ -66,12 +70,26 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
 
+  // Lixeira (30 dias): itens excluídos ficam restauráveis antes da purga.
+  const [trash, setTrash] = useState<TrashedDocDTO[]>([]);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashBusyId, setTrashBusyId] = useState<string | null>(null);
+  const [purgingDoc, setPurgingDoc] = useState<TrashedDocDTO | null>(null);
+
   // Pré-visualização de anexos (evita baixar cada arquivo só para conferir).
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  useEffect(() => { loadDocs(); }, [cardId, isProcess]);
+  useEffect(() => { loadDocs(); loadTrash(); }, [cardId, isProcess]);
+
+  async function loadTrash() {
+    try {
+      setTrash(await listTrashedDocs(cardId, isProcess));
+    } catch (err) {
+      console.error(err); // lixeira é acessório — não bloqueia a aba
+    }
+  }
 
   async function loadDocs() {
     try {
@@ -267,12 +285,44 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     try {
       await deletDoc(deletingDoc.id);
       setDocs((p) => p.filter((d) => d.id !== deletingDoc.id));
-      toast.success('Documento deletado.');
+      toast.success('Movido para a lixeira — restaurável por 30 dias.');
+      await loadTrash();
     } catch (err) {
       console.error(err);
       toast.error('Erro ao deletar.');
     } finally {
       setDeletingDoc(null);
+    }
+  }
+
+  async function handleRestore(doc: TrashedDocDTO) {
+    try {
+      setTrashBusyId(doc.id);
+      await restoreDoc(doc.id);
+      setTrash((p) => p.filter((d) => d.id !== doc.id));
+      await loadDocs();
+      toast.success('Documento restaurado.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao restaurar.');
+    } finally {
+      setTrashBusyId(null);
+    }
+  }
+
+  async function confirmPurgeDoc() {
+    if (!purgingDoc) return;
+    try {
+      setTrashBusyId(purgingDoc.id);
+      await purgeDoc(purgingDoc.id);
+      setTrash((p) => p.filter((d) => d.id !== purgingDoc.id));
+      toast.success('Documento excluído definitivamente.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao excluir de vez.');
+    } finally {
+      setTrashBusyId(null);
+      setPurgingDoc(null);
     }
   }
 
@@ -303,22 +353,36 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label>Arquivos Anexados ({docs.length})</Label>
-          {docs.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadAll}
-              disabled={downloadingAll}
-              className="h-8"
-            >
-              {downloadingAll ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <FileArchive className="w-4 h-4 mr-2" />
-              )}
-              Baixar todos (.zip)
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {trash.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTrashOpen(true)}
+                className="h-8 text-gray-500"
+                title="Documentos excluídos — restauráveis por 30 dias"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Lixeira ({trash.length})
+              </Button>
+            )}
+            {docs.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadAll}
+                disabled={downloadingAll}
+                className="h-8"
+              >
+                {downloadingAll ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileArchive className="w-4 h-4 mr-2" />
+                )}
+                Baixar todos (.zip)
+              </Button>
+            )}
+          </div>
         </div>
         {docs.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-zinc-400 border-2 border-dashed rounded-lg">
@@ -416,10 +480,90 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       <DeleteConfirmDialog
         open={!!deletingDoc}
         onOpenChange={(o) => !o && setDeletingDoc(null)}
-        title={`Deletar "${deletingDoc?.name}"?`}
-        description="Tem certeza que deseja deletar? Essa ação é irreversível."
+        title={`Excluir "${deletingDoc?.name}"?`}
+        description="O documento vai para a lixeira e pode ser restaurado em até 30 dias. Depois disso é excluído de vez."
         onConfirm={confirmDeleteDoc}
       />
+
+      <DeleteConfirmDialog
+        open={!!purgingDoc}
+        onOpenChange={(o) => !o && setPurgingDoc(null)}
+        title={`Excluir "${purgingDoc?.name}" DE VEZ?`}
+        description="O arquivo será apagado do armazenamento e não tem como recuperar. Essa ação é irreversível."
+        onConfirm={confirmPurgeDoc}
+      />
+
+      {/* Lixeira — como a galeria do celular: 30 dias pra restaurar. */}
+      <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-gray-500" />
+              Lixeira ({trash.length})
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-gray-500 dark:text-zinc-400 -mt-1">
+            Documentos excluídos ficam aqui por 30 dias. Depois disso são apagados
+            automaticamente e não têm como ser recuperados.
+          </p>
+
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {trash.length === 0 ? (
+              <div className="text-center py-10 text-gray-500 dark:text-zinc-400">
+                A lixeira está vazia.
+              </div>
+            ) : (
+              <ul className="divide-y border rounded-lg overflow-hidden">
+                {trash.map((doc) => (
+                  <li key={doc.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-zinc-800">
+                    <FileText className="w-5 h-5 shrink-0 text-gray-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{doc.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-zinc-400">
+                        Excluído em {new Date(doc.deletedAt).toLocaleDateString('pt-BR')}
+                        {doc.deletedBy ? ` por ${doc.deletedBy}` : ''}
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        doc.daysLeft <= 5
+                          ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400'
+                          : 'bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400'
+                      }`}
+                      title="Dias até a exclusão automática"
+                    >
+                      <Clock className="w-3 h-3" />
+                      {doc.daysLeft === 0 ? 'expira hoje' : `${doc.daysLeft}d`}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0"
+                      onClick={() => handleRestore(doc)}
+                      disabled={trashBusyId === doc.id}
+                    >
+                      {trashBusyId === doc.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <ArchiveRestore className="w-4 h-4 mr-1" />}
+                      Restaurar
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-red-500 hover:text-red-600"
+                      title="Excluir de vez (irreversível)"
+                      onClick={() => setPurgingDoc(doc)}
+                      disabled={trashBusyId === doc.id}
+                    >
+                      <Trash className="w-4 h-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!previewDoc} onOpenChange={(o) => { if (!o) { setPreviewDoc(null); setPreviewUrl(null); } }}>
         <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 overflow-hidden">

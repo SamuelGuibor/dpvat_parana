@@ -17,6 +17,7 @@ import {
 } from '@/app/_actions/analytics/get-chatbot-analytics';
 // import { SystemMap } from './SystemMap';
 import { AiCorner } from './AiCorner';
+import { BotconversaOrigin } from './BotconversaOrigin';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -584,6 +585,8 @@ export function ChatbotDashboard({ numberId = null }: { numberId?: string | null
                 })()}
               </div>
             )}
+
+            <BotconversaOrigin period={period} />
           </section>
 
           {/* Saúde da conta WhatsApp: avisos oficiais da Meta (webhook) */}

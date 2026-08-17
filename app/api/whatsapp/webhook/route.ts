@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     // Erro fora da ingestão por mensagem (bot, ficha, status): responde 200 —
     // a mensagem já está persistida; retry da Meta só geraria ruído. O erro
-    // vai para o Discord — antes era só console.error efêmero na Vercel.
+    // passa pelo reportCriticalError (registro centralizado).
     await reportCriticalError("WHATSAPP WEBHOOK", err);
   }
 

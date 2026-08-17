@@ -869,7 +869,6 @@ export async function runSlaPhase(): Promise<CronResults> {
 
     if (!waitingTooLong.length) return;
     const recipients = await whatsappRecipients().catch(() => [] as string[]);
-    const discordUrl = process.env.DISCORD_WEBHOOK_URL_WHATSAPP;
 
     for (const conv of waitingTooLong) {
       try {
@@ -890,20 +889,6 @@ export async function runSlaPhase(): Promise<CronResults> {
               contactId: conv.contactId,
             },
           });
-        }
-        if (discordUrl) {
-          await fetch(discordUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              embeds: [{
-                title: `${conv.urgent ? '🔴' : '⏰'} Cliente esperando na fila do WhatsApp`,
-                description: `**${label}**\nHá ${waitingMin} min na fila sem atendente.`,
-                color: conv.urgent ? 0xef4444 : 0xf59e0b,
-                timestamp: new Date().toISOString(),
-              }],
-            }),
-          }).catch(() => {});
         }
         await db.whatsAppConversation.update({
           where: { id: conv.id },

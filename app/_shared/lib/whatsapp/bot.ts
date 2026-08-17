@@ -352,7 +352,9 @@ async function runLookup(kind: string, contactId: string, card: LinkedCard | nul
       const fresh = card ?? (await findLinkedCard(contactId));
       if (!fresh) return { kind, data: { cadastrado: false, quantidade: 0 } };
       const quantidade = await db.document.count({
-        where: fresh.kind === "user" ? { userId: fresh.id } : { processId: fresh.id },
+        where: fresh.kind === "user"
+          ? { userId: fresh.id, deletedAt: null }
+          : { processId: fresh.id, deletedAt: null },
       });
       return { kind, data: { cadastrado: true, quantidade } };
     }
@@ -403,9 +405,9 @@ export async function postInternalNote(contactId: string, body: string): Promise
 }
 
 /**
- * Joga a conversa na fila de distribuição e avisa a equipe (Notification +
- * Discord). NUNCA envia mensagem de erro ao cliente — se a IA falhou, o
- * cliente simplesmente passa a ser atendido por um humano.
+ * Joga a conversa na fila de distribuição e avisa a equipe (Notification).
+ * NUNCA envia mensagem de erro ao cliente — se a IA falhou, o cliente
+ * simplesmente passa a ser atendido por um humano.
  */
 async function handoffToQueue(
   contactId: string,
@@ -440,27 +442,6 @@ async function handoffToQueue(
     }
   } catch (err) {
     console.error("[WHATSAPP BOT] Falha ao criar notificações de handoff:", err);
-  }
-
-  // Aviso no Discord, mesmo padrão do webhook do Trello (best-effort).
-  const discordUrl = process.env.DISCORD_WEBHOOK_URL_WHATSAPP;
-  if (discordUrl) {
-    try {
-      await fetch(discordUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          embeds: [{
-            title: "📲 Cliente aguardando atendimento no WhatsApp",
-            description: `**${contactLabel}**\n${reason}`,
-            color: 0x25d366,
-            timestamp: new Date().toISOString(),
-          }],
-        }),
-      });
-    } catch (err) {
-      console.error("[WHATSAPP BOT] Falha ao avisar o Discord:", err);
-    }
   }
 }
 
@@ -513,8 +494,9 @@ async function qualifyToQueue(contactId: string, contactLabel: string, reason: s
 
 /**
  * Tarefa "criar card + enviar contrato" na caixa de Menções e Tarefas quando a
- * IA qualifica um lead que ainda não tem card. Best-effort: nunca quebra o
- * fluxo de qualificação.
+ * IA qualifica um lead que ainda não tem card. Roteada para o setor
+ * responsável (sector-tasks.ts). Best-effort: nunca quebra o fluxo de
+ * qualificação.
  */
 async function createCardTaskForTeam(contactId: string, contactLabel: string, reason: string): Promise<void> {
   try {
@@ -524,14 +506,9 @@ async function createCardTaskForTeam(contactId: string, contactLabel: string, re
     });
     if (!contact || contact.userId) return; // já tem card — nada a fazer
 
-    const team = await db.user.findMany({
-      where: { role: { in: ["ADMIN", "ADMIN+", "ADMIN++"] } },
-      select: { id: true },
-    });
-    const { recordMentions } = await import("@/app/_shared/lib/mention-inbox");
-    await recordMentions({
-      recipientIds: team.map((u) => u.id),
-      authorId: null,
+    const { recordSectorTask } = await import("@/app/_shared/lib/sector-tasks");
+    await recordSectorTask({
+      kind: "wa_lead_qualificado",
       authorName: "Bot WhatsApp",
       source: "whatsapp",
       text: `Lead qualificado pela IA — criar o card e enviar o contrato pra assinatura. Motivo: ${reason}`,
@@ -643,23 +620,6 @@ async function handoffNotifyOnly(contactLabel: string, reason: string, contactId
     }
   } catch (err) {
     console.error("[WHATSAPP BOT] Falha ao notificar equipe:", err);
-  }
-  const discordUrl = process.env.DISCORD_WEBHOOK_URL_WHATSAPP;
-  if (discordUrl) {
-    try {
-      await fetch(discordUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          embeds: [{
-            title: "📲 WhatsApp",
-            description: `**${contactLabel}**\n${reason}`,
-            color: 0x25d366,
-            timestamp: new Date().toISOString(),
-          }],
-        }),
-      });
-    } catch { /* best-effort */ }
   }
 }
 

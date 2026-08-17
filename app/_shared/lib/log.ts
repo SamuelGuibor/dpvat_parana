@@ -7,7 +7,9 @@ export type LogAction =
   | "status_change"   // avanço/recuo do status de progresso (checklist do cliente)
   | "archive"         // arquivou/desarquivou o card
   | "document_add"
-  | "document_remove"
+  | "document_remove"   // mandou o documento pra lixeira (30 dias restaurável)
+  | "document_restore"  // restaurou um documento da lixeira
+  | "document_purge"    // excluiu definitivamente (manual ou cron dos 30 dias)
   | "comment_add"
   | "create"
   | "password_view"  // equipe visualizou a senha de acesso do cliente (auditoria)

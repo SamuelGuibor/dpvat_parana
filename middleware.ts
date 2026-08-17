@@ -40,8 +40,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/whatsapp/cron", // CRON_SECRET
   "/api/whatsapp/brain-prompt", // CHATBOT_SECRET (o microserviço busca o prompt aqui)
   "/api/afastamentos/check", // GET: CRON_SECRET; POST: sessão (validados na rota)
+  "/api/documents/trash/purge", // CRON_SECRET (validado na rota)
   "/api/botconversa/contratado", // shared secret (validado na rota)
-  "/api/discord/trello", // shared secret (validado na rota)
 ];
 
 /** GETs consumidos pela área do cliente sem login (consulta de status). */
@@ -87,7 +87,9 @@ export async function middleware(req: NextRequest) {
   }
 
   const loginUrl = new URL("/login", req.url);
-  loginUrl.searchParams.set("callbackUrl", pathname);
+  // Query preservada: links diretos tipo /nova-dash?wa=<contato> voltam
+  // inteiros depois do login (antes o callbackUrl só guardava o pathname).
+  loginUrl.searchParams.set("callbackUrl", pathname + req.nextUrl.search);
   return NextResponse.redirect(loginUrl);
 }
 

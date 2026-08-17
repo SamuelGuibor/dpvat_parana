@@ -23,8 +23,7 @@ em `app/_actions`, rotas de API em `app/api`, schema Prisma em `prisma/`.
 - **Chatbot WhatsApp** — projeto separado em `D:\Chatbot_whatsapp` (qualificação de leads por IA); tem restart próprio.
 - **docx-converter** — microserviço separado em `D:\docx-converter` (roteiros com IA e DOCX→PDF); não roda dentro do Next.
 - **Chat relay (Railway)** — SSE do chat interno/inbox (`CHAT_RELAY_*`); sem ele o chat cai para polling.
-- **Vercel Pro** — deploy + crons (`vercel.json`): `/api/whatsapp/cron` (15 min) e `/api/afastamentos/check` (30 min), autenticados por `CRON_SECRET`.
-- **Discord** — notificações internas e alertas de erro crítico (`app/_shared/lib/report-error.ts`).
+- **Vercel Pro** — deploy + crons (`vercel.json`): `/api/whatsapp/cron` (15 min), `/api/afastamentos/check` (30 min) e `/api/documents/trash/purge` (diário), autenticados por `CRON_SECRET`.
 - **Twilio (opcional)** — SMS do "esqueci minha senha"; sem credenciais o código vai por WhatsApp.
 
 ## Rodando localmente
