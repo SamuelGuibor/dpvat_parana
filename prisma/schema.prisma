@@ -488,6 +488,10 @@ model Mention {
   // vai pra qual setor fica em app/_shared/lib/sector-tasks.ts.
   sectorId      String?
   sectorName    String?
+  // Tarefa de setor é UMA só, com uma cópia por pessoa: todas as cópias
+  // compartilham o groupId, e dar ciência/concluir em qualquer uma aplica em
+  // todas (mention-actions.ts). Null = menção individual comum.
+  groupId       String?
   // Trecho já limpo do markup de menção/negrito, para render na tabela.
   excerpt       String
   // Origem — comentário de card (userId/processId é o card a abrir)
@@ -508,6 +512,7 @@ model Mention {
 
   @@index([recipientId, status])
   @@index([recipientId, createdAt])
+  @@index([groupId])
   @@map("mentions")
 }
 

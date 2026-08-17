@@ -17,29 +17,14 @@ import { MiniKanban } from '@/app/nova-dash/minikanban'
 import { LeadsTable } from './form-leads';
 import { CalendarTab } from './CalendarTab';
 import { DateFilter, getDefaultDateRange, type DateRange } from './DateFilter';
+import { setMonthGoal, type FunnelAnalytics } from '@/app/_actions/analytics/get-funnel-analytics';
 import {
-  getFunnelAnalytics, getMonthGoal, setMonthGoal,
-  type FunnelAnalytics,
-} from '@/app/_actions/analytics/get-funnel-analytics';
+  getStrategicDashboardData,
+  type StrategicDashboardData,
+} from '@/app/_actions/analytics/get-strategic-dashboard';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
-import { getContratadosTagCount } from '@/app/_actions/whatsapp/tags';
 import { KanbanFlowPanel } from './KanbanFlowPanel';
 import { ChatbotPanel } from './workspace/chatbot/ChatbotPanel';
-
-type Counts = {
-  contratado?: number;
-  iniciado?: number;
-  em_honorario?: number;
-  em_conversa?: number;
-  aguardando?: number;
-  nao_contratado?: number;
-  nao_qualificado?: number;
-  enviou_documentos?: number
-};
-
-function buildDateParams(range: DateRange): string {
-  return `from=${range.from.toISOString()}&to=${range.to.toISOString()}`;
-}
 
 function currentMonthKey(): string {
   const d = new Date();
@@ -47,20 +32,19 @@ function currentMonthKey(): string {
 }
 
 // Card "Meta do mês": contratos fechados vs meta definida pelo gestor (model
-// Goal no banco) — substitui o antigo alerta mock "Meta mensal atingida em 85%".
+// Goal no banco). O valor atual da meta chega junto com a carga única do
+// dashboard; aqui só fica a edição.
 function MonthGoalCard({
-  contratado, crm, bot, loading,
-}: { contratado: number; crm: number; bot: number; loading: boolean }) {
+  contratado, crm, bot, initialTarget,
+}: { contratado: number; crm: number; bot: number; initialTarget: number | null }) {
   const { perms } = usePermissions();
   const month = currentMonthKey();
-  const [target, setTarget] = useState<number | null>(null);
+  const [target, setTarget] = useState<number | null>(initialTarget);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    getMonthGoal(month).then((g) => setTarget(g.target)).catch(() => { });
-  }, [month]);
+  useEffect(() => { setTarget(initialTarget); }, [initialTarget]);
 
   async function save() {
     const value = parseInt(draft, 10);
@@ -90,11 +74,7 @@ function MonthGoalCard({
         <Target className="text-purple-600" size={28} />
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <div className="h-[60px] flex items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-          </div>
-        ) : editing ? (
+        {editing ? (
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -153,26 +133,8 @@ function MonthGoalCard({
 }
 
 // Funil real do kanban: entradas por coluna + tempo médio na etapa, calculado
-// dos logs de movimentação — nada de dados fictícios.
-function KanbanFunnel({ range }: { range: DateRange }) {
-  const [data, setData] = useState<FunnelAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(false);
-    getFunnelAnalytics(range.from.toISOString(), range.to.toISOString())
-      .then(setData)
-      .catch((err) => {
-        console.error('[FUNNEL]', err);
-        setError(true);
-      })
-      .finally(() => setLoading(false));
-  }, [range]);
-
-  useEffect(() => { load(); }, [load]);
-
+// dos logs de movimentação — os dados chegam prontos da carga única.
+function KanbanFunnel({ data }: { data: FunnelAnalytics }) {
   return (
     <Card>
       <CardHeader>
@@ -183,18 +145,7 @@ function KanbanFunnel({ range }: { range: DateRange }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <div className="flex h-[300px] items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-          </div>
-        ) : error ? (
-          <div className="flex h-[200px] flex-col items-center justify-center gap-3 text-sm text-gray-500">
-            <p>Não foi possível carregar o fluxo do kanban.</p>
-            <Button size="sm" variant="outline" onClick={load}>
-              <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
-            </Button>
-          </div>
-        ) : !data || data.stages.length === 0 ? (
+        {data.stages.length === 0 ? (
           <p className="py-10 text-center text-sm text-gray-500">
             Nenhuma movimentação de card registrada no período selecionado.
           </p>
@@ -226,46 +177,30 @@ function KanbanFunnel({ range }: { range: DateRange }) {
   );
 }
 
-// showChatbot: fusão de 11/08/2026 — o "Desempenho do Chatbot" deixou de ser
-// seção própria da sidebar e virou aba aqui dentro (mesma allowlist).
-export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showChatbot = false }) => {
+// Carga única (17/08/2026): TODOS os dados do dashboard — KPIs, gráfico
+// mensal, mini-kanban, funil, fluxo do kanban, meta do mês e chatbot — chegam
+// numa chamada só (getStrategicDashboardData) e a página só renderiza com
+// tudo pronto. A aba Chatbot aparece conforme a allowlist resolvida no
+// servidor (payload.chatbot === null → sem acesso).
+export const StrategicDashboard: React.FC = () => {
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
-  const [counts, setCounts] = useState<Counts>({});
+  const [data, setData] = useState<StrategicDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
-  const [kanbanItems, setKanbanItems] = useState([])
-  const [contratadosBot, setContratadosBot] = useState(0);
 
   const fetchAllData = useCallback(async (range: DateRange) => {
     setLoading(true);
+    setLoadError(false);
     try {
-      setLoadError(false);
-      const params = buildDateParams(range);
-
-      const [countsRes, monthRes, kanbanRes, contratadosBotCount] = await Promise.all([
-        fetch(`/api/botconversa/counts?${params}`, { cache: 'no-store' }),
-        fetch(`/api/botconversa/monthly?${params}`, { cache: 'no-store' }),
-        fetch(`/api/botconversa/get-kanban?${params}`, { cache: 'no-store' }),
-        getContratadosTagCount(range.from.toISOString(), range.to.toISOString()),
-      ]);
-      if (!countsRes.ok || !monthRes.ok || !kanbanRes.ok) {
-        throw new Error('Falha ao buscar métricas');
-      }
-
-      const [countsData, monthData, kanbanData] = await Promise.all([
-        countsRes.json(),
-        monthRes.json(),
-        kanbanRes.json(),
-      ]);
-
-      setCounts(countsData);
-      setMonthlyData(monthData);
-      setKanbanItems(kanbanData);
-      setContratadosBot(contratadosBotCount);
+      const payload = await getStrategicDashboardData(
+        range.from.toISOString(),
+        range.to.toISOString(),
+        currentMonthKey(),
+      );
+      setData(payload);
     } catch (err) {
-      // Antes uma falha aqui deixava os KPIs em ZERO como se fosse dado real —
-      // o gestor podia tomar decisão com base em zero falso.
+      // Uma falha aqui nunca vira KPI zerado "de verdade" — a página mostra o
+      // erro com opção de tentar de novo.
       console.error('[DASHBOARD] Falha ao carregar métricas:', err);
       setLoadError(true);
     } finally {
@@ -281,11 +216,45 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
     setDateRange(range);
   }, []);
 
+  const header = (
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div>
+        <h2 className="text-3xl">Gestão Estratégica</h2>
+        <p className="text-gray-500 dark:text-zinc-400">Visão completa de processos, funil e metas</p>
+      </div>
+      <DateFilter value={dateRange} onChange={handleDateChange} />
+    </div>
+  );
+
+  // Tudo ou nada: enquanto a carga única não termina, só o cabeçalho + spinner.
+  if (loading || !data) {
+    return (
+      <div className="p-6 space-y-6">
+        {header}
+        {loadError ? (
+          <div className="flex h-[50vh] flex-col items-center justify-center gap-4 text-sm text-gray-500">
+            <p>Não foi possível carregar as métricas do dashboard.</p>
+            <Button size="sm" variant="outline" onClick={() => fetchAllData(dateRange)}>
+              <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+            </Button>
+          </div>
+        ) : (
+          <div className="flex h-[50vh] flex-col items-center justify-center gap-3 text-gray-400">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <p className="text-sm">Carregando todos os dados do dashboard…</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const { counts, monthly, kanban, contratadosBot, monthGoal, funnel, kanbanFlow, chatbot } = data;
+
   const currentMonthIndex = new Date().getMonth();
   // A meta do mês soma os dois caminhos de contrato: o do CRM (evento
   // "contratado" do BotConversa) e o do WhatsApp (tag "Contratados"). As duas
   // parcelas seguem o mesmo filtro de data do dashboard.
-  const contratadoCrmMes = monthlyData[currentMonthIndex]?.aprovados ?? 0;
+  const contratadoCrmMes = monthly[currentMonthIndex]?.aprovados ?? 0;
   const contratadoMesAtual = contratadoCrmMes + contratadosBot;
 
   const soma_indeferidos = (counts.nao_contratado ?? 0) + (counts.nao_qualificado ?? 0);
@@ -325,22 +294,7 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl">Gestão Estratégica</h2>
-          <p className="text-gray-500 dark:text-zinc-400">Visão completa de processos, funil e metas</p>
-        </div>
-        <DateFilter value={dateRange} onChange={handleDateChange} />
-      </div>
-
-      {loadError && (
-        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-          <span>Não foi possível carregar as métricas — os números abaixo podem estar incompletos.</span>
-          <Button size="sm" variant="outline" onClick={() => fetchAllData(dateRange)}>
-            <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
-          </Button>
-        </div>
-      )}
+      {header}
 
       {/* KPIs Principais */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -351,11 +305,7 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
               {kpi.icon}
             </CardHeader>
             <CardContent className="h-[60px] flex items-center justify-center">
-              {loading ? (
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-zinc-500" />
-              ) : (
-                <div className={`text-6xl font-bold ${kpi.color}`}>{kpi.value ?? 0}</div>
-              )}
+              <div className={`text-6xl font-bold ${kpi.color}`}>{kpi.value ?? 0}</div>
             </CardContent>
           </Card>
         ))}
@@ -364,7 +314,7 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
           contratado={contratadoMesAtual}
           crm={contratadoCrmMes}
           bot={contratadosBot}
-          loading={loading}
+          initialTarget={monthGoal.target}
         />
       </div>
 
@@ -372,7 +322,7 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo do Kanban</TabsTrigger>
-          {showChatbot && <TabsTrigger value="chatbot">Chatbot</TabsTrigger>}
+          {chatbot && <TabsTrigger value="chatbot">Chatbot</TabsTrigger>}
           <TabsTrigger value="form-leads">Leads</TabsTrigger>
           {/* <TabsTrigger value="calendario">Calendário</TabsTrigger> */}
         </TabsList>
@@ -387,7 +337,7 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={monthlyData}>
+                  <BarChart data={monthly}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
@@ -453,18 +403,22 @@ export const StrategicDashboard: React.FC<{ showChatbot?: boolean }> = ({ showCh
             </Card>
           </div>
 
-          <KanbanFunnel range={dateRange} />
+          <KanbanFunnel data={funnel} />
 
-          <MiniKanban data={kanbanItems} />
+          <MiniKanban data={kanban} />
         </TabsContent>
 
         <TabsContent value="fluxo" className="space-y-4">
-          <KanbanFlowPanel range={dateRange} />
+          <KanbanFlowPanel
+            data={kanbanFlow}
+            from={dateRange.from.toISOString()}
+            to={dateRange.to.toISOString()}
+          />
         </TabsContent>
 
-        {showChatbot && (
+        {chatbot && (
           <TabsContent value="chatbot">
-            <ChatbotPanel />
+            <ChatbotPanel initialAnalytics={chatbot.analytics} numberOptions={chatbot.numberOptions} />
           </TabsContent>
         )}
 

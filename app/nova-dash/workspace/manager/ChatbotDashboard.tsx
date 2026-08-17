@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Bot, Loader2, BadgeCheck, XCircle, AlertTriangle,
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
@@ -159,10 +159,15 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
   );
 }
 
-export function ChatbotDashboard({ numberId = null }: { numberId?: string | null } = {}) {
+export function ChatbotDashboard({ numberId = null, initialData = null }: {
+  numberId?: string | null;
+  /** Analytics do período padrão (7d, todos os números), vindo da carga única
+   *  do dashboard — evita refetch na primeira renderização. */
+  initialData?: ChatbotAnalytics | null;
+} = {}) {
   const [period, setPeriod] = useState<7 | 30 | 90>(7);
-  const [data, setData] = useState<ChatbotAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<ChatbotAnalytics | null>(initialData);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
 
   // Drill-down da campanha: clicar num anúncio (ou no Orgânico) abre o modal
@@ -179,7 +184,14 @@ export function ChatbotDashboard({ numberId = null }: { numberId?: string | null
     return () => { alive = false; };
   }, [leadModal, period, numberId]);
 
+  // Com initialData (carga única do dashboard), o primeiro fetch é pulado —
+  // ele só volta a rodar quando o usuário troca o período ou o número.
+  const skipFirstFetch = useRef(Boolean(initialData));
   useEffect(() => {
+    if (skipFirstFetch.current) {
+      skipFirstFetch.current = false;
+      return;
+    }
     let alive = true;
     setLoading(true);
     getChatbotAnalytics(period, numberId)

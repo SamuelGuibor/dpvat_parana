@@ -2,6 +2,7 @@
 
 import { db } from "@/app/_shared/lib/prisma";
 import { requireTeam, requirePermission } from "@/app/_shared/lib/permissions-server";
+import { brDayKey, brLabelFromKey } from "@/app/_shared/utils/date-br";
 
 // Funil REAL do kanban a partir dos logs de movimentação (action "move",
 // metadata { from, to }) — substitui os dados fictícios que o dashboard
@@ -119,7 +120,50 @@ const EXPECTED_FLOWS: Record<string, string[]> = Object.fromEntries(
 
 const DISCARD_COLUMN_RE = /nikolas/i;
 
+// Colunas que encerram o fluxo "com sucesso" (fim do fluxo mapeado): chegar
+// nelas conta como card ENVIADO/concluído no throughput.
+const DONE_COLUMN_RE = /agendar\s+per[ií]cia\s+adm|fazer\s+roteiro\s+prev/i;
+
 export interface CardTime { card: string; days: number }
+
+/** Balde semanal (semana começando na segunda, fuso de Brasília). */
+export interface WeeklyFlowBucket {
+  /** Chave "YYYY-MM-DD" da segunda-feira da semana. */
+  weekStart: string;
+  /** Rótulo curto "dd/mm" da segunda-feira. */
+  label: string;
+  /** Cards cujo PRIMEIRO movimento do período caiu nesta semana. */
+  entries: number;
+  /** Movimentos que chegaram numa coluna terminal (enviados). */
+  done: number;
+  /** Movimentos que foram para a coluna de descarte. */
+  discarded: number;
+  /** Retornos (card voltou a uma coluna onde já esteve). */
+  returns: number;
+  /** Tempo médio de permanência das saídas registradas na semana. */
+  avgDwellDays: number | null;
+  /** % dos movimentos da semana que foram para o descarte. */
+  discardPct: number;
+  /** Total de movimentos na semana. */
+  moves: number;
+}
+
+/** Estatísticas de fluxo agregadas por hospital do card. */
+export interface HospitalFlowStats {
+  hospital: string;
+  /** Cards com movimentação no período. */
+  cards: number;
+  /** Cards que chegaram a uma coluna terminal (enviados). */
+  done: number;
+  /** Cards que passaram pela coluna de descarte. */
+  discarded: number;
+  /** Cards que tiveram ao menos um retorno (retrabalho). */
+  returns: number;
+  returnPct: number;
+  discardPct: number;
+  /** Tempo médio (dias) do 1º ao último movimento no período. */
+  avgDays: number | null;
+}
 
 export interface ColumnDwell {
   column: string;
@@ -155,9 +199,16 @@ export interface KanbanFlowAnalytics {
   totalTime: {
     count: number;
     avgDays: number | null;
+    medianDays: number | null;
     slowest: CardTime[];
     fastest: CardTime[];
   };
+  /** Throughput/vazão: totais do período (entradas, enviados, descartados). */
+  throughput: { entries: number; done: number; discarded: number; balance: number };
+  /** Série semanal — alimenta o gráfico de linha e o de entradas x saídas. */
+  weekly: WeeklyFlowBucket[];
+  /** Cruzamento por hospital (Process.hospital / User.hospital do card). */
+  hospitals: HospitalFlowStats[];
   totalMoves: number;
 }
 
@@ -201,12 +252,42 @@ export async function getKanbanFlowAnalytics(fromISO: string, toISO: string): Pr
   const passAgg = new Map<string, { passed: number; discarded: number }>();
   const spans: CardTime[] = [];
 
-  for (const moves of byCard.values()) {
+  // Segunda-feira (Brasília) da semana que contém o instante — chave "YYYY-MM-DD".
+  const weekKeyOf = (d: Date): string => {
+    const [y, m, dd] = brDayKey(d).split("-").map(Number);
+    const ut = new Date(Date.UTC(y, m - 1, dd));
+    ut.setUTCDate(ut.getUTCDate() - ((ut.getUTCDay() + 6) % 7));
+    return ut.toISOString().slice(0, 10);
+  };
+  const weeklyAgg = new Map<string, {
+    entries: number; done: number; discarded: number; returns: number;
+    dwellMs: number; dwellN: number; moves: number;
+  }>();
+  const weekOf = (d: Date) => {
+    const k = weekKeyOf(d);
+    const w = weeklyAgg.get(k) ?? { entries: 0, done: 0, discarded: 0, returns: 0, dwellMs: 0, dwellN: 0, moves: 0 };
+    weeklyAgg.set(k, w);
+    return w;
+  };
+
+  // Resumo por card — base do throughput e do cruzamento por hospital.
+  type CardSummary = { key: string; done: boolean; discarded: boolean; hadReturn: boolean; spanDays: number | null };
+  const cardSummaries = new Map<string, CardSummary>();
+
+  for (const [cardKey, moves] of byCard.entries()) {
     const visited = new Set<string>();
     let hadReturn = false;
+    let reachedDone = false;
+    let wasDiscarded = false;
+    weekOf(moves[0].at).entries += 1;
     for (let i = 0; i < moves.length; i++) {
       const m = moves[i];
       const fromCol = m.from ?? moves[i - 1]?.to ?? null;
+
+      const wk = weekOf(m.at);
+      wk.moves += 1;
+      if (DONE_COLUMN_RE.test(m.to)) { wk.done += 1; reachedDone = true; }
+      if (DISCARD_COLUMN_RE.test(m.to)) { wk.discarded += 1; wasDiscarded = true; }
 
       // Destinos por coluna de origem
       if (fromCol) {
@@ -224,6 +305,7 @@ export async function getKanbanFlowAnalytics(fromISO: string, toISO: string): Pr
       if (visited.has(norm(m.to))) {
         totalReturns += 1;
         hadReturn = true;
+        wk.returns += 1;
         returnsByColumn.set(m.to, (returnsByColumn.get(m.to) ?? 0) + 1);
         if (returnSamples.length < 40) {
           returnSamples.push({ card: m.card, from: fromCol ?? "?", backTo: m.to, at: m.at.toISOString() });
@@ -244,16 +326,25 @@ export async function getKanbanFlowAnalytics(fromISO: string, toISO: string): Pr
           d.minMs = Math.min(d.minMs, ms);
           d.slow.push({ card: m.card, ms });
           dwellAgg.set(m.to, d);
+          // A saída conta na semana em que aconteceu (movimento seguinte).
+          const wkOut = weekOf(next.at);
+          wkOut.dwellMs += ms;
+          wkOut.dwellN += 1;
         }
       }
     }
     if (hadReturn) cardsWithReturn += 1;
 
     // Tempo total no board (janela do período): 1º ao último movimento.
+    let spanDays: number | null = null;
     if (moves.length >= 2) {
       const ms = moves[moves.length - 1].at.getTime() - moves[0].at.getTime();
-      if (ms > 0) spans.push({ card: moves[0].card, days: round1(ms / 86_400_000) });
+      if (ms > 0) {
+        spanDays = round1(ms / 86_400_000);
+        spans.push({ card: moves[0].card, days: spanDays });
+      }
     }
+    cardSummaries.set(cardKey, { key: cardKey, done: reachedDone, discarded: wasDiscarded, hadReturn, spanDays });
   }
 
   const dwell: ColumnDwell[] = [...dwellAgg.entries()]
@@ -312,9 +403,88 @@ export async function getKanbanFlowAnalytics(fromISO: string, toISO: string): Pr
   const totalTime = {
     count: spans.length,
     avgDays: spans.length ? round1(spans.reduce((a, s) => a + s.days, 0) / spans.length) : null,
+    medianDays: spans.length
+      ? round1(spans.length % 2
+          ? spans[(spans.length - 1) / 2].days
+          : (spans[spans.length / 2 - 1].days + spans[spans.length / 2].days) / 2)
+      : null,
     slowest: spans.slice(0, 10),
     fastest: [...spans].reverse().slice(0, 10),
   };
+
+  // ---- Throughput + série semanal ------------------------------------------
+  const weekly: WeeklyFlowBucket[] = [...weeklyAgg.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([weekStart, w]) => ({
+      weekStart,
+      label: brLabelFromKey(weekStart),
+      entries: w.entries,
+      done: w.done,
+      discarded: w.discarded,
+      returns: w.returns,
+      avgDwellDays: w.dwellN > 0 ? round1(w.dwellMs / w.dwellN / 86_400_000) : null,
+      discardPct: w.moves > 0 ? Math.round((w.discarded / w.moves) * 100) : 0,
+      moves: w.moves,
+    }));
+  const throughput = {
+    entries: cardSummaries.size,
+    done: [...cardSummaries.values()].filter((c) => c.done).length,
+    discarded: [...cardSummaries.values()].filter((c) => c.discarded).length,
+    balance: 0,
+  };
+  throughput.balance = throughput.entries - throughput.done - throughput.discarded;
+
+  // ---- Cruzamento por hospital ---------------------------------------------
+  // O card do kanban aponta pra um Process ou direto pra um User — os dois têm
+  // os campos hospital/outro_hospital preenchidos na ficha.
+  const processIds = [...cardSummaries.keys()].filter((k) => k.startsWith("p:")).map((k) => k.slice(2));
+  const userIds = [...cardSummaries.keys()].filter((k) => k.startsWith("u:")).map((k) => k.slice(2));
+  const [procs, users] = await Promise.all([
+    processIds.length
+      ? db.process.findMany({
+          where: { id: { in: processIds } },
+          select: { id: true, hospital: true, outro_hospital: true },
+        })
+      : Promise.resolve([]),
+    userIds.length
+      ? db.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, hospital: true, outro_hospital: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const hospitalByKey = new Map<string, string>();
+  const pickHospital = (h: string | null, outro: string | null) => {
+    const name = (h && !/^outro/i.test(h.trim()) ? h : outro || h)?.trim();
+    return name && name.length > 0 ? name : "Não informado";
+  };
+  for (const p of procs) hospitalByKey.set(`p:${p.id}`, pickHospital(p.hospital, p.outro_hospital));
+  for (const u of users) hospitalByKey.set(`u:${u.id}`, pickHospital(u.hospital, u.outro_hospital));
+
+  const hospAgg = new Map<string, { cards: number; done: number; discarded: number; returns: number; spanSum: number; spanN: number }>();
+  for (const c of cardSummaries.values()) {
+    const name = hospitalByKey.get(c.key) ?? "Não informado";
+    const h = hospAgg.get(name) ?? { cards: 0, done: 0, discarded: 0, returns: 0, spanSum: 0, spanN: 0 };
+    h.cards += 1;
+    if (c.done) h.done += 1;
+    if (c.discarded) h.discarded += 1;
+    if (c.hadReturn) h.returns += 1;
+    if (c.spanDays != null) { h.spanSum += c.spanDays; h.spanN += 1; }
+    hospAgg.set(name, h);
+  }
+  const hospitals: HospitalFlowStats[] = [...hospAgg.entries()]
+    .map(([hospital, h]) => ({
+      hospital,
+      cards: h.cards,
+      done: h.done,
+      discarded: h.discarded,
+      returns: h.returns,
+      returnPct: h.cards > 0 ? Math.round((h.returns / h.cards) * 100) : 0,
+      discardPct: h.cards > 0 ? Math.round((h.discarded / h.cards) * 100) : 0,
+      avgDays: h.spanN > 0 ? round1(h.spanSum / h.spanN) : null,
+    }))
+    .sort((a, b) => b.cards - a.cards)
+    .slice(0, 60);
 
   return {
     dwell,
@@ -330,6 +500,9 @@ export async function getKanbanFlowAnalytics(fromISO: string, toISO: string): Pr
     },
     discard,
     totalTime,
+    throughput,
+    weekly,
+    hospitals,
     totalMoves: logs.length,
   };
 }

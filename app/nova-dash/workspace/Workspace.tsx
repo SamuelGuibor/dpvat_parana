@@ -9,9 +9,7 @@ import { countPendingReviews } from '@/app/_actions/whatsapp/reviews';
 import { ManagerDashboard } from './manager/ManagerDashboard';
 import { CostsPanel } from './costs/CostsPanel';
 import { NumbersPanel } from './numbers/NumbersPanel';
-import { getChatbotDashboardAccess } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
-import { ContratadosPanel } from './botconversa/ContratadosPanel';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { isManager } from '@/app/_shared/lib/managers';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
@@ -30,13 +28,8 @@ export function Workspace() {
   const canViewCosts = !permsLoading && perms.view_costs;
   const canManageNumbers = !permsLoading && perms.manage_team;
 
-  // Desempenho do Chatbot: allowlist própria (mais sensível que a visão do
-  // gestor — inclui gasto de IA), resolvida no servidor.
-  const [canViewChatbot, setCanViewChatbot] = useState(false);
-  useEffect(() => {
-    getChatbotDashboardAccess().then(setCanViewChatbot).catch(() => setCanViewChatbot(false));
-  }, []);
-
+  // A aba Chatbot do dashboard resolve a própria allowlist na carga única
+  // (get-strategic-dashboard) — nada a pré-buscar aqui.
   const [section, setSection] = useState<WorkspaceSection>('meu-espaco');
 
   // Badge da Revisão da IA: contagem leve, só para quem tem a permissão.
@@ -72,7 +65,6 @@ export function Workspace() {
     || (section === 'revisao-ia' && !canReviewAi)
     || (section === 'custos' && !canViewCosts)
     || (section === 'numeros' && !canManageNumbers)
-    || (section === 'contratados' && !manager)
       ? 'meu-espaco'
       : section;
 
@@ -84,11 +76,10 @@ export function Workspace() {
         {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
         {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
         {effective === 'revisao-ia' && <div className="h-full p-2 sm:p-4"><AIReview /></div>}
-        {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard showChatbot={canViewChatbot} /></div>}
+        {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
         {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
         {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
-        {effective === 'contratados' && <div className="h-full overflow-y-auto"><ContratadosPanel /></div>}
       </div>
     </div>
   );

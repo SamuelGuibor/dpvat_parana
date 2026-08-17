@@ -4,19 +4,29 @@ import { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { ChatbotDashboard } from '../manager/ChatbotDashboard';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
+import type { ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
 
-// "Desempenho do Chatbot" como seção própria da sidebar do workspace, com
-// seletor de número no topo (multi-tenant): uma tela só, N números — a
-// sidebar não cresce quando um número novo é cadastrado.
-// "Todos os números" (null) mantém a visão agregada de sempre.
+// "Desempenho do Chatbot" como aba do dashboard, com seletor de número no
+// topo (multi-tenant): uma tela só, N números — a sidebar não cresce quando
+// um número novo é cadastrado. "Todos os números" (null) mantém a visão
+// agregada de sempre.
+// initialAnalytics/numberOptions chegam da carga única do dashboard
+// (get-strategic-dashboard) — só há fetch novo quando o usuário troca o
+// período ou o número.
 
-export function ChatbotPanel() {
-  const [options, setOptions] = useState<{ id: string; label: string; displayPhone: string | null }[]>([]);
+interface NumberOption { id: string; label: string; displayPhone: string | null }
+
+export function ChatbotPanel({ initialAnalytics = null, numberOptions }: {
+  initialAnalytics?: ChatbotAnalytics | null;
+  numberOptions?: NumberOption[];
+}) {
+  const [options, setOptions] = useState<NumberOption[]>(numberOptions ?? []);
   const [numberId, setNumberId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (numberOptions) return;
     listWaNumberOptions().then(setOptions).catch(() => setOptions([]));
-  }, []);
+  }, [numberOptions]);
 
   return (
     <div className="p-4">
@@ -39,7 +49,7 @@ export function ChatbotPanel() {
           </select>
         )}
       </div>
-      <ChatbotDashboard numberId={numberId} />
+      <ChatbotDashboard numberId={numberId} initialData={initialAnalytics} />
     </div>
   );
 }

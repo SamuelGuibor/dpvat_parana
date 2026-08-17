@@ -12,9 +12,8 @@ interface KanbanItem {
     nome: string;
     telefone: string;
     evento: string;
-    createdAt: string;
-    updatedAt: string;
-    status: string;
+    createdAt: string | null;
+    updatedAt: string | null;
 }
 
 const STAGES = [
@@ -51,7 +50,8 @@ const STAGE_COLORS = [
 ];
 
 
-function formatDate(date: string) {
+function formatDate(date: string | null) {
+    if (!date) return '—';
     return new Date(date).toLocaleDateString('pt-BR');
 }
 

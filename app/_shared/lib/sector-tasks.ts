@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { db } from "@/app/_shared/lib/prisma";
 import { recordMentions } from "@/app/_shared/lib/mention-inbox";
 
@@ -79,6 +80,9 @@ export async function recordSectorTask({
       // a tarefa continua agrupada no lugar certo da caixa.
       sectorId: sector?.id ?? null,
       sectorName: sector?.name ?? null,
+      // A tarefa é UMA só: as cópias compartilham o groupId e quem der vazão
+      // primeiro resolve para o setor inteiro (mention-actions.ts).
+      groupId: randomUUID(),
     });
   } catch (err) {
     console.error(`[SECTOR TASKS] Falha ao criar a tarefa "${kind}":`, err);

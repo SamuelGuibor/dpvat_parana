@@ -46,6 +46,8 @@ interface RecordMentionsInput {
   /** Tarefas por setor: snapshot do setor responsável (sector-tasks.ts). */
   sectorId?: string | null;
   sectorName?: string | null;
+  /** Tarefa de grupo: cópias com o mesmo groupId mudam de status juntas. */
+  groupId?: string | null;
 }
 
 /**
@@ -66,6 +68,7 @@ export async function recordMentions({
   channelId = null,
   sectorId = null,
   sectorName = null,
+  groupId = null,
 }: RecordMentionsInput): Promise<void> {
   const unique = [...new Set(recipientIds.filter(Boolean))];
   if (unique.length === 0) return;
@@ -88,6 +91,7 @@ export async function recordMentions({
         channelId,
         sectorId,
         sectorName,
+        groupId,
       })),
     });
   } catch (err) {

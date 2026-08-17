@@ -4,28 +4,11 @@ import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { brStartOfDay, brStartOfDaysAgo, brDayKey, brDayKeySeries, brLabelFromKey } from '@/app/_shared/utils/date-br';
 
-// BotConversa no CRM: aba "Contratados" do Espaço de Trabalho (lista de
-// fechamentos) + bloco "Campanhas da Meta" dentro da Origem dos leads do
+// BotConversa no CRM: bloco "Campanhas da Meta" dentro da Origem dos leads do
 // dashboard do chatbot (leads/dia e qualificação vêm da tabela botconversa,
-// alimentada pelo webhook /api/botconversa/contratado).
-
-export interface Contratado {
-  id: string;
-  nome: string;
-  telefone: string;
-  createdAt: string | null;
-}
-
-/** Todos os leads fechados como "contratado" no BotConversa. */
-export async function listContratados(): Promise<Contratado[]> {
-  await requireTeam();
-  const rows = await db.botconversa.findMany({
-    where: { evento: 'contratado' },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, nome: true, telefone: true, createdAt: true },
-  });
-  return rows.map((r) => ({ ...r, createdAt: r.createdAt?.toISOString() ?? null }));
-}
+// alimentada pelo webhook /api/botconversa/contratado). A antiga aba
+// "Contratados" saiu do Espaço de Trabalho: cada fechamento vira tarefa na
+// Caixa de Menções (sector-tasks.ts).
 
 // ---------------------------------------------------------------------------
 // Campanhas da Meta (conta act_6242597975853314 "Paraná DPVAT") + leads do

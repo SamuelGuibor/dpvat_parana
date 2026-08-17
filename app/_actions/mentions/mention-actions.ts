@@ -20,6 +20,8 @@ export interface MentionDTO {
   /** Tarefas por setor: setor responsável no momento da criação. */
   sectorId: string | null;
   sectorName: string | null;
+  /** Tarefa de grupo: mudar o status aplica pra todas as cópias do setor. */
+  groupId: string | null;
   commentId: string | null;
   /** Card do tipo "usuário" (lead) — usado para abrir o card no Kanban. */
   userId: string | null;
@@ -133,6 +135,7 @@ async function enrich(rows: MentionRow[]): Promise<MentionDTO[]> {
       excerpt: r.excerpt,
       sectorId: r.sectorId,
       sectorName: r.sectorName,
+      groupId: r.groupId,
       commentId: r.commentId,
       userId: r.userId,
       processId: r.processId,
@@ -162,14 +165,26 @@ export async function countPendingMentions(): Promise<number> {
 /**
  * Muda o estado de uma menção. PENDING → ACK (tomei ciência) → DONE (resolvi);
  * voltar para PENDING limpa as duas datas.
+ *
+ * Tarefa de SETOR (groupId preenchido): o estado é do grupo — quem dá vazão
+ * primeiro resolve para todas as cópias do setor (e reabrir reabre pra todos).
  */
 export async function setMentionStatus(id: string, status: MentionStatus): Promise<void> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado');
 
   const now = new Date();
-  // updateMany (e não update) garante que ninguém mexe na menção de outra pessoa.
-  const where = { id, recipientId: session.user.id };
+  // A busca com recipientId garante que ninguém mexe na menção de outra pessoa
+  // (a propagação por groupId só acontece a partir de uma cópia SUA).
+  const mine = await db.mention.findFirst({
+    where: { id, recipientId: session.user.id },
+    select: { ackAt: true, groupId: true },
+  });
+  if (!mine) return;
+
+  const where = mine.groupId
+    ? { groupId: mine.groupId }
+    : { id, recipientId: session.user.id };
 
   if (status === 'PENDING') {
     await db.mention.updateMany({ where, data: { status, ackAt: null, doneAt: null } });
@@ -182,10 +197,9 @@ export async function setMentionStatus(id: string, status: MentionStatus): Promi
   }
 
   // Concluir direto (sem passar por "ciente") preenche o ackAt junto.
-  const current = await db.mention.findFirst({ where, select: { ackAt: true } });
   await db.mention.updateMany({
     where,
-    data: { status, ackAt: current?.ackAt ?? now, doneAt: now },
+    data: { status, ackAt: mine.ackAt ?? now, doneAt: now },
   });
 }
 
@@ -195,9 +209,24 @@ export async function setManyMentionsStatus(ids: string[], status: MentionStatus
   if (!session?.user?.id) throw new Error('Não autenticado');
   if (!ids.length) return;
 
+  // Tarefas de setor no lote propagam pro grupo inteiro (mesma regra do
+  // setMentionStatus); as menções individuais seguem só na cópia da pessoa.
+  const rows = await db.mention.findMany({
+    where: { id: { in: ids.slice(0, 500) }, recipientId: session.user.id },
+    select: { id: true, groupId: true },
+  });
+  if (!rows.length) return;
+  const groupIds = [...new Set(rows.map((r) => r.groupId).filter((g): g is string => !!g))];
+  const plainIds = rows.filter((r) => !r.groupId).map((r) => r.id);
+
   const now = new Date();
   await db.mention.updateMany({
-    where: { id: { in: ids.slice(0, 500) }, recipientId: session.user.id },
+    where: {
+      OR: [
+        ...(plainIds.length ? [{ id: { in: plainIds } }] : []),
+        ...(groupIds.length ? [{ groupId: { in: groupIds } }] : []),
+      ],
+    },
     data:
       status === 'DONE'
         ? { status, doneAt: now, ackAt: now }

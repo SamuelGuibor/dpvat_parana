@@ -172,16 +172,18 @@ function RowActions({
       />
     ) : null;
   }
+  // Tarefa de setor: qualquer ação vale pra cópia de todo mundo do setor.
+  const forAll = m.groupId ? ' (vale pro setor todo)' : '';
   return (
     <>
       {m.status === 'PENDING' && (
-        <IconAction icon={Eye} title="Tomei ciência" tone="sky" onClick={() => onStatus(m.id, 'ACK')} />
+        <IconAction icon={Eye} title={`Tomei ciência${forAll}`} tone="sky" onClick={() => onStatus(m.id, 'ACK')} />
       )}
       {m.status === 'ACK' && (
-        <IconAction icon={CheckCheck} title="Concluir" tone="emerald" onClick={() => onStatus(m.id, 'DONE')} />
+        <IconAction icon={CheckCheck} title={`Concluir${forAll}`} tone="emerald" onClick={() => onStatus(m.id, 'DONE')} />
       )}
       {m.status === 'DONE' && (
-        <IconAction icon={RotateCcw} title="Reabrir" onClick={() => onStatus(m.id, 'PENDING')} />
+        <IconAction icon={RotateCcw} title={`Reabrir${forAll}`} onClick={() => onStatus(m.id, 'PENDING')} />
       )}
       {canOpen && (
         <IconAction
@@ -230,7 +232,7 @@ function MentionRow({
       ) : (
         <button
           type="button"
-          title={done ? 'Reabrir' : 'Marcar como concluída'}
+          title={(done ? 'Reabrir' : 'Marcar como concluída') + (m.groupId ? ' (vale pro setor todo)' : '')}
           aria-label={done ? 'Reabrir menção' : 'Marcar menção como concluída'}
           onClick={(e) => { e.stopPropagation(); onStatus(m.id, done ? 'PENDING' : 'DONE'); }}
           className="mt-0.5 shrink-0 md:mt-0"
@@ -509,8 +511,11 @@ export function MentionsInbox() {
     try {
       await setMentionStatus(id, status);
       notifyMentionsChanged();
-      if (status === 'DONE') toast.success('Tarefa concluída ✅');
-      else if (status === 'ACK') toast.success('Marcada como ciente 👀');
+      // Tarefa de setor: a mudança vale pra cópia de todo mundo do setor.
+      const isGroup = !!before.find((m) => m.id === id)?.groupId;
+      if (status === 'DONE') toast.success(isGroup ? 'Tarefa concluída para o setor todo ✅' : 'Tarefa concluída ✅');
+      else if (status === 'ACK') toast.success(isGroup ? 'Ciente — aplicado ao setor todo 👀' : 'Marcada como ciente 👀');
+      else if (isGroup) toast.info('Tarefa reaberta para o setor todo.');
     } catch (err) {
       console.error(err);
       setItems(before);
