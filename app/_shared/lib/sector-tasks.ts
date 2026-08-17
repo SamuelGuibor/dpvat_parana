@@ -21,9 +21,9 @@ export type SectorTaskKind = "wa_lead_qualificado" | "botconversa_contratado";
 
 const SECTOR_TASK_ROUTES: Record<SectorTaskKind, { sectorSlug: string }> = {
   // Lead qualificado pela IA no WhatsApp → criar card + enviar contrato.
-  wa_lead_qualificado: { sectorSlug: "fechamentos" },
+  wa_lead_qualificado: { sectorSlug: "comercial" },
   // Webhook do BotConversa com evento "contratado".
-  botconversa_contratado: { sectorSlug: "fechamentos" },
+  botconversa_contratado: { sectorSlug: "comercial" },
 };
 
 const FALLBACK_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
