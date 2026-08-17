@@ -168,6 +168,11 @@ interface BotDecision {
   // Tokens gastos na chamada ao Claude (o microserviço devolve; alimenta o
   // custo semanal/mensal no dashboard do chatbot).
   usage?: BotUsage | null;
+  // Transcrições dos áudios do lote, feitas pelo micro na hora da decisão
+  // ({ id = WhatsAppMessage.id, transcript }). Persistimos em
+  // WhatsAppMessage.transcript: sem isso o conteúdo do áudio sumia do
+  // histórico dos turnos seguintes (a IA via só "[anexo: áudio]").
+  transcripts?: { id: string; transcript: string }[] | null;
 }
 
 function sumUsage(a?: BotUsage | null, b?: BotUsage | null): BotUsage | null {
@@ -887,7 +892,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       },
       orderBy: { createdAt: "asc" },
       take: 12,
-      select: { id: true, body: true, mediaKey: true, mediaType: true },
+      select: { id: true, body: true, mediaKey: true, mediaType: true, transcript: true },
     });
     const burstIds = burst.length ? burst.map((b) => b.id) : [message.id];
     let clientText = (burst.length ? burst.map((b) => b.body?.trim()).filter(Boolean) : [message.body?.trim()])
@@ -902,36 +907,41 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     // código (decisão de 25/07/2026; antes, qualquer arquivo não-áudio
     // transferia pra fila na hora, atropelando as regras aprendidas).
     //
-    // O anexo vem do LOTE, não da mensagem que disparou: quem manda a foto do
-    // RG e emenda um "bom dia" faz o TEXTO ganhar o debounce, e a foto — que
-    // tem `body` vazio — sumia do turno inteiro. O bot então repetia o pedido
-    // do documento que já estava na tela do cliente (caso Zico, 15/08/2026).
+    // Os anexos vêm do LOTE, não da mensagem que disparou: quem manda a foto
+    // do RG e emenda um "bom dia" faz o TEXTO ganhar o debounce, e a foto —
+    // que tem `body` vazio — sumia do turno inteiro (caso Zico, 15/08/2026).
+    //
+    // 16/08/2026 (caso Rose): o lote inteiro vai pro cérebro em `mediaList` —
+    // antes só o ÚLTIMO arquivo era aberto e uma nota mandava "considerar os
+    // outros como RECEBIDOS", o que fazia a IA confirmar RG que nunca veio.
+    // O micro abre cada imagem/PDF, transcreve cada áudio e declara como NÃO
+    // LIDO o que não conseguiu abrir. `media` (último anexo) continua sendo
+    // enviado só por compatibilidade com um micro antigo.
     const attachments = (burst.length ? burst : [message]).filter(
       (m) => m.mediaKey && m.mediaType,
     );
-    // O cérebro ainda lê UM anexo por chamada: manda o mais recente do lote e
-    // avisa por texto quando vieram vários (RG frente e verso é o caso comum).
-    const attachment = attachments.at(-1) ?? null;
-    let media: { url: string; mimeType: string } | null = null;
-    if (attachment?.mediaKey && attachment.mediaType) {
+    const mediaList: { id: string; url: string; mimeType: string }[] = [];
+    for (const m of attachments) {
+      if (!m.mediaKey || !m.mediaType) continue;
+      // Áudio já transcrito (invocação anterior deste mesmo lote que desistiu
+      // na corrida, ou botão "transcrever"): entra como texto direto e não
+      // paga transcrição de novo no micro.
+      const saved = (m as { transcript?: string | null }).transcript?.trim();
+      if (m.mediaType.startsWith("audio/") && saved) {
+        clientText = [clientText, `[áudio transcrito] ${saved}`].filter(Boolean).join("\n");
+        continue;
+      }
       const url = await getSignedUrl(
         s3,
-        new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: attachment.mediaKey }),
+        new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: m.mediaKey }),
         { expiresIn: 600 },
       );
-      media = { url, mimeType: attachment.mediaType };
+      mediaList.push({ id: m.id, url, mimeType: m.mediaType });
     }
-    if (attachments.length > 1) {
-      clientText = [
-        clientText,
-        `[NOTA DO SISTEMA: o cliente enviou ${attachments.length} arquivos seguidos nesta mesma ` +
-          "leva; você só consegue abrir o último. Considere os outros como RECEBIDOS (podem ser " +
-          "frente e verso do mesmo documento) e NÃO peça de novo — se precisar conferir, o " +
-          "atendente humano vê todos.]",
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-    }
+    const lastMedia = mediaList.at(-1) ?? null;
+    const media: { url: string; mimeType: string } | null = lastMedia
+      ? { url: lastMedia.url, mimeType: lastMedia.mimeType }
+      : null;
 
     // ---- Mensagem que CRUZOU com a última resposta do bot ------------------
     // O cliente enviou esta mensagem ANTES (ou no exato instante) de a nossa
@@ -985,6 +995,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         .filter((h) => h.text),
       message: crossedWithLastOut ? `${clientText}\n\n${crossNote}` : clientText,
       media,
+      // Lote completo de anexos ({ id, url, mimeType }) — o micro novo abre
+      // todos; um micro antigo simplesmente ignora este campo e usa `media`.
+      mediaList: mediaList.length ? mediaList : undefined,
       memory: conversation?.botMemory ?? null,
       state: conversation?.botState ?? null,
       failCount: conversation?.botFailCount ?? 0,
@@ -1033,6 +1046,26 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       } catch {
         // Mantém a decisão vazia — cai no handoff do default como antes.
       }
+    }
+
+    // ---- Persiste transcrições dos áudios do lote (16/08/2026) ------------
+    // O micro transcreve cada áudio na hora da decisão e devolve o texto com o
+    // id da mensagem. Gravar em WhatsAppMessage.transcript faz o conteúdo
+    // aparecer no histórico dos próximos turnos (antes a IA via só "[anexo:
+    // áudio]" e re-perguntava o que o cliente já tinha dito) e poupa o botão
+    // "transcrever" do inbox de pagar IA de novo. Roda ANTES da checagem de
+    // corrida: a transcrição pertence à mensagem, vale mesmo se esta invocação
+    // desistir de responder.
+    const validTranscriptIds = new Set([...burst.map((b) => b.id), message.id]);
+    const decisionTranscripts = (decision.transcripts ?? []).filter(
+      (t) => t?.id && t.transcript?.trim() && validTranscriptIds.has(t.id),
+    );
+    if (decisionTranscripts.length) {
+      await Promise.all(decisionTranscripts.map((t) =>
+        db.whatsAppMessage
+          .update({ where: { id: t.id }, data: { transcript: t.transcript.trim() } })
+          .catch((err) => console.error("[WHATSAPP BOT] Falha ao salvar transcrição:", t.id, err)),
+      ));
     }
 
     // ---- Corrida pós-cérebro (30/07/2026) ---------------------------------

@@ -3,6 +3,7 @@
 import { db } from '@/app/_shared/lib/prisma';
 import { requirePermission } from '@/app/_shared/lib/permissions-server';
 import { readSnapshot, type SnapshotTurn } from '@/app/_shared/lib/whatsapp/brain';
+import { buildExampleExcerpt } from '@/app/_shared/lib/whatsapp/examples';
 import { extractLesson, buildPlaybookDraft, publishPlaybook } from '@/app/_shared/lib/whatsapp/distill';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { REVIEW_VERDICTS, sanitizeErrorTags, type ReviewVerdict } from '@/app/_shared/lib/whatsapp/review-tags';
@@ -160,7 +161,7 @@ export async function submitReview(
 
   const review = await db.whatsAppReview.findUnique({
     where: { id },
-    select: { contactId: true, contactName: true, contactPhone: true, distilledAt: true },
+    select: { contactId: true, contactName: true, contactPhone: true, distilledAt: true, s3Key: true },
   });
   if (!review) throw new Error('Conversa não encontrada na fila.');
 
@@ -191,6 +192,20 @@ export async function submitReview(
     contactPhone: review.contactPhone,
     metadata: { verdict: input.verdict, errorTags: input.errorTags ?? [] },
   });
+
+  // Exemplo pro cérebro (16/08/2026): gera o trecho condensado e anonimizado
+  // da conversa AGORA — as revisões julgadas mais recentes viram o bloco
+  // "EXEMPLOS REVISADOS" do system prompt do bot. Best-effort: sem trecho a
+  // review só não vira exemplo, o julgamento continua salvo.
+  try {
+    const snapshot = await readSnapshot(review.s3Key);
+    const excerpt = buildExampleExcerpt(snapshot?.messages, review.contactName);
+    if (excerpt) {
+      await db.whatsAppReview.update({ where: { id }, data: { exampleExcerpt: excerpt } });
+    }
+  } catch (err) {
+    console.error('[REVIEW] Falha ao gerar exemplo pro cérebro (seguindo sem):', id, err);
+  }
 
   // Destila a lição AGORA (não em background) para a tela poder mostrar "a IA
   // entendeu assim" e você corrigir na hora se ela leu errado — uma lição

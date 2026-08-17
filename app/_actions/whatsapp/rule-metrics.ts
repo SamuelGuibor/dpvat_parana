@@ -305,7 +305,9 @@ export async function getRuleMetrics(): Promise<RuleMetricsPayload> {
         },
       })
     : 0;
-  const byAttempt = ['T1', 'T2', 'T3'].map((attempt) => ({
+  // 16/08/2026: o ciclo passou de 3 pra 5 tentativas (RECOVERY_MAX_ATTEMPTS)
+  // em 13/08, mas o painel seguia agregando só T1–T3 — T4/T5 saíam da conta.
+  const byAttempt = ['T1', 'T2', 'T3', 'T4', 'T5'].map((attempt) => ({
     attempt,
     sent: attempts.filter((e) => e.ruleId === attempt).length,
     recovered: recoveredEvents.filter((e) => e.ruleId === attempt).length,

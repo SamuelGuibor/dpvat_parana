@@ -26,9 +26,27 @@ const NUDGE_AFTER_MS = 30 * 60_000; // 30min sem resposta → pergunta
 // +60min (era +10min) sem resposta → encerra. O ritmo antigo mandava nudge e
 // despedida em ~40min e o lead "sumia" da triagem rápido demais (11/08/2026).
 const CLOSE_AFTER_MS = 60 * 60_000;
-const QUEUE_SLA_MS = 10 * 60_000;   // 10min na fila sem atendente → alerta
-const QUEUE_REALERT_MS = 60 * 60_000; // repete o alerta a cada 1h
+const QUEUE_SLA_MS = 10 * 60_000;   // 10min na fila sem atendente → 1º alerta
+// ESCALONAMENTO por degraus (16/08/2026): antes o alerta repetia DE HORA EM
+// HORA para a equipe inteira enquanto ninguém assumisse — foram 24.612
+// notificações em 7 dias (a MARILENE sozinha gerou 1.224) e o sino virou
+// ruído branco que ninguém lê. Agora cada conversa dispara UM alerta por
+// degrau ultrapassado e para: 4 avisos no máximo por estadia na fila.
+const QUEUE_ALERT_STEPS_MS = [10 * 60_000, 60 * 60_000, 4 * 60 * 60_000, 24 * 60 * 60_000];
 const HUMAN_SLA_MS = 30 * 60_000;   // 30min sem resposta do atendente → cobra o dono
+const HUMAN_ALERT_STEPS_MS = [30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000];
+
+/**
+ * Degrau de alerta devido: o MAIOR degrau já ultrapassado desde `baseMs`, ou
+ * null se nenhum. Alerta dispara quando o último alerta (alertAt) é anterior
+ * ao degrau — cada degrau notifica uma única vez, sem re-alertas periódicos.
+ * alertAt de uma estadia ANTIGA (menor que baseMs) não bloqueia nada.
+ */
+function dueAlertStep(steps: number[], baseMs: number, now: number, alertAt: Date | null): number | null {
+  const due = [...steps].reverse().find((s) => baseMs + s <= now);
+  if (due == null) return null;
+  return !alertAt || alertAt.getTime() < baseMs + due ? due : null;
+}
 // Mensagem "sent" que nunca virou "delivered": quando um número BLOQUEIA a
 // empresa a Meta nem manda status "failed" — a mensagem só fica travada no
 // tique único. 12h+ nesse estado → alerta de verificação pra equipe.
@@ -835,18 +853,19 @@ export async function runSlaPhase(): Promise<CronResults> {
 
   // ---- 3. SLA da fila de espera ---------------------------------------------
   await timed('sla-fila', async () => {
-    const waitingTooLong = await db.whatsAppConversation.findMany({
+    const candidates = await db.whatsAppConversation.findMany({
       where: {
         status: 'queued',
         queuedAt: { not: null, lte: new Date(now - QUEUE_SLA_MS) },
-        OR: [
-          { queueAlertAt: null },
-          { queueAlertAt: { lte: new Date(now - QUEUE_REALERT_MS) } },
-        ],
       },
       include: { contact: true },
-      take: 25,
+      take: 50,
     });
+    // Um alerta por degrau (10min/1h/4h/24h) por estadia na fila — quem já foi
+    // alertado no degrau atual fica em silêncio até cruzar o próximo.
+    const waitingTooLong = candidates
+      .filter((conv) => dueAlertStep(QUEUE_ALERT_STEPS_MS, conv.queuedAt!.getTime(), now, conv.queueAlertAt) != null)
+      .slice(0, 25);
 
     if (!waitingTooLong.length) return;
     const recipients = await whatsappRecipients().catch(() => [] as string[]);
@@ -857,6 +876,8 @@ export async function runSlaPhase(): Promise<CronResults> {
         const label = conv.contact.name ?? `+${conv.contact.phone}`;
         const waitingMin = conv.queuedAt ? Math.round((now - conv.queuedAt.getTime()) / 60_000) : 0;
         const urgentPrefix = conv.urgent ? '🔴 URGENTE — ' : '';
+        const stepIdx = QUEUE_ALERT_STEPS_MS.filter((s) => conv.queuedAt!.getTime() + s <= now).length;
+        const stepSuffix = ` (aviso ${stepIdx}/${QUEUE_ALERT_STEPS_MS.length}${stepIdx >= QUEUE_ALERT_STEPS_MS.length ? ' — último' : ''})`;
 
         for (const id of recipients) {
           await db.notification.create({
@@ -865,7 +886,7 @@ export async function runSlaPhase(): Promise<CronResults> {
               authorId: 'whatsapp-bot',
               authorName: '🤖 Bot WhatsApp',
               targetName: label,
-              message: `${urgentPrefix}WhatsApp: ${label} está há ${waitingMin} min na fila sem atendimento!`,
+              message: `${urgentPrefix}WhatsApp: ${label} está há ${waitingMin} min na fila sem atendimento!${stepSuffix}`,
               contactId: conv.contactId,
             },
           });
@@ -898,20 +919,21 @@ export async function runSlaPhase(): Promise<CronResults> {
 
   // ---- 3b. SLA de atendimento HUMANO ----------------------------------------
   await timed('sla-humano', async () => {
-    const humanStalled = isBusinessHours(now)
+    const stalledCandidates = isBusinessHours(now)
       ? await db.whatsAppConversation.findMany({
           where: {
             status: 'human',
             lastMessageAt: { lte: new Date(now - HUMAN_SLA_MS) },
-            OR: [
-              { queueAlertAt: null },
-              { queueAlertAt: { lte: new Date(now - QUEUE_REALERT_MS) } },
-            ],
           },
           include: { contact: true },
-          take: 25,
+          take: 50,
         })
       : [];
+    // Mesmo escalonamento por degraus da fila (30min/2h/12h): a mensagem nova
+    // do cliente move lastMessageAt e re-arma os degraus naturalmente.
+    const humanStalled = stalledCandidates
+      .filter((conv) => dueAlertStep(HUMAN_ALERT_STEPS_MS, conv.lastMessageAt.getTime(), now, conv.queueAlertAt) != null)
+      .slice(0, 25);
 
     for (const conv of humanStalled) {
       try {

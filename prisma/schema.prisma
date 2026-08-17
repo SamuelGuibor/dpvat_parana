@@ -847,6 +847,12 @@ model WhatsAppReview {
   // 100% manual — o humano continua sendo quem decide.
   aiSuggestedVerdict String?
   aiSuggestedReason  String?
+  // ---- Exemplo pro cérebro (16/08/2026) ------------------------------------
+  // Trecho condensado e ANONIMIZADO da conversa, gerado no momento do
+  // julgamento. As revisões julgadas mais recentes viram o bloco "EXEMPLOS
+  // REVISADOS PELA EQUIPE" do system prompt do bot — few-shot com atendimentos
+  // reais aprovados/reprovados. Null = não entra como exemplo.
+  exampleExcerpt String?
   // Marca quando esta review já foi absorvida por uma versão do playbook.
   distilledAt    DateTime?
   createdAt      DateTime  @default(now())

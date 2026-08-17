@@ -4,6 +4,7 @@ import {
   renderInstructions,
   type InstructionSection,
 } from '@/app/_shared/lib/whatsapp/instructions';
+import { getBrainExamples } from '@/app/_shared/lib/whatsapp/examples';
 
 // O CÉREBRO, servido para o microserviço.
 //
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [instructions, playbook] = await Promise.all([
+    const [instructions, playbook, examples] = await Promise.all([
       db.whatsAppInstructions.findFirst({
         where: { status: 'publicado' },
         orderBy: { version: 'desc' },
@@ -39,6 +40,10 @@ export async function GET(req: NextRequest) {
         where: { status: 'publicado' },
         orderBy: { version: 'desc' },
       }),
+      // Exemplos revisados pela equipe (few-shot). Determinístico: o bloco só
+      // muda quando uma review nova é julgada — mesma regra de estabilidade de
+      // bytes do playbook.
+      getBrainExamples().catch(() => ({ count: 0, rendered: '' })),
     ]);
 
     // Sem instruções publicadas devolvemos null (e NÃO um texto vazio): é o
@@ -63,6 +68,9 @@ export async function GET(req: NextRequest) {
             rulesCount: playbook.rulesCount,
           }
         : null,
+      // Bloco pronto de exemplos ("" quando não há nenhum julgado) — o micro
+      // só concatena depois do playbook, dentro do trecho cacheado.
+      examples: examples.count ? { count: examples.count, rendered: examples.rendered } : null,
     });
   } catch (err) {
     console.error('[BRAIN PROMPT] Falha ao servir o prompt:', err);
