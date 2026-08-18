@@ -331,19 +331,39 @@ model Label {
 }
 
 model Automation {
-  id             String   @id @default(cuid())
+  id             String            @id @default(cuid())
   name           String
-  isActive       Boolean  @default(true)
+  // Categoria/setor livre pra organizar a lista (ex.: "Roteiro", "WhatsApp",
+  // "Prazos"). Sem valor fixo no schema — o filtro na UI é sobre os valores
+  // já usados.
+  category       String?
+  isActive       Boolean           @default(true)
   triggerLabelId String
-  cardType       String   @default("both")
-  conditionLogic String   @default("AND")
-  conditions     Json     @default("[]")
-  actions        Json     @default("[]")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  triggerLabel   Label    @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
+  cardType       String            @default("both")
+  conditionLogic String            @default("AND")
+  conditions     Json              @default("[]")
+  actions        Json              @default("[]")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  triggerLabel   Label             @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
+  fires          AutomationFire[]
 
   @@map("automations")
+}
+
+// Marca que uma automação com condição baseada em tempo (tempo na coluna /
+// data de vencimento) já disparou para um card — essas condições não nascem
+// de um movimento de card, então o cron de verificação (time-check) precisa
+// de um jeito de não repetir a ação a cada rodada.
+model AutomationFire {
+  id           String     @id @default(cuid())
+  automationId String
+  cardId       String
+  firedAt      DateTime   @default(now())
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, cardId])
+  @@map("automation_fires")
 }
 
 model Comment {

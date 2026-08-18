@@ -14,7 +14,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, triggerLabelId, cardType, conditionLogic, conditions, actions } = body;
+    const { name, category, triggerLabelId, cardType, conditionLogic, conditions, actions } = body;
 
     if (!name || !triggerLabelId) {
       return NextResponse.json({ error: "Nome e etiqueta são obrigatórios" }, { status: 400 });
@@ -22,6 +22,7 @@ export async function POST(req: Request) {
 
     const automation = await createAutomation({
       name,
+      category: category ?? null,
       triggerLabelId,
       cardType: cardType ?? "both",
       conditionLogic: conditionLogic ?? "AND",

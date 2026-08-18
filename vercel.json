@@ -17,6 +17,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/automations/cron/time-check",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/documents/trash/purge",
       "schedule": "0 6 * * *"
     }

@@ -5,11 +5,17 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { db } from "./prisma";
-import { fetchAutomationsByLabel, AutomationCondition, AutomationAction } from "./db/automations";
+import {
+  fetchAutomationsByLabel,
+  fetchTimeConditionAutomations,
+  AutomationCondition,
+  AutomationAction,
+} from "./db/automations";
 import { sendSystemWhatsApp } from "./whatsapp/outbound";
 import { createLog } from "./log";
 import { runAiAudit } from "./ai-audit";
 import { appendSheetRow } from "./google-sheets";
+import { brDateVars } from "../utils/date-br";
 
 // Limite de movimentos encadeados por ação "move" (coluna A move pra B, que
 // move pra C...). Evita loop infinito entre automações que se apontam.
@@ -39,11 +45,18 @@ function getVars(card: CardData): Record<string, string> {
   return out;
 }
 
+// Dias corridos entre duas datas (arredondado, ignora hora do dia).
+function daysBetween(a: Date, b: Date): number {
+  const MS_DAY = 86_400_000;
+  return Math.floor((a.getTime() - b.getTime()) / MS_DAY);
+}
+
 function evalConditions(
   conds: AutomationCondition[],
   logic: string,
   card: CardData,
-  tagNames: string[]
+  tagNames: string[],
+  now: Date = new Date()
 ): boolean {
   if (conds.length === 0) return true;
   const normalizedTags = tagNames.map((t) => t.toLowerCase().trim());
@@ -61,6 +74,33 @@ function evalConditions(
         case "isNotEmpty":  return normalizedTags.length > 0;
         default:            return false;
       }
+    }
+    // Campo especial: tempo (dias) que o card está na coluna atual, medido
+    // a partir de statusStartedAt.
+    if (c.field === "__time_in_column__") {
+      const started = card.statusStartedAt;
+      if (!started) return false;
+      const days = daysBetween(now, new Date(started as any));
+      const threshold = Number(c.value);
+      if (Number.isNaN(threshold)) return false;
+      if (c.operator === "moreThanDays") return days >= threshold;
+      if (c.operator === "lessThanDays") return days < threshold;
+      return false;
+    }
+    // Campo especial: posição de hoje em relação a uma data do card
+    // (padrão afastadoAte) — value = nº de dias de folga da data.
+    if (c.field === "__due_date__") {
+      const dateField = c.dateField || "afastadoAte";
+      const due = card[dateField];
+      if (!due) return false;
+      const dueDate = new Date(due as any);
+      if (Number.isNaN(dueDate.getTime())) return false;
+      const daysUntil = daysBetween(dueDate, now) * -1; // positivo = falta X dias
+      const threshold = Number(c.value);
+      if (Number.isNaN(threshold)) return false;
+      if (c.operator === "beforeDueDate") return daysUntil >= 0 && daysUntil <= threshold;
+      if (c.operator === "afterDueDate") return daysUntil < 0 && Math.abs(daysUntil) >= threshold;
+      return false;
     }
     const fv = String(card[c.field] ?? "").toLowerCase().trim();
     switch (c.operator) {
@@ -98,6 +138,220 @@ async function processDocx(templateKey: string, vars: Record<string, string>): P
   });
   doc.render(vars);
   return doc.getZip().generate({ type: "nodebuffer" });
+}
+
+type ActionCtx = {
+  auto: { id: string; name: string };
+  cardId: string;
+  isProcess: boolean;
+  authorId: string;
+  authorName: string;
+  cardData: CardData;
+  vars: Record<string, string>;
+  safeName: string;
+  // Coluna em que o card está no momento (usada pra ação "move" não apontar
+  // pra ela mesma, e pra saber a partir de onde encadear).
+  currentLabelId: string;
+  // Profundidade do encadeamento de ações "move" (interno).
+  depth: number;
+};
+
+// Executa UMA ação de UMA automação para um card. Retorna "moved" quando a
+// ação foi um "move" bem-sucedido — o chamador deve parar o loop de ações
+// (e o de automações da coluna) nesse caso, pois o card já não está lá.
+async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<"moved" | void> {
+  const { auto, cardId, isProcess, authorId, authorName, cardData, vars, safeName, currentLabelId, depth } = ctx;
+
+  if (action.type === "comment" && action.templateText) {
+    await db.comment.create({
+      data: {
+        text: fillTemplate(action.templateText, vars),
+        authorId,
+        authorName: `🤖 Bot (Automação)`,
+        targetName: String(cardData.name ?? ""),
+        userId: isProcess ? null : cardId,
+        processId: isProcess ? cardId : null,
+      },
+    });
+  }
+
+  if (action.type === "whatsapp" && action.waText) {
+    const phone = String(cardData.telefone ?? cardData.telefone_secundario ?? "").trim();
+    if (!phone) {
+      console.warn(`[AUTOMATION] Card ${cardId} sem telefone — ação de WhatsApp pulada (auto ${auto.id}).`);
+    } else {
+      const result = await sendSystemWhatsApp({
+        phone,
+        clientName: String(cardData.name ?? "") || null,
+        text: fillTemplate(action.waText, vars),
+        templateName: action.waTemplateName || null,
+        templateVars: (action.waTemplateVars ?? []).map((v) => fillTemplate(v, vars)),
+        authorId,
+        authorName: `🤖 Bot (Automação: ${auto.name})`,
+        source: "automation",
+      });
+      if (!result.sent) {
+        console.warn(`[AUTOMATION] WhatsApp não enviado (auto ${auto.id}): ${result.reason}`);
+      }
+    }
+  }
+
+  // Registro em planilha do Google Sheets (ex.: base externa do Caique).
+  if (action.type === "sheets" && action.sheetsSpreadsheetId) {
+    try {
+      const columns = (action.sheetsColumns ?? []).filter((c) => typeof c === "string");
+      // Sem colunas configuradas: linha padrão com os dados principais.
+      const row = columns.length
+        ? columns.map((c) => fillTemplate(c, vars))
+        : [
+            new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+            vars.name ?? "",
+            vars.cpf ?? "",
+            vars.telefone ?? "",
+            vars.service ?? "",
+            String(cardData.role ?? ""),
+          ];
+      await appendSheetRow(action.sheetsSpreadsheetId, action.sheetsTab, row);
+      await createLog({
+        action: "sheets_export",
+        message: `registrou o card na planilha do Google (automação: ${auto.name})`,
+        authorId,
+        authorName: `🤖 Bot (Automação)`,
+        userId: isProcess ? null : cardId,
+        processId: isProcess ? cardId : null,
+        metadata: { automationId: auto.id, automationName: auto.name, tab: action.sheetsTab ?? null },
+      });
+    } catch (err) {
+      console.error(`[AUTOMATION] Erro ao registrar na planilha (auto ${auto.id}):`, err);
+    }
+  }
+
+  // Auditoria de documentos por IA (Claude). Roda inline (await) para
+  // garantir execução antes do fim da request; nunca lança.
+  if (action.type === "ai_audit" && action.auditType) {
+    await runAiAudit({
+      cardId,
+      isProcess,
+      auditType: action.auditType,
+      authorId,
+      authorName: `🤖 Bot (Automação: ${auto.name})`,
+      trigger: "automation",
+    });
+  }
+
+  // Adiciona uma tag ao card. O connect é idempotente (tag já presente
+  // não duplica); tag apagada é ignorada com aviso.
+  if (action.type === "add_tag" && action.tagId) {
+    try {
+      const tag = await db.cardTag.findUnique({ where: { id: action.tagId } });
+      if (!tag) {
+        console.warn(`[AUTOMATION] Tag não existe mais (auto ${auto.id}) — ação de tag ignorada.`);
+      } else {
+        const tagOp = { cardTags: { connect: { id: tag.id } } };
+        if (isProcess) {
+          await db.process.update({ where: { id: cardId }, data: tagOp });
+        } else {
+          await db.user.update({ where: { id: cardId }, data: tagOp });
+        }
+        await createLog({
+          action: "tag_add",
+          message: `adicionou a tag "${tag.name}" (automação: ${auto.name})`,
+          authorId,
+          authorName: `🤖 Bot (Automação)`,
+          userId: isProcess ? null : cardId,
+          processId: isProcess ? cardId : null,
+          metadata: { automationId: auto.id, automationName: auto.name, tagId: tag.id, tagName: tag.name },
+        });
+      }
+    } catch (err) {
+      console.error(`[AUTOMATION] Erro ao adicionar tag (auto ${auto.id}):`, err);
+    }
+  }
+
+  // Ação TERMINAL: move o card pra outra coluna e dispara as automações
+  // dela. Nada mais roda depois (nem as demais ações desta automação,
+  // nem outras automações da coluna antiga) — o card já não está aqui.
+  if (action.type === "move" && action.moveLabelId) {
+    if (depth >= MAX_MOVE_DEPTH) {
+      console.warn(`[AUTOMATION] Limite de movimentos encadeados atingido (auto ${auto.id}) — ação de mover ignorada.`);
+      return;
+    }
+    if (action.moveLabelId === currentLabelId) return; // já está na coluna de destino
+
+    const targetLabel = await db.label.findUnique({ where: { id: action.moveLabelId } });
+    if (!targetLabel) {
+      console.warn(`[AUTOMATION] Coluna de destino não existe mais (auto ${auto.id}) — ação de mover ignorada.`);
+      return;
+    }
+
+    const moveData = {
+      labelId: targetLabel.id,
+      role: targetLabel.name,
+      statusStartedAt: new Date(),
+    };
+    if (isProcess) {
+      await db.process.update({ where: { id: cardId }, data: moveData });
+    } else {
+      await db.user.update({ where: { id: cardId }, data: moveData });
+    }
+
+    await createLog({
+      action: "move",
+      message: `moveu de "${String(cardData.role ?? "?")}" para "${targetLabel.name}" (automação: ${auto.name})`,
+      authorId,
+      authorName: `🤖 Bot (Automação)`,
+      userId: isProcess ? null : cardId,
+      processId: isProcess ? cardId : null,
+      metadata: {
+        from: cardData.role ?? null,
+        to: targetLabel.name,
+        cardName: cardData.name ?? null,
+        service: cardData.service ?? null,
+        automationId: auto.id,
+        automationName: auto.name,
+      },
+    });
+
+    await runAutomations({
+      cardId,
+      isProcess,
+      newLabelId: targetLabel.id,
+      authorId,
+      authorName,
+      depth: depth + 1,
+    });
+    return "moved";
+  }
+
+  if (action.type === "file" && action.templateFileKey) {
+    try {
+      const buf = await processDocx(action.templateFileKey, vars);
+      const baseName = (action.templateFileName ?? "arquivo").replace(/\.docx$/i, "");
+      const outName = `${baseName}_${safeName}.docx`;
+      const key = `uploads/${isProcess ? "process" : "user"}_${cardId}/${Date.now()}-${outName}`;
+
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: key,
+          Body: buf,
+          ContentType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        })
+      );
+
+      await db.document.create({
+        data: {
+          userId: isProcess ? String((cardData as any).userId) : cardId,
+          processId: isProcess ? cardId : null,
+          key,
+          name: outName,
+        },
+      });
+    } catch (err) {
+      console.error(`[AUTOMATION] Erro ao processar arquivo (auto ${auto.id}):`, err);
+    }
+  }
 }
 
 export async function runAutomations({
@@ -142,7 +396,7 @@ export async function runAutomations({
       : [];
 
     const cardData = card as unknown as CardData;
-    const vars = getVars(cardData);
+    const vars = { ...getVars(cardData), ...brDateVars() };
     const safeName = String(cardData.name ?? "")
       .normalize("NFD")
       .replace(/[̀-ͯ]/g, "")
@@ -158,201 +412,104 @@ export async function runAutomations({
       if (!evalConditions(conds, auto.conditionLogic, cardData, tagNames)) continue;
 
       const actions = (auto.actions as unknown as AutomationAction[]) ?? [];
+      const ctx: ActionCtx = {
+        auto, cardId, isProcess, authorId, authorName, cardData, vars, safeName,
+        currentLabelId: newLabelId, depth,
+      };
 
       for (const action of actions) {
-        if (action.type === "comment" && action.templateText) {
-          await db.comment.create({
-            data: {
-              text: fillTemplate(action.templateText, vars),
-              authorId,
-              authorName: `🤖 Bot (Automação)`,
-              targetName: String(cardData.name ?? ""),
-              userId: isProcess ? null : cardId,
-              processId: isProcess ? cardId : null,
-            },
-          });
-        }
-
-        if (action.type === "whatsapp" && action.waText) {
-          const phone = String(cardData.telefone ?? cardData.telefone_secundario ?? "").trim();
-          if (!phone) {
-            console.warn(`[AUTOMATION] Card ${cardId} sem telefone — ação de WhatsApp pulada (auto ${auto.id}).`);
-          } else {
-            const result = await sendSystemWhatsApp({
-              phone,
-              clientName: String(cardData.name ?? "") || null,
-              text: fillTemplate(action.waText, vars),
-              templateName: action.waTemplateName || null,
-              templateVars: (action.waTemplateVars ?? []).map((v) => fillTemplate(v, vars)),
-              authorId,
-              authorName: `🤖 Bot (Automação: ${auto.name})`,
-              source: "automation",
-            });
-            if (!result.sent) {
-              console.warn(`[AUTOMATION] WhatsApp não enviado (auto ${auto.id}): ${result.reason}`);
-            }
-          }
-        }
-
-        // Registro em planilha do Google Sheets (ex.: base externa do Caique).
-        if (action.type === "sheets" && action.sheetsSpreadsheetId) {
-          try {
-            const columns = (action.sheetsColumns ?? []).filter((c) => typeof c === "string");
-            // Sem colunas configuradas: linha padrão com os dados principais.
-            const row = columns.length
-              ? columns.map((c) => fillTemplate(c, vars))
-              : [
-                  new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
-                  vars.name ?? "",
-                  vars.cpf ?? "",
-                  vars.telefone ?? "",
-                  vars.service ?? "",
-                  String(cardData.role ?? ""),
-                ];
-            await appendSheetRow(action.sheetsSpreadsheetId, action.sheetsTab, row);
-            await createLog({
-              action: "sheets_export",
-              message: `registrou o card na planilha do Google (automação: ${auto.name})`,
-              authorId,
-              authorName: `🤖 Bot (Automação)`,
-              userId: isProcess ? null : cardId,
-              processId: isProcess ? cardId : null,
-              metadata: { automationId: auto.id, automationName: auto.name, tab: action.sheetsTab ?? null },
-            });
-          } catch (err) {
-            console.error(`[AUTOMATION] Erro ao registrar na planilha (auto ${auto.id}):`, err);
-          }
-        }
-
-        // Auditoria de documentos por IA (Claude). Roda inline (await) para
-        // garantir execução antes do fim da request; nunca lança.
-        if (action.type === "ai_audit" && action.auditType) {
-          await runAiAudit({
-            cardId,
-            isProcess,
-            auditType: action.auditType,
-            authorId,
-            authorName: `🤖 Bot (Automação: ${auto.name})`,
-            trigger: "automation",
-          });
-        }
-
-        // Adiciona uma tag ao card. O connect é idempotente (tag já presente
-        // não duplica); tag apagada é ignorada com aviso.
-        if (action.type === "add_tag" && action.tagId) {
-          try {
-            const tag = await db.cardTag.findUnique({ where: { id: action.tagId } });
-            if (!tag) {
-              console.warn(`[AUTOMATION] Tag não existe mais (auto ${auto.id}) — ação de tag ignorada.`);
-            } else {
-              const tagOp = { cardTags: { connect: { id: tag.id } } };
-              if (isProcess) {
-                await db.process.update({ where: { id: cardId }, data: tagOp });
-              } else {
-                await db.user.update({ where: { id: cardId }, data: tagOp });
-              }
-              await createLog({
-                action: "tag_add",
-                message: `adicionou a tag "${tag.name}" (automação: ${auto.name})`,
-                authorId,
-                authorName: `🤖 Bot (Automação)`,
-                userId: isProcess ? null : cardId,
-                processId: isProcess ? cardId : null,
-                metadata: { automationId: auto.id, automationName: auto.name, tagId: tag.id, tagName: tag.name },
-              });
-            }
-          } catch (err) {
-            console.error(`[AUTOMATION] Erro ao adicionar tag (auto ${auto.id}):`, err);
-          }
-        }
-
-        // Ação TERMINAL: move o card pra outra coluna e dispara as automações
-        // dela. Nada mais roda depois (nem as demais ações desta automação,
-        // nem outras automações da coluna antiga) — o card já não está aqui.
-        if (action.type === "move" && action.moveLabelId) {
-          if (depth >= MAX_MOVE_DEPTH) {
-            console.warn(`[AUTOMATION] Limite de movimentos encadeados atingido (auto ${auto.id}) — ação de mover ignorada.`);
-            continue;
-          }
-          if (action.moveLabelId === newLabelId) continue; // já está na coluna de destino
-
-          const targetLabel = await db.label.findUnique({ where: { id: action.moveLabelId } });
-          if (!targetLabel) {
-            console.warn(`[AUTOMATION] Coluna de destino não existe mais (auto ${auto.id}) — ação de mover ignorada.`);
-            continue;
-          }
-
-          const moveData = {
-            labelId: targetLabel.id,
-            role: targetLabel.name,
-            statusStartedAt: new Date(),
-          };
-          if (isProcess) {
-            await db.process.update({ where: { id: cardId }, data: moveData });
-          } else {
-            await db.user.update({ where: { id: cardId }, data: moveData });
-          }
-
-          await createLog({
-            action: "move",
-            message: `moveu de "${String(cardData.role ?? "?")}" para "${targetLabel.name}" (automação: ${auto.name})`,
-            authorId,
-            authorName: `🤖 Bot (Automação)`,
-            userId: isProcess ? null : cardId,
-            processId: isProcess ? cardId : null,
-            metadata: {
-              from: cardData.role ?? null,
-              to: targetLabel.name,
-              cardName: cardData.name ?? null,
-              service: cardData.service ?? null,
-              automationId: auto.id,
-              automationName: auto.name,
-            },
-          });
-
-          await runAutomations({
-            cardId,
-            isProcess,
-            newLabelId: targetLabel.id,
-            authorId,
-            authorName,
-            depth: depth + 1,
-          });
-          return;
-        }
-
-        if (action.type === "file" && action.templateFileKey) {
-          try {
-            const buf = await processDocx(action.templateFileKey, vars);
-            const baseName = (action.templateFileName ?? "arquivo").replace(/\.docx$/i, "");
-            const outName = `${baseName}_${safeName}.docx`;
-            const key = `uploads/${isProcess ? "process" : "user"}_${cardId}/${Date.now()}-${outName}`;
-
-            await s3.send(
-              new PutObjectCommand({
-                Bucket: process.env.AWS_S3_BUCKET_NAME,
-                Key: key,
-                Body: buf,
-                ContentType:
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-              })
-            );
-
-            await db.document.create({
-              data: {
-                userId: isProcess ? String((card as any).userId) : cardId,
-                processId: isProcess ? cardId : null,
-                key,
-                name: outName,
-              },
-            });
-          } catch (err) {
-            console.error(`[AUTOMATION] Erro ao processar arquivo (auto ${auto.id}):`, err);
-          }
-        }
+        const result = await executeAction(action, ctx);
+        if (result === "moved") return;
       }
     }
   } catch (err) {
     console.error("[AUTOMATION] Erro geral:", err);
   }
+}
+
+// Cron de verificação periódica: automações com condições de tempo
+// (__time_in_column__ / __due_date__) não nascem de um movimento de card,
+// então precisam ser reavaliadas em intervalos — aqui a cada card que
+// atualmente está na coluna-gatilho da automação. Dispara no máximo uma vez
+// por card por automação (marcado em AutomationFire).
+export async function runTimeBasedAutomations() {
+  const summary = { checked: 0, fired: 0 };
+  try {
+    const automations = await fetchTimeConditionAutomations();
+    if (!automations.length) return summary;
+
+    for (const auto of automations) {
+      const conds = (auto.conditions as unknown as AutomationCondition[]) ?? [];
+      const actions = (auto.actions as unknown as AutomationAction[]) ?? [];
+      if (!actions.length) continue;
+
+      const wantsProcess = auto.cardType !== "user";
+      const wantsUser = auto.cardType !== "process";
+
+      const [processCards, userCards] = await Promise.all([
+        wantsProcess ? db.process.findMany({ where: { labelId: auto.triggerLabelId } }) : Promise.resolve([]),
+        wantsUser ? db.user.findMany({ where: { labelId: auto.triggerLabelId } }) : Promise.resolve([]),
+      ]);
+
+      const usesTags = conds.some((c) => c.field === "tags");
+
+      for (const [cards, isProcess] of [[processCards, true], [userCards, false]] as const) {
+        for (const card of cards) {
+          summary.checked++;
+          const cardId = (card as any).id as string;
+          const cardData = card as unknown as CardData;
+
+          const tagNames = usesTags
+            ? (
+                await db.cardTag.findMany({
+                  where: isProcess
+                    ? { processes: { some: { id: cardId } } }
+                    : { users: { some: { id: cardId } } },
+                  select: { name: true },
+                })
+              ).map((t) => t.name)
+            : [];
+
+          if (!evalConditions(conds, auto.conditionLogic, cardData, tagNames)) continue;
+
+          // Já disparou pra este card nesta automação — não repete.
+          const already = await db.automationFire.findUnique({
+            where: { automationId_cardId: { automationId: auto.id, cardId } },
+          }).catch(() => null);
+          if (already) continue;
+
+          try {
+            await db.automationFire.create({ data: { automationId: auto.id, cardId } });
+          } catch {
+            continue; // corrida entre execuções do cron — outra já marcou
+          }
+
+          const vars = { ...getVars(cardData), ...brDateVars() };
+          const safeName = String(cardData.name ?? "")
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "")
+            .replace(/[^a-zA-Z0-9 ]/g, "")
+            .trim()
+            .replace(/ +/g, "_");
+          const ctx: ActionCtx = {
+            auto, cardId, isProcess,
+            authorId: "system",
+            authorName: "Sistema (verificação de prazo)",
+            cardData, vars, safeName,
+            currentLabelId: auto.triggerLabelId,
+            depth: 0,
+          };
+
+          for (const action of actions) {
+            const result = await executeAction(action, ctx);
+            if (result === "moved") break;
+          }
+          summary.fired++;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[AUTOMATION] Erro no cron de tempo:", err);
+  }
+  return summary;
 }

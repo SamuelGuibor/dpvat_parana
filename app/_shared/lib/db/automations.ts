@@ -1,14 +1,25 @@
 import { db } from "../prisma";
 
 export type AutomationCondition = {
-  // Campo do card, ou o campo especial "tags" (tags do card, com os
-  // operadores hasTag/notHasTag — o value guarda o NOME da tag).
+  // Campo do card, o campo especial "tags" (tags do card, com os operadores
+  // hasTag/notHasTag — o value guarda o NOME da tag), ou um dos campos
+  // especiais de tempo abaixo — esses não nascem de um movimento de card,
+  // então só são avaliados pelo cron de verificação periódica.
+  // "__time_in_column__": tempo (dias) que o card está na coluna atual
+  //   (statusStartedAt) — value = nº de dias, operator more/lessThanDays.
+  // "__due_date__": posição de hoje em relação a um campo de data do card
+  //   (dateField, padrão "afastadoAte") — value = nº de dias de folga,
+  //   operator before/afterDueDate.
   field: string;
   operator:
     | "equals" | "contains" | "startsWith" | "endsWith" | "notEquals"
     | "isEmpty" | "isNotEmpty"
-    | "hasTag" | "notHasTag";
+    | "hasTag" | "notHasTag"
+    | "moreThanDays" | "lessThanDays"
+    | "beforeDueDate" | "afterDueDate";
   value: string;
+  // Só para field === "__due_date__": qual campo de data do card comparar.
+  dateField?: string;
 };
 
 export type AutomationAction = {
@@ -58,6 +69,7 @@ export async function fetchAutomationsByLabel(labelId: string) {
 
 export async function createAutomation(data: {
   name: string;
+  category?: string | null;
   triggerLabelId: string;
   cardType: string;
   conditionLogic: string;
@@ -67,6 +79,7 @@ export async function createAutomation(data: {
   return db.automation.create({
     data: {
       name: data.name,
+      category: data.category?.trim() || null,
       triggerLabelId: data.triggerLabelId,
       cardType: data.cardType,
       conditionLogic: data.conditionLogic,
@@ -80,6 +93,7 @@ export async function updateAutomation(
   id: string,
   data: Partial<{
     name: string;
+    category: string | null;
     isActive: boolean;
     triggerLabelId: string;
     cardType: string;
@@ -91,9 +105,25 @@ export async function updateAutomation(
   const payload: Record<string, unknown> = { ...data };
   if (data.conditions) payload.conditions = data.conditions as object[];
   if (data.actions) payload.actions = data.actions as object[];
+  if ("category" in data) payload.category = data.category?.trim() || null;
   return db.automation.update({ where: { id }, data: payload });
 }
 
 export async function deleteAutomation(id: string) {
   return db.automation.delete({ where: { id } });
+}
+
+// Automações ativas com pelo menos uma condição de tempo (__time_in_column__
+// ou __due_date__) — essas não disparam por movimento de card, então o cron
+// de verificação periódica é quem precisa encontrá-las.
+export async function fetchTimeConditionAutomations() {
+  const all = await db.automation.findMany({
+    where: { isActive: true },
+    include: { triggerLabel: true },
+  });
+  return all.filter((a) =>
+    ((a.conditions as unknown as AutomationCondition[]) ?? []).some(
+      (c) => c.field === "__time_in_column__" || c.field === "__due_date__"
+    )
+  );
 }

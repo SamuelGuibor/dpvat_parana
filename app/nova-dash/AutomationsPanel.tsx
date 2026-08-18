@@ -63,6 +63,7 @@ type Condition = {
   field: string;
   operator: string;
   value: string;
+  dateField?: string;
 };
 
 type Action = {
@@ -93,6 +94,7 @@ type WaTemplateOption = {
 type AutomationData = {
   id: string;
   name: string;
+  category: string | null;
   isActive: boolean;
   triggerLabelId: string;
   triggerLabel: { id: string; name: string; color: string };
@@ -117,8 +119,31 @@ interface AutomationsPanelProps {
 
 // ─── Field map ──────────────────────────────────────────────────────────────
 
+// Campos especiais de tempo — não são um campo do card, o cron periódico
+// (a cada 30min) é quem os avalia, já que não nascem de um movimento de card.
+const __TIME_IN_COLUMN__ = "__time_in_column__";
+const __DUE_DATE__ = "__due_date__";
+const TIME_FIELDS = new Set([__TIME_IN_COLUMN__, __DUE_DATE__]);
+
+// Campos de data do card para o "vence em / venceu há" escolher qual comparar.
+const DUE_DATE_FIELDS: { value: string; label: string }[] = [
+  { value: "afastadoAte", label: "Data limite do afastamento" },
+];
+
+const TIME_IN_COLUMN_OPERATORS = [
+  { value: "moreThanDays", label: "está há mais de (dias) nesta coluna" },
+  { value: "lessThanDays", label: "está há menos de (dias) nesta coluna" },
+];
+
+const DUE_DATE_OPERATORS = [
+  { value: "beforeDueDate", label: "faltam até (dias) para vencer" },
+  { value: "afterDueDate", label: "venceu há mais de (dias)" },
+];
+
 const CARD_FIELDS: { value: string; label: string }[] = [
   { value: "tags", label: "Tag do card" },
+  { value: __TIME_IN_COLUMN__, label: "⏱ Tempo na coluna" },
+  { value: __DUE_DATE__, label: "📅 Data de vencimento" },
   { value: "name", label: "Nome" },
   { value: "cpf", label: "CPF" },
   { value: "data_nasc", label: "Data de Nascimento" },
@@ -173,8 +198,12 @@ const VARIABLE_CHIPS = [
   "name", "cpf", "rg", "data_nasc", "telefone", "email",
   "cidade", "estado", "cep", "hospital", "data_acidente",
   "lesoes", "service", "nome_mae", "estado_civil", "profissao",
-  "nacionalidade", "rua", "bairro", "numero", "cep"
+  "nacionalidade", "rua", "bairro", "numero", "cep",
+  "dia", "mes", "mes_numerico", "ano",
 ];
+
+// Categorias já usadas em qualquer automação — sugestões pro campo livre.
+const DEFAULT_CATEGORIES = ["Roteiro", "Documentos", "WhatsApp", "Prazos", "Cobrança"];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -191,7 +220,11 @@ function labelForField(val: string) {
 }
 
 function labelForOp(val: string, field?: string) {
-  const list = field === "tags" ? TAG_OPERATORS : OPERATORS;
+  const list =
+    field === "tags" ? TAG_OPERATORS
+    : field === __TIME_IN_COLUMN__ ? TIME_IN_COLUMN_OPERATORS
+    : field === __DUE_DATE__ ? DUE_DATE_OPERATORS
+    : OPERATORS;
   return list.find((o) => o.value === val)?.label
     ?? OPERATORS.find((o) => o.value === val)?.label
     ?? val;
@@ -224,7 +257,15 @@ function ConditionRow({
   const needsValue = !["isEmpty", "isNotEmpty"].includes(cond.operator);
   const isTagField = cond.field === "tags";
   const isHospitalField = HOSPITAL_FIELDS.has(cond.field);
-  const operatorOptions = isTagField ? TAG_OPERATORS : OPERATORS;
+  const isTimeInColumn = cond.field === __TIME_IN_COLUMN__;
+  const isDueDate = cond.field === __DUE_DATE__;
+  const operatorOptions = isTagField
+    ? TAG_OPERATORS
+    : isTimeInColumn
+      ? TIME_IN_COLUMN_OPERATORS
+      : isDueDate
+        ? DUE_DATE_OPERATORS
+        : OPERATORS;
   // Tag salva que foi excluída depois: mantém na lista pra não sumir do editor.
   const tagOptions =
     cond.value && !cardTags.some((t) => t.name === cond.value)
@@ -248,9 +289,21 @@ function ConditionRow({
         <Select
           value={cond.field}
           onValueChange={(v) => {
-            // Trocar de/para "tags" muda o conjunto de operadores — reseta.
-            if ((v === "tags") !== isTagField) {
-              onChange({ field: v, operator: v === "tags" ? "hasTag" : "equals", value: "" });
+            // Trocar entre tags / tempo-na-coluna / vencimento / campo comum
+            // muda o conjunto de operadores disponíveis — reseta o resto.
+            const wasSpecial = isTagField || isTimeInColumn || isDueDate;
+            const isSpecial = v === "tags" || v === __TIME_IN_COLUMN__ || v === __DUE_DATE__;
+            if (wasSpecial || isSpecial) {
+              onChange({
+                field: v,
+                operator:
+                  v === "tags" ? "hasTag"
+                  : v === __TIME_IN_COLUMN__ ? "moreThanDays"
+                  : v === __DUE_DATE__ ? "beforeDueDate"
+                  : "equals",
+                value: "",
+                dateField: v === __DUE_DATE__ ? "afastadoAte" : undefined,
+              });
             } else {
               onChange({ ...cond, field: v });
             }
@@ -331,7 +384,36 @@ function ConditionRow({
           </Select>
         )}
 
-        {needsValue && !isHospitalField && !isTagField && (
+        {needsValue && isDueDate && (
+          <Select
+            value={cond.dateField ?? "afastadoAte"}
+            onValueChange={(v) => onChange({ ...cond, dateField: v })}
+          >
+            <SelectTrigger className="h-8 text-xs w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DUE_DATE_FIELDS.map((f) => (
+                <SelectItem key={f.value} value={f.value} className="text-xs">
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {needsValue && (isTimeInColumn || isDueDate) && (
+          <Input
+            type="number"
+            min={0}
+            value={cond.value}
+            onChange={(e) => onChange({ ...cond, value: e.target.value })}
+            placeholder="Nº de dias"
+            className="h-8 text-xs w-[100px]"
+          />
+        )}
+
+        {needsValue && !isHospitalField && !isTagField && !isTimeInColumn && !isDueDate && (
           <Input
             value={cond.value}
             onChange={(e) => onChange({ ...cond, value: e.target.value })}
@@ -815,6 +897,7 @@ function AutomationEditor({
   initial?: AutomationData | null;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
+  const [category, setCategory] = useState(initial?.category ?? "");
   const [triggerLabelId, setTriggerLabelId] = useState(initial?.triggerLabelId ?? "");
   const [cardType, setCardType] = useState(initial?.cardType ?? "both");
   const [conditionLogic, setConditionLogic] = useState(initial?.conditionLogic ?? "AND");
@@ -835,6 +918,7 @@ function AutomationEditor({
   useEffect(() => {
     if (open) {
       setName(initial?.name ?? "");
+      setCategory(initial?.category ?? "");
       setTriggerLabelId(initial?.triggerLabelId ?? "");
       setCardType(initial?.cardType ?? "both");
       setConditionLogic(initial?.conditionLogic ?? "AND");
@@ -871,9 +955,14 @@ function AutomationEditor({
     );
     if (invalidTagCond) { toast.error("Selecione a tag da condição"); return; }
 
+    const invalidTimeCond = conditions.some(
+      (c) => TIME_FIELDS.has(c.field) && (!c.value.trim() || Number.isNaN(Number(c.value)))
+    );
+    if (invalidTimeCond) { toast.error("Informe o número de dias da condição de tempo/vencimento"); return; }
+
     setSaving(true);
     try {
-      await onSave({ name, triggerLabelId, cardType, conditionLogic, conditions, actions });
+      await onSave({ name, category: category.trim() || null, triggerLabelId, cardType, conditionLogic, conditions, actions });
       onClose();
     } finally {
       setSaving(false);
@@ -891,14 +980,28 @@ function AutomationEditor({
         </DialogHeader>
 
         <div className="space-y-5 py-2">
-          {/* Name */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Nome</label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ex: Solicitar prontuário Cajuru"
-            />
+          {/* Name + category */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Nome</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ex: Solicitar prontuário Cajuru"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Categoria/setor <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <Input
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="Ex: Roteiro, WhatsApp, Prazos..."
+                list="automation-categories"
+              />
+              <datalist id="automation-categories">
+                {DEFAULT_CATEGORIES.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
           </div>
 
           {/* Trigger + card type */}
@@ -974,6 +1077,13 @@ function AutomationEditor({
             {conditions.length === 0 && (
               <p className="text-xs text-gray-400 dark:text-zinc-500 italic py-1">
                 Sem condições — a automação dispara para qualquer card que entrar na coluna.
+              </p>
+            )}
+
+            {conditions.some((c) => TIME_FIELDS.has(c.field)) && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 italic">
+                Condições de tempo/vencimento não disparam na hora — são checadas a cada 30 min
+                pelo sistema, e cada card só dispara a ação uma vez por automação.
               </p>
             )}
 
@@ -1076,8 +1186,13 @@ function AutomationCard({
         />
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
+          <p className="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate flex items-center gap-1.5">
             {auto.name}
+            {auto.category && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                {auto.category}
+              </span>
+            )}
           </p>
           <div className="flex flex-wrap gap-1.5 mt-0.5">
             <span className="text-xs text-gray-500 dark:text-zinc-400">
@@ -1229,6 +1344,14 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AutomationData | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
+  const categories = Array.from(
+    new Set(automations.map((a) => a.category).filter((c): c is string => !!c))
+  ).sort();
+  const visibleAutomations = categoryFilter
+    ? automations.filter((a) => a.category === categoryFilter)
+    : automations;
 
   async function loadAutomations() {
     setLoading(true);
@@ -1314,6 +1437,34 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
             </p>
           </SheetHeader>
 
+          {categories.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-6 pt-3">
+              <button
+                onClick={() => setCategoryFilter(null)}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                  categoryFilter === null
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-700 hover:bg-gray-100"
+                }`}
+              >
+                Todas ({automations.length})
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setCategoryFilter(cat)}
+                  className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                    categoryFilter === cat
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-700 hover:bg-gray-100"
+                  }`}
+                >
+                  {cat} ({automations.filter((a) => a.category === cat).length})
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             {loading && (
               <div className="flex items-center justify-center py-12 text-gray-400 dark:text-zinc-500 text-sm">
@@ -1345,7 +1496,7 @@ export function AutomationsPanel({ open, onClose, labels }: AutomationsPanelProp
             )}
 
             {!loading &&
-              automations.map((auto) => (
+              visibleAutomations.map((auto) => (
                 <AutomationCard
                   key={auto.id}
                   auto={auto}

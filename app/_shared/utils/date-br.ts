@@ -104,3 +104,35 @@ export function brMonthIndex(date: Date | string | number): number {
 export function brDateBR(date: Date | string | number = new Date()): string {
   return new Date(date).toLocaleDateString('pt-BR', { timeZone: BR_TZ });
 }
+
+const monthExtensoFmt = new Intl.DateTimeFormat('pt-BR', { timeZone: BR_TZ, month: 'long' });
+
+/** Mês (1..12) no fuso de Brasília. */
+export function brMonth(date: Date | string | number = new Date()): number {
+  return Number(brDayKey(date).slice(5, 7));
+}
+
+/** Nome do mês por extenso, em português, com inicial maiúscula ("Agosto"). */
+export function brMonthNameExtenso(date: Date | string | number = new Date()): string {
+  const name = monthExtensoFmt.format(new Date(date));
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/** Ano (4 dígitos) no fuso de Brasília. */
+export function brYear(date: Date | string | number = new Date()): number {
+  return Number(brDayKey(date).slice(0, 4));
+}
+
+/**
+ * Variáveis de data prontas para template ([[dia]], [[mes]], [[ano]],
+ * [[mes_numerico]]) — usadas nas automações do Kanban (comentário/arquivo
+ * gerado). `mes` vem por extenso; `mes_numerico` com dois dígitos.
+ */
+export function brDateVars(date: Date | string | number = new Date()) {
+  return {
+    dia: String(brDayOfMonth(new Date(date))),
+    mes: brMonthNameExtenso(date),
+    mes_numerico: String(brMonth(date)).padStart(2, '0'),
+    ano: String(brYear(date)),
+  };
+}
