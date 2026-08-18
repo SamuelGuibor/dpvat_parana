@@ -5,6 +5,7 @@ import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
+import { brStartOfDay } from '@/app/_shared/utils/date-br';
 
 // FASES do cron de WhatsApp (07/08/2026) — o antigo /api/whatsapp/cron fazia
 // tudo num passe só e sequencial; com multi-número o volume multiplica e as
@@ -61,17 +62,29 @@ const OVERDUE_AUTHOR_ID = 'kanban-overdue';
 const OVERDUE_MAX_CARDS = 60; // teto por rodada (os mais atrasados primeiro)
 
 // ---- Ciclo de RECUPERAÇÃO (status "standby") --------------------------------
-// 12/08/2026: 5 provocações no total — as 3 primeiras DENTRO da janela de 24h
-// da Meta (texto livre, sem gastar template), as 2 últimas por template
-// (recuperacao_triagem_1 e depois a final), espaçadas de 24h como antes.
-const RECOVERY_MAX_ATTEMPTS = 5;
+// 18/08/2026: reduzido de 5 → 4 provocações (aviso de spam da Meta nas duas
+// WABAs) — as 3 primeiras DENTRO da janela de 24h da Meta (texto livre, sem
+// gastar template), a última pela despedida em template (recuperacao_triagem_
+// final; o template 1 vira só fallback de janela fechada).
+const RECOVERY_MAX_ATTEMPTS = 4;
 const RECOVERY_EARLY_ATTEMPTS = 3;                // texto livre na janela de 24h
-const RECOVERY_FIRST_AFTER_MS = 4 * 60 * 60_000;  // 1ª provocação: 4h após a última msg do cliente
-const RECOVERY_EARLY_GAP_MS = 8 * 60 * 60_000;    // entre as provocações da janela (4h, 12h, 20h)
+// Cadência afrouxada (18/08/2026): 8h → 15h → 22h. Antes 4h/12h/20h — três
+// cutucadas em menos de um dia liam como spam. As três continuam DENTRO da
+// janela de 24h (fora dela virariam template MARKETING, pior pro sinal).
+const RECOVERY_FIRST_AFTER_MS = 8 * 60 * 60_000;  // 1ª provocação: 8h após a última msg do cliente
+const RECOVERY_EARLY_GAP_MS = 7 * 60 * 60_000;    // entre as provocações da janela (8h, 15h, 22h)
 const RECOVERY_GAP_MS = 24 * 60 * 60_000;         // entre as tentativas por template
 const RECOVERY_RETRY_MS = 6 * 60 * 60_000;        // re-tenta envios que falharam
 const RECOVERY_TEMPLATE_1 = 'recuperacao_triagem_1';
 const RECOVERY_TEMPLATE_FINAL = 'recuperacao_triagem_final';
+// Teto DIÁRIO de provocações (18/08/2026): a régua de spam da Meta é o volume
+// de proativas dos últimos dias — na semana do alerta saíam ~130/dia. O que
+// passar do teto espera o dia seguinte (a conversa continua "due"). Ajustável
+// sem deploy pela env WA_RECOVERY_DAILY_CAP.
+const RECOVERY_DAILY_CAP = (() => {
+  const raw = Number(process.env.WA_RECOVERY_DAILY_CAP);
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 60;
+})();
 
 // Desfechos que NÃO são "sumiu no meio da triagem".
 const NON_RECOVERABLE_CATEGORIES = new Set([
@@ -681,6 +694,15 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
   const results = emptyResults();
   const pacer = createPacer(budgetMs);
 
+  // Teto diário: conta o que já saiu HOJE (dia de Brasília) antes de disparar.
+  // Estourou o teto → as conversas continuam "due" e saem amanhã; os desfechos
+  // sem envio (opt-out/esgotado/bloqueado) continuam sendo processados.
+  const sentToday = await db.whatsAppMessage.count({
+    where: { direction: 'out', systemSource: 'recovery', createdAt: { gte: brStartOfDay() } },
+  });
+  let recoveryBudget = Math.max(0, RECOVERY_DAILY_CAP - sentToday);
+  let cappedToday = 0;
+
   const dueRecovery = await db.whatsAppConversation.findMany({
     where: {
       status: 'standby',
@@ -744,6 +766,13 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         return;
       }
 
+      // Teto diário de provocações atingido → fica pra amanhã (a conversa
+      // continua "due"; só os desfechos sem envio seguem sendo processados).
+      if (recoveryBudget <= 0) {
+        cappedToday++;
+        return;
+      }
+
       // Vaga na fila de envio (30–40s entre provocações). Sem vaga, a
       // conversa continua "due" e sai na próxima rodada do cron.
       if (!(await pacer.slot())) return;
@@ -803,6 +832,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
           },
         });
         results.recoverySent++;
+        recoveryBudget--;
       } else if (sent.reason?.includes('não receber')) {
         await recordRecoveryEvent({
           contactId: conv.contactId,
@@ -839,6 +869,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
   }));
 
   if (pacer.skipped()) console.log(`[WHATSAPP CRON] recovery: ${pacer.skipped()} conversa(s) adiadas pra próxima rodada (fila de envio).`);
+  if (cappedToday) console.log(`[WHATSAPP CRON] recovery: teto diário de ${RECOVERY_DAILY_CAP} provocações atingido — ${cappedToday} conversa(s) ficam pra amanhã.`);
   return results;
 }
 

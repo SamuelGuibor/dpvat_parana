@@ -1845,7 +1845,7 @@ function ConversationGroup({
               )}
               {c.status === 'standby' && c.recoveryAttempts > 0 && (
                 <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-violet-300 ring-1 ring-violet-400/30">
-                  {Math.min(c.recoveryAttempts, 5)}ª de 5
+                  {Math.min(c.recoveryAttempts, 4)}ª de 4
                 </span>
               )}
               {pill && (
