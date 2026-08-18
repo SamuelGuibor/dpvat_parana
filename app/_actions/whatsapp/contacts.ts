@@ -71,6 +71,101 @@ export async function createWhatsAppContact(phoneRaw: string, name: string): Pro
   return { contactId: contact.id };
 }
 
+// ---------------------------------------------------------------------------
+// Agenda de contatos (18/08/2026): navega TODOS os contatos da linha — mesmo
+// quem nunca trocou mensagem (ex.: os 2.224 importados do BotConversa). A
+// pasta "Contatos" do inbox usa isto.
+
+export interface WaDirectoryContact {
+  id: string;
+  name: string | null;
+  phone: string;
+  numberId: string | null;
+  importSource: string | null;
+  /** Status da conversa quando ela existe (abre direto); null = nunca falou. */
+  conversationStatus: string | null;
+  createdAt: string;
+}
+
+export interface WaDirectoryPage {
+  total: number;
+  items: WaDirectoryContact[];
+}
+
+const DIRECTORY_PAGE = 100;
+
+export async function listWaContactsDirectory(
+  search: string,
+  numberId: string | null,
+  offset: number,
+): Promise<WaDirectoryPage> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id || !TEAM_ROLES.includes(session.user.role ?? '')) {
+    throw new Error('Sem permissão para o atendimento de WhatsApp.');
+  }
+
+  const term = search.trim();
+  const digits = term.replace(/\D/g, '');
+  const where = {
+    ...(numberId ? { numberId } : {}),
+    ...(term
+      ? {
+          OR: [
+            { name: { contains: term, mode: 'insensitive' as const } },
+            ...(digits.length >= 4 ? [{ phone: { contains: digits } }] : []),
+          ],
+        }
+      : {}),
+  };
+
+  const [total, rows] = await Promise.all([
+    db.whatsAppContact.count({ where }),
+    db.whatsAppContact.findMany({
+      where,
+      orderBy: [{ name: 'asc' }, { createdAt: 'desc' }],
+      skip: Math.max(0, Math.round(offset) || 0),
+      take: DIRECTORY_PAGE,
+      select: {
+        id: true, name: true, phone: true, numberId: true, importSource: true, createdAt: true,
+        conversation: { select: { status: true } },
+      },
+    }),
+  ]);
+
+  return {
+    total,
+    items: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      numberId: r.numberId,
+      importSource: r.importSource,
+      conversationStatus: r.conversation?.status ?? null,
+      createdAt: r.createdAt.toISOString(),
+    })),
+  };
+}
+
+/**
+ * Garante a conversa de um contato da agenda e devolve o contactId — a UI abre
+ * o chat (fora da janela de 24h o composer oferece o template). Conversa nova
+ * nasce em atendimento humano com quem clicou, para o bot não atropelar.
+ */
+export async function openContactConversation(contactId: string): Promise<{ contactId: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id || !TEAM_ROLES.includes(session.user.role ?? '')) {
+    throw new Error('Sem permissão para o atendimento de WhatsApp.');
+  }
+  const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { id: true, numberId: true } });
+  if (!contact) throw new Error('Contato não encontrado.');
+  await db.whatsAppConversation.upsert({
+    where: { contactId: contact.id },
+    update: {},
+    create: { contactId: contact.id, numberId: contact.numberId, status: 'human', assignedToId: session.user.id, lastMessageAt: new Date() },
+  });
+  return { contactId: contact.id };
+}
+
 // Ações destrutivas sobre CONTATOS do WhatsApp (bloquear/desbloquear/excluir).
 // Todas exigem a permissão "manage_wa_contacts" (padrão: só ADMIN++; o Super
 // Admin pode conceder ao ADMIN+ por override na tela de Equipe).

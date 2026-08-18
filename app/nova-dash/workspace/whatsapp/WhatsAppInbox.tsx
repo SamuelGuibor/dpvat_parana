@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import useSWR from 'swr';
 import {
@@ -11,7 +11,7 @@ import {
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
-  UserCheck, Columns3, Users,
+  UserCheck, Columns3, Users, Phone, BookUser,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -34,6 +34,7 @@ import {
   editWhatsAppMessage, deleteWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
@@ -49,6 +50,8 @@ import { WhatsAppComposer } from './WhatsAppComposer';
 import { CopilotPanel } from './CopilotPanel';
 import { WhatsAppTagsModal } from './WhatsAppTagsModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
+import { ContactsDirectory } from './ContactsDirectory';
+import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
@@ -148,6 +151,13 @@ const chipLabelCls = (expanded: boolean) =>
     ? 'ml-1.5 max-w-[150px] opacity-100'
     : 'ml-0 max-w-0 opacity-0 group-hover:ml-1.5 group-hover:max-w-[150px] group-hover:opacity-100'}`;
 
+// Multi-número: etiqueta da linha em cada conversa (só aparece com 2+ números
+// cadastrados). O mapa numberId → {label, cor} desce por contexto para o
+// ConversationGroup, que é chamado de vários lugares.
+export interface NumberBadge { label: string; dot: string }
+const NUMBER_BADGE_DOTS = ['bg-sky-400', 'bg-teal-300', 'bg-violet-400', 'bg-amber-400', 'bg-rose-400'];
+const NumberBadgeContext = createContext<Map<string, NumberBadge> | null>(null);
+
 // Cor determinística do selinho de atendente na lista (por nome).
 const ATTENDANT_BADGE_COLORS = ['bg-emerald-600', 'bg-violet-600', 'bg-amber-600', 'bg-sky-600', 'bg-rose-600'];
 function attendantBadgeColor(name: string) {
@@ -189,6 +199,31 @@ export function WhatsAppInbox() {
   // "Coluna do Kanban" = estágio do card do cliente vinculado.
   const [todayOnly, setTodayOnly] = useState(false);
   const [columnFilter, setColumnFilter] = useState<string | null>(null);
+
+  // Multi-número (17/08/2026): filtrar por linha da empresa, com a preferência
+  // salva por usuário no navegador. Só aparece com 2+ números cadastrados.
+  const [waNumbers, setWaNumbers] = useState<{ id: string; label: string }[]>([]);
+  const [numberFilter, setNumberFilter] = useState<string | null>(null);
+  useEffect(() => {
+    listWaNumberOptions()
+      .then((opts) => {
+        setWaNumbers(opts.map((o) => ({ id: o.id, label: o.label })));
+        const saved = localStorage.getItem('wa-number-filter');
+        if (saved && opts.some((o) => o.id === saved)) setNumberFilter(saved);
+      })
+      .catch(() => setWaNumbers([]));
+  }, []);
+  const changeNumberFilter = (id: string | null) => {
+    setNumberFilter(id);
+    if (id) localStorage.setItem('wa-number-filter', id);
+    else localStorage.removeItem('wa-number-filter');
+  };
+  const numberBadges = useMemo(() => {
+    if (waNumbers.length < 2) return null;
+    return new Map<string, NumberBadge>(
+      waNumbers.map((n, i) => [n.id, { label: n.label, dot: NUMBER_BADGE_DOTS[i % NUMBER_BADGE_DOTS.length] }]),
+    );
+  }, [waNumbers]);
 
   // Motivos de "não qualificada" editáveis (menu Encerrar + modal de gestão).
   const { data: closeReasons, mutate: mutateCloseReasons } = useSWR<CloseReasonDTO[]>(
@@ -287,6 +322,14 @@ export function WhatsAppInbox() {
     perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined,
   };
   const [activeFolder, setActiveFolder] = useState<FolderKey>('todos');
+
+  // Pasta "Contatos" (18/08/2026): a AGENDA da linha — todos os contatos,
+  // mesmo sem conversa (importados do BotConversa incluídos).
+  const [contactsMode, setContactsMode] = useState(false);
+  const [directoryTotal, setDirectoryTotal] = useState(0);
+  useEffect(() => {
+    listWaContactsDirectory('', null, 0).then((p) => setDirectoryTotal(p.total)).catch(() => {});
+  }, []);
 
   // Paginação client-side: cada pasta mostra 200 por vez, com "Carregar mais".
   // Reinicia ao trocar de pasta, buscar ou filtrar por tag.
@@ -419,10 +462,11 @@ export function WhatsAppInbox() {
       if (tagFilter.length && !c.tags.some((t) => tagFilter.includes(t.id))) return false;
       if (todayOnly && !isToday(c.createdAt)) return false;
       if (columnFilter && c.kanbanColumn !== columnFilter) return false;
+      if (numberFilter && c.numberId !== numberFilter) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, search, tagFilter, todayOnly, columnFilter]);
+  }, [conversations, search, tagFilter, todayOnly, columnFilter, numberFilter]);
 
   // Contagem do chip "Hoje" (independe dos outros filtros, senão o número
   // mudaria ao clicar no próprio chip) e colunas disponíveis pro seletor.
@@ -435,6 +479,14 @@ export function WhatsAppInbox() {
       if (c.kanbanColumn) map.set(c.kanbanColumn, (map.get(c.kanbanColumn) ?? 0) + 1);
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [conversations]);
+  // Contagem por número (dropdown do filtro de linha).
+  const numberCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of conversations) {
+      if (c.numberId) map.set(c.numberId, (map.get(c.numberId) ?? 0) + 1);
+    }
+    return map;
   }, [conversations]);
 
   const groups = useMemo(() => {
@@ -699,6 +751,7 @@ export function WhatsAppInbox() {
   }
 
   return (
+    <NumberBadgeContext.Provider value={numberBadges}>
     <div className="flex h-full overflow-hidden rounded-none border border-[#dce8e1] bg-[#dce8e1] shadow-sm dark:border-zinc-800 whatsapp-darkreader sm:rounded-2xl">
       {confirmDialog}
       {/* ---------- Lista de conversas ----------
@@ -721,8 +774,8 @@ export function WhatsAppInbox() {
               title={f.title}
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
-              active={!tagFilterActive && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setAttendantFilter(null); setActiveFolder(f.key); }}
+              active={!tagFilterActive && !contactsMode && activeFolder === f.key}
+              onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(false); setActiveFolder(f.key); }}
             />
           ))}
           <div className="mx-3 my-2 h-px bg-[#14332a]" />
@@ -735,10 +788,21 @@ export function WhatsAppInbox() {
               title={f.title}
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
-              active={!tagFilterActive && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setAttendantFilter(null); setActiveFolder(f.key); }}
+              active={!tagFilterActive && !contactsMode && activeFolder === f.key}
+              onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(false); setActiveFolder(f.key); }}
             />
           ))}
+          <div className="mx-3 my-2 h-px bg-[#14332a]" />
+          <span className="px-1 pb-1.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4f7a68]">Agenda</span>
+          <RailButton
+            icon={BookUser}
+            label="Contatos"
+            title="Todos os contatos da linha, mesmo sem conversa (importados do BotConversa incluídos)"
+            count={directoryTotal}
+            unread={0}
+            active={contactsMode}
+            onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(true); }}
+          />
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -780,7 +844,9 @@ export function WhatsAppInbox() {
             </div>
 
             {/* Filtros compactos: só ícones — o rótulo desliza no hover. Hoje,
-                Coluna do Kanban, Tags e Só minhas numa linha só. */}
+                Coluna do Kanban, Tags e Só minhas numa linha só. (Na Agenda de
+                contatos só a busca vale — os filtros são de conversa.) */}
+            {!contactsMode && (<>
             <p className="truncate text-[13px] font-bold text-white pt-2">Filtros</p>
             <div className="mt-1.5 flex items-center gap-1">
               {/* Novas do dia */}
@@ -795,6 +861,47 @@ export function WhatsAppInbox() {
                   <span className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">{todayCount}</span>
                 )}
               </button>
+
+              {/* Número da empresa (multi-número) — só com 2+ linhas cadastradas */}
+              {waNumbers.length >= 2 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button title="Filtrar pelo número da empresa" className={chipCls(!!numberFilter)}>
+                      <Phone className="h-3.5 w-3.5 shrink-0" />
+                      <span className={chipLabelCls(!!numberFilter)}>
+                        {numberFilter ? waNumbers.find((n) => n.id === numberFilter)?.label ?? 'Número' : 'Número'}
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-72 w-60 overflow-y-auto">
+                    <div className="flex items-center justify-between px-2 py-1.5">
+                      <DropdownMenuLabel className="p-0 text-xs text-gray-400">Número da empresa</DropdownMenuLabel>
+                      {numberFilter && (
+                        <button
+                          onClick={() => changeNumberFilter(null)}
+                          className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                        >
+                          Todos
+                        </button>
+                      )}
+                    </div>
+                    <DropdownMenuSeparator />
+                    {waNumbers.map((n) => (
+                      <DropdownMenuCheckboxItem
+                        key={n.id}
+                        checked={numberFilter === n.id}
+                        onCheckedChange={() => changeNumberFilter(numberFilter === n.id ? null : n.id)}
+                        onSelect={(e) => e.preventDefault()}
+                        className="text-sm"
+                      >
+                        <span className={`mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle ${numberBadges?.get(n.id)?.dot ?? 'bg-gray-400'}`} />
+                        <span className="min-w-0 flex-1 truncate">{n.label}</span>
+                        <span className="ml-2 text-xs text-gray-400">{numberCounts.get(n.id) ?? 0}</span>
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               {/* Coluna do Kanban (só conversas já vinculadas a um card) */}
               <DropdownMenu>
@@ -955,10 +1062,22 @@ export function WhatsAppInbox() {
                 {filtered.length} resultado{filtered.length === 1 ? '' : 's'} {search.trim() ? 'pra essa busca' : 'com essas tags'}, em <b>todas as pastas</b>.
               </div>
             )}
+            </>)}
           </div>
 
           {/* Área rolável: só a lista de conversas rola */}
           <div className="wa-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
+            {contactsMode ? (
+              <ContactsDirectory
+                search={search}
+                numberFilter={numberFilter}
+                numberLabelOf={numberBadges ? (nid) => (nid ? numberBadges.get(nid) ?? null : null) : null}
+                onOpen={async (contactId) => {
+                  await refreshConversations();
+                  setActiveContactId(contactId);
+                }}
+              />
+            ) : (<>
             {conversations.length === 0 && (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
@@ -1036,6 +1155,7 @@ export function WhatsAppInbox() {
                 </button>
               </div>
             )}
+            </>)}
           </div>
         </div>
         {/* Alça de redimensionar a lista (só desktop) */}
@@ -1389,6 +1509,7 @@ export function WhatsAppInbox() {
         }}
       />
     </div>
+    </NumberBadgeContext.Provider>
   );
 }
 
@@ -1644,6 +1765,8 @@ function ConversationGroup({
   // busca global por tag, que mistura itens de todas as pastas.
   folderLabel?: (c: WhatsAppConversationDTO) => string;
 }) {
+  // Etiqueta do número da empresa (multi-número) — null com menos de 2 linhas.
+  const numberBadges = useContext(NumberBadgeContext);
   if (!items.length && !forceShow && !hideTitle) return null;
   const colors = accent ? GROUP_ACCENT[accent] : { header: 'text-[#8fbcac]', chip: 'bg-[#2e5749] text-[#cfe6db]' };
   const visible = limit != null ? items.slice(0, limit) : items;
@@ -1769,9 +1892,18 @@ function ConversationGroup({
               <span className="truncate">{previewText}</span>
             </span>
 
-            {/* linha 3: tags (só quando existem) */}
-            {(c.tags.length > 0 || folderLabel) && (
+            {/* linha 3: tags + etiqueta do número (multi-número) */}
+            {(c.tags.length > 0 || folderLabel || (numberBadges && c.numberId && numberBadges.get(c.numberId))) && (
               <span className="mt-1 flex w-full items-center gap-1.5 pl-[46px]">
+                {(() => {
+                  const nb = numberBadges && c.numberId ? numberBadges.get(c.numberId) : null;
+                  return nb ? (
+                    <span title={`Atendido pela linha ${nb.label}`} className="flex max-w-[110px] items-center gap-1 rounded-md bg-[#33544a] px-1.5 py-0.5 text-[9px] font-bold text-[#cfe6db]">
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${nb.dot}`} />
+                      <span className="truncate">{nb.label}</span>
+                    </span>
+                  ) : null;
+                })()}
                 {c.tags.slice(0, 2).map((t) => (
                   <span key={t.id} className="rounded-md px-1.5 py-0.5 text-[9px] font-bold text-white" style={{ backgroundColor: t.color }}>
                     {t.name}

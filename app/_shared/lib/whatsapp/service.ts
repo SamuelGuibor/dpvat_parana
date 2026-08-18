@@ -422,6 +422,28 @@ export async function ingestIncomingMessage(
     return { contactId: contact.id, numberId: contact.numberId, conversationStatus: "closed", message: dto, isNew: true };
   }
 
+  // Migração BotConversa (18/08/2026): contato importado da planilha NUNCA cai
+  // no bot — vai direto pra fila humana com a nota de validação (aparece como
+  // motivo do handoff na Fila do inbox). Vale no primeiro contato e em toda
+  // reabertura, enquanto a marca importSource existir no contato.
+  if (contact.importSource === "botconversa" && conversation.status === "bot") {
+    conversation = await db.whatsAppConversation.update({
+      where: { id: conversation.id },
+      data: { status: "queued", assignedToId: null, queuedAt: new Date(), queueAlertAt: null },
+    });
+    await db.whatsAppMessage.create({
+      data: {
+        contactId: contact.id,
+        numberId: contact.numberId,
+        direction: "out",
+        internal: true,
+        sentByBot: true,
+        body: "Cliente do BotConversa — passado para humano validar.",
+        status: "sent",
+      },
+    });
+  }
+
   // Notificação (sino) do "cliente respondeu": NUNCA para todo mundo quando
   // já existe um dono do ticket — só a fila de distribuição (sem atendente)
   // justifica avisar a equipe inteira. Conversa em modo "bot" não notifica

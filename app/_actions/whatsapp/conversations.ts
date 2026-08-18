@@ -139,6 +139,9 @@ export interface WhatsAppConversationDTO {
   kanbanColumn: string | null;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
+  // Número da empresa que atende esta conversa (multi-número): o inbox filtra
+  // e etiqueta por ele. Null em conversa legada ainda não adotada.
+  numberId: string | null;
   tags: { id: string; name: string; color: string }[];
 }
 
@@ -354,6 +357,7 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       manualUnread: (effectiveReadAt?.getTime() ?? -1) === 0,
       kanbanColumn: c.contact.userId ? columnByUserId.get(c.contact.userId) ?? null : null,
       optedOut: c.contact.optedOut,
+      numberId: c.numberId,
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
   });

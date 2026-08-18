@@ -16,17 +16,22 @@ import type { ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-anal
 
 interface NumberOption { id: string; label: string; displayPhone: string | null }
 
-export function ChatbotPanel({ initialAnalytics = null, numberOptions }: {
+export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId: controlledNumberId }: {
   initialAnalytics?: ChatbotAnalytics | null;
   numberOptions?: NumberOption[];
+  /** Número CONTROLADO pelo seletor global do dashboard (17/08/2026). Quando
+   *  presente (mesmo null = "todos"), o seletor próprio desta aba some. */
+  numberId?: string | null;
 }) {
+  const isControlled = controlledNumberId !== undefined;
   const [options, setOptions] = useState<NumberOption[]>(numberOptions ?? []);
-  const [numberId, setNumberId] = useState<string | null>(null);
+  const [localNumberId, setLocalNumberId] = useState<string | null>(null);
+  const numberId = isControlled ? controlledNumberId : localNumberId;
 
   useEffect(() => {
-    if (numberOptions) return;
+    if (numberOptions || isControlled) return;
     listWaNumberOptions().then(setOptions).catch(() => setOptions([]));
-  }, [numberOptions]);
+  }, [numberOptions, isControlled]);
 
   return (
     <div className="p-4">
@@ -34,10 +39,10 @@ export function ChatbotPanel({ initialAnalytics = null, numberOptions }: {
         <h2 className="flex items-center gap-2 text-lg font-bold text-gray-800 dark:text-zinc-100">
           <Bot className="h-5 w-5 text-indigo-600" /> Desempenho do Chatbot
         </h2>
-        {options.length > 0 && (
+        {!isControlled && options.length > 0 && (
           <select
-            value={numberId ?? ''}
-            onChange={(e) => setNumberId(e.target.value || null)}
+            value={localNumberId ?? ''}
+            onChange={(e) => setLocalNumberId(e.target.value || null)}
             className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
           >
             <option value="">Todos os números</option>

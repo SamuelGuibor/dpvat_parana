@@ -624,6 +624,10 @@ model WhatsAppContact {
   // não reenvia o mesmo estágio pro mesmo lead). Ex.: LeadQualificado.
   metaLeadStage   String?
   metaLeadStageAt DateTime?
+  // Origem de importação em massa ("botconversa" = planilha da migração de
+  // 18/08/2026). Contato marcado NUNCA cai no bot: vai direto pra fila humana
+  // com a nota de validação (ver service.ts).
+  importSource   String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   conversation   WhatsAppConversation?
@@ -1023,6 +1027,15 @@ model WhatsAppTemplate {
 
   @@unique([numberId, name])
   @@map("whatsapp_templates")
+}
+
+// Configurações simples chave→valor do app (ex.: meta mensal de contratados).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
 }
 
 model Botconversa {

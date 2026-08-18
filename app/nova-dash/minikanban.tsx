@@ -14,6 +14,12 @@ interface KanbanItem {
     evento: string;
     createdAt: string | null;
     updatedAt: string | null;
+    // Multi-número (17/08/2026): etiqueta da linha que atendeu ("Principal",
+    // "Paraná DPVAT"...) ou "BotConversa" nos registros legados do webhook.
+    numberLabel?: string | null;
+    // Cards do NOSSO sistema são derivados do estado real da conversa — a
+    // etapa anda sozinha, então mover/excluir manualmente fica desabilitado.
+    readOnly?: boolean;
 }
 
 const STAGES = [
@@ -57,9 +63,11 @@ function formatDate(date: string | null) {
 
 interface MiniKanbanProps {
     data?: KanbanItem[];
+    /** Leads do sistema próprio (WhatsApp multi-número), somente-leitura. */
+    systemItems?: KanbanItem[];
 }
 
-export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
+export const MiniKanban: React.FC<MiniKanbanProps> = ({ data, systemItems }) => {
     const [items, setItems] = useState<KanbanItem[]>([]);
     const [search, setSearch] = useState('');
 
@@ -91,16 +99,23 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data }) => {
 
     const deferredSearch = useDeferredValue(search);
 
+    // Sistema primeiro (mais recente/vivo), legado do BotConversa depois —
+    // com a etiqueta de origem em cada card.
+    const allItems = useMemo(() => [
+        ...(systemItems ?? []).map((s) => ({ ...s, readOnly: true })),
+        ...items.map((i) => ({ ...i, numberLabel: i.numberLabel ?? 'BotConversa', readOnly: false })),
+    ], [items, systemItems]);
+
     // Filtro otimizado
     const filteredItems = useMemo(() => {
         const term = deferredSearch.toLowerCase();
-        if (!term) return items;
+        if (!term) return allItems;
 
-        return items.filter(item =>
+        return allItems.filter(item =>
             item.nome.toLowerCase().includes(term) ||
             item.telefone.includes(term)
         );
-    }, [items, deferredSearch]);
+    }, [allItems, deferredSearch]);
 
     // Agrupamento por coluna
     const groupedItems = useMemo(() => {
@@ -300,9 +315,18 @@ const KanbanCard = React.memo(function KanbanCard({
             <div className={`absolute top-0 left-0 w-1 h-full ${stageColor} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
 
             <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest truncate">
-                    {item.evento}
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest truncate">
+                        {item.evento}
+                    </span>
+                    {item.numberLabel && (
+                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${item.numberLabel === 'BotConversa'
+                            ? 'bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400'
+                            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
+                            {item.numberLabel}
+                        </span>
+                    )}
+                </div>
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-600 dark:text-zinc-400 shrink-0 shadow-sm">
                         <User className="w-4 h-4" />
@@ -338,6 +362,7 @@ const KanbanCard = React.memo(function KanbanCard({
                 </div>
             </div>
 
+            {!item.readOnly && (
             <div className="flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
                 <button
                     onClick={() => deleteItem(item.id)}
@@ -365,6 +390,7 @@ const KanbanCard = React.memo(function KanbanCard({
                     </button>
                 )}
             </div>
+            )}
         </div>
     );
 });
