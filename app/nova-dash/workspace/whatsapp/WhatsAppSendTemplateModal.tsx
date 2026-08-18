@@ -44,8 +44,9 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
   async function reload() {
     setLoading(true);
     try {
-      // Só aprovados: a Meta recusa o envio de template em análise/reprovado.
-      const list = await listWhatsAppTemplates(true);
+      // Só aprovados E do catálogo do número que atende este contato — enviar
+      // template de outra WABA a Meta recusa (multi-número, 18/08/2026).
+      const list = await listWhatsAppTemplates(true, contactId);
       setTemplates(list);
       if (list.length && !list.some((t) => t.id === selectedId)) setSelectedId(list[0].id);
     } catch (e) {
@@ -55,7 +56,7 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
     }
   }
 
-  useEffect(() => { if (open) reload(); else setTemplateSearch(''); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) reload(); else setTemplateSearch(''); }, [open, contactId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   const filteredTemplates = templates.filter((t) => {

@@ -48,6 +48,29 @@ async function requireTeamMember(): Promise<{ id: string; name: string }> {
   return { id: me.id, name: me.name ?? 'Atendente' };
 }
 
+/**
+ * Catálogo por número (18/08/2026): todo template pertence a UMA WABA — o
+ * catálogo é escopado pelo WhatsAppNumber. `numberId` null é legado e conta
+ * como catálogo do número default.
+ */
+async function defaultNumberId(): Promise<string | null> {
+  const row = await db.whatsAppNumber.findFirst({
+    where: { active: true },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
+
+/** Filtro do catálogo de um número (null legado conta como default). */
+async function catalogWhere(numberId: string | null): Promise<{ OR: { numberId: string | null }[] }> {
+  const def = await defaultNumberId();
+  const target = numberId ?? def;
+  const keys: { numberId: string | null }[] = [{ numberId: target }];
+  if (target === def) keys.push({ numberId: null });
+  return { OR: keys };
+}
+
 export interface WhatsAppTemplateDTO {
   id: string;
   name: string;
@@ -57,6 +80,9 @@ export interface WhatsAppTemplateDTO {
   status: string; // APPROVED | PENDING | REJECTED | PAUSED | DISABLED
   category: string;
   rejectedReason: string | null;
+  // Número dono do catálogo (null = legado/default) + rótulo pra UI.
+  numberId: string | null;
+  numberLabel: string | null;
   headerText: string | null;
   // TEXT | IMAGE | VIDEO | DOCUMENT | null (sem cabeçalho)
   headerFormat: string | null;
@@ -67,13 +93,14 @@ export interface WhatsAppTemplateDTO {
 
 function toDTO(t: {
   id: string; name: string; language: string; bodyVars: number; bodyPreview: string | null;
-  status: string; category: string; rejectedReason: string | null;
+  status: string; category: string; rejectedReason: string | null; numberId: string | null;
   headerText: string | null; headerFormat: string | null; headerMediaKey: string | null;
   footerText: string | null;
-}): WhatsAppTemplateDTO {
+}, numberLabel: string | null = null): WhatsAppTemplateDTO {
   return {
     id: t.id, name: t.name, language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyPreview,
     status: t.status, category: t.category, rejectedReason: t.rejectedReason,
+    numberId: t.numberId, numberLabel,
     headerText: t.headerText, headerFormat: t.headerFormat, hasHeaderMedia: !!t.headerMediaKey,
     footerText: t.footerText,
   };
@@ -83,14 +110,28 @@ function toDTO(t: {
  * Lista o cadastro local. Por padrão devolve TODOS os status (a tela de
  * gerenciamento acompanha o ciclo da Meta); `onlyApproved` é o que o envio
  * usa — mandar template não aprovado a Meta recusa na hora.
+ *
+ * `contactId` limita ao CATÁLOGO do número que atende o contato — enviar
+ * template de outra WABA a Meta recusa (é o que o modal de envio usa).
  */
-export async function listWhatsAppTemplates(onlyApproved = false): Promise<WhatsAppTemplateDTO[]> {
+export async function listWhatsAppTemplates(onlyApproved = false, contactId?: string): Promise<WhatsAppTemplateDTO[]> {
   await requireTeamMember();
-  const templates = await db.whatsAppTemplate.findMany({
-    where: onlyApproved ? { status: 'APPROVED' } : undefined,
-    orderBy: { name: 'asc' },
-  });
-  return templates.map(toDTO);
+
+  let catalog: { OR: { numberId: string | null }[] } | undefined;
+  if (contactId) {
+    const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { numberId: true } });
+    catalog = await catalogWhere(contact?.numberId ?? null);
+  }
+
+  const [templates, numbers] = await Promise.all([
+    db.whatsAppTemplate.findMany({
+      where: { ...(onlyApproved ? { status: 'APPROVED' } : {}), ...(catalog ?? {}) },
+      orderBy: { name: 'asc' },
+    }),
+    db.whatsAppNumber.findMany({ select: { id: true, label: true } }),
+  ]);
+  const labelOf = new Map(numbers.map((n) => [n.id, n.label]));
+  return templates.map((t) => toDTO(t, t.numberId ? labelOf.get(t.numberId) ?? null : 'Número principal'));
 }
 
 /**
@@ -148,8 +189,11 @@ export async function createWhatsAppTemplate(input: {
   headerMediaKey?: string;
   headerMediaType?: string;
   bodyText: string; bodyExamples: string[]; footerText?: string;
+  // Em qual NÚMERO (WABA) criar — ausente = número default.
+  numberId?: string | null;
 }): Promise<{ template?: WhatsAppTemplateDTO; error?: string }> {
   await requireTeamMember();
+  const targetNumberId = input.numberId ?? (await defaultNumberId());
 
   const name = input.name.trim().toLowerCase().replace(/\s+/g, '_');
   if (!/^[a-z0-9_]{1,512}$/.test(name)) {
@@ -197,10 +241,9 @@ export async function createWhatsAppTemplate(input: {
     }
   }
 
-  // Tela de templates opera no catálogo do número default (numberId null —
-  // legado). Catálogo por número entra quando a WABA nova tiver templates.
-  if (await db.whatsAppTemplate.findFirst({ where: { name, numberId: null } })) {
-    return { error: `Já existe um template chamado "${name}".` };
+  // Duplicidade é POR CATÁLOGO — o mesmo nome pode existir em WABAs diferentes.
+  if (await db.whatsAppTemplate.findFirst({ where: { name, ...(await catalogWhere(targetNumberId)) } })) {
+    return { error: `Já existe um template chamado "${name}" neste número.` };
   }
 
   const language = input.language.trim() || 'pt_BR';
@@ -225,6 +268,7 @@ export async function createWhatsAppTemplate(input: {
       buffer,
       input.headerMediaType!,
       input.headerMediaKey!.split('/').pop() ?? 'header',
+      targetNumberId,
     );
     if (!uploaded.handle) {
       return { error: uploaded.error ?? 'Falha ao subir a mídia de exemplo na Meta.' };
@@ -239,12 +283,13 @@ export async function createWhatsAppTemplate(input: {
     headerFormat: wantsMediaHeader ? input.headerFormat : null,
     headerHandle,
     bodyText, bodyExamples: examples, footerText,
-  });
+  }, targetNumberId);
   if (created.error) return { error: created.error };
 
   const template = await db.whatsAppTemplate.create({
     data: {
       name, language, category, headerText, footerText,
+      numberId: targetNumberId,
       headerFormat: wantsMediaHeader ? input.headerFormat : headerText ? 'TEXT' : null,
       headerMediaKey: wantsMediaHeader ? input.headerMediaKey : null,
       headerMediaType: wantsMediaHeader ? input.headerMediaType : null,
@@ -294,66 +339,98 @@ export async function syncWhatsAppTemplatesFromMeta(): Promise<{
   imported: number; approved: number; pending: number; rejected: number; error?: string;
 }> {
   await requireTeamMember();
+  const result = { imported: 0, approved: 0, pending: 0, rejected: 0 };
+  const errors: string[] = [];
 
-  const empty = { imported: 0, approved: 0, pending: 0, rejected: 0 };
-  let metaTemplates;
-  try {
-    metaTemplates = await fetchMetaTemplates();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Falha ao consultar os templates na Meta.';
-    console.error('[WHATSAPP TEMPLATES] Sincronização falhou:', message);
-    return { ...empty, error: message };
-  }
+  const numbers = await db.whatsAppNumber.findMany({
+    where: { active: true, wabaId: { not: null } },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true, label: true, isDefault: true },
+  });
+  if (!numbers.length) return { ...result, error: 'Nenhum número com WABA cadastrada.' };
 
-  const result = { ...empty };
-  for (const t of metaTemplates) {
-    const data = {
-      language: t.language,
-      bodyVars: t.bodyVars,
-      bodyPreview: t.bodyText,
-      headerText: t.headerText,
-      // headerMediaKey NÃO entra aqui: a mídia padrão definida localmente
-      // sobrevive à sincronização (a Meta não devolve mídia de exemplo).
-      headerFormat: t.headerFormat,
-      footerText: t.footerText,
-      status: t.status,
-      category: t.category,
-      rejectedReason: t.rejectedReason,
-      metaId: t.metaId,
-    };
-    // name deixou de ser unique global (catálogo por número) → upsert manual
-    // no catálogo default (numberId null).
-    const existing = await db.whatsAppTemplate.findFirst({ where: { name: t.name, numberId: null }, select: { id: true } });
-    if (existing) {
-      await db.whatsAppTemplate.update({ where: { id: existing.id }, data });
+  // Normalização do legado: linhas numberId null pertencem ao número default.
+  // (O adopt do ensureDefaultNumber cobre isto, mas syncs antigos recriavam
+  // linhas nulas — funde as duplicadas preservando a mídia de cabeçalho.)
+  const defId = numbers[0].id;
+  const legacy = await db.whatsAppTemplate.findMany({ where: { numberId: null } });
+  for (const row of legacy) {
+    const twin = await db.whatsAppTemplate.findFirst({ where: { name: row.name, numberId: defId } });
+    if (twin) {
+      if (!twin.headerMediaKey && row.headerMediaKey) {
+        await db.whatsAppTemplate.update({
+          where: { id: twin.id },
+          data: { headerMediaKey: row.headerMediaKey, headerMediaType: row.headerMediaType },
+        });
+      }
+      await db.whatsAppTemplate.delete({ where: { id: row.id } });
     } else {
-      await db.whatsAppTemplate.create({ data: { name: t.name, ...data } });
+      await db.whatsAppTemplate.update({ where: { id: row.id }, data: { numberId: defId } });
     }
-    result.imported++;
-    if (t.status === 'APPROVED') result.approved++;
-    else if (t.status === 'PENDING') result.pending++;
-    else if (t.status === 'REJECTED') result.rejected++;
   }
 
-  // Template apagado na Meta sai do cadastro: se ficasse, apareceria enviável
-  // e o envio falharia só na hora de falar com o cliente.
-  const names = metaTemplates.map((t) => t.name);
-  if (names.length) {
-    // Só limpa o catálogo default — os catálogos dos outros números não podem
-    // ser apagados por uma sincronização da WABA principal.
-    await db.whatsAppTemplate.deleteMany({ where: { name: { notIn: names }, numberId: null } });
+  // Um catálogo por número: cada WABA é fonte da verdade do próprio catálogo.
+  for (const number of numbers) {
+    let metaTemplates;
+    try {
+      // "hello_world" é o template de demonstração que a Meta pré-cria e não
+      // deixa excluir — não serve pra nada no atendimento, então fica de fora
+      // (e o stale-delete abaixo remove qualquer resquício dele no cadastro).
+      metaTemplates = (await fetchMetaTemplates(number.id)).filter((t) => t.name !== 'hello_world');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Falha ao consultar os templates na Meta.';
+      console.error(`[WHATSAPP TEMPLATES] Sincronização falhou (${number.label}):`, message);
+      errors.push(`${number.label}: ${message}`);
+      continue;
+    }
+
+    for (const t of metaTemplates) {
+      const data = {
+        language: t.language,
+        bodyVars: t.bodyVars,
+        bodyPreview: t.bodyText,
+        headerText: t.headerText,
+        // headerMediaKey NÃO entra aqui: a mídia padrão definida localmente
+        // sobrevive à sincronização (a Meta não devolve mídia de exemplo).
+        headerFormat: t.headerFormat,
+        footerText: t.footerText,
+        status: t.status,
+        category: t.category,
+        rejectedReason: t.rejectedReason,
+        metaId: t.metaId,
+      };
+      const existing = await db.whatsAppTemplate.findFirst({
+        where: { name: t.name, numberId: number.id }, select: { id: true },
+      });
+      if (existing) {
+        await db.whatsAppTemplate.update({ where: { id: existing.id }, data });
+      } else {
+        await db.whatsAppTemplate.create({ data: { name: t.name, numberId: number.id, ...data } });
+      }
+      result.imported++;
+      if (t.status === 'APPROVED') result.approved++;
+      else if (t.status === 'PENDING') result.pending++;
+      else if (t.status === 'REJECTED') result.rejected++;
+    }
+
+    // Template apagado na Meta sai do cadastro DESTE número: se ficasse,
+    // apareceria enviável e o envio falharia só na hora de falar com o cliente.
+    const names = metaTemplates.map((t) => t.name);
+    if (names.length) {
+      await db.whatsAppTemplate.deleteMany({ where: { name: { notIn: names }, numberId: number.id } });
+    }
   }
 
-  return result;
+  return errors.length ? { ...result, error: errors.join(' · ') } : result;
 }
 
-/** Exclui o template — na Meta e no cadastro local. */
+/** Exclui o template — na Meta (WABA do número dono) e no cadastro local. */
 export async function deleteWhatsAppTemplate(id: string): Promise<{ error?: string }> {
   await requireTeamMember();
   const template = await db.whatsAppTemplate.findUnique({ where: { id } });
   if (!template) return {};
 
-  const { error } = await deleteMetaTemplate(template.name);
+  const { error } = await deleteMetaTemplate(template.name, template.numberId);
   if (error) return { error };
 
   await db.whatsAppTemplate.delete({ where: { id } });
@@ -381,6 +458,14 @@ export async function sendWhatsAppTemplateMessage(
   if (!template) throw new Error('Template não encontrado.');
   if (template.status !== 'APPROVED') {
     throw new Error(`Este template está "${template.status}" na Meta — só templates aprovados podem ser enviados.`);
+  }
+  // Catálogo × número: template de outra WABA a Meta recusa — barra aqui com
+  // mensagem clara em vez de falhar na Graph API.
+  const def = await defaultNumberId();
+  const templateOwner = template.numberId ?? def;
+  const contactOwner = contact.numberId ?? def;
+  if (templateOwner !== contactOwner) {
+    throw new Error('Este template pertence a outro número — use um template do número que atende este contato.');
   }
   if (vars.length !== template.bodyVars) throw new Error(`Este template espera ${template.bodyVars} variável(is).`);
 
@@ -418,6 +503,7 @@ export async function sendWhatsAppTemplateMessage(
   const message = await db.whatsAppMessage.create({
     data: {
       contactId,
+      numberId: contact.numberId,
       waMessageId: result.waMessageId,
       direction: 'out',
       body: preview,
@@ -439,8 +525,8 @@ export async function sendWhatsAppTemplateMessage(
 
   const conversation = await db.whatsAppConversation.upsert({
     where: { contactId },
-    update: { lastMessageAt: new Date(), status: 'human', assignedToId: me.id },
-    create: { contactId, status: 'human', assignedToId: me.id },
+    update: { lastMessageAt: new Date(), status: 'human', assignedToId: me.id, ...(contact.numberId ? { numberId: contact.numberId } : {}) },
+    create: { contactId, numberId: contact.numberId, status: 'human', assignedToId: me.id },
   });
 
   const dto: WhatsAppMessageDTO = {

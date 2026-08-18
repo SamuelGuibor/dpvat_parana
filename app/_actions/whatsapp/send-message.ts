@@ -54,6 +54,9 @@ async function persistOutbound(params: {
   contactId: string;
   contactName: string | null;
   contactPhone: string;
+  // Número da empresa que atende o contato — carimba mensagem e conversa
+  // (sem isto os dashboards por número perdiam os envios de atendente).
+  numberId: string | null;
   waMessageId: string;
   body: string | null;
   mediaKey?: string | null;
@@ -64,6 +67,7 @@ async function persistOutbound(params: {
   const message = await db.whatsAppMessage.create({
     data: {
       contactId: params.contactId,
+      numberId: params.numberId,
       waMessageId: params.waMessageId,
       direction: 'out',
       body: params.body,
@@ -79,8 +83,8 @@ async function persistOutbound(params: {
 
   const conversation = await db.whatsAppConversation.upsert({
     where: { contactId: params.contactId },
-    update: { lastMessageAt: new Date(), status: 'human', assignedToId: params.authorId },
-    create: { contactId: params.contactId, status: 'human', assignedToId: params.authorId },
+    update: { lastMessageAt: new Date(), status: 'human', assignedToId: params.authorId, ...(params.numberId ? { numberId: params.numberId } : {}) },
+    create: { contactId: params.contactId, numberId: params.numberId, status: 'human', assignedToId: params.authorId },
   });
 
   const dto: WhatsAppMessageDTO = {
@@ -152,6 +156,7 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
     contactId,
     contactName: contact.name,
     contactPhone: contact.phone,
+    numberId: contact.numberId,
     waMessageId: result.waMessageId,
     body: text,
     authorId: me.id,
@@ -348,6 +353,7 @@ export async function sendWhatsAppMedia({ contactId, key, mimeType, fileName, ca
     contactId,
     contactName: contact.name,
     contactPhone: contact.phone,
+    numberId: contact.numberId,
     waMessageId: result.waMessageId,
     body: caption?.trim() || null,
     mediaKey: key,

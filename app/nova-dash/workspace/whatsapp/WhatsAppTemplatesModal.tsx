@@ -341,6 +341,12 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                             <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 dark:bg-zinc-800 dark:text-zinc-300">
                               {categoryLabel(t.category)}
                             </span>
+                            {/* Catálogo por número: de qual linha/WABA este template é */}
+                            {t.numberLabel && (
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                                {t.numberLabel}
+                              </span>
+                            )}
                             {t.headerFormat && t.headerFormat !== 'TEXT' && (
                               <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
                                 t.hasHeaderMedia

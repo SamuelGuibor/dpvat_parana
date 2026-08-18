@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
 
   interface WebhookPayload {
     entry?: {
+      // Id da WABA que originou o lote — escopa eventos de conta (templates).
+      id?: string | number;
       changes?: {
         field?: string;
         value?: {
@@ -106,7 +108,9 @@ export async function POST(req: NextRequest) {
         // Antes eram descartados sem rastro — a violação de spam da Meta
         // chegou por aqui e a única evidência que sobrou foi o e-mail.
         if (change?.field && change.field !== "messages") {
-          await handleAccountEvent(change.field, value as Record<string, unknown> | undefined);
+          // entry.id = WABA que originou o evento — escopa o update de status
+          // de template no catálogo certo (multi-número).
+          await handleAccountEvent(change.field, value as Record<string, unknown> | undefined, entry?.id ? String(entry.id) : null);
           continue;
         }
         if (change?.field !== "messages" || !value) continue;

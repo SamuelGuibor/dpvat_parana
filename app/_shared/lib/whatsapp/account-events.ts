@@ -120,7 +120,7 @@ function compact(value: Value): string {
  * o veredito no cadastro na hora, senão a equipe só descobriria clicando em
  * "Sincronizar". Best-effort — falha aqui não pode derrubar o webhook.
  */
-async function applyTemplateStatus(value: Value): Promise<void> {
+async function applyTemplateStatus(value: Value, wabaId?: string | null): Promise<void> {
   const name = str(value.message_template_name);
   const event = (str(value.event) ?? "").toUpperCase();
   if (!name || !event) return;
@@ -130,8 +130,23 @@ async function applyTemplateStatus(value: Value): Promise<void> {
   const rawId = value.message_template_id;
   const metaId = typeof rawId === "number" || typeof rawId === "string" ? String(rawId) : null;
 
+  // Catálogo por número (18/08/2026): o mesmo nome pode existir em duas WABAs
+  // — o veredito só vale para o catálogo da WABA que mandou o evento
+  // (entry.id do webhook). Sem wabaId identificável, cai no comportamento
+  // antigo (por nome) para não perder o update.
+  let scope: { numberId: { in: string[] } } | { numberId: null } | object = {};
+  if (wabaId) {
+    const numbers = await db.whatsAppNumber.findMany({ where: { wabaId }, select: { id: true, isDefault: true } });
+    if (numbers.length) {
+      const ids = numbers.map((n) => n.id);
+      scope = numbers.some((n) => n.isDefault)
+        ? { OR: [{ numberId: { in: ids } }, { numberId: null }] }
+        : { numberId: { in: ids } };
+    }
+  }
+
   await db.whatsAppTemplate.updateMany({
-    where: { name },
+    where: { name, ...scope },
     data: {
       status: event,
       rejectedReason: event === "REJECTED" && reason && reason !== "NONE" ? reason : null,
@@ -144,13 +159,13 @@ async function applyTemplateStatus(value: Value): Promise<void> {
  * Processa um change de webhook que NÃO é "messages". Sempre loga o payload
  * cru no console (fica nos logs da Vercel para investigação posterior).
  */
-export async function handleAccountEvent(field: string, value: Value | undefined): Promise<void> {
+export async function handleAccountEvent(field: string, value: Value | undefined, wabaId?: string | null): Promise<void> {
   try {
-    console.log(`[WHATSAPP ACCOUNT] Evento "${field}":`, JSON.stringify(value ?? null));
+    console.log(`[WHATSAPP ACCOUNT] Evento "${field}" (waba ${wabaId ?? '?'}):`, JSON.stringify(value ?? null));
     if (!value) return;
 
     if (field === "message_template_status_update") {
-      await applyTemplateStatus(value);
+      await applyTemplateStatus(value, wabaId);
     }
 
     await createLog({
