@@ -11,7 +11,6 @@ import {
   workedMinutes,
   breakMinutes,
   bankSummary,
-  statusOf,
   fmtHm,
   fmtSigned,
   fmtClock,
@@ -56,22 +55,6 @@ function toDto(ws: NonNullable<DbSession>): PontoSession {
     autoClosed: ws.autoClosed,
     editedById: ws.editedById,
     editedAt: ws.editedAt?.toISOString() ?? null,
-  };
-}
-
-/**
- * Estado do dia SEM horários — é o que o colaborador comum recebe. A regra
- * (16/08/2026) é o funcionário só ver os botões de bater ponto; horários e
- * histórico ficam restritos a quem tem `manage_ponto`.
- */
-function limitedState(ws: NonNullable<DbSession> | null) {
-  if (!ws) return { status: 'nao_iniciado' as const, breaksCount: 0, autoClosed: false, note: null as string | null };
-  const dto = toDto(ws);
-  return {
-    status: statusOf(dto),
-    breaksCount: parseBreaks(dto).length,
-    autoClosed: !!ws.autoClosed,
-    note: ws.note ?? null,
   };
 }
 
@@ -197,16 +180,21 @@ export async function GET(req: NextRequest) {
 
   const today = todayStr();
 
-  // Colaborador comum: SÓ o estado dos botões — sem horários, sem histórico,
-  // sem escala. Os horários ficam restritos a quem gerencia o ponto.
+  // Colaborador comum: vê o PRÓPRIO dia (relógio, trabalhado hoje, batidas),
+  // mas não o histórico do mês nem o de ninguém — isso continua restrito a
+  // quem tem `manage_ponto`.
   if (!canManage) {
-    const ws = await db.workSession.findFirst({ where: { discordId: ctx.userId, date: today } });
+    const [meOnly, ws] = await Promise.all([
+      db.user.findUnique({ where: { id: ctx.userId }, select: { workSchedule: true } }),
+      db.workSession.findFirst({ where: { discordId: ctx.userId, date: today } }),
+    ]);
     return NextResponse.json({
       month,
       today,
       canManageTeam: false,
       restricted: true,
-      todayState: limitedState(ws),
+      schedule: parseSchedule(meOnly?.workSchedule),
+      todaySession: ws ? toDto(ws) : null,
     });
   }
 
@@ -258,11 +246,8 @@ export async function POST(req: NextRequest) {
   const { action } = body;
   const date = todayStr();
   const now = new Date();
-  const canManage = canManagePonto(ctx.userId, ctx.permissions);
-
-  // Colaborador comum não recebe horários nem na resposta da batida.
-  const respond = (ws: NonNullable<DbSession>) =>
-    NextResponse.json(canManage ? toDto(ws) : limitedState(ws));
+  // A batida é sempre do próprio usuário — ele pode ver os próprios horários.
+  const respond = (ws: NonNullable<DbSession>) => NextResponse.json(toDto(ws));
 
   await closeStale({ discordId: ctx.userId });
 
