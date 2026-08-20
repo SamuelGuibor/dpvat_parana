@@ -25,6 +25,13 @@ const nextConfig = {
   // externalizado, o Node o resolve direto do node_modules e funciona.
   experimental: {
     serverComponentsExternalPackages: ["pdfjs-dist"],
+    // Os .docx de templates/ são lidos em runtime com nome de arquivo dinâmico
+    // (gerarProcuracao) — o file tracing da Vercel não enxerga essa leitura e
+    // deixava a pasta fora do bundle das funções: ENOENT em
+    // /var/task/templates/*.docx ao gerar contrato/procuração em produção.
+    outputFileTracingIncludes: {
+      "/**": ["./templates/**/*.docx"],
+    },
   },
   images: {
     remotePatterns: [
