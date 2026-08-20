@@ -2,7 +2,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import QRCode from "qrcode";
 import { gerarProcuracao } from "@/app/_shared/utils/gerarProcuracao";
 import { verifyUrlFor } from "./tokens";
@@ -252,6 +252,150 @@ function loadLogo(): Buffer | null {
   }
 }
 
+/**
+ * Texto em arco (usado no selo decorativo abaixo). Cada caractere é
+ * posicionado e rotacionado individualmente ao longo de um círculo de raio
+ * `radius`, centrado em (cx, cy) — a leitura corre da esquerda pra direita
+ * passando pelo topo do círculo.
+ */
+function drawArcText(
+  page: PDFPage,
+  text: string,
+  opts: { cx: number; cy: number; radius: number; font: PDFFont; size: number; color: ReturnType<typeof rgb> },
+): void {
+  const { cx, cy, radius, font, size, color } = opts;
+  const chars = Array.from(text);
+  const angularWidths = chars.map((ch) => (font.widthOfTextAtSize(ch, size) / radius) * (180 / Math.PI));
+  const totalWidth = angularWidths.reduce((a, b) => a + b, 0);
+  let angle = 90 + totalWidth / 2;
+  for (let i = 0; i < chars.length; i++) {
+    const halfW = angularWidths[i] / 2;
+    angle -= halfW;
+    const theta = (angle * Math.PI) / 180;
+    const x = cx + radius * Math.cos(theta);
+    const y = cy + radius * Math.sin(theta);
+    page.drawText(chars[i], { x, y, size, font, color, rotate: degrees(angle - 90) });
+    angle -= halfW;
+  }
+}
+
+/** Anel de tracinhos radiais (textura tipo guilhoché de selo de segurança). */
+function drawTickRing(
+  page: PDFPage,
+  cx: number,
+  cy: number,
+  rOuter: number,
+  rInner: number,
+  count: number,
+  color: ReturnType<typeof rgb>,
+): void {
+  for (let i = 0; i < count; i++) {
+    const theta = (2 * Math.PI * i) / count;
+    page.drawLine({
+      start: { x: cx + rInner * Math.cos(theta), y: cy + rInner * Math.sin(theta) },
+      end: { x: cx + rOuter * Math.cos(theta), y: cy + rOuter * Math.sin(theta) },
+      thickness: 0.35,
+      color,
+    });
+  }
+}
+
+/** Caminho SVG de uma estrela de 5 pontas, centrada na origem (coordenadas locais). */
+function starSvgPath(rOuter: number, rInner: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const ang = (Math.PI / 5) * i - Math.PI / 2;
+    const r = i % 2 === 0 ? rOuter : rInner;
+    pts.push(`${i === 0 ? "M" : "L"} ${(r * Math.cos(ang)).toFixed(2)} ${(r * Math.sin(ang)).toFixed(2)}`);
+  }
+  return pts.join(" ") + " Z";
+}
+
+/** Folhinhas de louro (elipses finas, rotacionadas radialmente) na metade de baixo do círculo. */
+function drawLaurel(page: PDFPage, cx: number, cy: number, radius: number, color: ReturnType<typeof rgb>): void {
+  const leafW = radius * 0.16;
+  const leafH = radius * 0.06;
+  const ramos: [number, number][] = [
+    [204, 256],
+    [284, 336],
+  ];
+  for (const [start, end] of ramos) {
+    for (let deg = start; deg <= end; deg += 13) {
+      const theta = (deg * Math.PI) / 180;
+      page.drawEllipse({
+        x: cx + radius * Math.cos(theta),
+        y: cy + radius * Math.sin(theta),
+        xScale: leafW,
+        yScale: leafH,
+        rotate: degrees(deg),
+        color,
+      });
+    }
+  }
+}
+
+/**
+ * Selo decorativo FICTÍCIO ("Minnesota International Certification
+ * Authority") — não é o ICP-Brasil nem qualquer certificadora real. Serve só
+ * pra dar uma cara de "documento com selo" ao relatório, no mesmo estilo
+ * visual de badges de certificação: anéis concêntricos com textura de
+ * segurança, texto em arco, estrela e ramo de louro.
+ */
+function drawFictitiousSeal(
+  page: PDFPage,
+  args: { cx: number; cy: number; radius: number; font: PDFFont; fontBold: PDFFont },
+): void {
+  const { cx, cy, radius, font, fontBold } = args;
+  const gold = rgb(0.52, 0.4, 0.14);
+  const goldLight = rgb(0.68, 0.56, 0.28);
+
+  // Anéis + textura de segurança.
+  page.drawEllipse({ x: cx, y: cy, xScale: radius, yScale: radius, borderColor: gold, borderWidth: 1.4 });
+  page.drawEllipse({ x: cx, y: cy, xScale: radius * 0.91, yScale: radius * 0.91, borderColor: gold, borderWidth: 0.6 });
+  drawTickRing(page, cx, cy, radius * 0.91, radius * 0.82, 60, goldLight);
+  page.drawEllipse({ x: cx, y: cy, xScale: radius * 0.82, yScale: radius * 0.82, borderColor: gold, borderWidth: 0.6 });
+
+  // Ramo de louro na metade de baixo, por trás do texto central.
+  drawLaurel(page, cx, cy, radius * 0.72, goldLight);
+
+  // Texto em arco encostado no anel interno.
+  drawArcText(page, "MINNESOTA INTERNATIONAL CERTIFICATION AUTHORITY  •  ", {
+    cx, cy, radius: radius * 0.72, font: fontBold, size: radius * 0.12, color: gold,
+  });
+
+  // Estrelinha entre o arco e o brasão central.
+  page.drawSvgPath(starSvgPath(radius * 0.1, radius * 0.042), {
+    x: cx,
+    y: cy + radius * 0.42,
+    color: gold,
+    borderWidth: 0,
+  });
+
+  const linha1 = "M.I.C.A.";
+  const s1 = 8;
+  page.drawText(linha1, {
+    x: cx - fontBold.widthOfTextAtSize(linha1, s1) / 2,
+    y: cy + 4,
+    size: s1,
+    font: fontBold,
+    color: gold,
+  });
+  const linha2 = "CERTIFICADO Nº MN-27001";
+  page.drawText(linha2, {
+    x: cx - font.widthOfTextAtSize(linha2, 4.4) / 2,
+    y: cy - 7,
+    size: 4.4,
+    font,
+    color: gold,
+  });
+  page.drawLine({
+    start: { x: cx - radius * 0.4, y: cy - 12 },
+    end: { x: cx + radius * 0.4, y: cy - 12 },
+    thickness: 0.5,
+    color: gold,
+  });
+}
+
 /** Rodapé de autenticação, em TODAS as páginas do documento assinado. */
 function drawFooter(page: PDFPage, font: PDFFont, token: string): void {
   const { width } = page.getSize();
@@ -392,6 +536,8 @@ async function appendManifest(
       console.error("[SIGN] logo do manifesto falhou (seguindo sem ele):", err);
     }
   }
+  drawFictitiousSeal(page, { cx: 330, cy: y - 22, radius: 34, font, fontBold });
+
   y -= 6;
   texto("Relatório de Assinaturas", { size: 17, bold: true, cor: NAVY, gap: 7 });
   texto("Datas e horários em UTC-03:00 (America/Sao_Paulo)", { size: 8, cor: GRAY, gap: 3 });
