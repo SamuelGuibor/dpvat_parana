@@ -698,6 +698,10 @@ async function appendManifest(
   page.drawText(`Este relatório é parte integrante do documento ${token.slice(0, 22)}.`, {
     x: tx, y: blocoY + 12, size: 7, font, color: GRAY,
   });
+
+  drawFictitiousSeal(page, {
+    cx: margem + larguraUtil - 56, cy: blocoY + 53, radius: 34, font, fontBold,
+  });
 }
 
 // ---------------------------------------------------------------------------
