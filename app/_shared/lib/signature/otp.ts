@@ -60,6 +60,9 @@ export async function sendOtp(requestId: string): Promise<SendOtpResult> {
   }
 
   const sent = await sendSystemWhatsApp({
+    // O contato do ciclo, não a resolução por telefone: garante que o código
+    // sai pela MESMA linha da empresa que conversa com este cliente.
+    contactId: request.contactId,
     phone: request.contact.phone,
     clientName: request.contact.name,
     text: `Seu código para assinar os documentos é ${code}. Ele vale por 10 minutos. Não compartilhe com ninguém.`,

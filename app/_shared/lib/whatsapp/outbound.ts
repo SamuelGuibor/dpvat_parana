@@ -198,6 +198,13 @@ async function alertIfUnanswered(
 export interface SystemSendInput {
   phone: string; // telefone do card (qualquer máscara)
   clientName?: string | null;
+  /**
+   * Contato EXATO a usar (multi-número). O mesmo telefone pode existir como
+   * dois contatos, um por linha da empresa — resolver só pelo phone pode cair
+   * no gêmeo da outra linha e o envio sai pelo número errado. Quando o chamador
+   * já sabe o contato (ex.: ciclo de assinatura), deve passá-lo aqui.
+   */
+  contactId?: string;
   /** Texto livre — usado quando a janela de 24h está aberta. */
   text: string;
   /**
@@ -239,8 +246,15 @@ export interface SystemSendResult {
  */
 export async function sendSystemWhatsApp(input: SystemSendInput): Promise<SystemSendResult> {
   try {
-    const contact = await findOrCreateContactByPhone(input.phone, input.clientName);
-    if (!contact) return { sent: false, via: null, reason: "telefone do card inválido" };
+    // Com contactId o envio usa AQUELE contato (e a linha dele); a resolução
+    // por telefone fica só para quem não sabe o contato (ex.: envio por card).
+    const contact = input.contactId
+      ? await db.whatsAppContact.findUnique({
+          where: { id: input.contactId },
+          select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
+        })
+      : await findOrCreateContactByPhone(input.phone, input.clientName);
+    if (!contact) return { sent: false, via: null, reason: input.contactId ? "contato não encontrado" : "telefone do card inválido" };
     if (contact.optedOut) {
       await logWhatsAppEvent({
         action: "wa_text",

@@ -636,7 +636,7 @@ function askMissingMessage(missing: MissingField[], documentsRead: number, retry
   if (keys.has("estado_civil")) itens.push("seu *estado civil* (solteiro, casado, divorciado...)");
   if (keys.has("profissao")) itens.push("sua *profissão* (o que você trabalha)");
   if (["rua", "numero", "bairro", "cep", "cidade", "estado"].some((k) => keys.has(k as ContractFieldKey))) {
-    itens.push("seu *endereço completo com CEP* (rua, número, bairro e cidade)");
+    itens.push("seu *endereço completo com CEP* (rua, número, bairro e cidade) *se preferir, pode me mandar uma foto do comprovante de residência*");
   }
   if (keys.has("nacionalidade")) itens.push("sua nacionalidade");
   const lista = itens.map((i) => `📌 ${i}`).join("\n");
@@ -1336,6 +1336,8 @@ export async function runSignatureReminders(now: number): Promise<ReminderResult
       const first = (req.contact.name ?? "").trim().split(/\s+/)[0] ?? "";
       const text = REMINDER_TEXTS[Math.min(attempt, REMINDER_TEXTS.length) - 1](first, signUrlFor(req.token));
       const sent = await sendSystemWhatsApp({
+        // Linha certa: o contato do ciclo, sem re-resolver pelo telefone.
+        contactId: req.contactId,
         phone: req.contact.phone,
         clientName: req.contact.name,
         text,

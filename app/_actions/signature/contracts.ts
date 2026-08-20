@@ -320,6 +320,8 @@ export async function reenviarLink(id: string): Promise<{ ok: boolean; erro?: st
 
   const primeiroNome = (r.contact.name ?? "").trim().split(/\s+/)[0] ?? "";
   const enviado = await sendSystemWhatsApp({
+    // Linha certa: o contato do ciclo, sem re-resolver pelo telefone.
+    contactId: r.contactId,
     phone: r.contact.phone,
     clientName: r.contact.name,
     text:

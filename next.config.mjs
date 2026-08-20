@@ -29,8 +29,17 @@ const nextConfig = {
     // (gerarProcuracao) — o file tracing da Vercel não enxerga essa leitura e
     // deixava a pasta fora do bundle das funções: ENOENT em
     // /var/task/templates/*.docx ao gerar contrato/procuração em produção.
+    //
+    // pdf.worker.mjs (usado por findAnchors ao carimbar a assinatura) é
+    // carregado pelo PRÓPRIO pdfjs-dist internamente (não um import literal
+    // que o tracing consiga seguir) — mesmo problema, mesmo remédio: erro em
+    // produção era "Cannot find module '.../pdfjs-dist/legacy/build/pdf.worker.mjs'"
+    // bem no passo de assinar (o cliente via "deu um problema ao finalizar").
     outputFileTracingIncludes: {
-      "/**": ["./templates/**/*.docx"],
+      "/**": [
+        "./templates/**/*.docx",
+        "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      ],
     },
   },
   images: {
