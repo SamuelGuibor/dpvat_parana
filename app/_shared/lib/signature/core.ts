@@ -663,31 +663,17 @@ export async function maybeStartSignatureFlow(
 
     const missing = await validateExtraction(fields);
     if (missing.length) {
-      // Antes de desistir pro atendente, o BOT pede os dados que faltaram
-      // direto ao cliente (texto ou foto do RG/CNH). Só depois de
-      // COLLECT_MAX_ROUNDS tentativas sem fechar é que vira revisão humana.
-      const request = await db.signatureRequest.create({
-        data: {
-          contactId,
-          token: newSignatureToken(),
-          expiresAt: tokenExpiry(),
-          status: "coletando",
-          origin: "bot",
-          extracted: fields as unknown as Prisma.InputJsonValue,
-          missingFields: missing as unknown as Prisma.InputJsonValue,
-          confirmRounds: 1, // 1ª rodada de pedido (o campo conta as rodadas da etapa atual)
-        },
-      });
-      await sendBotReply(contactId, contact.phone, contact.name, askMissingMessage(missing, documentsRead), 1500);
-      await postInternalNote(
-        contactId,
-        `🖊️ Faltaram dados pro contrato (${missing.map((m) => m.label).join(", ")}) — ` +
-        `o bot está PEDINDO ao cliente (até ${COLLECT_MAX_ROUNDS} tentativas antes de passar pra equipe).`,
+      // DECISÃO 20/08 (caso Jb Martelinho): dado faltando aqui significa que a
+      // COLETA CONVERSACIONAL do cérebro (RG/CNH, endereço, estado civil,
+      // profissão — seção "COLETA E VALIDAÇÃO" das instruções) não aconteceu
+      // ou ficou pela metade. O código NÃO abre uma segunda conversa pedindo
+      // documentos por cima da IA — quem conversa é o cérebro; o código só
+      // valida no final. Pendência → nota interna + fila, atendente completa.
+      await failToHuman(
+        contactId, contact, fields, missing,
+        `a coleta da IA não fechou todos os dados do contrato (${documentsRead} documento(s) lidos)`,
       );
-      await logSignature(contactId, contact, "assinatura: dados incompletos — bot pedindo ao cliente", {
-        stage: "coletando", requestId: request.id, missing: missing.map((m) => m.key), documentsRead,
-      });
-      return "confirming";
+      return "queue";
     }
 
     // Dados fechados → pede a CONFIRMAÇÃO do cliente antes de gerar o doc.
@@ -729,13 +715,13 @@ export async function maybeStartSignatureFlow(
 }
 
 // ---------------------------------------------------------------------------
-// COLETA dos dados que a extração não fechou (status "coletando")
+// COLETA dos dados que a extração não fechou (status "coletando") — LEGADO
 //
-// A extração rodou mas faltou campo (ou veio com confiança baixa) — em vez de
-// jogar direto pro atendente, o bot PEDE ao cliente o que falta. A resposta
-// (texto ou foto de RG/CNH) reabastece o histórico e a extração RODA DE NOVO
-// por inteiro — é ela quem lê o documento e pega o nome completo. Fechou tudo
-// → segue pro resumo de confirmação. 3 rodadas sem fechar → atendente.
+// Desde 20/08 NENHUM ciclo novo entra neste status: a coleta é 100% do
+// CÉREBRO (conversacional, seção "COLETA E VALIDAÇÃO" das instruções) e
+// pendência na validação final vai direto pra fila. Este handler continua
+// existindo só para TERMINAR os ciclos que já estavam em "coletando" quando
+// a mudança entrou — quando o último fechar, isto pode ser removido.
 // ---------------------------------------------------------------------------
 
 const COLLECT_MAX_ROUNDS = 3;
