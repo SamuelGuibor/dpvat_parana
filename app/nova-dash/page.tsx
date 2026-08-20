@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle, MessageCircle, AtSign } from 'lucide-react';
+import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle, MessageCircle, AtSign, FileSignature } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
@@ -19,6 +19,7 @@ import { WhatsAppInbox } from '@/app/nova-dash/workspace/whatsapp/WhatsAppInbox'
 import Team from '@/app/nova-dash/_components/team_dash';
 import { WorkSessionPanel } from '@/app/nova-dash/_components/ponto';
 import { TicketsBoard } from '@/app/nova-dash/tickets/TicketsBoard';
+import { ContractsPanel } from '@/app/nova-dash/contratos/ContractsPanel';
 
 import Link from 'next/link';
 import { NotificationDropdown } from './box';
@@ -35,6 +36,12 @@ import { GlobalSearch } from '@/app/nova-dash/_components/GlobalSearch';
 import { isTeamRole } from '@/app/_shared/lib/permissions';
 import { DashboardTour, START_DASH_TOUR_EVENT } from '@/app/nova-dash/_components/DashboardTour';
 export const dynamic = "force-dynamic";
+
+// Abas do topo (20/08/2026): estilo "underline nav" — texto discreto, hover
+// suave e a aba ativa marcada por texto esmeralda + barra embaixo, alinhada à
+// borda do header. Substitui o TabsList cinza padrão do shadcn.
+const tabCls =
+  'group relative h-auto flex-none shrink-0 whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3.5 py-2.5 text-[13px] font-medium text-gray-500 transition-colors hover:bg-gray-100/80 hover:text-gray-900 data-[state=active]:border-emerald-600 data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-emerald-700 data-[state=active]:shadow-none';
 
 export default function Page() {
   return (
@@ -162,15 +169,7 @@ function PageInner() {
   // PermissionsProvider — nada mais de listas de IDs hardcoded aqui.
   const canViewArchived = perms.view_archived;
   const canViewTickets = perms.view_tickets;
-
-  // Kanban + Espaço de Trabalho + Menções + WhatsApp são fixos; Arquivados e Tickets Dev
-  // entram conforme a permissão. Classes literais para o Tailwind não perder o JIT.
-  // Mobile: as abas viram uma linha com scroll lateral; o grid só vale no md+.
-  const visibleTabs = 5 + (canViewArchived ? 1 : 0) + (canViewTickets ? 1 : 0);
-  const tabsGridCols =
-    visibleTabs === 7 ? "md:grid-cols-7"
-      : visibleTabs === 6 ? "md:grid-cols-6"
-        : "md:grid-cols-5";
+  const canViewContracts = perms.manage_contracts;
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
@@ -226,9 +225,7 @@ function PageInner() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-3 md:px-6">
           <TabsList
               data-tour="tabs"
-              className={`flex w-full gap-1 overflow-x-auto md:grid md:max-w-[1400px] md:overflow-visible ${tabsGridCols} ${
-                isDark ? "bg-zinc-800 text-zinc-300" : ""
-              }`}
+              className="h-auto w-full items-center justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 md:overflow-visible"
             >
             {/* <TabsTrigger
               value="dashboard"
@@ -240,7 +237,7 @@ function PageInner() {
             <TabsTrigger
               value="kanban"
               data-tour="tab-kanban"
-              className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+              className={tabCls}
             >
               <Trello className="w-4 h-4 mr-2" />
               Kanban Workflow
@@ -248,7 +245,7 @@ function PageInner() {
             {canViewArchived && (
               <TabsTrigger
                 value="arquivados"
-                className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+                className={tabCls}
               >
                 <Archive className="w-4 h-4 mr-2" />
                 Arquivados
@@ -257,7 +254,7 @@ function PageInner() {
             {canViewTickets && (
               <TabsTrigger
                 value="tickets-dev"
-                className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+                className={tabCls}
               >
                 <Ticket className="w-4 h-4 mr-2" />
                 Tickets Dev
@@ -266,7 +263,7 @@ function PageInner() {
             <TabsTrigger
               value="meu-espaco"
               data-tour="tab-workspace"
-              className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+              className={tabCls}
             >
               <UserCircle className="w-4 h-4 mr-2" />
               Espaço de Trabalho
@@ -279,7 +276,7 @@ function PageInner() {
             <TabsTrigger
               value="mencoes"
               data-tour="tab-mencoes"
-              className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+              className={tabCls}
             >
               <AtSign className="w-4 h-4 mr-2" />
               Menções e Tarefas
@@ -298,7 +295,7 @@ function PageInner() {
             <TabsTrigger
               value="whatsapp"
               data-tour="tab-whatsapp"
-              className={`relative shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+              className={tabCls}
             >
               <MessageCircle className="w-4 h-4 mr-2" />
               WhatsApp
@@ -308,9 +305,18 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
+            {canViewContracts && (
+              <TabsTrigger
+                value="contratos"
+                className={tabCls}
+              >
+                <FileSignature className="w-4 h-4 mr-2" />
+                Contratos
+              </TabsTrigger>
+            )}
             <TabsTrigger
               value="ponto"
-              className={`shrink-0 whitespace-nowrap ${isDark ? 'data-[state=active]:bg-zinc-700 data-[state=active]:text-white' : ''}`}
+              className={tabCls}
             >
               <Clock className="w-4 h-4 mr-2" />
               Controle de Ponto
@@ -352,6 +358,9 @@ function PageInner() {
           </TabsContent>
           <TabsContent value="tickets-dev">
             <TicketsBoard />
+          </TabsContent>
+          <TabsContent value="contratos">
+            <ContractsPanel />
           </TabsContent>
           <TabsContent value="ponto">
             <WorkSessionPanel />

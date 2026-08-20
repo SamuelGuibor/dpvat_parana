@@ -28,6 +28,7 @@ const NO_PERMISSIONS: PermissionMap = {
   view_costs: false,
   view_all_mentions: false,
   manage_ponto: false,
+  manage_contracts: false,
   manage_team: false,
 };
 

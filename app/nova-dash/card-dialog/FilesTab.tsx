@@ -1,5 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
 import { Dropzone, DropzoneContent, DropzoneEmptyState } from '@/app/nova-dash/_components/dropzone';
 import { Button } from '@/app/_shared/ui/button';
 import { Input } from '@/app/_shared/ui/input';
@@ -9,7 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
 import {
-  Download, Loader2, Trash, FileArchive, Eye, FileText, ChevronUp, ChevronDown,
+  Download, Loader2, Trash, FileArchive, Eye, FileText, GripVertical,
   Trash2, ArchiveRestore, Clock,
 } from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
@@ -45,6 +55,28 @@ function previewKind(key: string): 'image' | 'pdf' | null {
   if (IMAGE_EXTS.includes(ext)) return 'image';
   if (ext === '.pdf') return 'pdf';
   return null;
+}
+
+// Linha arrastável da tabela: o useSortable precisa rodar uma vez por item,
+// então a <tr> vira componente próprio. O handle (attributes/listeners) sai
+// por render prop para o JSX das células continuar dentro do FilesTab —
+// assim só o grip inicia o arrasto e os demais botões seguem clicáveis.
+function SortableRow({ id, children }: {
+  id: string;
+  children: (handle: { attributes: any; listeners: any }) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <tr
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      // Enquanto arrasta: meio transparente + sombra + z-index pra linha
+      // "flutuar" por cima das vizinhas durante a troca de posição.
+      className={`hover:bg-gray-50 dark:hover:bg-zinc-800 ${isDragging ? 'relative z-10 opacity-60 shadow-lg bg-gray-50' : ''}`}
+    >
+      {children({ attributes, listeners })}
+    </tr>
+  );
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -258,13 +290,24 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     }
   }
 
-  // Sobe/desce o arquivo uma posição e persiste a nova ordem completa.
-  // Otimista: troca no estado na hora; se a persistência falhar, recarrega.
-  async function moveDoc(index: number, dir: -1 | 1) {
-    const target = index + dir;
-    if (target < 0 || target >= docs.length) return;
-    const next = [...docs];
-    [next[index], next[target]] = [next[target], next[index]];
+  // Sensores do arrastar e soltar: distance 5 evita que um clique simples
+  // (abrir, baixar, editar) dispare arrasto sem querer; teclado mantém a
+  // reordenação acessível (espaço pega, setas movem, espaço solta).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Solta o arquivo na nova posição e persiste a ordem completa (mesmo
+  // endpoint das antigas setas). Otimista: reordena o estado na hora;
+  // se a persistência falhar, recarrega do servidor pra desfazer.
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = docs.findIndex((d) => d.id === active.id);
+    const newIndex = docs.findIndex((d) => d.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const next = arrayMove(docs, oldIndex, newIndex);
     setDocs(next);
     try {
       const res = await fetch('/api/documents/reorder', {
@@ -390,6 +433,14 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
           </div>
         ) : (
           <div className="border rounded-lg overflow-hidden">
+            {/* Reordenação por arrastar e soltar: restrito ao eixo vertical e
+                ao corpo da tabela pra linha não "escapar" do quadro. */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+              onDragEnd={handleDragEnd}
+            >
             <table className="w-full text-sm">
               <thead className="bg-muted">
                 <tr>
@@ -398,8 +449,10 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {docs.map((doc, i) => (
-                  <tr key={doc.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800">
+                <SortableContext items={docs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
+                {docs.map((doc) => (
+                  <SortableRow key={doc.id} id={doc.id}>
+                  {({ attributes, listeners }) => (<>
                     <td className="p-3">
                       {editingId === doc.id ? (
                         <div className="flex items-center gap-2">
@@ -431,16 +484,18 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                     <td className="p-3 text-right">
                       {editingId !== doc.id && (
                         <div className="flex items-center justify-end gap-1">
-                          <div className="flex flex-col mr-1">
-                            <Button variant="ghost" size="icon" className="h-4 w-6" title="Mover para cima"
-                              onClick={() => moveDoc(i, -1)} disabled={i === 0}>
-                              <ChevronUp className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-4 w-6" title="Mover para baixo"
-                              onClick={() => moveDoc(i, 1)} disabled={i === docs.length - 1}>
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
+                          {/* Handle de arrasto: só ele inicia a reordenação
+                              (touch-none evita o scroll roubar o gesto no touch). */}
+                          <button
+                            type="button"
+                            {...attributes}
+                            {...listeners}
+                            className="h-8 w-6 mr-1 flex items-center justify-center rounded text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+                            title="Arrastar para reordenar"
+                            aria-label="Arrastar para reordenar"
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </button>
                           <Button variant="ghost" size="icon" className="h-8 w-8"
                             onClick={() => {
                               setEditingId(doc.id);
@@ -469,10 +524,13 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                         </div>
                       )}
                     </td>
-                  </tr>
+                  </>)}
+                  </SortableRow>
                 ))}
+                </SortableContext>
               </tbody>
             </table>
+            </DndContext>
           </div>
         )}
       </div>

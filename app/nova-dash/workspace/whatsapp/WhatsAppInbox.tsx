@@ -41,6 +41,7 @@ import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } f
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
 import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
+import { RECOVERY_MAX_ATTEMPTS_DEFAULT } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { attachConversationMediaToCard } from '@/app/_actions/whatsapp/client-documents';
 import { getClientInfo } from '@/app/_actions/whatsapp/client-info';
@@ -151,12 +152,24 @@ const chipLabelCls = (expanded: boolean) =>
     ? 'ml-1.5 max-w-[150px] opacity-100'
     : 'ml-0 max-w-0 opacity-0 group-hover:ml-1.5 group-hover:max-w-[150px] group-hover:opacity-100'}`;
 
+// Pills de leitura estilo WhatsApp (20/08/2026): Tudo / Não lidas / Lidas /
+// Em fila com rótulo e contagem sempre visíveis, como no app oficial.
+const pillCls = (active: boolean) =>
+  `flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold transition-colors ${active
+    ? 'border-transparent bg-[#1d9e75] text-white'
+    : 'border-[#3a6b58]/70 bg-[#24463a] text-[#a9cabc] hover:bg-[#2e5749] hover:text-white'}`;
+
 // Multi-número: etiqueta da linha em cada conversa (só aparece com 2+ números
 // cadastrados). O mapa numberId → {label, cor} desce por contexto para o
 // ConversationGroup, que é chamado de vários lugares.
 export interface NumberBadge { label: string; dot: string }
 const NUMBER_BADGE_DOTS = ['bg-sky-400', 'bg-teal-300', 'bg-violet-400', 'bg-amber-400', 'bg-rose-400'];
 const NumberBadgeContext = createContext<Map<string, NumberBadge> | null>(null);
+
+// Teto de provocações do ciclo de recuperação POR NÚMERO (pill "Nª de N") —
+// vem de listWaNumberOptions; conversa sem numberId herda o teto do default.
+// eslint-disable-next-line no-unused-vars
+const RecoveryCapContext = createContext<(numberId: string | null) => number>(() => RECOVERY_MAX_ATTEMPTS_DEFAULT);
 
 // Cor determinística do selinho de atendente na lista (por nome).
 const ATTENDANT_BADGE_COLORS = ['bg-emerald-600', 'bg-violet-600', 'bg-amber-600', 'bg-sky-600', 'bg-rose-600'];
@@ -200,14 +213,31 @@ export function WhatsAppInbox() {
   const [todayOnly, setTodayOnly] = useState(false);
   const [columnFilter, setColumnFilter] = useState<string | null>(null);
 
+  // Estado de leitura/fila (19/08/2026): triagem rápida do que ainda não foi
+  // visto, do que já foi, ou de quem espera atendente na fila — sem precisar
+  // caçar pasta por pasta. A escolha sobrevive ao reload (mesmo padrão do
+  // filtro de número), porque quem vive de triagem quer abrir já filtrado.
+  type ReadFilter = 'todas' | 'nao_lidas' | 'lidas' | 'fila';
+  const [readFilter, setReadFilter] = useState<ReadFilter>('todas');
+  useEffect(() => {
+    const saved = localStorage.getItem('wa-read-filter');
+    if (saved === 'nao_lidas' || saved === 'lidas' || saved === 'fila') setReadFilter(saved);
+  }, []);
+  const changeReadFilter = (f: ReadFilter) => {
+    setReadFilter(f);
+    // "Todas" é o default — sem chave guardada o inbox abre limpo.
+    if (f === 'todas') localStorage.removeItem('wa-read-filter');
+    else localStorage.setItem('wa-read-filter', f);
+  };
+
   // Multi-número (17/08/2026): filtrar por linha da empresa, com a preferência
   // salva por usuário no navegador. Só aparece com 2+ números cadastrados.
-  const [waNumbers, setWaNumbers] = useState<{ id: string; label: string }[]>([]);
+  const [waNumbers, setWaNumbers] = useState<{ id: string; label: string; isDefault: boolean; recoveryMax: number }[]>([]);
   const [numberFilter, setNumberFilter] = useState<string | null>(null);
   useEffect(() => {
     listWaNumberOptions()
       .then((opts) => {
-        setWaNumbers(opts.map((o) => ({ id: o.id, label: o.label })));
+        setWaNumbers(opts.map((o) => ({ id: o.id, label: o.label, isDefault: o.isDefault, recoveryMax: o.recoveryMax })));
         const saved = localStorage.getItem('wa-number-filter');
         if (saved && opts.some((o) => o.id === saved)) setNumberFilter(saved);
       })
@@ -223,6 +253,11 @@ export function WhatsAppInbox() {
     return new Map<string, NumberBadge>(
       waNumbers.map((n, i) => [n.id, { label: n.label, dot: NUMBER_BADGE_DOTS[i % NUMBER_BADGE_DOTS.length] }]),
     );
+  }, [waNumbers]);
+  const recoveryCapOf = useMemo(() => {
+    const byId = new Map(waNumbers.map((n) => [n.id, n.recoveryMax]));
+    const defaultCap = waNumbers.find((n) => n.isDefault)?.recoveryMax ?? RECOVERY_MAX_ATTEMPTS_DEFAULT;
+    return (numberId: string | null) => (numberId ? byId.get(numberId) : undefined) ?? defaultCap;
   }, [waNumbers]);
 
   // Motivos de "não qualificada" editáveis (menu Encerrar + modal de gestão).
@@ -463,16 +498,28 @@ export function WhatsAppInbox() {
       if (todayOnly && !isToday(c.createdAt)) return false;
       if (columnFilter && c.kanbanColumn !== columnFilter) return false;
       if (numberFilter && c.numberId !== numberFilter) return false;
+      // Estado de leitura: "não lidas" = mensagem recebida depois da última
+      // leitura; "fila" = aguardando atendente (status queued).
+      if (readFilter === 'nao_lidas' && !c.unread) return false;
+      if (readFilter === 'lidas' && c.unread) return false;
+      if (readFilter === 'fila' && c.status !== 'queued') return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, search, tagFilter, todayOnly, columnFilter, numberFilter]);
+  }, [conversations, search, tagFilter, todayOnly, columnFilter, numberFilter, readFilter]);
 
   // Contagem do chip "Hoje" (independe dos outros filtros, senão o número
   // mudaria ao clicar no próprio chip) e colunas disponíveis pro seletor.
   const todayCount = useMemo(() => conversations.filter((c) => isToday(c.createdAt)).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [conversations]);
+  // Contagens dos chips de leitura/fila: também independem dos outros filtros
+  // pelo mesmo motivo do "Hoje" — o número não pode mudar ao clicar no chip.
+  const readCounts = useMemo(() => ({
+    nao_lidas: conversations.filter((c) => c.unread).length,
+    lidas: conversations.filter((c) => !c.unread).length,
+    fila: conversations.filter((c) => c.status === 'queued').length,
+  }), [conversations]);
   const kanbanColumns = useMemo(() => {
     const map = new Map<string, number>();
     for (const c of conversations) {
@@ -558,7 +605,7 @@ export function WhatsAppInbox() {
   const tagFilterActive = tagFilter.length > 0 || search.trim().length > 0;
   const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
 
-  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter]);
+  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter]);
 
   // Janela de 24h: sem mensagem recebida recente, a Meta só aceita template.
   const windowExpired = !!active && (
@@ -752,6 +799,7 @@ export function WhatsAppInbox() {
 
   return (
     <NumberBadgeContext.Provider value={numberBadges}>
+    <RecoveryCapContext.Provider value={recoveryCapOf}>
     <div className="flex h-full overflow-hidden rounded-none border border-[#dce8e1] bg-[#dce8e1] shadow-sm dark:border-zinc-800 whatsapp-darkreader sm:rounded-2xl">
       {confirmDialog}
       {/* ---------- Lista de conversas ----------
@@ -843,10 +891,44 @@ export function WhatsAppInbox() {
               </button>
             </div>
 
-            {/* Filtros compactos: só ícones — o rótulo desliza no hover. Hoje,
-                Coluna do Kanban, Tags e Só minhas numa linha só. (Na Agenda de
-                contatos só a busca vale — os filtros são de conversa.) */}
+            {/* Pills de leitura estilo WhatsApp: Tudo / Não lidas / Lidas / Em
+                fila numa fileira própria; os demais filtros ficam nos chips
+                compactos logo abaixo. (Na Agenda de contatos só a busca vale —
+                os filtros são de conversa.) */}
             {!contactsMode && (<>
+            <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {/* "Tudo" limpa o filtro de leitura/fila (igual ao pill do app). */}
+              <button
+                onClick={() => changeReadFilter('todas')}
+                title="Todas as conversas"
+                className={pillCls(readFilter === 'todas')}
+              >
+                <span className="whitespace-nowrap">Tudo</span>
+              </button>
+
+              {/* Estado de leitura/fila: chips exclusivos entre si — clicar no
+                  ativo volta pra "Tudo". Contagem sempre visível, como no app. */}
+              {([
+                { key: 'nao_lidas', label: 'Não lidas', hint: 'Só conversas com mensagem ainda não lida' },
+                { key: 'lidas', label: 'Lidas', hint: 'Só conversas já lidas' },
+                { key: 'fila', label: 'Em fila', hint: 'Só quem está na fila, aguardando atendente' },
+              ] as const).map(({ key, label, hint }) => (
+                <button
+                  key={key}
+                  onClick={() => changeReadFilter(readFilter === key ? 'todas' : key)}
+                  title={hint}
+                  className={pillCls(readFilter === key)}
+                >
+                  <span className="whitespace-nowrap">{label}</span>
+                  {readCounts[key] > 0 && (
+                    <span className={`text-[11px] font-bold ${readFilter === key ? 'text-white/85' : 'text-[#7fae9c]'}`}>
+                      {readCounts[key]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
             <p className="truncate text-[13px] font-bold text-white pt-2">Filtros</p>
             <div className="mt-1.5 flex items-center gap-1">
               {/* Novas do dia */}
@@ -1509,6 +1591,7 @@ export function WhatsAppInbox() {
         }}
       />
     </div>
+    </RecoveryCapContext.Provider>
     </NumberBadgeContext.Provider>
   );
 }
@@ -1767,6 +1850,7 @@ function ConversationGroup({
 }) {
   // Etiqueta do número da empresa (multi-número) — null com menos de 2 linhas.
   const numberBadges = useContext(NumberBadgeContext);
+  const recoveryCapOf = useContext(RecoveryCapContext);
   if (!items.length && !forceShow && !hideTitle) return null;
   const colors = accent ? GROUP_ACCENT[accent] : { header: 'text-[#8fbcac]', chip: 'bg-[#2e5749] text-[#cfe6db]' };
   const visible = limit != null ? items.slice(0, limit) : items;
@@ -1845,7 +1929,7 @@ function ConversationGroup({
               )}
               {c.status === 'standby' && c.recoveryAttempts > 0 && (
                 <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-violet-300 ring-1 ring-violet-400/30">
-                  {Math.min(c.recoveryAttempts, 4)}ª de 4
+                  {Math.min(c.recoveryAttempts, recoveryCapOf(c.numberId))}ª de {recoveryCapOf(c.numberId)}
                 </span>
               )}
               {pill && (

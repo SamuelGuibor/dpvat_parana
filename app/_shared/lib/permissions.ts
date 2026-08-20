@@ -104,6 +104,12 @@ export const PERMISSION_DEFS = [
       "Vê o ponto de toda a equipe, corrige batidas esquecidas e exporta a folha do mês.",
   },
   {
+    key: "manage_contracts",
+    label: "Contratos e assinaturas",
+    description:
+      "Gera contratos para assinatura eletrônica, acompanha a aba Contratos e valida os assinados.",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -138,6 +144,8 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_costs: false,
     view_all_mentions: false,
     manage_ponto: false,
+    // Gerar contrato é operação de atendimento — o comercial precisa disso.
+    manage_contracts: true,
     manage_team: false,
   },
   "ADMIN+": {
@@ -167,6 +175,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Ponto da equipe é dado de RH — nasce exclusivo do ADMIN++, concedível
     // ao ADMIN+ por override.
     manage_ponto: false,
+    manage_contracts: true,
     manage_team: false,
   },
   "ADMIN++": {
@@ -186,6 +195,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_costs: true,
     view_all_mentions: true,
     manage_ponto: true,
+    manage_contracts: true,
     manage_team: true,
   },
 };

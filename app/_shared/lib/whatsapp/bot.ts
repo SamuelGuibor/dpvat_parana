@@ -9,6 +9,9 @@ import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { captureConversation } from "./brain";
 import { recordAppliedRules, recordCodeIntervention } from "./rule-events";
 import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
+// tokens.ts não importa nada deste arquivo — import estático seguro (o core
+// da assinatura, que importa daqui, entra por import DINÂMICO no handler).
+import { signUrlFor } from "@/app/_shared/lib/signature/tokens";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
   whatsappChannelId,
@@ -460,7 +463,7 @@ async function tagAsQualified(conversationId: string): Promise<void> {
 }
 
 /** Lead QUALIFICADO: fila de espera + tag "Qualificada" + aviso pra equipe. */
-async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
+export async function qualifyToQueue(contactId: string, contactLabel: string, reason: string): Promise<void> {
   // Já era qualificado antes (lead voltando)? Então NÃO é uma nova qualificação:
   // não reposta a nota de "lead novo", não re-notifica a equipe como lead
   // inédito e não redispara o evento pra Meta — só garante que voltou pra fila.
@@ -924,6 +927,56 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       return;
     }
 
+    // ---- Assinatura eletrônica --------------------------------------------
+    // Import dinâmico: signature/core importa deste arquivo (sendBotReply,
+    // qualifyToQueue...) — o import estático criaria ciclo de módulos.
+    const signature = await import("@/app/_shared/lib/signature/core");
+
+    // 1. Ciclo em "coletando"/"confirmando": a mensagem é a resposta ao pedido
+    //    de dados pendentes (texto ou foto de RG/CNH — a extração relê tudo) ou
+    //    ao RESUMO — o módulo de assinatura trata e o cérebro normal NÃO roda.
+    const contactRef = { phone: message.contactPhone, name: message.contactName };
+    if (await signature.handleSignatureClientReply(contactId, contactRef, clientText, media)) {
+      return;
+    }
+
+    // 2. Contrato NA RUA (link enviado, sem assinatura): trava de código +
+    //    bloco de contexto pro cérebro (camadas 1 e 2 do plano).
+    let signatureContext: {
+      status: string; sentBy: string; sentAt: string | null;
+      remindersSent: number; maxReminders: number; link: string;
+    } | null = null;
+    const cycle = await signature.activeCycle(contactId);
+    if (cycle && cycle.pdfKey && ["aguardando", "visualizado"].includes(cycle.status)) {
+      // Cliente afirma que JÁ ASSINOU mas o ciclo não registra assinatura: o
+      // bot não discute — confere quem tem que conferir (atendente).
+      if (/\bassinei\b|j[aá] (esta|está|ta|tá) assinad|acabei de assinar/i.test(clientText)) {
+        await sendBotReply(
+          contactId, message.contactPhone, message.contactName,
+          "Deixa eu verificar isso aqui pra você, um instante 😊",
+          1200,
+        );
+        await postInternalNote(
+          contactId,
+          `🖊️ Cliente AFIRMA que assinou, mas o ciclo de assinatura está "${cycle.status}" — conferir o link/documento e ajudar a concluir.`,
+        );
+        await handoffToQueue(contactId, contactLabel, "cliente afirma que assinou o contrato — conferir ciclo de assinatura");
+        return;
+      }
+      signatureContext = {
+        status: cycle.status,
+        sentBy: cycle.deliveredBy === "bot"
+          ? "VOCÊ (o link saiu automaticamente nesta conversa)"
+          : `ATENDENTE ${cycle.createdByName ?? "da equipe"} (não foi você — não repita a explicação dele)`,
+        sentAt: cycle.sentAt
+          ? cycle.sentAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })
+          : null,
+        remindersSent: cycle.remindersSent,
+        maxReminders: 3,
+        link: signUrlFor(cycle.token),
+      };
+    }
+
     // ---- Contexto -------------------------------------------------------
     const [history, card, flows] = await Promise.all([
       db.whatsAppMessage.findMany({
@@ -970,6 +1023,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         closeCategory: conversation?.closeCategory ?? null,
       },
       business: businessHours(),
+      // Contrato aguardando assinatura → bloco "ASSINATURA EM ANDAMENTO" no
+      // cérebro (não recomeçar triagem, não gerar outro link, reenviar ESTE).
+      signature: signatureContext,
     };
 
     // ---- IA (com no máximo 1 consulta intermediária ao banco) -----------
@@ -1190,7 +1246,14 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
             "qualify sem texto",
           );
         }
-        await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
+        // Assinatura automática (SIGNATURE_AUTO_ENABLED): tenta extrair os
+        // dados e mandar o RESUMO pro cliente confirmar. "confirming" = a
+        // conversa FICA em modo bot esperando o "sim" (a fila vem depois de
+        // confirmado/assinado); "queue" = flag desligada, dados incompletos ou
+        // falha → segue o caminho de sempre (nota interna explica o porquê).
+        if ((await signature.maybeStartSignatureFlow(contactId, contactRef)) === "queue") {
+          await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA");
+        }
         break;
       case "disqualify":
         // Encerrar MUDO só quando a IA declarou silêncio deliberado (silent) —

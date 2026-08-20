@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive, DollarSign, XCircle, Search, Loader2, Briefcase, User as UserIcon,
-  RotateCcw, Eye, Phone, MapPin, IdCard, Mail, Inbox,
+  RotateCcw, Eye, Phone, MapPin, IdCard, Mail, Inbox, FolderOutput,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -15,6 +15,7 @@ import {
   getArchivedCards, setArchiveStatus, type ArchivedCard, type ArchiveStatus,
 } from '@/app/_actions/cards/archive-card';
 import { CardDialog } from './CardDialog';
+import { CaiqueFolders } from './CaiqueFolders';
 import type { ExtendedKanbanCard } from './card-dialog/types';
 
 // Configuração visual de cada categoria de arquivamento.
@@ -210,7 +211,12 @@ const InfoRow: React.FC<{ icon: React.ElementType; value?: string }> = ({ icon: 
   );
 };
 
+// Sub-visões da aba: a listagem clássica de arquivados e a planilha de
+// controle das pastas enviadas pro Caique (coluna CAIQUE do Kanban).
+type View = 'arquivados' | 'caique';
+
 export const ArchivedCards: React.FC = () => {
+  const [view, setView] = useState<View>('arquivados');
   const [cards, setCards] = useState<ArchivedCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
@@ -315,17 +321,52 @@ export const ArchivedCards: React.FC = () => {
           <div>
             <h2 className="font-black text-lg text-gray-900 dark:text-zinc-100 leading-tight">Arquivados</h2>
           </div>
+
+          {/* Toggle de sub-visão: listagem clássica x planilha das pastas do Caique */}
+          <div className="flex items-center gap-1 ml-4 p-1 rounded-2xl bg-gray-100 dark:bg-zinc-800">
+            <button
+              onClick={() => setView('arquivados')}
+              className={cn(
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all',
+                view === 'arquivados'
+                  ? 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 shadow-sm'
+                  : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'
+              )}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Arquivados
+            </button>
+            <button
+              onClick={() => setView('caique')}
+              className={cn(
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all',
+                view === 'caique'
+                  ? 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 shadow-sm'
+                  : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'
+              )}
+            >
+              <FolderOutput className="w-3.5 h-3.5" />
+              Pastas Caique
+            </button>
+          </div>
         </div>
-        <div className="relative flex items-center w-full lg:w-96">
-          <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por nome, CPF ou nº do card..."
-            className="pl-10 h-12 w-full rounded-2xl border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50"
-          />
-        </div>
+        {view === 'arquivados' && (
+          <div className="relative flex items-center w-full lg:w-96">
+            <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por nome, CPF ou nº do card..."
+              className="pl-10 h-12 w-full rounded-2xl border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50"
+            />
+          </div>
+        )}
       </div>
+
+      {/* Planilha das pastas do Caique (visão alternativa; a listagem clássica fica intacta abaixo) */}
+      {view === 'caique' && <CaiqueFolders />}
+      {view === 'arquivados' && (<>
+
 
       {/* Filtros por categoria */}
       <div className="flex flex-wrap gap-2 mb-6">
@@ -487,6 +528,7 @@ export const ArchivedCards: React.FC = () => {
           isProcess={selected.isProcess}
         />
       )}
+      </>)}
     </div>
   );
 };

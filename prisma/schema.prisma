@@ -652,10 +652,76 @@ model WhatsAppContact {
   updatedAt      DateTime              @updatedAt
   conversation   WhatsAppConversation?
   messages       WhatsAppMessage[]
+  signatureRequests SignatureRequest[]
 
   @@unique([numberId, phone])
   @@index([phone])
   @@map("whatsapp_contacts")
+}
+
+// Ciclo de ASSINATURA ELETRÔNICA própria (substitui a ZapSign).
+// Fluxo: dados extraídos pela IA (ou tirados do card) → cliente confirma o
+// resumo → KIT preenchido vira PDF → link /assinar/<token> no nosso site →
+// cliente assina (desenho/digitado + código no WhatsApp) → PDF carimbado com
+// manifesto de auditoria → anexado ao card → conversa volta pra fila para
+// VALIDAÇÃO humana.
+model SignatureRequest {
+  id            String    @id @default(cuid())
+  contactId     String
+  // extracao_falhou | confirmando | confirmacao_expirada | aguardando |
+  // visualizado | assinado | validado | recusado | expirado | erro | cancelado
+  status        String    @default("aguardando")
+
+  // --- link público --------------------------------------------------------
+  token         String    @unique // 32 bytes aleatórios; vira /assinar/<token>
+  expiresAt     DateTime // 7 dias — link vencido mostra tela amigável
+
+  // --- origem (bot x equipe) ----------------------------------------------
+  // bot | manual_card | manual_inbox | manual_offline
+  origin        String    @default("bot")
+  createdById   String?
+  createdByName String?
+  // bot | atendente | nao_enviado (só gerou o link/PDF, entrega manual)
+  deliveredBy   String?
+
+  // --- documento -----------------------------------------------------------
+  // Campos do KIT com { value, confidence, source } por campo — auditoria e
+  // conferência humana na validação final.
+  extracted     Json?
+  missingFields Json?
+  pdfKey        String? // PDF sem assinatura (S3)
+  signedPdfKey  String? // PDF assinado + página de manifesto (S3)
+  documentHash  String? // SHA-256 do PDF exibido ao cliente
+  signedHash    String? // SHA-256 do PDF final
+
+  // --- identidade / prova --------------------------------------------------
+  otpHash       String? // bcrypt do código de 6 dígitos
+  otpExpiresAt  DateTime?
+  otpAttempts   Int       @default(0) // trava em 5
+  otpSentAt     DateTime?
+  signatureKey  String? // PNG da assinatura (S3)
+  signatureMode String? // desenho | digitado
+  // Trilha: IP, user-agent, horário de cada passo, aceite do termo, OTP.
+  audit         Json?
+
+  // --- ciclo ---------------------------------------------------------------
+  confirmRounds Int       @default(0)
+  remindersSent Int       @default(0)
+  nextReminderAt DateTime?
+  sentAt        DateTime?
+  viewedAt      DateTime?
+  signedAt      DateTime?
+  validatedAt   DateTime?
+  validatedById String?
+  refusedReason String?
+  error         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  contact       WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextReminderAt])
+  @@index([contactId, createdAt])
+  @@map("signature_requests")
 }
 
 model WhatsAppConversation {

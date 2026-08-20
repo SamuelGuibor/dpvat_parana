@@ -19,6 +19,13 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // O pdfjs (usado para achar as âncoras de assinatura no PDF) carrega o
+  // próprio worker por caminho de arquivo. Empacotado pelo webpack ele procura
+  // o worker dentro de .next/ e quebra ("Cannot find module pdf.worker.mjs") —
+  // externalizado, o Node o resolve direto do node_modules e funciona.
+  experimental: {
+    serverComponentsExternalPackages: ["pdfjs-dist"],
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },

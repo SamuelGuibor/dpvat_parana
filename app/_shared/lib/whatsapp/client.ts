@@ -294,6 +294,12 @@ export async function sendTemplate(
   headerVar?: string | null,
   numberId?: string | null,
   headerMedia?: TemplateHeaderMedia | null,
+  /**
+   * Variável do BOTÃO do template: o código (AUTHENTICATION/copiar código) ou
+   * o sufixo dinâmico da URL ({{1}} no botão). A Meta recusa o envio de um
+   * template com botão dinâmico quando este componente falta.
+   */
+  buttonVar?: string | null,
 ): Promise<SendResult> {
   // A Meta rejeita variáveis com \n, \t ou 4+ espaços consecutivos (erro 132012).
   const clean = (v: string) => v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim();
@@ -318,6 +324,16 @@ export async function sendTemplate(
   }
   if (cleanVars.length) {
     components.push({ type: "body", parameters: cleanVars.map((v) => ({ type: "text", text: v })) });
+  }
+  if (buttonVar?.trim()) {
+    // Mesmo formato pros dois casos: botão "copiar código" (auth) e botão de
+    // URL com sufixo dinâmico — sempre sub_type "url", index 0.
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [{ type: "text", text: clean(buttonVar) }],
+    });
   }
 
   const result = await postMessageRaw({
@@ -439,6 +455,17 @@ export async function createMetaTemplate(input: {
   bodyText: string;
   bodyExamples: string[];
   footerText?: string | null;
+  /**
+   * Categoria AUTHENTICATION: a Meta NÃO aceita texto livre — o corpo, o
+   * rodapé e o botão "copiar código" são montados por ela. Quando true, os
+   * campos de texto acima são ignorados e vale só codeExpirationMinutes.
+   */
+  authentication?: { codeExpirationMinutes: number } | null;
+  /**
+   * Botão de URL (categoria UTILITY/MARKETING). `url` pode ter sufixo
+   * dinâmico {{1}} — nesse caso `example` é obrigatório (exigência da Meta).
+   */
+  urlButton?: { text: string; url: string; example?: string } | null;
 }, numberId?: string | null): Promise<{ metaId: string | null; status: string; error?: string }> {
   const c = await getCreds(numberId);
   if (!c?.token || !c.wabaId) {
@@ -446,6 +473,16 @@ export async function createMetaTemplate(input: {
   }
 
   const components: Record<string, unknown>[] = [];
+
+  if (input.authentication) {
+    // Formato fixo dos templates de autenticação (OTP com "copiar código").
+    const auth: Record<string, unknown>[] = [
+      { type: "BODY", add_security_recommendation: true },
+      { type: "FOOTER", code_expiration_minutes: input.authentication.codeExpirationMinutes },
+      { type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE" }] },
+    ];
+    return postCreateTemplate(c, { name: input.name, language: input.language, category: "AUTHENTICATION", components: auth });
+  }
 
   // O cabeçalho vem ANTES do corpo — a Meta valida a ordem dos componentes.
   // Mídia usa `example.header_handle` (upload resumable); texto usa
@@ -474,7 +511,31 @@ export async function createMetaTemplate(input: {
   if (input.footerText?.trim()) {
     components.push({ type: "FOOTER", text: input.footerText.trim() });
   }
+  if (input.urlButton) {
+    components.push({
+      type: "BUTTONS",
+      buttons: [{
+        type: "URL",
+        text: input.urlButton.text,
+        url: input.urlButton.url,
+        ...(input.urlButton.example ? { example: [input.urlButton.example] } : {}),
+      }],
+    });
+  }
 
+  return postCreateTemplate(c, {
+    name: input.name,
+    language: input.language,
+    category: input.category,
+    components,
+  });
+}
+
+/** POST cru do template na Meta (compartilhado entre os formatos). */
+async function postCreateTemplate(
+  c: WaCreds,
+  payload: { name: string; language: string; category: string; components: Record<string, unknown>[] },
+): Promise<{ metaId: string | null; status: string; error?: string }> {
   try {
     const res = await fetch(`${graphBase(c)}/${c.wabaId}/message_templates`, {
       method: "POST",
@@ -482,12 +543,7 @@ export async function createMetaTemplate(input: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${c.token}`,
       },
-      body: JSON.stringify({
-        name: input.name,
-        language: input.language,
-        category: input.category,
-        components,
-      }),
+      body: JSON.stringify(payload),
       cache: "no-store",
     });
     const data = await res.json().catch(() => null);

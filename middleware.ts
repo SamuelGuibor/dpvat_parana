@@ -31,6 +31,8 @@ const PUBLIC_PAGE_PREFIXES = [
   "/termos-de-uso",
   "/area-do-cliente",
   "/status",
+  "/assinar", // página pública de assinatura (o token do link é a credencial)
+  "/verificar", // conferência do documento assinado (QR do manifesto)
 ];
 
 /** APIs com mecanismo de autenticação próprio (secret/HMAC na própria rota). */
@@ -47,8 +49,11 @@ const PUBLIC_API_PREFIXES = [
 /** GETs consumidos pela área do cliente sem login (consulta de status). */
 const PUBLIC_GET_APIS = ["/api/process-status", "/api/user-status", "/api/documents"];
 
+/** APIs públicas por PREFIXO com credencial na própria URL (token do link). */
+const PUBLIC_GET_API_PREFIXES = ["/api/signature/pdf"];
+
 /** Páginas públicas cujo fluxo legítimo usa server actions anônimas. */
-const PUBLIC_ACTION_PAGES = ["/area-do-cliente", "/status", "/documents", "/login/recuperar-senha"];
+const PUBLIC_ACTION_PAGES = ["/area-do-cliente", "/status", "/documents", "/login/recuperar-senha", "/assinar"];
 
 function matchesPrefix(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -62,6 +67,7 @@ export async function middleware(req: NextRequest) {
   if (isApi) {
     if (matchesPrefix(pathname, PUBLIC_API_PREFIXES)) return NextResponse.next();
     if (req.method === "GET" && PUBLIC_GET_APIS.includes(pathname)) return NextResponse.next();
+    if (req.method === "GET" && matchesPrefix(pathname, PUBLIC_GET_API_PREFIXES)) return NextResponse.next();
   } else {
     const isPublicPage = pathname === "/" || matchesPrefix(pathname, PUBLIC_PAGE_PREFIXES);
     if (isPublicPage && (!isServerAction || matchesPrefix(pathname, PUBLIC_ACTION_PAGES))) {

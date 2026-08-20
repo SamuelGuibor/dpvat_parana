@@ -207,11 +207,24 @@ export interface SystemSendInput {
    */
   templateName?: string | null;
   templateVars?: string[];
+  /**
+   * Variável do BOTÃO do template (sufixo dinâmico de URL, ex.: o token do
+   * link de assinatura). Template AUTHENTICATION não precisa: o código do
+   * botão "copiar" é deduzido da 1ª variável do corpo.
+   */
+  templateButtonVar?: string;
   /** Identificação de quem disparou (para auditoria nos logs). */
   authorId: string;
   authorName: string;
   /** Origem: "automation" | "progress" — vai pro metadata do log. */
   source: string;
+  /**
+   * Mensagem TRANSACIONAL pedida pelo próprio cliente naquele momento (ex.:
+   * código de assinatura que ele solicitou na tela). Pula o cooldown anti-spam
+   * de mensagens proativas — o cliente está esperando; segurar o envio é que
+   * quebra o fluxo. Opt-out e janela/template continuam valendo.
+   */
+  transactional?: boolean;
 }
 
 export interface SystemSendResult {
@@ -244,7 +257,8 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
 
     // Cap de frequência: já houve proativa há menos de SYSTEM_COOLDOWN_MS?
     // Pula (o card avançando várias etapas de uma vez não vira rajada).
-    const lastProactive = await db.whatsAppMessage.findFirst({
+    // Transacional (OTP etc.) não conta aqui: foi o CLIENTE que pediu.
+    const lastProactive = input.transactional ? null : await db.whatsAppMessage.findFirst({
       where: {
         contactId: contact.id,
         direction: "out",
@@ -426,7 +440,10 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       };
     }
 
-    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId, headerMedia);
+    // AUTHENTICATION: o botão "copiar código" repete a variável do corpo (o
+    // próprio código). Nos demais, vale o sufixo de URL passado pelo chamador.
+    const buttonVar = template.category === "AUTHENTICATION" ? vars[0] : input.templateButtonVar;
+    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId, headerMedia, buttonVar);
     if (!result.waMessageId) {
       await logWhatsAppEvent({
         action: "wa_text",

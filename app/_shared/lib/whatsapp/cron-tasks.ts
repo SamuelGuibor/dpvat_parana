@@ -5,7 +5,9 @@ import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
+import { RECOVERY_MAX_ATTEMPTS_DEFAULT, recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { brStartOfDay } from '@/app/_shared/utils/date-br';
+import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
 
 // FASES do cron de WhatsApp (07/08/2026) — o antigo /api/whatsapp/cron fazia
 // tudo num passe só e sequencial; com multi-número o volume multiplica e as
@@ -65,9 +67,32 @@ const OVERDUE_MAX_CARDS = 60; // teto por rodada (os mais atrasados primeiro)
 // 18/08/2026: reduzido de 5 → 4 provocações (aviso de spam da Meta nas duas
 // WABAs) — as 3 primeiras DENTRO da janela de 24h da Meta (texto livre, sem
 // gastar template), a última pela despedida em template (recuperacao_triagem_
-// final; o template 1 vira só fallback de janela fechada).
-const RECOVERY_MAX_ATTEMPTS = 4;
+// final; o template 1 vira só fallback de janela fechada). O teto é POR
+// NÚMERO desde 19/08/2026 (aviso de spam da Meta) — padrão e overrides moram
+// em recovery-caps.ts, compartilhado com a pill do inbox.
 const RECOVERY_EARLY_ATTEMPTS = 3;                // texto livre na janela de 24h
+
+// Resolve o teto de provocações pelo número da conversa. Conversa sem
+// numberId (linha legada) sai pelo número DEFAULT — herda o teto dele. O
+// cache vive pela instância da lambda: o mapa é hardcoded e o vínculo
+// id→phoneNumberId praticamente não muda.
+let recoveryCapCache: { byNumberId: Map<string, number>; defaultCap: number } | null = null;
+async function recoveryMaxAttempts(numberId: string | null): Promise<number> {
+  if (!recoveryCapCache) {
+    const rows = await db.whatsAppNumber.findMany({
+      select: { id: true, phoneNumberId: true, isDefault: true },
+    });
+    const byNumberId = new Map<string, number>();
+    let defaultCap = RECOVERY_MAX_ATTEMPTS_DEFAULT;
+    for (const row of rows) {
+      const cap = recoveryCapForPhoneNumberId(row.phoneNumberId);
+      byNumberId.set(row.id, cap);
+      if (row.isDefault) defaultCap = cap;
+    }
+    recoveryCapCache = { byNumberId, defaultCap };
+  }
+  return (numberId ? recoveryCapCache.byNumberId.get(numberId) : undefined) ?? recoveryCapCache.defaultCap;
+}
 // Cadência afrouxada (18/08/2026): 8h → 15h → 22h. Antes 4h/12h/20h — três
 // cutucadas em menos de um dia liam como spam. As três continuam DENTRO da
 // janela de 24h (fora dela virariam template MARKETING, pior pro sinal).
@@ -166,10 +191,11 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
 export interface CronResults {
   nudged30: number; closed: number; standby: number; recoverySent: number;
   queueAlerts: number; deliveryAlerts: number; overdueAlerts: number; errors: number;
+  signatureReminders: number;
 }
 
 function emptyResults(): CronResults {
-  return { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0 };
+  return { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0, signatureReminders: 0 };
 }
 
 /**
@@ -179,13 +205,14 @@ function emptyResults(): CronResults {
  */
 async function standbyBlockReason(conv: {
   contactId: string;
+  numberId: string | null;
   qualified: boolean | null;
   closeCategory: string | null;
   recoveryAttempts: number;
   contact: { optedOut: boolean; userId: string | null };
 }): Promise<string | null> {
   if (conv.contact.optedOut) return 'contato em opt-out';
-  if (conv.recoveryAttempts >= RECOVERY_MAX_ATTEMPTS) return 'ciclo de recuperação já esgotado';
+  if (conv.recoveryAttempts >= (await recoveryMaxAttempts(conv.numberId))) return 'ciclo de recuperação já esgotado';
   if (conv.qualified === true) return 'lead já qualificado';
   if (conv.closeCategory && NON_RECOVERABLE_CATEGORIES.has(conv.closeCategory)) {
     return `desfecho "${conv.closeCategory}" não é triagem incompleta`;
@@ -488,12 +515,13 @@ async function buildRecoveryMessage(
   contactName: string | null,
   attempt: number,
   botState: string | null,
+  maxAttempts: number,
 ): Promise<{ message: string; pending: string }> {
   const first = (contactName ?? '').trim().split(/\s+/)[0] ?? '';
   const oi = first ? `Oi, ${first}!` : 'Oi!';
-  // 1ª = retomada leve; do meio = insistência; a ÚLTIMA (5ª) é a despedida.
+  // 1ª = retomada leve; do meio = insistência; a ÚLTIMA é a despedida.
   const fallbackMessage =
-    attempt >= RECOVERY_MAX_ATTEMPTS
+    attempt >= maxAttempts
       ? `${first ? `${first}, essa` : 'Essa'} é minha última mensagem, tá? Seu atendimento está quase pronto e seria uma pena parar agora que falta tão pouco. Se ainda tiver interesse, é só responder que a gente termina juntos. 🙏`
       : attempt === 1
         ? `${oi} Vi que a gente começou seu atendimento sobre o acidente, mas ficou faltando bem pouco pra concluir. Posso continuar de onde paramos? É rapidinho. 😊`
@@ -527,7 +555,7 @@ async function buildRecoveryMessage(
           memory: conv?.botMemory ?? null,
           state: conv?.botState ?? null,
           attempt,
-          maxAttempts: RECOVERY_MAX_ATTEMPTS,
+          maxAttempts,
           history: history
             .reverse()
             .filter((h) => h.body)
@@ -728,8 +756,10 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         results.closed++;
         return;
       }
-      // 5 provocações e mais 24h de silêncio → não há o que fazer.
-      if (conv.recoveryAttempts >= RECOVERY_MAX_ATTEMPTS) {
+      // Ciclo completo (teto do número da conversa) e mais 24h de silêncio →
+      // não há o que fazer.
+      const maxAttempts = await recoveryMaxAttempts(conv.numberId);
+      if (conv.recoveryAttempts >= maxAttempts) {
         await recordRecoveryEvent({
           contactId: conv.contactId,
           contactName: conv.contact.name,
@@ -783,12 +813,13 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         conv.contact.name,
         attempt,
         conv.botState,
+        maxAttempts,
       );
       const firstName = (conv.contact.name ?? '').trim().split(/\s+/)[0] || 'amigo(a)';
-      const isFinal = attempt >= RECOVERY_MAX_ATTEMPTS;
-      // Só a ÚLTIMA (5ª) usa o template final; a 4ª usa o template 1. As
-      // tentativas 1-3 devem sair como texto livre (janela de 24h aberta) —
-      // o template abaixo é só o fallback caso a janela já tenha fechado.
+      const isFinal = attempt >= maxAttempts;
+      // Só a ÚLTIMA usa o template final; as anteriores devem sair como texto
+      // livre (janela de 24h aberta) — o template abaixo é só o fallback caso
+      // a janela já tenha fechado.
       const useFinalTemplate = isFinal;
       const sent = await sendSystemWhatsApp({
         phone: conv.contact.phone,
@@ -808,9 +839,9 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         // direto pra fase de templates (próxima = final, em 24h). Template
         // final enviado = ciclo completo, não repetir template.
         const attemptsAfter = sentFinalTemplate
-          ? RECOVERY_MAX_ATTEMPTS
+          ? maxAttempts
           : sent.via === 'template'
-            ? Math.max(attempt, RECOVERY_MAX_ATTEMPTS - 1)
+            ? Math.max(attempt, maxAttempts - 1)
             : attempt;
         await recordRecoveryEvent({
           contactId: conv.contactId,
@@ -823,7 +854,10 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
             : `texto livre (janela de 24h): ${message.slice(0, 200)}`,
         });
         // Dentro da janela o intervalo é curto (8h); na fase de template, 24h.
-        const gapMs = attemptsAfter < RECOVERY_EARLY_ATTEMPTS ? RECOVERY_EARLY_GAP_MS : RECOVERY_GAP_MS;
+        // Num número de teto reduzido sobram menos tentativas de texto livre
+        // (a última é sempre o template final, 24h depois).
+        const earlyAttempts = Math.min(RECOVERY_EARLY_ATTEMPTS, maxAttempts - 1);
+        const gapMs = attemptsAfter < earlyAttempts ? RECOVERY_EARLY_GAP_MS : RECOVERY_GAP_MS;
         await db.whatsAppConversation.update({
           where: { id: conv.id },
           data: {
@@ -1148,6 +1182,20 @@ export async function runSlaPhase(): Promise<CronResults> {
       }
     } catch (err) {
       console.error('[WHATSAPP CRON] Falha na varredura de cards atrasados:', err);
+      results.errors++;
+    }
+  });
+
+  // ---- 7. Assinatura eletrônica: lembretes, expiração e faxina ---------------
+  // Vive na fase SLA de propósito: sem IA, termina em segundos, e o ciclo de
+  // assinatura não pode esperar a fase de nudge (que tem orçamento de IA).
+  await timed('sla-assinatura', async () => {
+    try {
+      const r = await runSignatureReminders(now);
+      results.signatureReminders += r.reminders;
+      results.errors += r.errors;
+    } catch (err) {
+      console.error('[WHATSAPP CRON] Falha no ciclo de lembretes de assinatura:', err);
       results.errors++;
     }
   });

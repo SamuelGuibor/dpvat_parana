@@ -3,6 +3,7 @@
 import { db } from '@/app/_shared/lib/prisma';
 import { requirePermission, requireTeam } from '@/app/_shared/lib/permissions-server';
 import { encryptSecret } from '@/app/_shared/lib/whatsapp/crypto';
+import { recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { ensureDefaultNumber, invalidateNumberCache } from '@/app/_shared/lib/whatsapp/numbers';
 
 // Cadastro de NÚMEROS da empresa (multi-tenant): a tela de Números do
@@ -44,15 +45,22 @@ export async function listWaNumbers(): Promise<WaNumberDTO[]> {
   return rows.map(toDTO);
 }
 
-/** Lista enxuta pros seletores (dashboard, inbox): só id + rótulo. */
-export async function listWaNumberOptions(): Promise<{ id: string; label: string; displayPhone: string | null }[]> {
+/**
+ * Lista enxuta pros seletores (dashboard, inbox): id + rótulo + teto de
+ * provocações do ciclo de recuperação (a pill "Nª de N" do inbox mostra o
+ * teto do número certo; isDefault resolve conversa legada sem numberId).
+ */
+export async function listWaNumberOptions(): Promise<{ id: string; label: string; displayPhone: string | null; isDefault: boolean; recoveryMax: number }[]> {
   await requireTeam();
   const rows = await db.whatsAppNumber.findMany({
     where: { active: true },
     orderBy: { createdAt: 'asc' },
-    select: { id: true, label: true, displayPhone: true },
+    select: { id: true, label: true, displayPhone: true, isDefault: true, phoneNumberId: true },
   });
-  return rows;
+  return rows.map(({ phoneNumberId, ...rest }) => ({
+    ...rest,
+    recoveryMax: recoveryCapForPhoneNumberId(phoneNumberId),
+  }));
 }
 
 /**
