@@ -311,6 +311,17 @@ async function logSignature(
 // Extração via microserviço da IA
 // ---------------------------------------------------------------------------
 
+/** Lê o `detail` do corpo de erro do microserviço (se houver) pra não perder a causa real. */
+async function httpErrorDetail(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    if (body?.detail) return `: ${body.detail}`;
+  } catch {
+    // corpo não é JSON — segue só com o status.
+  }
+  return "";
+}
+
 async function callExtract(contactId: string, contact: { name: string | null; phone: string }): Promise<{
   fields: ExtractedFields;
   documentsRead: number;
@@ -344,7 +355,7 @@ async function callExtract(contactId: string, contact: { name: string | null; ph
     signal: AbortSignal.timeout(EXTRACT_TIMEOUT_MS),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`extract-contract-data HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`extract-contract-data HTTP ${res.status}${await httpErrorDetail(res)}`);
   const data = await res.json();
   if (!data?.fields) throw new Error("extração sem campo fields");
   return { fields: data.fields as ExtractedFields, documentsRead: Number(data.documentsRead ?? 0) };
@@ -892,7 +903,7 @@ export async function handleConfirmationReply(
       signal: AbortSignal.timeout(45_000),
       cache: "no-store",
     });
-    if (!res.ok) throw new Error(`confirm-contract-data HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`confirm-contract-data HTTP ${res.status}${await httpErrorDetail(res)}`);
     const out = (await res.json()) as {
       decision: "confirmado" | "corrigir" | "atendente" | "nao_entendi";
       corrections: { field: ContractFieldKey; value: string }[];
