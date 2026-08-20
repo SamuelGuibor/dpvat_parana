@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendText, sendTemplate, type TemplateHeaderMedia } from "./client";
-import { OPT_OUT_FOOTER } from "./opt-out";
+// import { OPT_OUT_FOOTER } from "./opt-out";
 import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 import { renderTemplateThreadText } from "./template-text";
 
@@ -298,7 +298,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
     const windowOpen = await isWindowOpen(contact.id);
 
     if (windowOpen) {
-      const body = input.text + OPT_OUT_FOOTER;
+      const body = input.text;
       const result = await sendText(contact.phone, body, undefined, contact.numberId);
       if (!result.waMessageId) {
         await logWhatsAppEvent({
