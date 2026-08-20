@@ -14,7 +14,7 @@ import {
 } from "@/app/_shared/lib/whatsapp/bot";
 import { sendSystemWhatsApp, findOrCreateContactByPhone } from "@/app/_shared/lib/whatsapp/outbound";
 import { whatsappRecipients } from "@/app/_shared/lib/whatsapp/service";
-import { generateKitPdf, sha256 } from "./pdf";
+import { generateSignaturePdf, sha256, type SignaturePart } from "./pdf";
 import { newSignatureToken, tokenExpiry, signUrlFor } from "./tokens";
 
 /** Coluna pra onde o card vai assim que o cliente termina de assinar. */
@@ -509,7 +509,7 @@ async function issueSignature(
     data: { status: "aguardando", extracted: fields as unknown as Prisma.InputJsonValue },
   });
 
-  const pdf = await generateKitPdf(dados);
+  const { pdf, parts } = await generateSignaturePdf(dados);
   const documentHash = sha256(pdf);
   const pdfKey = `whatsapp/${contactId}/contrato-kit-${Date.now()}.pdf`;
   await s3.send(new PutObjectCommand({
@@ -524,6 +524,7 @@ async function issueSignature(
     data: {
       pdfKey,
       documentHash,
+      parts: parts as unknown as Prisma.InputJsonValue,
       sentAt: new Date(),
       deliveredBy: opts.delivery,
       nextReminderAt: opts.delivery === "nao_enviado" ? null : new Date(Date.now() + SIGN_REMINDER_GAP_MS),
@@ -1189,23 +1190,28 @@ export async function markViewed(requestId: string): Promise<void> {
 }
 
 /**
- * Anexa o PDF assinado ao card do cliente. Sem card vinculado, entra no
- * rascunho de documentos do contato — que migra sozinho quando o atendente
- * criar o cadastro ("Adicionar cliente").
+ * Anexa os PDFs assinados ao card do cliente — UM ARQUIVO POR DOCUMENTO (KIT,
+ * procuração Curitiba, procuração Taynara), cada um com o próprio relatório de
+ * assinaturas; ciclos antigos (sem partes separadas) caem no PDF único. Sem
+ * card vinculado, entram no rascunho de documentos do contato — que migra
+ * sozinho quando o atendente criar o cadastro ("Adicionar cliente").
  */
-async function attachSignedPdf(contactId: string, signedPdfKey: string): Promise<"card" | "rascunho" | "falhou"> {
-  const nome = "Procuração e contrato assinados.pdf";
+async function attachSignedPdf(
+  contactId: string,
+  files: { key: string; name: string }[],
+): Promise<"card" | "rascunho" | "falhou"> {
   try {
     const card = await findLinkedCard(contactId);
     if (card) {
-      if (card.kind === "user") {
-        await db.document.create({ data: { userId: card.id, key: signedPdfKey, name: nome } });
-      } else {
-        const process = await db.process.findUnique({ where: { id: card.id }, select: { userId: true } });
+      let userId = card.kind === "user" ? card.id : null;
+      const processId = card.kind === "user" ? null : card.id;
+      if (processId) {
+        const process = await db.process.findUnique({ where: { id: processId }, select: { userId: true } });
         if (!process?.userId) throw new Error("processo sem userId");
-        await db.document.create({
-          data: { userId: process.userId, processId: card.id, key: signedPdfKey, name: nome },
-        });
+        userId = process.userId;
+      }
+      for (const f of files) {
+        await db.document.create({ data: { userId: userId!, processId, key: f.key, name: f.name } });
       }
       return "card";
     }
@@ -1215,12 +1221,13 @@ async function attachSignedPdf(contactId: string, signedPdfKey: string): Promise
       select: { draftDocuments: true },
     });
     const docs = Array.isArray(contact?.draftDocuments) ? (contact!.draftDocuments as unknown[]) : [];
+    const uploadedAt = new Date().toISOString();
     await db.whatsAppContact.update({
       where: { id: contactId },
       data: {
         draftDocuments: [
           ...docs,
-          { key: signedPdfKey, name: nome, uploadedAt: new Date().toISOString() },
+          ...files.map((f) => ({ key: f.key, name: f.name, uploadedAt })),
         ] as unknown as Prisma.InputJsonValue,
       },
     });
@@ -1246,7 +1253,16 @@ export async function finalizeSignature(requestId: string): Promise<void> {
 
   const contact = request.contact;
   const label = contact.name ?? `+${contact.phone}`;
-  const destino = await attachSignedPdf(request.contactId, request.signedPdfKey);
+  // Um PDF por documento quando as partes separadas existem (ciclos novos);
+  // senão, o PDF único de sempre.
+  const parts = (Array.isArray(request.parts) ? request.parts : []) as unknown as SignaturePart[];
+  const partFiles = parts
+    .filter((p) => p.signedKey)
+    .map((p) => ({ key: p.signedKey!, name: p.fileName }));
+  const files = partFiles.length
+    ? partFiles
+    : [{ key: request.signedPdfKey, name: "Procuração e contrato assinados.pdf" }];
+  const destino = await attachSignedPdf(request.contactId, files);
 
   // Assinou → card segue pra "FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL". Se
   // por algum motivo ainda não tinha card (ex.: fluxo antigo), cria um agora
@@ -1289,8 +1305,8 @@ export async function finalizeSignature(requestId: string): Promise<void> {
     `✅ CONTRATO ASSINADO pelo cliente.\n` +
     `➡️ VALIDAR: confira os dados abaixo contra os documentos que ele enviou e dê sequência.\n` +
     `${checklist}\n\n` +
-    (destino === "card" ? "📎 PDF assinado anexado ao card (aba Arquivos)." :
-     destino === "rascunho" ? "📎 PDF assinado na ficha do contato (migra pro card ao criar o cadastro)." :
+    (destino === "card" ? `📎 ${files.length} PDF(s) assinado(s) anexado(s) ao card (aba Arquivos).` :
+     destino === "rascunho" ? `📎 ${files.length} PDF(s) assinado(s) na ficha do contato (migram pro card ao criar o cadastro).` :
      "⚠️ NÃO consegui anexar o PDF automaticamente — ele está no S3, anexe à mão."),
   );
   await notifyTeam(request.contactId, label, `✅ ${label} ASSINOU o contrato — validar agora.`);

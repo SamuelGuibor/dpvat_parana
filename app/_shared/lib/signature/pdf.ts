@@ -27,11 +27,50 @@ const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 export const KIT_TEMPLATE_ASSINATURA = "_KIT_PREV_CSS_ASSINATURA.docx";
 
 /** Tudo o que o cliente assina, na ordem em que aparece no PDF final. */
-export const SIGNATURE_TEMPLATES = [
-  KIT_TEMPLATE_ASSINATURA,
-  "-PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURAA.docx",
-  "-PROCURAÇÃO-ESPECÍFICA-TAYNARA_ASSINATURAA.docx",
-] as const;
+export interface SignatureTemplateMeta {
+  file: string;
+  slug: string;
+  /** Como o documento é citado no relatório de assinaturas. */
+  label: string;
+  /** Nome do arquivo que sobe pro card (um PDF por documento). */
+  fileName: string;
+}
+
+export const SIGNATURE_TEMPLATES: SignatureTemplateMeta[] = [
+  {
+    file: KIT_TEMPLATE_ASSINATURA,
+    slug: "kit",
+    label: "KIT previdenciário — procuração, contrato e declaração",
+    fileName: "KIT previdenciário (assinado).pdf",
+  },
+  {
+    file: "-PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURA.docx",
+    slug: "proc-curitiba",
+    label: "Procuração específica — Curitiba",
+    fileName: "Procuração específica Curitiba (assinada).pdf",
+  },
+  {
+    file: "-PROCURAÇÃO-ESPECÍFICA-TAYNARA_ASSINATURA.docx",
+    slug: "proc-taynara",
+    label: "Procuração específica — Dra. Taynara",
+    fileName: "Procuração específica Taynara (assinada).pdf",
+  },
+];
+
+/**
+ * Fronteiras de cada documento dentro do PDF único (gravadas no ciclo na hora
+ * da geração — é o que permite, depois da assinatura, separar de volta em um
+ * PDF por documento, cada um com seu próprio relatório de assinaturas).
+ */
+export interface SignaturePart {
+  slug: string;
+  label: string;
+  fileName: string;
+  pageStart: number;
+  pageCount: number;
+  /** Preenchido pós-assinatura: chave S3 do PDF separado e carimbado. */
+  signedKey?: string;
+}
 
 /** Linhas de assinatura do cliente: 3 no KIT + 2 na Curitiba + 3 na Taynara. */
 export const EXPECTED_SIGNATURE_SPOTS = 8;
@@ -84,25 +123,35 @@ async function convertDocx(docx: Buffer): Promise<Buffer> {
 
 /**
  * Preenche os 3 templates com âncoras, converte cada um e junta tudo em UM
- * PDF, na ordem de SIGNATURE_TEMPLATES. (O nome ficou histórico — hoje o "KIT"
- * é o pacote completo: KIT previdenciário + 2 procurações específicas.)
+ * PDF (o cliente lê e assina o pacote de uma vez). Devolve também as
+ * FRONTEIRAS de página de cada documento — gravadas no ciclo, elas permitem
+ * separar o PDF assinado de volta em um arquivo por documento.
  */
-export async function generateKitPdf(dados: Record<string, string>): Promise<Buffer> {
-  const parts: Buffer[] = [];
+export async function generateSignaturePdf(
+  dados: Record<string, string>,
+): Promise<{ pdf: Buffer; parts: SignaturePart[] }> {
+  const buffers: Buffer[] = [];
   // Sequencial de propósito: o docx-converter (LibreOffice) sofre com rajadas.
   for (const template of SIGNATURE_TEMPLATES) {
-    const docx = await gerarProcuracao(dados, template);
-    parts.push(await convertDocx(docx));
+    const docx = await gerarProcuracao(dados, template.file, "templates-assinatura");
+    buffers.push(await convertDocx(docx));
   }
-  if (parts.length === 1) return parts[0];
 
   const merged = await PDFDocument.create();
-  for (const part of parts) {
-    const src = await PDFDocument.load(part);
+  const parts: SignaturePart[] = [];
+  for (let i = 0; i < buffers.length; i++) {
+    const src = await PDFDocument.load(buffers[i]);
     const pages = await merged.copyPages(src, src.getPageIndices());
+    parts.push({
+      slug: SIGNATURE_TEMPLATES[i].slug,
+      label: SIGNATURE_TEMPLATES[i].label,
+      fileName: SIGNATURE_TEMPLATES[i].fileName,
+      pageStart: merged.getPageCount(),
+      pageCount: pages.length,
+    });
     for (const page of pages) merged.addPage(page);
   }
-  return Buffer.from(await merged.save());
+  return { pdf: Buffer.from(await merged.save()), parts };
 }
 
 // ---------------------------------------------------------------------------
@@ -335,13 +384,13 @@ function drawLaurel(page: PDFPage, cx: number, cy: number, radius: number, color
 }
 
 /**
- * Selo decorativo FICTÍCIO ("Minnesota International Certification
- * Authority") — não é o ICP-Brasil nem qualquer certificadora real. Serve só
- * pra dar uma cara de "documento com selo" ao relatório, no mesmo estilo
- * visual de badges de certificação: anéis concêntricos com textura de
- * segurança, texto em arco, estrela e ramo de louro.
+ * Selo decorativo da PRÓPRIA Paraná Seguros. De propósito, ele não cita
+ * nenhuma certificadora nem número de certificado: selo de terceiro que não
+ * existe é credencial inventada — num documento jurídico isso derruba a
+ * confiança em vez de aumentar. O que dá validade é a MP 2.200-2/2001 e a
+ * trilha de auditoria, e é isso que o selo diz.
  */
-function drawFictitiousSeal(
+function drawBrandSeal(
   page: PDFPage,
   args: { cx: number; cy: number; radius: number; font: PDFFont; fontBold: PDFFont },
 ): void {
@@ -359,7 +408,7 @@ function drawFictitiousSeal(
   drawLaurel(page, cx, cy, radius * 0.72, goldLight);
 
   // Texto em arco encostado no anel interno.
-  drawArcText(page, "MINNESOTA INTERNATIONAL CERTIFICATION AUTHORITY  •  ", {
+  drawArcText(page, "PARANÁ SEGUROS  •  ASSINATURA ELETRÔNICA  •  ", {
     cx, cy, radius: radius * 0.72, font: fontBold, size: radius * 0.12, color: gold,
   });
 
@@ -371,8 +420,8 @@ function drawFictitiousSeal(
     borderWidth: 0,
   });
 
-  const linha1 = "M.I.C.A.";
-  const s1 = 8;
+  const linha1 = "DOCUMENTO";
+  const s1 = 6.5;
   page.drawText(linha1, {
     x: cx - fontBold.widthOfTextAtSize(linha1, s1) / 2,
     y: cy + 4,
@@ -380,11 +429,11 @@ function drawFictitiousSeal(
     font: fontBold,
     color: gold,
   });
-  const linha2 = "CERTIFICADO Nº MN-27001";
+  const linha2 = "MP 2.200-2/2001 • LEI 14.063/2020";
   page.drawText(linha2, {
-    x: cx - font.widthOfTextAtSize(linha2, 4.4) / 2,
+    x: cx - font.widthOfTextAtSize(linha2, 4.2) / 2,
     y: cy - 7,
-    size: 4.4,
+    size: 4.2,
     font,
     color: gold,
   });
@@ -417,7 +466,9 @@ function drawFooter(page: PDFPage, font: PDFFont, token: string): void {
   });
 }
 
-export async function stampSignedPdf(input: StampInput): Promise<Buffer> {
+export async function stampSignedPdf(
+  input: StampInput,
+): Promise<{ pdf: Buffer; stampedPages: number[] }> {
   const { pdf, signaturePng, signerName, cpf, token, documentHash, auditLines, signedAt } = input;
 
   const spots = await findAnchors(pdf);
@@ -478,12 +529,73 @@ export async function stampSignedPdf(input: StampInput): Promise<Buffer> {
   await appendManifest(doc, {
     font, fontBold, png, signerName, cpf, token, documentHash, auditLines, signedAt,
     carimbos: spots.length,
+    docLabel: "KIT previdenciário (procuração, contrato e declaração) + procurações específicas",
   });
 
   // Rodapé por último: vale pra TODAS as páginas, inclusive o manifesto.
   for (const page of doc.getPages()) drawFooter(page, font, token);
 
-  return Buffer.from(await doc.save());
+  return { pdf: Buffer.from(await doc.save()), stampedPages: spots.map((s) => s.pageIndex) };
+}
+
+/**
+ * Separa o PDF ASSINADO de volta em um arquivo por documento (KIT, procuração
+ * Curitiba, procuração Taynara), cada um com o próprio Relatório de
+ * Assinaturas no final — é o que sobe pro card em vez do PDF único. As páginas
+ * já vêm carimbadas e com rodapé do stampSignedPdf; aqui só recortamos os
+ * intervalos e anexamos um relatório por documento.
+ */
+export async function buildSignedParts(
+  signedPdf: Buffer,
+  parts: SignaturePart[],
+  args: {
+    signaturePng: Buffer;
+    signerName: string;
+    cpf: string;
+    token: string;
+    documentHash: string;
+    auditLines: { label: string; value: string }[];
+    signedAt: Date;
+    stampedPages: number[];
+  },
+): Promise<{ slug: string; fileName: string; pdf: Buffer }[]> {
+  const src = await PDFDocument.load(signedPdf);
+  const out: { slug: string; fileName: string; pdf: Buffer }[] = [];
+
+  for (const part of parts) {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+    const png = await doc.embedPng(args.signaturePng);
+
+    const indices = Array.from({ length: part.pageCount }, (_, i) => part.pageStart + i)
+      .filter((i) => i < src.getPageCount());
+    const pages = await doc.copyPages(src, indices);
+    for (const page of pages) doc.addPage(page);
+
+    const carimbos = args.stampedPages.filter(
+      (p) => p >= part.pageStart && p < part.pageStart + part.pageCount,
+    ).length;
+
+    await appendManifest(doc, {
+      font, fontBold, png,
+      signerName: args.signerName,
+      cpf: args.cpf,
+      token: args.token,
+      documentHash: args.documentHash,
+      auditLines: args.auditLines,
+      signedAt: args.signedAt,
+      carimbos,
+      docLabel: part.label,
+    });
+    // Só a página nova do relatório precisa de rodapé (as demais já vieram
+    // com o rodapé do documento completo).
+    const all = doc.getPages();
+    drawFooter(all[all.length - 1], font, args.token);
+
+    out.push({ slug: part.slug, fileName: part.fileName, pdf: Buffer.from(await doc.save()) });
+  }
+  return out;
 }
 
 async function appendManifest(
@@ -499,9 +611,11 @@ async function appendManifest(
     auditLines: { label: string; value: string }[];
     signedAt: Date;
     carimbos: number;
+    /** Como este documento é citado no relatório (o pacote inteiro ou uma parte). */
+    docLabel: string;
   },
 ): Promise<void> {
-  const { font, fontBold, png, signerName, cpf, token, documentHash, auditLines, signedAt, carimbos } = args;
+  const { font, fontBold, png, signerName, cpf, token, documentHash, auditLines, signedAt, carimbos, docLabel } = args;
 
   const page: PDFPage = doc.addPage([595.28, 841.89]); // A4
   const { width } = page.getSize();
@@ -536,7 +650,8 @@ async function appendManifest(
       console.error("[SIGN] logo do manifesto falhou (seguindo sem ele):", err);
     }
   }
-  drawFictitiousSeal(page, { cx: 330, cy: y - 22, radius: 34, font, fontBold });
+  // Selo só no bloco de validade jurídica do rodapé — no topo ficava
+  // disputando espaço com o logo.
 
   y -= 6;
   texto("Relatório de Assinaturas", { size: 17, bold: true, cor: NAVY, gap: 7 });
@@ -563,7 +678,7 @@ async function appendManifest(
   page.drawText("Status:", { x: margem, y, size: 9, font: fontBold, color: INK });
   chip("Assinado", margem + fontBold.widthOfTextAtSize("Status:", 9) + 8, y);
   y -= 17;
-  texto(`Documento: KIT previdenciário (procuração, contrato e declaração) + procurações específicas — ${carimbos} assinaturas aplicadas`, { size: 8.5, gap: 4 });
+  texto(`Documento: ${docLabel} — ${carimbos} assinatura(s) aplicada(s)`, { size: 8.5, gap: 4 });
   texto(`Número: ${token}`, { size: 8.5, gap: 4 });
   texto("Hash do documento original (SHA256):", { size: 8.5, bold: true, gap: 3 });
   texto(documentHash.slice(0, 64), { size: 8, cor: GRAY, gap: 14 });
@@ -699,7 +814,7 @@ async function appendManifest(
     x: tx, y: blocoY + 12, size: 7, font, color: GRAY,
   });
 
-  drawFictitiousSeal(page, {
+  drawBrandSeal(page, {
     cx: margem + larguraUtil - 56, cy: blocoY + 53, radius: 34, font, fontBold,
   });
 }

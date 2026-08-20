@@ -7,11 +7,15 @@ import Docxtemplater from "docxtemplater";
 export async function gerarProcuracao(
   dados: any,
   template?: string,
+  // Os templates da ASSINATURA ELETRÔNICA (variantes com âncora) moram em
+  // templates-assinatura/ — fora de templates/, que é listada no front
+  // (/api/procuracao/templates) e não deve exibir as variantes internas.
+  baseDir: "templates" | "templates-assinatura" = "templates",
 ) {
   const filename = template || "procuracao.docx";
   const templatePath = path.join(
     process.cwd(),
-    "templates",
+    baseDir,
     filename
   );
 

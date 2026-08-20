@@ -7,7 +7,7 @@ import { db } from "@/app/_shared/lib/prisma";
 import { rateLimit } from "@/app/_shared/lib/rate-limit";
 import { loadByToken } from "@/app/_shared/lib/signature/tokens";
 import { sendOtp, verifyOtp } from "@/app/_shared/lib/signature/otp";
-import { stampSignedPdf, sha256, assertSignaturePng } from "@/app/_shared/lib/signature/pdf";
+import { stampSignedPdf, buildSignedParts, sha256, assertSignaturePng, type SignaturePart } from "@/app/_shared/lib/signature/pdf";
 import { finalizeSignature, markViewed, requestHumanHelp } from "@/app/_shared/lib/signature/core";
 
 // Ações da página pública de assinatura. O TOKEN é a credencial — não há
@@ -182,7 +182,18 @@ export async function assinar(token: string, input: AssinarInput) {
       ContentType: "image/png",
     }));
 
-    const assinado = await stampSignedPdf({
+    const auditLines = [
+      { label: "Documento gerado em", value: request.sentAt?.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) ?? "—" },
+      { label: "Link aberto em", value: primeiro ? new Date(primeiro.at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—" },
+      { label: "Assinado em", value: signedAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) + " (Brasília)" },
+      { label: "IP do signatário", value: g.ip },
+      { label: "Dispositivo", value: g.ua.slice(0, 100) },
+      { label: "Telefone verificado por código", value: `+${request.contact.phone}` },
+      { label: "Forma da assinatura", value: input.modo === "desenho" ? "desenhada na tela" : "nome digitado pelo signatário" },
+      { label: "Aceite registrado", value: input.aceite.slice(0, 160) },
+      { label: "Identificador do ciclo", value: request.id },
+    ];
+    const { pdf: assinado, stampedPages } = await stampSignedPdf({
       pdf: original,
       signaturePng: assinaturaPng,
       signerName: nome,
@@ -190,17 +201,7 @@ export async function assinar(token: string, input: AssinarInput) {
       token: request.token,
       documentHash: request.documentHash,
       signedAt,
-      auditLines: [
-        { label: "Documento gerado em", value: request.sentAt?.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) ?? "—" },
-        { label: "Link aberto em", value: primeiro ? new Date(primeiro.at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—" },
-        { label: "Assinado em", value: signedAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) + " (Brasília)" },
-        { label: "IP do signatário", value: g.ip },
-        { label: "Dispositivo", value: g.ua.slice(0, 100) },
-        { label: "Telefone verificado por código", value: `+${request.contact.phone}` },
-        { label: "Forma da assinatura", value: input.modo === "desenho" ? "desenhada na tela" : "nome digitado pelo signatário" },
-        { label: "Aceite registrado", value: input.aceite.slice(0, 160) },
-        { label: "Identificador do ciclo", value: request.id },
-      ],
+      auditLines,
     });
 
     const signedPdfKey = `whatsapp/${request.contactId}/contrato-assinado-${Date.now()}.pdf`;
@@ -211,12 +212,47 @@ export async function assinar(token: string, input: AssinarInput) {
       ContentType: "application/pdf",
     }));
 
+    // Um PDF por documento (KIT + 2 procurações), cada um com o próprio
+    // relatório de assinaturas — é o que sobe pro card. Best-effort: se a
+    // separação falhar, o fluxo segue e o card recebe o PDF único.
+    let partsComChaves: SignaturePart[] | null = null;
+    try {
+      const rawParts = (Array.isArray(request.parts) ? request.parts : []) as unknown as SignaturePart[];
+      if (rawParts.length) {
+        const separados = await buildSignedParts(assinado, rawParts, {
+          signaturePng: assinaturaPng,
+          signerName: nome,
+          cpf,
+          token: request.token,
+          documentHash: request.documentHash,
+          auditLines,
+          signedAt,
+          stampedPages,
+        });
+        partsComChaves = [];
+        for (let i = 0; i < rawParts.length; i++) {
+          const key = `whatsapp/${request.contactId}/assinado-${rawParts[i].slug}-${Date.now()}.pdf`;
+          await s3.send(new PutObjectCommand({
+            Bucket: process.env.AWS_S3_BUCKET_NAME,
+            Key: key,
+            Body: separados[i].pdf,
+            ContentType: "application/pdf",
+          }));
+          partsComChaves.push({ ...rawParts[i], signedKey: key });
+        }
+      }
+    } catch (err) {
+      console.error("[SIGN] Separação dos PDFs por documento falhou (segue com o único):", request.id, err);
+      partsComChaves = null;
+    }
+
     await db.signatureRequest.update({
       where: { id: request.id },
       data: {
         status: "assinado",
         signedAt,
         signedPdfKey,
+        ...(partsComChaves ? { parts: partsComChaves as unknown as Prisma.InputJsonValue } : {}),
         signedHash: sha256(assinado),
         signatureKey: assinaturaKey,
         signatureMode: input.modo,

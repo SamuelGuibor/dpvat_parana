@@ -693,6 +693,9 @@ model SignatureRequest {
   signedPdfKey  String? // PDF assinado + página de manifesto (S3)
   documentHash  String? // SHA-256 do PDF exibido ao cliente
   signedHash    String? // SHA-256 do PDF final
+  // Fronteiras de página de cada documento dentro do PDF único (+ signedKey
+  // por documento pós-assinatura) — permite subir um PDF por documento no card.
+  parts         Json?
 
   // --- identidade / prova --------------------------------------------------
   otpHash       String? // bcrypt do código de 6 dígitos

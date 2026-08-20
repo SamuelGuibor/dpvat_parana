@@ -163,7 +163,7 @@ function addNameUnderAnchoredLines(documentXml, label) {
 
 const KIT = "_KIT_PREV_CSS_ASSINATURA.docx";
 {
-  const kitPath = path.join("templates", KIT);
+  const kitPath = path.join("templates-assinatura", KIT);
   const zip = new PizZip(fs.readFileSync(kitPath));
   const xml = addNameUnderAnchoredLines(zip.file("word/document.xml").asText(), KIT);
   zip.file("word/document.xml", xml);
@@ -172,7 +172,7 @@ const KIT = "_KIT_PREV_CSS_ASSINATURA.docx";
 
 for (const name of TEMPLATES) {
   const src = path.join("templates", name);
-  const dst = path.join("templates", name.replace(/\.docx$/, "_ASSINATURA.docx"));
+  const dst = path.join("templates-assinatura", name.replace(/\.docx$/, "_ASSINATURA.docx"));
   const zip = new PizZip(fs.readFileSync(src));
   const doc = zip.file("word/document.xml").asText();
   const { xml, anchored } = addAnchors(doc, name);

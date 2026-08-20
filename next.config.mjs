@@ -38,6 +38,7 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/**": [
         "./templates/**/*.docx",
+        "./templates-assinatura/**/*.docx",
         "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       ],
     },

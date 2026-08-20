@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import QRCode from "qrcode";
-import { generateKitPdf, findAnchors, stampSignedPdf, sha256, EXPECTED_SIGNATURE_SPOTS } from "@/app/_shared/lib/signature/pdf";
+import { generateSignaturePdf, findAnchors, stampSignedPdf, buildSignedParts, sha256, EXPECTED_SIGNATURE_SPOTS } from "@/app/_shared/lib/signature/pdf";
 
 // SMOKE do motor de PDF — usa o docx-converter DE VERDADE, por isso não roda no
 // `npm test` normal. Para rodar e ver o resultado:
@@ -35,8 +35,10 @@ const DADOS = {
 
 describe.skipIf(!ativo)("motor de PDF da assinatura", () => {
   it("preenche os 3 arquivos, acha as âncoras e carimba a assinatura", async () => {
-    const pdf = await generateKitPdf(DADOS);
+    const { pdf, parts } = await generateSignaturePdf(DADOS);
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+    expect(parts.length).toBe(3);
+    console.log("partes:", parts.map((p) => `${p.slug}: páginas ${p.pageStart + 1}-${p.pageStart + p.pageCount}`));
 
     const hash = sha256(pdf);
     expect(hash).toHaveLength(64);
@@ -54,7 +56,7 @@ describe.skipIf(!ativo)("motor de PDF da assinatura", () => {
     // Placeholder de assinatura (o desenho real vem do canvas do navegador).
     const signaturePng = await QRCode.toBuffer("assinatura-de-teste", { margin: 0, width: 160 });
 
-    const assinado = await stampSignedPdf({
+    const { pdf: assinado, stampedPages } = await stampSignedPdf({
       pdf,
       signaturePng,
       signerName: DADOS.name,
@@ -71,11 +73,32 @@ describe.skipIf(!ativo)("motor de PDF da assinatura", () => {
       signedAt: new Date("2026-08-18T17:32:00Z"),
     });
 
+    // Separação em um PDF por documento, cada um com o próprio relatório.
+    const separados = await buildSignedParts(assinado, parts, {
+      signaturePng,
+      signerName: DADOS.name,
+      cpf: DADOS.cpf,
+      token: "tokendetestetokendetes",
+      documentHash: hash,
+      auditLines: [
+        { label: "IP do signatário", value: "189.45.12.9" },
+        { label: "Telefone verificado por código", value: "+55 41 99999-9999" },
+      ],
+      signedAt: new Date("2026-08-18T17:32:00Z"),
+      stampedPages,
+    });
+    expect(separados.length).toBe(3);
+    // Cada carimbo do documento único precisa cair em exatamente uma parte.
+    expect(stampedPages.length).toBe(EXPECTED_SIGNATURE_SPOTS);
+
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "assinatura-"));
     const original = path.join(dir, "kit-original.pdf");
     const final = path.join(dir, "kit-assinado.pdf");
     fs.writeFileSync(original, pdf);
     fs.writeFileSync(final, assinado);
+    for (const sep of separados) {
+      fs.writeFileSync(path.join(dir, `parte-${sep.slug}.pdf`), sep.pdf);
+    }
     console.log(`\nPDFs gerados:\n  ${original}\n  ${final}\n`);
 
     expect(assinado.length).toBeGreaterThan(pdf.length);
