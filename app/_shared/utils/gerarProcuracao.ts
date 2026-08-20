@@ -13,11 +13,14 @@ export async function gerarProcuracao(
   baseDir: "templates" | "templates-assinatura" = "templates",
 ) {
   const filename = template || "procuracao.docx";
-  const templatePath = path.join(
-    process.cwd(),
-    baseDir,
-    filename
-  );
+  // ATENÇÃO: o prefixo do diretório precisa ser um LITERAL em cada ramo. Com
+  // `path.join(process.cwd(), baseDir, ...)` (variável), o file tracing da
+  // Vercel não resolve o diretório e inclui o PROJETO INTEIRO (.git, public,
+  // node_modules) em cada função — o deploy estourou em 1.48GB (20/08). Os
+  // .docx em si já entram pelo outputFileTracingIncludes do next.config.
+  const templatePath = baseDir === "templates-assinatura"
+    ? path.join(process.cwd(), "templates-assinatura", filename)
+    : path.join(process.cwd(), "templates", filename);
 
   const content = fs.readFileSync(templatePath, "binary");
 
