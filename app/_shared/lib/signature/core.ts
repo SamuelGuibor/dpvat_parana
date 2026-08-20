@@ -2,17 +2,23 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Prisma } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
-import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { logWhatsAppEvent, createLog } from "@/app/_shared/lib/log";
+import { hashPassword } from "@/app/_shared/lib/password";
+import { runAutomations } from "@/app/_shared/lib/automation-executor";
 import {
   sendBotReply,
   postInternalNote,
   qualifyToQueue,
   findLinkedCard,
+  type LinkedCard,
 } from "@/app/_shared/lib/whatsapp/bot";
 import { sendSystemWhatsApp, findOrCreateContactByPhone } from "@/app/_shared/lib/whatsapp/outbound";
 import { whatsappRecipients } from "@/app/_shared/lib/whatsapp/service";
 import { generateKitPdf, sha256 } from "./pdf";
 import { newSignatureToken, tokenExpiry, signUrlFor } from "./tokens";
+
+/** Coluna pra onde o card vai assim que o cliente termina de assinar. */
+const PROTOCOLO_HOSPITAL_LABEL = "FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL";
 
 // CICLO DA ASSINATURA ELETRÔNICA (própria — sem ZapSign)
 //
@@ -380,6 +386,98 @@ function summaryMessage(dados: Record<string, string>): string {
 export type DeliveryMode = "bot" | "atendente" | "nao_enviado";
 
 /**
+ * Garante que o contato tem um card no kanban ANTES do link de assinatura sair
+ * — se ainda não tiver (nem por vínculo direto, nem por telefone), cria um,
+ * mesmo padrão do webhook do BotConversa: primeira coluna do board, número de
+ * card tirado da sequence. Sem sessão de equipe (roda no fluxo automático).
+ */
+async function ensureCardForContact(
+  contactId: string,
+  contact: { phone: string; name: string | null },
+): Promise<LinkedCard | null> {
+  const existing = await findLinkedCard(contactId);
+  if (existing) return existing;
+
+  try {
+    const [label, seq] = await Promise.all([
+      db.label.findFirst({ where: { order: 0 }, select: { id: true, name: true } }),
+      db.$queryRawUnsafe<{ nextval: bigint }[]>(`SELECT nextval('card_number_seq') AS nextval`),
+    ]);
+    const cardNumber = Number(seq[0].nextval);
+
+    const user = await db.user.create({
+      data: {
+        name: contact.name || `+${contact.phone}`,
+        email: `inserir_email-${contact.phone}@gmail.com`,
+        telefone: contact.phone,
+        role: "Filtro de Cartões",
+        password: await hashPassword("segurosparana1"),
+        cardNumber,
+        service: "INSS",
+        status: "INSS_S1",
+        statusStartedAt: new Date(),
+        ...(label && { labelId: label.id }),
+      },
+    });
+
+    await db.whatsAppContact.update({ where: { id: contactId }, data: { userId: user.id } });
+
+    await createLog({
+      action: "create",
+      message: "criou o card (link de assinatura eletrônica enviado)",
+      authorId: AUTHOR_ID,
+      authorName: AUTHOR_NAME,
+      userId: user.id,
+    });
+
+    return { kind: "user", id: user.id, name: user.name, etapa: label?.name ?? null, etapaDescricao: null, service: user.service };
+  } catch (err) {
+    console.error("[SIGN] Falha ao criar card automaticamente pro contato:", contactId, err);
+    return null;
+  }
+}
+
+/**
+ * Move o card pro nome de coluna dado (comparação sem diferenciar
+ * maiúsculas/minúsculas) e dispara as automações configuradas nela — mesmo
+ * comportamento de uma movimentação manual. Idempotente: não faz nada se o
+ * card já estiver lá, ou se a coluna não existir mais.
+ */
+async function moveCardToLabelByName(card: { kind: "user" | "process"; id: string }, labelName: string): Promise<void> {
+  try {
+    const targetLabel = await db.label.findFirst({ where: { name: { equals: labelName, mode: "insensitive" } } });
+    if (!targetLabel) {
+      console.warn(`[SIGN] Coluna "${labelName}" não encontrada — card não movido.`);
+      return;
+    }
+
+    const isProcess = card.kind === "process";
+    const current = isProcess
+      ? await db.process.findUnique({ where: { id: card.id }, select: { labelId: true, role: true, name: true, service: true } })
+      : await db.user.findUnique({ where: { id: card.id }, select: { labelId: true, role: true, name: true, service: true } });
+    if (!current || current.labelId === targetLabel.id) return;
+
+    const moveData = { labelId: targetLabel.id, role: targetLabel.name, statusStartedAt: new Date() };
+    if (isProcess) await db.process.update({ where: { id: card.id }, data: moveData });
+    else await db.user.update({ where: { id: card.id }, data: moveData });
+
+    await createLog({
+      action: "move",
+      message: `moveu de "${current.role ?? "?"}" para "${targetLabel.name}" (assinatura eletrônica concluída)`,
+      authorId: AUTHOR_ID,
+      authorName: AUTHOR_NAME,
+      userId: isProcess ? null : card.id,
+      processId: isProcess ? card.id : null,
+      metadata: { from: current.role ?? null, to: targetLabel.name, cardName: current.name ?? null, service: current.service ?? null },
+    });
+
+    await runAutomations({ cardId: card.id, isProcess, newLabelId: targetLabel.id, authorId: AUTHOR_ID, authorName: AUTHOR_NAME });
+  } catch (err) {
+    console.error("[SIGN] Falha ao mover card pra coluna de protocolo:", labelName, err);
+  }
+}
+
+/**
  * Gera o PDF do KIT, cria o token/link e (opcionalmente) manda pro cliente.
  * Usada nas DUAS portas: fluxo do bot (após o "sim") e geração manual da
  * equipe pelo card/inbox.
@@ -443,6 +541,10 @@ async function issueSignature(
   }
 
   if (opts.delivery !== "nao_enviado") {
+    // O link só sai se o cliente já tiver (ou ganhar agora) um card no
+    // kanban — assim a assinatura nunca fica "solta" sem cadastro.
+    await ensureCardForContact(contactId, contact);
+
     const first = (dados.name || "").split(/\s+/)[0] ?? "";
     await sendBotReply(
       contactId, contact.phone, contact.name,
@@ -626,29 +728,48 @@ export async function maybeStartSignatureFlow(
 
 const COLLECT_MAX_ROUNDS = 3;
 
-/** Mensagem pedindo os campos pendentes, em linguagem simples. */
+/**
+ * Mensagem pedindo os dados pendentes — SÓ o grupo de maior prioridade que
+ * ainda falta, numa frase natural (não checklist). Prioridade: documento
+ * (nome/CPF/RG, que uma foto do RG/CNH resolve de uma vez) → endereço →
+ * dados rápidos (estado civil/profissão/nacionalidade). Isso evita despejar
+ * tudo de uma vez — o cliente responde uma coisa por vez, do jeito que a
+ * gente perguntaria numa conversa de verdade.
+ */
 function askMissingMessage(missing: MissingField[], documentsRead: number, retry = false): string {
   const keys = new Set(missing.map((m) => m.key));
-  const itens: string[] = [];
-  if (keys.has("name")) itens.push("seu *nome completo* (igualzinho está no seu RG)");
-  if (keys.has("cpf")) itens.push("o número do seu *CPF*");
-  if (keys.has("rg")) itens.push("o número do seu *RG*");
-  if (keys.has("estado_civil")) itens.push("seu *estado civil* (solteiro, casado, divorciado...)");
-  if (keys.has("profissao")) itens.push("sua *profissão* (o que você trabalha)");
-  if (["rua", "numero", "bairro", "cep", "cidade", "estado"].some((k) => keys.has(k as ContractFieldKey))) {
-    itens.push("seu *endereço completo com CEP* (rua, número, bairro e cidade) *se preferir, pode me mandar uma foto do comprovante de residência*");
+  const docKeys: ContractFieldKey[] = ["name", "cpf", "rg"];
+  const addressKeys: ContractFieldKey[] = ["rua", "numero", "bairro", "cep", "cidade", "estado"];
+  const docMissing = docKeys.filter((k) => keys.has(k));
+  const addressMissing = addressKeys.some((k) => keys.has(k));
+
+  if (docMissing.length) {
+    if (docMissing.length > 1) {
+      return documentsRead > 0
+        ? "Só uma última conferência: me manda uma foto do seu RG ou da CNH *bem iluminada e sem cortar as bordas*? Assim eu pego seu nome, CPF e RG certinhos. 😊"
+        : "Show! Agora me manda uma foto do seu RG ou da CNH? Assim eu já pego seu nome completo, CPF e RG direto de lá. 😊";
+    }
+    const only = docMissing[0];
+    if (only === "name") return "Só uma coisinha: qual o seu nome completo, igualzinho está no seu RG?";
+    if (only === "cpf") return "Faltou só o número do seu CPF — pode me passar?";
+    return "Faltou só o número do seu RG — pode me passar? Se preferir, me manda uma foto que eu leio de lá. 😊";
   }
-  if (keys.has("nacionalidade")) itens.push("sua nacionalidade");
-  const lista = itens.map((i) => `📌 ${i}`).join("\n");
-  const abertura = retry
-    ? "Obrigado! Ainda ficou faltando uma coisinha:"
-    : "Estamos quase lá! Pra eu preparar seus documentos certinhos, só preciso de:";
-  const docDica = keys.has("name") || keys.has("cpf") || keys.has("rg")
-    ? (documentsRead > 0
-      ? "\n\nSe puder, me manda uma foto do seu RG ou da CNH *bem iluminada e sem cortar as bordas* — assim eu pego tudo direitinho. 😊"
-      : "\n\nSe ficar mais fácil, é só me mandar uma *foto do seu RG ou da CNH* que eu pego esses dados de lá. 😊")
-    : "\n\nPode me mandar por aqui mesmo, do jeito que for mais fácil. 😊";
-  return `${abertura}\n\n${lista}${docDica}`;
+
+  if (addressMissing) {
+    return retry
+      ? "Ainda preciso do seu endereço pra fechar — rua, número, bairro e cidade (o CEP ajuda bastante). Se for mais fácil, pode me mandar uma foto do comprovante de residência. 😊"
+      : "Perfeito! Agora só falta o seu endereço completo — rua, número, bairro e cidade (com CEP, se souber). Se preferir, me manda uma foto do comprovante de residência que eu pego de lá. 😊";
+  }
+
+  const quick: string[] = [];
+  if (keys.has("estado_civil")) quick.push("seu estado civil");
+  if (keys.has("profissao")) quick.push("sua profissão (o que você trabalha)");
+  if (keys.has("nacionalidade")) quick.push("sua nacionalidade");
+  if (quick.length) {
+    return `Já tá quase tudo certo! Só falta você me contar ${quick.join(" e ")}. 😊`;
+  }
+
+  return "Só confirmando: consegue me passar os dados que ainda estão faltando? Pode ser por aqui mesmo, do jeito que for mais fácil. 😊";
 }
 
 /**
@@ -1115,6 +1236,14 @@ export async function finalizeSignature(requestId: string): Promise<void> {
   const contact = request.contact;
   const label = contact.name ?? `+${contact.phone}`;
   const destino = await attachSignedPdf(request.contactId, request.signedPdfKey);
+
+  // Assinou → card segue pra "FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL". Se
+  // por algum motivo ainda não tinha card (ex.: fluxo antigo), cria um agora
+  // pra não perder o rastro — a assinatura em si é a prova de que virou lead.
+  const linkedCard = (await findLinkedCard(request.contactId)) ?? (await ensureCardForContact(request.contactId, contact));
+  if (linkedCard) {
+    await moveCardToLabelByName(linkedCard, PROTOCOLO_HOSPITAL_LABEL);
+  }
 
   // Conversa volta pra FILA — MAS sem roubar o ticket de um atendente que já
   // esteja com ela (status "human" com dono).
