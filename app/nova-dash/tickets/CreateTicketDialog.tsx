@@ -25,7 +25,7 @@ import {
 import { Ticket, Type, AlignLeft, Tag, ImagePlus, X, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { createDevTicket, getTicketImageUploadUrl } from '@/app/_actions/dev-tickets/ticket-actions';
-import { TYPE_META } from './constants';
+import { MAX_TICKET_IMAGES, TYPE_META } from './constants';
 
 const fieldLabel =
   'flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400 mb-1.5';
@@ -41,30 +41,52 @@ export function CreateTicketDialog({ onCreated }: Props) {
   const [type, setType] = useState('BUG');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  // Cada foto carrega sua própria object URL de prévia — revogada ao remover.
+  const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const photoRef = useRef<HTMLInputElement>(null);
 
-  function pickPhoto(file: File | null) {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Anexe apenas imagens (JPEG, PNG, WEBP ou GIF).');
-      return;
+  function pickPhotos(files: FileList | null) {
+    if (!files?.length) return;
+
+    const accepted: { file: File; preview: string }[] = [];
+    let free = MAX_TICKET_IMAGES - photos.length;
+
+    for (const file of Array.from(files)) {
+      if (free <= 0) {
+        toast.error(`Máximo de ${MAX_TICKET_IMAGES} fotos por ticket.`);
+        break;
+      }
+      if (!file.type.startsWith('image/')) {
+        toast.error(`"${file.name}": anexe apenas imagens (JPEG, PNG, WEBP ou GIF).`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`"${file.name}" excede o limite de 10MB.`);
+        continue;
+      }
+      accepted.push({ file, preview: URL.createObjectURL(file) });
+      free--;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('A imagem excede o limite de 10MB.');
-      return;
-    }
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhoto(file);
-    setPhotoPreview(URL.createObjectURL(file));
+
+    if (accepted.length) setPhotos((prev) => [...prev, ...accepted]);
+    // Zera o input para permitir reescolher o mesmo arquivo depois.
+    if (photoRef.current) photoRef.current.value = '';
   }
 
-  function removePhoto() {
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhoto(null);
-    setPhotoPreview(null);
+  function removePhoto(index: number) {
+    setPhotos((prev) => {
+      const target = prev[index];
+      if (target) URL.revokeObjectURL(target.preview);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  function clearPhotos() {
+    setPhotos((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.preview));
+      return [];
+    });
     if (photoRef.current) photoRef.current.value = '';
   }
 
@@ -72,7 +94,7 @@ export function CreateTicketDialog({ onCreated }: Props) {
     setType('BUG');
     setTitle('');
     setDescription('');
-    removePhoto();
+    clearPhotos();
   }
 
   async function handleCreate() {
@@ -87,29 +109,29 @@ export function CreateTicketDialog({ onCreated }: Props) {
 
     setSaving(true);
     try {
-      let imageKey: string | null = null;
-      let imageName: string | null = null;
+      // Cada foto sobe direto ao S3 por presigned PUT (o body da Vercel tem
+      // limite de 4.5MB); só as chaves resultantes vão para a server action.
+      const images: { key: string; name: string }[] = [];
 
-      if (photo) {
+      for (const { file } of photos) {
         const presign = await getTicketImageUploadUrl({
-          name: photo.name,
-          type: photo.type,
-          size: photo.size,
+          name: file.name,
+          type: file.type,
+          size: file.size,
         });
         if (!presign.success || !presign.url || !presign.key) {
-          throw new Error(presign.error ?? 'Falha ao preparar o upload da imagem.');
+          throw new Error(presign.error ?? `Falha ao preparar o upload de "${file.name}".`);
         }
         const res = await fetch(presign.url, {
           method: 'PUT',
-          body: photo,
-          headers: { 'Content-Type': photo.type },
+          body: file,
+          headers: { 'Content-Type': file.type },
         });
-        if (!res.ok) throw new Error('Erro ao enviar a imagem.');
-        imageKey = presign.key;
-        imageName = photo.name;
+        if (!res.ok) throw new Error(`Erro ao enviar "${file.name}".`);
+        images.push({ key: presign.key, name: file.name });
       }
 
-      await createDevTicket({ title, description, type, imageKey, imageName });
+      await createDevTicket({ title, description, type, images });
 
       toast.success('Ticket criado! Ele entrou na fila de distribuição.');
       resetForm();
@@ -196,39 +218,63 @@ export function CreateTicketDialog({ onCreated }: Props) {
 
           <div>
             <span className={fieldLabel}>
-              <ImagePlus className="w-3.5 h-3.5" /> Foto / Print (opcional)
+              <ImagePlus className="w-3.5 h-3.5" /> Fotos / Prints (opcional)
+              {photos.length > 0 && (
+                <span className="ml-1 normal-case tracking-normal font-medium text-gray-400">
+                  {photos.length}/{MAX_TICKET_IMAGES}
+                </span>
+              )}
             </span>
             <input
               ref={photoRef}
               type="file"
+              multiple
               accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
-              onChange={(e) => pickPhoto(e.target.files?.[0] ?? null)}
+              onChange={(e) => pickPhotos(e.target.files)}
             />
-            {photoPreview ? (
-              <div className="relative rounded-xl border border-gray-200 dark:border-zinc-800 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photoPreview} alt="Prévia da imagem" className="w-full max-h-56 object-contain bg-gray-50 dark:bg-zinc-950/50" />
-                <button
-                  type="button"
-                  onClick={removePhoto}
-                  className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
-                  title="Remover imagem"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-                <p className="px-3 py-2 text-[11px] text-gray-500 dark:text-zinc-400 truncate border-t border-gray-100 dark:border-zinc-800">
-                  {photo?.name}
-                </p>
+
+            {photos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                {photos.map((p, i) => (
+                  <div
+                    key={p.preview}
+                    className="relative rounded-xl border border-gray-200 dark:border-zinc-800 overflow-hidden"
+                    title={p.file.name}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.preview}
+                      alt={`Prévia de ${p.file.name}`}
+                      className="w-full h-24 object-cover bg-gray-50 dark:bg-zinc-950/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(i)}
+                      className="absolute top-1.5 right-1.5 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                      title="Remover imagem"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ) : (
+            )}
+
+            {photos.length < MAX_TICKET_IMAGES && (
               <button
                 type="button"
                 onClick={() => photoRef.current?.click()}
-                className="w-full h-24 rounded-xl border-2 border-dashed border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
+                className={`w-full rounded-xl border-2 border-dashed border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-colors ${
+                  photos.length > 0 ? 'h-14' : 'h-24'
+                }`}
               >
                 <ImagePlus className="w-5 h-5" />
-                <span className="text-xs font-medium">Clique para anexar um print (até 10MB)</span>
+                <span className="text-xs font-medium">
+                  {photos.length > 0
+                    ? 'Adicionar mais fotos'
+                    : `Clique para anexar prints (até ${MAX_TICKET_IMAGES} imagens, 10MB cada)`}
+                </span>
               </button>
             )}
           </div>
@@ -244,7 +290,7 @@ export function CreateTicketDialog({ onCreated }: Props) {
             className="rounded-xl h-11 bg-blue-600 hover:bg-blue-700"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-            {saving ? 'Criando…' : 'Criar Ticket'}
+            {saving ? (photos.length ? 'Enviando fotos…' : 'Criando…') : 'Criar Ticket'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

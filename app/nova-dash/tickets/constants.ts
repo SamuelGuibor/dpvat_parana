@@ -20,14 +20,21 @@ export const TICKET_STATUS_FLOW = [
 
 export type TicketStatus = (typeof TICKET_STATUS_FLOW)[number];
 
+export interface TicketImage {
+  key: string;
+  name: string;
+}
+
 export interface DevTicketDto {
   id: string;
   title: string;
   description: string;
   type: string;
   status: string;
+  // Legado (primeira foto dos tickets antigos) — use ticketImages() para ler.
   imageKey: string | null;
   imageName: string | null;
+  images: TicketImage[] | null;
   creatorId: string;
   creatorName: string;
   assigneeId: string | null;
@@ -35,6 +42,23 @@ export interface DevTicketDto {
   concludedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Máximo de fotos por ticket — espelha MAX_IMAGES_PER_TICKET no servidor. */
+export const MAX_TICKET_IMAGES = 8;
+
+/**
+ * Fotos do ticket já normalizadas: o array novo mais, para tickets criados
+ * antes do suporte a várias fotos, o par imageKey/imageName.
+ */
+export function ticketImages(ticket: DevTicketDto): TicketImage[] {
+  const list = Array.isArray(ticket.images)
+    ? ticket.images.filter((img) => typeof img?.key === 'string')
+    : [];
+  if (ticket.imageKey && !list.some((img) => img.key === ticket.imageKey)) {
+    return [{ key: ticket.imageKey, name: ticket.imageName ?? 'imagem' }, ...list];
+  }
+  return list;
 }
 
 export const TYPE_META: Record<string, { label: string; icon: LucideIcon; badge: string }> = {

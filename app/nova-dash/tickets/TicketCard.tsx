@@ -25,10 +25,10 @@ import {
   DialogTitle,
 } from '@/app/_shared/ui/dialog';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
-import { ArrowRight, Clock, Loader2, MoreHorizontal, Trash2, UserPlus, UserCheck } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Clock, ImageIcon, Loader2, MoreHorizontal, Trash2, UserPlus, UserCheck } from 'lucide-react';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { assumeDevTicket, deleteDevTicket, setDevTicketStatus } from '@/app/_actions/dev-tickets/ticket-actions';
-import { DevTicketDto, NEXT_STATUS, STATUS_META, TICKET_STATUS_FLOW, TYPE_META, TicketStatus } from './constants';
+import { DevTicketDto, NEXT_STATUS, STATUS_META, TICKET_STATUS_FLOW, TYPE_META, TicketImage as TicketImageMeta, TicketStatus, ticketImages } from './constants';
 
 function initials(name: string) {
   return name
@@ -40,29 +40,149 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-/** Foto do ticket: presigned GET sob demanda, cacheado pelo SWR. */
-function TicketImage({ ticket, onZoom, full = false }: { ticket: DevTicketDto; onZoom: (url: string) => void; full?: boolean }) {
+/** Uma foto do ticket: presigned GET sob demanda, cacheado pelo SWR. */
+function TicketPhoto({
+  image,
+  onZoom,
+  className,
+  badge,
+}: {
+  image: TicketImageMeta;
+  onZoom?: () => void;
+  className: string;
+  badge?: string;
+}) {
   const { data } = useSWR(
-    ticket.imageKey ? ['dev-ticket-image', ticket.imageKey] : null,
-    () => downloadFileFromS3(ticket.imageKey!, ticket.imageName ?? 'imagem', true),
+    ['dev-ticket-image', image.key],
+    () => downloadFileFromS3(image.key, image.name || 'imagem', true),
     { revalidateOnFocus: false, dedupingInterval: 30 * 60_000 },
   );
 
-  if (!ticket.imageKey) return null;
   if (!data?.success || !data.presignedUrl) {
-    return <div className={`${full ? 'h-48' : 'h-24'} rounded-xl bg-gray-100 dark:bg-zinc-800 animate-pulse`} />;
+    return <div className={`${className} rounded-xl bg-gray-100 dark:bg-zinc-800 animate-pulse`} />;
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={data.presignedUrl}
-      alt={ticket.imageName ?? 'Print do ticket'}
-      onClick={(e) => { e.stopPropagation(); onZoom(data.presignedUrl!); }}
-      className={`w-full rounded-xl border border-gray-100 dark:border-zinc-800 cursor-zoom-in hover:opacity-90 transition-opacity ${
-        full ? 'max-h-96 object-contain bg-gray-50 dark:bg-zinc-950/50' : 'h-24 object-cover'
-      }`}
-    />
+    <div className="relative">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={data.presignedUrl}
+        alt={image.name || 'Print do ticket'}
+        onClick={(e) => { e.stopPropagation(); onZoom?.(); }}
+        className={`w-full rounded-xl border border-gray-100 dark:border-zinc-800 cursor-zoom-in hover:opacity-90 transition-opacity ${className}`}
+      />
+      {badge && (
+        <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white">
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Galeria de fotos do ticket. No card mostra até 3 miniaturas (a última leva o
+ * contador do que sobrou); no detalhe mostra todas, uma embaixo da outra.
+ */
+function TicketGallery({
+  images,
+  onZoom,
+  full = false,
+}: {
+  images: TicketImageMeta[];
+  onZoom: (index: number) => void;
+  full?: boolean;
+}) {
+  if (!images.length) return null;
+
+  if (full) {
+    return (
+      <div className="space-y-2">
+        {images.map((img, i) => (
+          <TicketPhoto
+            key={img.key}
+            image={img}
+            onZoom={() => onZoom(i)}
+            className="max-h-96 object-contain bg-gray-50 dark:bg-zinc-950/50"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const shown = images.slice(0, 3);
+  const hidden = images.length - shown.length;
+
+  return (
+    <div className={shown.length === 1 ? '' : 'grid grid-cols-3 gap-1.5'}>
+      {shown.map((img, i) => (
+        <TicketPhoto
+          key={img.key}
+          image={img}
+          onZoom={() => onZoom(i)}
+          className={shown.length === 1 ? 'h-24 object-cover' : 'h-16 object-cover'}
+          badge={hidden > 0 && i === shown.length - 1 ? `+${hidden}` : undefined}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Visualizador em tela cheia com navegação entre as fotos do ticket. */
+function TicketZoom({
+  images,
+  index,
+  onIndex,
+  onClose,
+}: {
+  images: TicketImageMeta[];
+  index: number | null;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+}) {
+  const current = index !== null ? images[index] : null;
+
+  return (
+    <Dialog open={index !== null} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent
+        className="max-w-5xl p-2 bg-black/90 border-none"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>{current?.name || 'Imagem do ticket'}</DialogTitle>
+        </DialogHeader>
+
+        {current && (
+          <div className="relative">
+            <TicketPhoto image={current} className="max-h-[80vh] object-contain" />
+
+            {images.length > 1 && index !== null && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onIndex((index - 1 + images.length) % images.length)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 grid h-9 w-9 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                  title="Foto anterior"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onIndex((index + 1) % images.length)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 grid h-9 w-9 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                  title="Próxima foto"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+                <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-[11px] font-bold text-white">
+                  {index + 1} / {images.length}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -74,10 +194,11 @@ interface Props {
 export function TicketCard({ ticket, onChanged }: Props) {
   const { data: session } = useSession();
   const [busy, setBusy] = useState(false);
-  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const [zoomIndex, setZoomIndex] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const { confirm, confirmDialog } = useConfirm();
 
+  const images = ticketImages(ticket);
   const meta = TYPE_META[ticket.type] ?? TYPE_META.OUTRO;
   const TypeIcon = meta.icon;
   const status = (TICKET_STATUS_FLOW.includes(ticket.status as TicketStatus)
@@ -177,7 +298,7 @@ export function TicketCard({ ticket, onChanged }: Props) {
         </p>
       </div>
 
-      <TicketImage ticket={ticket} onZoom={setZoomUrl} />
+      <TicketGallery images={images} onZoom={setZoomIndex} />
 
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 min-w-0" title={`Criado por ${ticket.creatorName}`}>
@@ -187,6 +308,15 @@ export function TicketCard({ ticket, onChanged }: Props) {
             </AvatarFallback>
           </Avatar>
           <span className="text-[10px] text-gray-400 dark:text-zinc-500 truncate">{ticket.creatorName}</span>
+          {images.length > 1 && (
+            <span
+              className="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-zinc-500 shrink-0"
+              title={`${images.length} fotos anexadas`}
+            >
+              <ImageIcon className="w-3 h-3" />
+              {images.length}
+            </span>
+          )}
         </div>
 
         <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex items-center gap-1.5">
@@ -255,25 +385,17 @@ export function TicketCard({ ticket, onChanged }: Props) {
           <p className="text-sm text-gray-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">
             {ticket.description}
           </p>
-          <TicketImage ticket={ticket} onZoom={setZoomUrl} full />
+          <TicketGallery images={images} onZoom={setZoomIndex} full />
         </DialogContent>
       </Dialog>
 
-      {/* Zoom da imagem */}
-      <Dialog open={!!zoomUrl} onOpenChange={(v) => !v && setZoomUrl(null)}>
-        <DialogContent
-          className="max-w-5xl p-2 bg-black/90 border-none"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <DialogHeader className="sr-only">
-            <DialogTitle>{ticket.imageName ?? 'Imagem do ticket'}</DialogTitle>
-          </DialogHeader>
-          {zoomUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={zoomUrl} alt={ticket.imageName ?? 'Imagem do ticket'} className="max-h-[80vh] w-full object-contain" />
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Zoom das imagens */}
+      <TicketZoom
+        images={images}
+        index={zoomIndex}
+        onIndex={setZoomIndex}
+        onClose={() => setZoomIndex(null)}
+      />
     </div>
   );
 }

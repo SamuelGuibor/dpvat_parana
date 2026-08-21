@@ -1244,8 +1244,12 @@ model DevTicket {
   // Fluxo: EM_DISTRIBUICAO -> EM_ANALISE -> EM_DESENVOLVIMENTO -> CONCLUIDO
   status       String    @default("EM_DISTRIBUICAO")
   // Print/foto opcional do problema (chave no S3, prefixo dev-tickets/).
+  // Legado: primeira foto dos tickets criados antes do suporte a várias fotos.
+  // Continua sendo lido (e mesclado a `images`) para não perder anexo antigo.
   imageKey     String?
   imageName    String?
+  // Fotos do ticket: array JSON de { key, name } — chaves no S3 (dev-tickets/).
+  images       Json?
   creatorId    String
   creatorName  String
   // Dev que assumiu o ticket (null = aguardando em distribuição).
