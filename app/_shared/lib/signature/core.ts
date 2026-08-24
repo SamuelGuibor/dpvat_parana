@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Prisma } from "@prisma/client";
@@ -1253,10 +1254,11 @@ export async function finalizeSignature(requestId: string): Promise<void> {
   // Assinou → card segue pra "FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL". Se
   // por algum motivo ainda não tinha card (ex.: fluxo antigo), cria um agora
   // pra não perder o rastro — a assinatura em si é a prova de que virou lead.
-  const linkedCard = (await findLinkedCard(request.contactId)) ?? (await ensureCardForContact(request.contactId, contact));
-  if (linkedCard) {
-    await moveCardToLabelByName(linkedCard, PROTOCOLO_HOSPITAL_LABEL);
-  }
+  
+  // const linkedCard = (await findLinkedCard(request.contactId)) ?? (await ensureCardForContact(request.contactId, contact));
+  // if (linkedCard) {
+  //   await moveCardToLabelByName(linkedCard, PROTOCOLO_HOSPITAL_LABEL);
+  // }
 
   // Conversa volta pra FILA — MAS sem roubar o ticket de um atendente que já
   // esteja com ela (status "human" com dono).
