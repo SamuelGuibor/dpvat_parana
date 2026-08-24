@@ -21,7 +21,7 @@ import {
 
 const STATUS_INFO: Record<string, { rotulo: string; cor: string; icone: React.ReactNode }> = {
   assinado: { rotulo: "Assinado — validar", cor: "bg-emerald-100 text-emerald-800 border-emerald-200", icone: <CheckCircle2 className="w-3.5 h-3.5" /> },
-  validado: { rotulo: "Validado", cor: "bg-slate-100 text-slate-600 border-slate-200", icone: <CheckCircle2 className="w-3.5 h-3.5" /> },
+  validado: { rotulo: "Validado", cor: "bg-emerald-200 text-emerald-800 border-emerald-300", icone: <CheckCircle2 className="w-3.5 h-3.5" /> },
   aguardando: { rotulo: "Aguardando assinatura", cor: "bg-amber-100 text-amber-800 border-amber-200", icone: <Clock className="w-3.5 h-3.5" /> },
   visualizado: { rotulo: "Abriu, não assinou", cor: "bg-orange-100 text-orange-800 border-orange-200", icone: <Clock className="w-3.5 h-3.5" /> },
   confirmando: { rotulo: "Confirmando dados", cor: "bg-sky-100 text-sky-800 border-sky-200", icone: <Clock className="w-3.5 h-3.5" /> },
