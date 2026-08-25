@@ -47,6 +47,52 @@ const SIGN_REMINDER_RETRY_MS = 6 * 60 * 60_000; // janela fechada/cooldown
 // Template aprovado na Meta para lembrar fora da janela de 24h ({{1}} = nome).
 const SIGN_REMINDER_TEMPLATE = "lembrete_assinatura";
 
+// Colunas do kanban em que a COBRANÇA de assinatura é permitida (24/08): fora
+// delas o card já seguiu no funil (ou voltou pra etapa que não é de assinatura)
+// e a IA não deve insistir — o lembrete fica adiado até o card retornar.
+// Comparação sem acento/hífen porque os nomes são dados vivos da tabela Label.
+const SIGN_NAG_ALLOWED_COLUMNS = new Set(["COLHER ASSINATURA", "FILTRO DE CARTOES"]);
+
+function normalizeColumnName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[-_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * Nome cru da coluna (Label.name) do card vinculado ao contato. Não dá pra
+ * usar findLinkedCard().etapa: aquele campo prioriza o rótulo de status do
+ * serviço, não a coluna do board.
+ */
+async function contactCardColumn(contactId: string): Promise<string | null> {
+  const card = await findLinkedCard(contactId);
+  if (!card) return null;
+  const row = card.kind === "process"
+    ? await db.process.findUnique({ where: { id: card.id }, select: { label: { select: { name: true } }, role: true } })
+    : await db.user.findUnique({ where: { id: card.id }, select: { label: { select: { name: true } }, role: true } });
+  return row?.label?.name ?? row?.role ?? null;
+}
+
+/**
+ * Cobrança de assinatura permitida pro contato? Sem card (lead novo — o card
+ * nasce junto com o envio do link, já na coluna "Filtro de Cartões") = sim.
+ */
+async function isSignatureNagAllowed(contactId: string): Promise<boolean> {
+  try {
+    const column = await contactCardColumn(contactId);
+    if (!column) return true;
+    return SIGN_NAG_ALLOWED_COLUMNS.has(normalizeColumnName(column));
+  } catch (err) {
+    // Falha na resolução do card não pode derrubar o cron — na dúvida, cobra.
+    console.error("[SIGN] Falha ao resolver coluna do card:", contactId, err);
+    return true;
+  }
+}
+
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -601,6 +647,9 @@ async function failToHuman(
     status: "extracao_falhou",
     extracted: (fields ?? undefined) as unknown as Prisma.InputJsonValue,
     missingFields: missing as unknown as Prisma.InputJsonValue,
+    // Guarda POR QUE caiu no colo do humano — a aba Contratos mostra este
+    // texto na linha; sem ele o motivo só existia na nota interna.
+    error: contexto.slice(0, 500),
     nextReminderAt: null,
   };
   if (requestId) {
@@ -653,6 +702,14 @@ export async function maybeStartSignatureFlow(
   try {
     if (!(await isAutoSignatureActive())) return "queue";
     if (!CHATBOT_URL || !CHATBOT_SECRET) return "queue";
+
+    // Card já em outra etapa do funil → a IA não abre cobrança de assinatura
+    // (sem card ainda é permitido: ele nasce no envio do link, na coluna
+    // "Filtro de Cartões").
+    if (!(await isSignatureNagAllowed(contactId))) {
+      console.log(`[SIGN] ${contactId}: card fora das colunas de cobrança — fluxo automático não iniciado.`);
+      return "queue";
+    }
 
     const active = await activeCycle(contactId);
     if (active) {
@@ -1473,6 +1530,17 @@ export async function runSignatureReminders(now: number): Promise<ReminderResult
         );
         await notifyTeam(req.contactId, label, `⏰ ${label} não assinou após ${SIGN_REMINDER_MAX} lembretes — resgate manual.`);
         results.exhausted++;
+        continue;
+      }
+
+      // Card fora das colunas de cobrança (COLHER-ASSINATURA / Filtro de
+      // Cartões) → adia 24h sem gastar lembrete; volta a cobrar se o card
+      // for movido de volta.
+      if (!(await isSignatureNagAllowed(req.contactId))) {
+        await db.signatureRequest.update({
+          where: { id: req.id },
+          data: { nextReminderAt: nextBusinessSlot(now + SIGN_REMINDER_GAP_MS) },
+        });
         continue;
       }
 

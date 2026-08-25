@@ -121,6 +121,24 @@ export function sendText(phone: string, body: string, replyToWaId?: string, numb
 }
 
 /**
+ * Reage a uma mensagem (do cliente ou nossa) com um emoji — igual ao app:
+ * a reação aparece "grudada" na bolha no celular do cliente. Emoji vazio ("")
+ * REMOVE a reação. Só funciona dentro da janela de 24h de serviço.
+ */
+export function sendReaction(
+  phone: string,
+  targetWaMessageId: string,
+  emoji: string,
+  numberId?: string | null,
+): Promise<SendResult> {
+  return postMessage({
+    to: phone,
+    type: "reaction",
+    reaction: { message_id: targetWaMessageId, emoji },
+  }, numberId);
+}
+
+/**
  * Mídia por URL pública (usamos presigned GET do S3): a Meta baixa o arquivo
  * e entrega ao cliente. Também só funciona dentro da janela de 24h.
  * ATENÇÃO: áudio por link SEMPRE chega como player de arquivo — para chegar

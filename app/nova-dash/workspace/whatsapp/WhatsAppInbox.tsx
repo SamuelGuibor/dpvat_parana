@@ -11,7 +11,7 @@ import {
   FileBadge, ChevronDown, BadgeCheck, XCircle, Settings2, FileText,
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
-  UserCheck, Columns3, Users, Phone, BookUser,
+  UserCheck, Columns3, Users, Phone, BookUser, Smile,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -31,7 +31,7 @@ import {
 } from '@/app/_actions/whatsapp/conversations';
 import {
   sendWhatsAppMessage, sendWhatsAppMedia, getWhatsAppUploadUrl,
-  editWhatsAppMessage, deleteWhatsAppMessage,
+  editWhatsAppMessage, deleteWhatsAppMessage, reactToWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
@@ -422,6 +422,12 @@ export function WhatsAppInbox() {
 
   useEffect(() => { setCardDialogOpen(false); }, [activeContactId]);
 
+  // Reações aplicadas nesta sessão (messageId → emoji|null): feedback imediato
+  // e única fonte de verdade pras mensagens antigas já acumuladas no client.
+  const [reactionOverrides, setReactionOverrides] = useState<Record<string, string | null>>({});
+  const reactBusy = useRef<Set<string>>(new Set());
+  useEffect(() => { setReactionOverrides({}); }, [activeContactId]);
+
   // Stub mínimo pro CardDialog — ele mesmo recarrega o card completo ao abrir.
   const cardStub = useMemo<ExtendedKanbanCard | null>(() => {
     if (!clientInfo?.registered || !clientInfo.userId) return null;
@@ -756,6 +762,24 @@ export function WhatsAppInbox() {
       await mutateMessages();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao apagar.');
+    }
+  }
+
+  // Reagir com emoji (o cliente vê a reação na bolha, como no app). Repetir o
+  // mesmo emoji remove; emoji '' remove explicitamente (chip). O override
+  // local cobre as mensagens do bloco "carregar anteriores", que o polling
+  // não refaz — sem ele a reação nunca apareceria nelas.
+  async function handleReact(msg: WhatsAppThreadMessage, emoji: string) {
+    if (reactBusy.current.has(msg.id)) return; // clique duplo = 1 envio
+    reactBusy.current.add(msg.id);
+    try {
+      const { reaction } = await reactToWhatsAppMessage({ messageId: msg.id, emoji });
+      setReactionOverrides((prev) => ({ ...prev, [msg.id]: reaction }));
+      await mutateMessages();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao enviar a reação.');
+    } finally {
+      reactBusy.current.delete(msg.id);
     }
   }
 
@@ -1476,7 +1500,7 @@ export function WhatsAppInbox() {
                       </div>
                     )}
                     <ThreadMessageRow
-                      msg={msg}
+                      msg={reactionOverrides[msg.id] !== undefined ? { ...msg, reaction: reactionOverrides[msg.id] } : msg}
                       grouped={!!grouped}
                       meId={meId}
                       highlighted={highlightId === msg.id}
@@ -1491,6 +1515,7 @@ export function WhatsAppInbox() {
                       onDiscard={() => removePending(msg.id)}
                       onJumpToReply={() => jumpToMessage(msg.replyToId)}
                       onAttachToCard={() => handleAttachMedia(msg)}
+                      onReact={(emoji) => handleReact(msg, emoji)}
                       contactName={active?.contactName}
                     />
                   </Fragment>
@@ -2030,19 +2055,27 @@ function parseReactionBody(body: string | null): { emoji: string | null; removed
   return null;
 }
 
+// Paleta de reações (mesma do chat interno; whitelist replicada no servidor).
+const WA_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
+
 function ThreadMessageRow({
-  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard, contactName,
+  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard, onReact, contactName,
 }: {
   msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean; contactName?: string | null;
   setRowRef: (el: HTMLDivElement | null) => void;
   onReply: () => void; onEdit: () => void; onDelete: () => void;
   onRetry: () => void; onDiscard: () => void; onJumpToReply: () => void;
   onAttachToCard: () => void;
+  onReact: (emoji: string) => void;
 }) {
   const mine = msg.direction === 'out';
   const isTemp = msg.id.startsWith('temp-');
   const canEdit = mine && !isTemp && msg.authorId === meId && !msg.mediaKey && !msg.deletedAt;
   const canDelete = mine && !isTemp && msg.authorId === meId && !msg.deletedAt;
+  // Reagir exige que a mensagem exista na Meta (waMessageId) — nota interna e
+  // envio otimista ficam de fora.
+  const canReact = !isTemp && !msg.internal && !msg.deletedAt && !!msg.waMessageId;
+  const [reactOpen, setReactOpen] = useState(false);
 
   if (msg.deletedAt) {
     return (
@@ -2140,6 +2173,18 @@ function ThreadMessageRow({
           </span>
         </div>
 
+        {/* Reação da equipe aplicada — chip encostado na bolha. Remoção
+            EXPLÍCITA (emoji '') pra clique duplo não reaplicar por engano. */}
+        {msg.reaction && (
+          <button
+            onClick={() => onReact('')}
+            title="Reação enviada ao cliente — clique para remover"
+            className={`z-[1] -mt-2 flex items-center rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-sm shadow-sm transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 ${mine ? 'mr-1 self-end' : 'ml-1 self-start'}`}
+          >
+            {msg.reaction}
+          </button>
+        )}
+
         {msg.status === 'failed' && isTemp && (
           <span className="mt-0.5 flex items-center gap-2 px-1 text-sm text-red-500">
             Falhou.
@@ -2153,7 +2198,29 @@ function ThreadMessageRow({
 
       {/* Ações da mensagem (aparecem no hover) */}
       {!isTemp && (
-        <div className="mb-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className={`relative mb-1 flex gap-0.5 transition-opacity group-hover:opacity-100 ${reactOpen ? 'opacity-100' : 'opacity-0'}`}>
+          {canReact && (
+            <>
+              <MsgAction icon={Smile} label="Reagir" onClick={() => setReactOpen((v) => !v)} />
+              {reactOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setReactOpen(false)} />
+                  <div className={`absolute bottom-8 z-20 flex gap-0.5 rounded-full border border-gray-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 ${mine ? 'right-0' : 'left-0'}`}>
+                    {WA_REACTION_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => { onReact(emoji); setReactOpen(false); }}
+                        title={msg.reaction === emoji ? 'Remover reação' : `Reagir com ${emoji}`}
+                        className={`grid h-7 w-7 place-items-center rounded-full text-base transition-colors hover:bg-gray-100 dark:hover:bg-zinc-700 ${msg.reaction === emoji ? 'bg-emerald-100 dark:bg-emerald-900/40' : ''}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
           <MsgAction icon={ReplyIcon} label="Responder" onClick={onReply} />
           {canEdit && <MsgAction icon={Pencil} label="Editar (só na thread)" onClick={onEdit} />}
           {canDelete && <MsgAction icon={Trash2} label="Apagar (só na thread)" onClick={onDelete} />}

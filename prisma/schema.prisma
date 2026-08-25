@@ -878,6 +878,10 @@ model WhatsAppMessage {
   // Transcrição de áudio feita a pedido do atendente (botão "transcrever").
   // Persistida: o próximo clique (de qualquer atendente) não paga IA de novo.
   transcript       String?
+  // Reação da EQUIPE aplicada a esta mensagem (emoji único, como no app do
+  // WhatsApp). Enviada à Meta via type:"reaction"; null = sem reação.
+  reaction         String?
+  reactionAuthorId String?
   createdAt        DateTime        @default(now())
   contact          WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 

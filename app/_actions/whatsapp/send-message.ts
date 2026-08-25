@@ -6,7 +6,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
-import { sendText, sendMedia, sendVoiceNote } from '@/app/_shared/lib/whatsapp/client';
+import { sendText, sendMedia, sendVoiceNote, sendReaction } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { extractMentions } from '@/app/_shared/utils/mentions';
 import { recordMentions } from '@/app/_shared/lib/mention-inbox';
@@ -175,6 +175,71 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
   });
 
   return dto;
+}
+
+// Mesma paleta do chat interno (reactions.ts) — whitelist também no servidor.
+const REACTION_EMOJIS_ALLOWED = new Set(['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅']);
+
+/**
+ * Reage a uma mensagem da thread com um emoji (estilo WhatsApp: 1 reação da
+ * empresa por mensagem). Repetir o mesmo emoji REMOVE a reação. A reação
+ * também aparece no celular do cliente — só funciona com a janela de 24h
+ * aberta (fora dela a Meta recusa e o erro chega legível).
+ */
+export async function reactToWhatsAppMessage({
+  messageId, emoji,
+}: { messageId: string; emoji: string }): Promise<{ reaction: string | null }> {
+  const me = await requireTeamMember();
+  if (emoji && !REACTION_EMOJIS_ALLOWED.has(emoji)) throw new Error('Emoji de reação não suportado.');
+
+  const msg = await db.whatsAppMessage.findUnique({
+    where: { id: messageId },
+    select: { id: true, contactId: true, waMessageId: true, internal: true, deletedAt: true, reaction: true },
+  });
+  if (!msg || msg.internal || msg.deletedAt) throw new Error('Mensagem não encontrada.');
+  if (!msg.waMessageId) throw new Error('Esta mensagem não pode receber reação.');
+
+  const contact = await requireContact(msg.contactId);
+
+  // Toggle: mesmo emoji de novo (ou emoji vazio) = remover.
+  const next = !emoji || msg.reaction === emoji ? null : emoji;
+  const result = await sendReaction(contact.phone, msg.waMessageId, next ?? '', contact.numberId);
+  if (result.error) throw new Error(result.error);
+
+  await db.whatsAppMessage.update({
+    where: { id: msg.id },
+    data: { reaction: next, reactionAuthorId: next ? me.id : null },
+  });
+
+  // Broadcast leve: qualquer evento no canal já força o refetch da thread
+  // aberta nos outros atendentes (o inbox só olha o channelId).
+  const recipients = await whatsappRecipients();
+  await broadcastToRelay({
+    channelId: whatsappChannelId(msg.contactId),
+    recipients,
+    message: {
+      type: 'wa_reaction',
+      channelId: whatsappChannelId(msg.contactId),
+      contactId: msg.contactId,
+      messageId: msg.id,
+      reaction: next,
+    },
+  });
+
+  await logWhatsAppEvent({
+    action: 'wa_reaction',
+    message: next
+      ? `reagiu com ${next} a uma mensagem de ${contact.name ?? contact.phone}`
+      : `removeu a reação de uma mensagem de ${contact.name ?? contact.phone}`,
+    authorId: me.id,
+    authorName: me.name,
+    contactId: msg.contactId,
+    contactName: contact.name,
+    contactPhone: contact.phone,
+    metadata: { messageId: msg.id, emoji: next },
+  });
+
+  return { reaction: next };
 }
 
 /**

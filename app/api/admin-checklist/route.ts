@@ -1,17 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../_shared/lib/prisma";
-
-// Itens padrão do Checklist Previdenciário, agrupados por seção. A ordem aqui
-// define a ordem exibida; a seção agrupa visualmente no card (aba Arquivos).
-const DEFAULT_ITEMS: { text: string; section: string }[] = [
-  { section: "COMERCIAL", text: "DOCUMENTO PESSOAL (ATUALIZADO)" },
-  { section: "COMERCIAL", text: "COMPROVANTE DE ENDEREÇO" },
-  { section: "COMERCIAL", text: "PROCURAÇÕES" },
-  { section: "ADM", text: "SENHA/DOCS INSS" },
-  { section: "ADM", text: "ROTEIRO" },
-  { section: "MÉDICO", text: "PRONTUÁRIOS" },
-  { section: "MÉDICO", text: "LAUDOS MÉDICOS" },
-];
+import { DEFAULT_CHECKLIST_ITEMS } from "../../_shared/lib/admin-checklist";
 
 type ItemRow = {
   id: string;
@@ -51,7 +40,7 @@ export async function GET(request: Request) {
       // Primeira carga deste card: semeia os itens padrão.
       if (items.length === 0) {
         await tx.adminChecklistItem.createMany({
-          data: DEFAULT_ITEMS.map((item, i) => ({
+          data: DEFAULT_CHECKLIST_ITEMS.map((item, i) => ({
             processId: processId ?? null,
             userId: userId ?? null,
             text: item.text,

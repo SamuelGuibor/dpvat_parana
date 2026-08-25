@@ -4,14 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   PenLine, Search, RefreshCw, Copy, ExternalLink, CheckCircle2, XCircle,
-  Send, Clock, AlertTriangle, FileText, Loader2, ChevronRight,
+  Send, Clock, AlertTriangle, FileText, Loader2, ChevronRight, SquareKanban,
+  Trash2, Stethoscope, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/app/_shared/ui/button";
 import {
   listarContratos, detalharContrato, validarContrato, cancelarContrato, reenviarLink,
-  getAutomacaoAssinatura, setAutomacaoAssinaturaPausada, type AutomacaoAssinaturaStatus,
-  type ContractRow, type ContractDetail,
+  getAutomacaoAssinatura, setAutomacaoAssinaturaPausada, resolverCardDoContrato,
+  resumirProblemasContratos, excluirContrato,
+  type AutomacaoAssinaturaStatus, type ContractRow, type ContractDetail,
+  type ContractProblemSummary, type ContractProblemCase,
 } from "@/app/_actions/signature/contracts";
+import { CardDialog } from "@/app/nova-dash/CardDialog";
+import type { ExtendedKanbanCard } from "@/app/nova-dash/card-dialog/types";
 
 // Aba CONTRATOS — mesa de trabalho de quem cobra e valida assinatura.
 //
@@ -41,6 +46,14 @@ const ORIGEM_ROTULO: Record<string, string> = {
   manual_offline: "👤 offline",
 };
 
+/** Cor do bloco de diagnóstico por tipo de problema. */
+const COR_PROBLEMA: Record<string, string> = {
+  erro: "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200",
+  extracao_falhou: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200",
+  confirmacao_expirada: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
+  parado: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-200",
+};
+
 const FILTROS = [
   { chave: "todos", rotulo: "Todos" },
   { chave: "assinado", rotulo: "Assinado, falta validar" },
@@ -67,9 +80,35 @@ export function ContractsPanel() {
   const [carregando, setCarregando] = useState(true);
   const [detalhe, setDetalhe] = useState<ContractDetail | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  // Raio-X do que deu errado (bloco do topo) + linha marcada pra excluir.
+  const [problemas, setProblemas] = useState<ContractProblemSummary | null>(null);
+  const [abrirProblemas, setAbrirProblemas] = useState(false);
+  const [excluindo, setExcluindo] = useState<ContractRow | null>(null);
   // Trava de segurança da automação (null = ainda carregando).
   const [automacao, setAutomacao] = useState<AutomacaoAssinaturaStatus | null>(null);
   const [alternandoTrava, setAlternandoTrava] = useState(false);
+  // Cartão do kanban aberto a partir de um contrato (o CardDialog recarrega
+  // o card completo sozinho a partir do id — stub mínimo basta).
+  const [cardAberto, setCardAberto] = useState<{ id: string; isProcess: boolean; ownerId: string; titulo: string } | null>(null);
+  const [abrindoCard, setAbrindoCard] = useState<string | null>(null);
+
+  const abrirCard = async (contractId: string, contactId: string, cliente: string) => {
+    if (abrindoCard) return;
+    setAbrindoCard(contractId);
+    try {
+      const res = await resolverCardDoContrato(contactId);
+      if (res) {
+        setDetalhe(null); // não empilhar o drawer com o dialog
+        setCardAberto({ id: res.id, isProcess: res.isProcess, ownerId: res.ownerId, titulo: res.nome ?? cliente });
+      } else {
+        toast.error("Nenhum cartão do kanban vinculado a este cliente.");
+      }
+    } catch {
+      toast.error("Falha ao localizar o cartão do cliente.");
+    } finally {
+      setAbrindoCard(null);
+    }
+  };
 
   const carregarAutomacao = useCallback(async () => {
     try {
@@ -106,6 +145,8 @@ export function ContractsPanel() {
       const res = await listarContratos({ status, busca });
       setLinhas(res.linhas);
       setContagem(res.contagem);
+      // O raio-X é global (não segue filtro nem busca): é a foto do que travou.
+      resumirProblemasContratos().then(setProblemas).catch(() => setProblemas(null));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao carregar os contratos.");
     } finally {
@@ -132,6 +173,25 @@ export function ContractsPanel() {
         toast.success(sucesso);
         await carregar();
         if (detalhe?.id === id) setDetalhe(await detalharContrato(id));
+      } else {
+        toast.error(res.erro ?? "Não deu certo.", { duration: 8000 });
+      }
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  const confirmarExclusao = async (motivo: string) => {
+    if (!excluindo) return;
+    const alvo = excluindo;
+    setOcupado(alvo.id);
+    try {
+      const res = await excluirContrato(alvo.id, motivo);
+      if (res.ok) {
+        toast.success("Contrato excluído da lista.");
+        setExcluindo(null);
+        if (detalhe?.id === alvo.id) setDetalhe(null);
+        await carregar();
       } else {
         toast.error(res.erro ?? "Não deu certo.", { duration: 8000 });
       }
@@ -209,6 +269,62 @@ export function ContractsPanel() {
         ))}
       </div>
 
+      {problemas && problemas.total > 0 && (
+        <section className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50/60 dark:bg-rose-950/20">
+          <button
+            onClick={() => setAbrirProblemas((v) => !v)}
+            className="flex w-full items-center gap-3 px-4 py-3 text-left"
+          >
+            <Stethoscope className="w-5 h-5 shrink-0 text-rose-600" />
+            <div className="min-w-0">
+              <h3 className="text-sm font-black text-rose-900 dark:text-rose-100">
+                {problemas.total} contrato(s) travaram e precisaram (ou precisam) de gente
+              </h3>
+              <p className="text-[11px] text-rose-700/80 dark:text-rose-300/80">
+                {problemas.porTipo.map((t) => `${t.quantidade} ${t.rotulo.toLowerCase()}`).join(" · ")}
+                {problemas.recuperados30d > 0 &&
+                  ` · ${problemas.recuperados30d} desses clientes acabaram assinando (30d)`}
+              </p>
+            </div>
+            <ChevronDown
+              className={`ml-auto w-4 h-4 shrink-0 text-rose-600 transition-transform ${abrirProblemas ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {abrirProblemas && (
+            <div className="space-y-3 border-t border-rose-200 dark:border-rose-900 p-4">
+              <div>
+                <h4 className="mb-2 text-[11px] font-black uppercase text-rose-700/80">
+                  Por que travou (causas mais repetidas)
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {problemas.motivos.map((m) => (
+                    <span
+                      key={m.motivo}
+                      className="rounded-full border border-rose-200 dark:border-rose-900 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-gray-700 dark:text-zinc-300"
+                    >
+                      {m.motivo}
+                      <span className="ml-1.5 font-black text-rose-600">{m.quantidade}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                {problemas.casos.map((c) => (
+                  <CasoProblema
+                    key={c.id}
+                    caso={c}
+                    onAbrir={() => abrirDetalhe(c.id)}
+                    onAbrirCard={() => abrirCard(c.id, c.contactId, c.cliente)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {carregando && linhas.length === 0 ? (
         <div className="py-16 text-center text-gray-400">
           <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" /> carregando…
@@ -254,6 +370,13 @@ export function ContractsPanel() {
                           parado há {l.horasParado}h
                         </div>
                       )}
+                      {/* O motivo importa mais que o rótulo: quem abre esta aba
+                          quer saber o que deu errado sem clicar em nada. */}
+                      {(l.erro || l.pendencias.length > 0) && (
+                        <div className="mt-1 max-w-[260px] text-[10px] leading-snug text-rose-600 dark:text-rose-300">
+                          {l.erro ?? `Faltou: ${l.pendencias.map((p) => p.label).join(", ")}`}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600 dark:text-zinc-400">
                       {ORIGEM_ROTULO[l.origem] ?? l.origem}
@@ -294,10 +417,27 @@ export function ContractsPanel() {
                         )}
                         <Button
                           size="sm" variant="outline" className="h-8 rounded-lg text-xs"
+                          title="Abrir cartão do cliente no kanban"
+                          disabled={abrindoCard === l.id}
+                          onClick={() => abrirCard(l.id, l.contactId, l.cliente)}
+                        >
+                          {abrindoCard === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SquareKanban className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm" variant="outline" className="h-8 rounded-lg text-xs"
                           disabled={ocupado === l.id}
                           onClick={() => abrirDetalhe(l.id)}
                         >
                           {ocupado === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm" variant="outline"
+                          className="h-8 rounded-lg text-xs border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          title="Excluir esta linha da lista de contratos"
+                          disabled={ocupado === l.id}
+                          onClick={() => setExcluindo(l)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </td>
@@ -313,10 +453,38 @@ export function ContractsPanel() {
         <PainelDetalhe
           detalhe={detalhe}
           ocupado={ocupado === detalhe.id}
+          abrindoCard={abrindoCard === detalhe.id}
           onFechar={() => setDetalhe(null)}
           onValidar={() => acao(detalhe.id, () => validarContrato(detalhe.id), "Contrato validado!")}
           onCancelar={(motivo) => acao(detalhe.id, () => cancelarContrato(detalhe.id, motivo), "Contrato cancelado.")}
           onAbrirOutro={abrirDetalhe}
+          onAbrirCard={() => abrirCard(detalhe.id, detalhe.contactId, detalhe.cliente)}
+        />
+      )}
+
+      {excluindo && (
+        <DialogExcluir
+          linha={excluindo}
+          ocupado={ocupado === excluindo.id}
+          onFechar={() => setExcluindo(null)}
+          onConfirmar={confirmarExclusao}
+        />
+      )}
+
+      {cardAberto && (
+        <CardDialog
+          card={{
+            id: cardAberto.id, title: cardAberto.titulo,
+            description: "", assignee: "", timer: 0, comments: [], attachments: [],
+            observations: "", checklistItems: [], createdAt: new Date(), updatedAt: new Date(),
+            isProcess: cardAberto.isProcess,
+          } as ExtendedKanbanCard}
+          open
+          onClose={() => setCardAberto(null)}
+          onUpdate={() => { carregar(); }}
+          cardId={cardAberto.id}
+          isProcess={cardAberto.isProcess}
+          ownerId={cardAberto.ownerId}
         />
       )}
     </div>
@@ -325,14 +493,16 @@ export function ContractsPanel() {
 
 /** Painel do cliente: este ciclo em detalhe + TODOS os contratos dele. */
 function PainelDetalhe({
-  detalhe, ocupado, onFechar, onValidar, onCancelar, onAbrirOutro,
+  detalhe, ocupado, abrindoCard, onFechar, onValidar, onCancelar, onAbrirOutro, onAbrirCard,
 }: {
   detalhe: ContractDetail;
   ocupado: boolean;
+  abrindoCard: boolean;
   onFechar: () => void;
   onValidar: () => void;
   onCancelar: (motivo: string) => void;
   onAbrirOutro: (id: string) => void;
+  onAbrirCard: () => void;
 }) {
   const [motivo, setMotivo] = useState("");
   const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
@@ -367,6 +537,14 @@ function PainelDetalhe({
           >
             <ExternalLink className="w-4 h-4" /> Página de verificação
           </a>
+          <Button
+            variant="outline" onClick={onAbrirCard} disabled={abrindoCard}
+            className="h-10 rounded-xl font-bold"
+            title="Abrir cartão do cliente no kanban"
+          >
+            {abrindoCard ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <SquareKanban className="w-4 h-4 mr-1.5" />}
+            Cartão do cliente
+          </Button>
           {detalhe.status === "assinado" && (
             <Button onClick={onValidar} disabled={ocupado} className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
               <CheckCircle2 className="w-4 h-4 mr-1.5" /> Validar contrato
@@ -476,6 +654,125 @@ function PainelDetalhe({
             )}
           </section>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Uma linha do raio-X: o que aconteceu + o que fazer. */
+function CasoProblema({
+  caso, onAbrir, onAbrirCard,
+}: {
+  caso: ContractProblemCase;
+  onAbrir: () => void;
+  onAbrirCard: () => void;
+}) {
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${COR_PROBLEMA[caso.tipo] ?? "border-gray-200 bg-white"}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-black">{caso.cliente}</span>
+        <span className="text-[10px] opacity-70">+{caso.telefone}</span>
+        <span className="rounded-full bg-white/70 dark:bg-zinc-900/60 px-2 py-0.5 text-[10px] font-bold">
+          {caso.rotulo}
+        </span>
+        <span className="text-[10px] opacity-70">{data(caso.quando)}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={onAbrirCard}
+            title="Abrir cartão do cliente"
+            className="rounded-lg border border-current/20 bg-white/70 dark:bg-zinc-900/60 px-2 py-1 text-[10px] font-bold"
+          >
+            <SquareKanban className="w-3 h-3" />
+          </button>
+          <button
+            onClick={onAbrir}
+            className="rounded-lg border border-current/20 bg-white/70 dark:bg-zinc-900/60 px-2 py-1 text-[10px] font-bold"
+          >
+            abrir
+          </button>
+        </div>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug">{caso.oQueAconteceu}</p>
+      {caso.pendencias.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {caso.pendencias.map((p, i) => (
+            <li key={i} className="text-[10px] opacity-80">
+              • <b>{p.label}</b> — {p.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-1 text-[10px] font-bold opacity-90">→ {caso.acaoSugerida}</p>
+    </div>
+  );
+}
+
+/**
+ * Exclusão da linha. Ciclo quebrado sai com um clique; contrato já assinado é
+ * documento — exige motivo escrito, que vai para o Log e para a conversa.
+ */
+function DialogExcluir({
+  linha, ocupado, onFechar, onConfirmar,
+}: {
+  linha: ContractRow;
+  ocupado: boolean;
+  onFechar: () => void;
+  onConfirmar: (motivo: string) => void;
+}) {
+  const [motivo, setMotivo] = useState("");
+  const assinado = ["assinado", "validado"].includes(linha.status);
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" onClick={onFechar}>
+      <div
+        className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-950 p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 shrink-0 rounded-xl bg-red-100 dark:bg-red-950 grid place-items-center">
+            <Trash2 className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h3 className="text-base font-black text-gray-900 dark:text-zinc-100">Excluir este contrato?</h3>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
+              {linha.cliente} · situação &quot;{STATUS_INFO[linha.status]?.rotulo ?? linha.status}&quot;
+            </p>
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-600 dark:text-zinc-400">
+          A linha some da aba Contratos e não volta. O PDF continua guardado e a exclusão fica
+          registrada no Log com seu nome.
+        </p>
+
+        {assinado && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3">
+            <p className="text-[11px] font-bold text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="inline w-3.5 h-3.5 mr-1" />
+              Este contrato JÁ FOI ASSINADO. Escreva o motivo — ele vai para o Log e para a conversa
+              do cliente.
+            </p>
+          </div>
+        )}
+
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder={assinado ? "motivo (obrigatório)" : "motivo (opcional)"}
+          className="h-10 w-full rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-sm"
+        />
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onFechar} className="h-10 rounded-xl">Voltar</Button>
+          <Button
+            disabled={ocupado || (assinado && !motivo.trim())}
+            onClick={() => onConfirmar(motivo)}
+            className="h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
+          >
+            {ocupado ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1.5" />}
+            Excluir
+          </Button>
+        </div>
       </div>
     </div>
   );

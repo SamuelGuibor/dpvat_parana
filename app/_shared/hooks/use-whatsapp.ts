@@ -33,6 +33,11 @@ export interface WhatsAppThreadMessage {
   replyToId?: string | null;
   replyToBody?: string | null;
   replyToDirection?: string | null;
+  // Id da Meta (só mensagens que passaram pela Cloud API podem receber reação).
+  waMessageId?: string | null;
+  // Reação da equipe aplicada a esta mensagem (1 emoji, estilo WhatsApp).
+  reaction?: string | null;
+  reactionAuthorId?: string | null;
 }
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((r) => r.json());

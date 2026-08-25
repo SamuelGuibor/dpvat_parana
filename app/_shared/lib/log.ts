@@ -26,6 +26,7 @@ export type LogAction =
   | "wa_flow"        // disparou um fluxo pré-setado
   | "wa_template"    // enviou um template aprovado na Meta
   | "wa_note"        // registrou uma nota interna na thread (só equipe vê)
+  | "wa_reaction"    // reagiu com emoji a uma mensagem da thread
   | "wa_bot"         // decisão da IA (qualify/disqualify/handoff/continue/erro)
   | "wa_suggest"     // IA sugeriu resposta pro atendente (agent-assist)
   | "wa_summary"     // IA resumiu a conversa pro card do kanban

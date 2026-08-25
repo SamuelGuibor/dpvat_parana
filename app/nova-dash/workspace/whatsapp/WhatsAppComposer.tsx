@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Send, ImagePlus, X, Workflow, Loader2, Settings2, Pencil,
   Reply as ReplyIcon, FileText, Image as ImageIcon, Video, Mic, Check, FileBadge,
-  StickyNote, Zap, Search, Sparkles,
+  StickyNote, Zap, Search, Sparkles, Smile,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { MentionsInput, Mention } from 'react-mentions';
@@ -27,6 +27,7 @@ import { WhatsAppQuickRepliesModal } from './WhatsAppQuickRepliesModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { checkFileForWhatsApp } from './media-rules';
 import { useVoiceRecorder, formatRecordingTime } from './use-voice-recorder';
+import { EmojiPicker } from './EmojiPicker';
 
 const MAX_FILES = 10;
 
@@ -88,6 +89,27 @@ export function WhatsAppComposer({
   // Funciona mesmo com a janela de 24h expirada (não passa pela Meta).
   const [noteMode, setNoteMode] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
+
+  // Seletor de emojis (fica aberto pra inserir vários; fecha no clique fora).
+  const [emojiOpen, setEmojiOpen] = useState(false);
+
+  // Insere o emoji na posição do cursor do textarea (no modo nota interna o
+  // input é o MentionsInput — sem ref, o emoji vai pro fim do texto).
+  function insertEmoji(emoji: string) {
+    const el = textareaRef.current;
+    if (el && !noteMode) {
+      const start = el.selectionStart ?? value.length;
+      const end = el.selectionEnd ?? start;
+      setValue(value.slice(0, start) + emoji + value.slice(end));
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = start + emoji.length;
+        try { el.setSelectionRange(pos, pos); } catch { /* sem suporte: só foca */ }
+      });
+    } else {
+      setValue((v) => v + emoji);
+    }
+  }
 
   // Equipe mencionável nas notas internas (@fulano) — carregada uma vez.
   const [mentionUsers, setMentionUsers] = useState<{ id: string; display: string }[]>([]);
@@ -379,6 +401,24 @@ export function WhatsAppComposer({
           className="hidden"
           onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
         />
+        {/* Emojis: insere no cursor; funciona também na nota interna e edição */}
+        <div className="relative">
+          <button
+            onClick={() => setEmojiOpen((v) => !v)}
+            disabled={disabled && !noteMode}
+            title="Emojis"
+            className={iconPillCls(emojiOpen
+              ? 'bg-gray-100 text-gray-600 dark:bg-zinc-800 dark:text-zinc-200'
+              : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-zinc-400 dark:hover:bg-zinc-800')}
+          >
+            <Smile className="h-[18px] w-[18px] shrink-0" />
+            <span className={iconPillLabelCls}>Emojis</span>
+          </button>
+          {emojiOpen && (
+            <EmojiPicker align="left" onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />
+          )}
+        </div>
+
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || editing || noteMode}

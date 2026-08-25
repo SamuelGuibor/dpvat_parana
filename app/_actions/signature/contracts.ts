@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/app/_shared/lib/prisma";
 import { requirePermission, getSessionPermissions } from "@/app/_shared/lib/permissions-server";
 import { logWhatsAppEvent, createLog } from "@/app/_shared/lib/log";
-import { postInternalNote } from "@/app/_shared/lib/whatsapp/bot";
+import { postInternalNote, findLinkedCard } from "@/app/_shared/lib/whatsapp/bot";
 import { sendSystemWhatsApp } from "@/app/_shared/lib/whatsapp/outbound";
 import { signUrlFor, verifyUrlFor } from "@/app/_shared/lib/signature/tokens";
 import {
@@ -174,6 +174,7 @@ export async function listarContratos(filtro?: {
 
 export interface ContractDetail {
   id: string;
+  contactId: string;
   cliente: string;
   telefone: string;
   status: string;
@@ -213,6 +214,7 @@ export async function detalharContrato(id: string): Promise<ContractDetail | nul
 
   return {
     id: r.id,
+    contactId: r.contactId,
     cliente: r.contact.name ?? `+${r.contact.phone}`,
     telefone: r.contact.phone,
     status: r.status,
@@ -240,6 +242,24 @@ export async function detalharContrato(id: string): Promise<ContractDetail | nul
       assinadoEm: i.signedAt?.toISOString() ?? null,
     })),
   };
+}
+
+/**
+ * Card do kanban vinculado ao contato do contrato (vínculo direto ou fallback
+ * pelos últimos 8 dígitos do telefone — mesma resolução do bot). O ownerId é
+ * o que a aba Arquivos do CardDialog usa pra listar os anexos.
+ */
+export async function resolverCardDoContrato(
+  contactId: string,
+): Promise<{ id: string; isProcess: boolean; ownerId: string; nome: string | null } | null> {
+  await requirePermission("manage_contracts");
+  const card = await findLinkedCard(contactId);
+  if (!card) return null;
+  if (card.kind === "process") {
+    const p = await db.process.findUnique({ where: { id: card.id }, select: { userId: true } });
+    return { id: card.id, isProcess: true, ownerId: p?.userId ?? card.id, nome: card.name };
+  }
+  return { id: card.id, isProcess: false, ownerId: card.id, nome: card.name };
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +363,241 @@ export async function reenviarLink(id: string): Promise<{ ok: boolean; erro?: st
     };
   }
   await db.signatureRequest.update({ where: { id }, data: { deliveredBy: "atendente" } });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Raio-X dos problemas (bloco "Precisou de humano" no topo da aba)
+//
+// Junta num só lugar tudo que travou: erro técnico, extração que caiu no colo
+// do atendente, cliente que não confirmou e link parado há dias. A pergunta
+// que este resumo responde é "o que quebrou e o que eu faço com cada um".
+// ---------------------------------------------------------------------------
+
+/** Status que só saem do lugar com gente. */
+const STATUS_PROBLEMA = ["erro", "extracao_falhou", "confirmacao_expirada"] as const;
+
+const ROTULO_PROBLEMA: Record<string, string> = {
+  erro: "Erro técnico",
+  extracao_falhou: "Precisou de humano",
+  confirmacao_expirada: "Cliente não confirmou",
+  parado: "Link parado há 48h+",
+};
+
+const ACAO_SUGERIDA: Record<string, string> = {
+  erro: "Cancele este ciclo e gere o contrato de novo pelo cartão do cliente.",
+  extracao_falhou: "Complete os dados que faltam com o cliente e gere o contrato manualmente.",
+  confirmacao_expirada: "Fale com o cliente, confirme os dados na mão e gere de novo.",
+  parado: "Reenvie o link ou ligue — já passou de 48h sem assinatura.",
+};
+
+export interface ContractProblemCase {
+  id: string;
+  contactId: string;
+  cliente: string;
+  telefone: string;
+  status: string;
+  /** erro | extracao_falhou | confirmacao_expirada | parado */
+  tipo: string;
+  rotulo: string;
+  quando: string;
+  /** Frase pronta: o que aconteceu com este contrato. */
+  oQueAconteceu: string;
+  pendencias: { label: string; reason: string }[];
+  acaoSugerida: string;
+  horasParado: number | null;
+}
+
+export interface ContractProblemSummary {
+  total: number;
+  porTipo: { tipo: string; rotulo: string; quantidade: number }[];
+  /** Causas mais repetidas (campo que falta / mensagem de erro agrupada). */
+  motivos: { motivo: string; quantidade: number }[];
+  casos: ContractProblemCase[];
+  /** Clientes que travaram e mesmo assim assinaram nos últimos 30 dias. */
+  recuperados30d: number;
+}
+
+/** Agrupa mensagens de erro parecidas (tira ids e números variáveis). */
+function normalizarMotivo(texto: string): string {
+  return texto
+    .replace(/[a-f0-9]{20,}/gi, "…")
+    .replace(/\d+/g, "N")
+    .trim()
+    .slice(0, 120);
+}
+
+export async function resumirProblemasContratos(): Promise<ContractProblemSummary> {
+  await requirePermission("manage_contracts");
+
+  const rows = await db.signatureRequest.findMany({
+    where: {
+      OR: [
+        { status: { in: [...STATUS_PROBLEMA] } },
+        // Parados: link vivo, enviado, sem assinatura há mais de 48h.
+        {
+          status: { in: ["aguardando", "visualizado"] },
+          sentAt: { lt: new Date(Date.now() - 48 * 3_600_000) },
+        },
+      ],
+    },
+    include: { contact: { select: { name: true, phone: true } } },
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+  });
+
+  const agora = Date.now();
+  const casos: ContractProblemCase[] = rows.map((r) => {
+    const tipo = (STATUS_PROBLEMA as readonly string[]).includes(r.status) ? r.status : "parado";
+    const pendencias = Array.isArray(r.missingFields)
+      ? (r.missingFields as unknown as { label: string; reason: string }[])
+      : [];
+    const horasParado =
+      r.sentAt && !r.signedAt ? Math.floor((agora - r.sentAt.getTime()) / 3_600_000) : null;
+
+    let oQueAconteceu: string;
+    if (tipo === "erro") {
+      oQueAconteceu = r.error ?? "A geração do contrato falhou e o ciclo parou no meio.";
+    } else if (tipo === "extracao_falhou") {
+      oQueAconteceu = r.error
+        ? r.error
+        : pendencias.length
+          ? `Faltou: ${pendencias.map((p) => p.label).join(", ")}.`
+          : "A IA não conseguiu fechar os dados do contrato.";
+    } else if (tipo === "confirmacao_expirada") {
+      oQueAconteceu = "O resumo foi enviado, mas o cliente nunca confirmou os dados.";
+    } else {
+      oQueAconteceu = r.viewedAt
+        ? `Abriu o link e não assinou — parado há ${horasParado}h.`
+        : `Recebeu o link e nem abriu — parado há ${horasParado}h (${r.remindersSent} lembrete(s)).`;
+    }
+
+    return {
+      id: r.id,
+      contactId: r.contactId,
+      cliente: r.contact.name ?? `+${r.contact.phone}`,
+      telefone: r.contact.phone,
+      status: r.status,
+      tipo,
+      rotulo: ROTULO_PROBLEMA[tipo] ?? r.status,
+      quando: (r.sentAt ?? r.updatedAt).toISOString(),
+      oQueAconteceu,
+      pendencias,
+      acaoSugerida: ACAO_SUGERIDA[tipo] ?? "",
+      horasParado,
+    };
+  });
+
+  const porTipoMap = new Map<string, number>();
+  const motivosMap = new Map<string, number>();
+  for (const c of casos) {
+    porTipoMap.set(c.tipo, (porTipoMap.get(c.tipo) ?? 0) + 1);
+    if (c.pendencias.length) {
+      for (const p of c.pendencias) {
+        const k = `Faltou ${p.label}`;
+        motivosMap.set(k, (motivosMap.get(k) ?? 0) + 1);
+      }
+    } else {
+      const k = normalizarMotivo(c.oQueAconteceu);
+      motivosMap.set(k, (motivosMap.get(k) ?? 0) + 1);
+    }
+  }
+
+  // Recuperação: clientes que travaram e depois assinaram mesmo assim.
+  const contatosComProblema = [...new Set(casos.map((c) => c.contactId))];
+  const recuperados30d = contatosComProblema.length
+    ? await db.signatureRequest.count({
+        where: {
+          contactId: { in: contatosComProblema },
+          status: { in: ["assinado", "validado"] },
+          signedAt: { gte: new Date(agora - 30 * 86_400_000) },
+        },
+      })
+    : 0;
+
+  const ordemTipo = ["erro", "extracao_falhou", "confirmacao_expirada", "parado"];
+  casos.sort(
+    (a, b) =>
+      ordemTipo.indexOf(a.tipo) - ordemTipo.indexOf(b.tipo) ||
+      new Date(b.quando).getTime() - new Date(a.quando).getTime(),
+  );
+
+  return {
+    total: casos.length,
+    porTipo: ordemTipo
+      .filter((t) => porTipoMap.has(t))
+      .map((t) => ({ tipo: t, rotulo: ROTULO_PROBLEMA[t], quantidade: porTipoMap.get(t) ?? 0 })),
+    motivos: [...motivosMap.entries()]
+      .map(([motivo, quantidade]) => ({ motivo, quantidade }))
+      .sort((a, b) => b.quantidade - a.quantidade)
+      .slice(0, 8),
+    casos,
+    recuperados30d,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Excluir a linha (lixeira da aba)
+//
+// Apaga o REGISTRO do ciclo — serve pra limpar teste e ciclo quebrado. Um
+// contrato já assinado é documento: só sai com motivo escrito, e o que
+// aconteceu fica no Log e na conversa do cliente.
+// ---------------------------------------------------------------------------
+
+export async function excluirContrato(
+  id: string,
+  motivo?: string,
+): Promise<{ ok: boolean; erro?: string }> {
+  await requirePermission("manage_contracts");
+  const eu = await quemSou();
+
+  const r = await db.signatureRequest.findUnique({
+    where: { id },
+    include: { contact: { select: { name: true, phone: true } } },
+  });
+  if (!r) return { ok: false, erro: "Contrato não encontrado (talvez já tenha sido excluído)." };
+
+  const assinado = ["assinado", "validado"].includes(r.status);
+  if (assinado && !motivo?.trim()) {
+    return {
+      ok: false,
+      erro: "Este contrato já foi assinado — escreva o motivo da exclusão para prosseguir.",
+    };
+  }
+
+  await db.signatureRequest.delete({ where: { id } });
+
+  await createLog({
+    action: "wa_signature",
+    message:
+      `EXCLUIU o contrato de assinatura de ${r.contact.name ?? `+${r.contact.phone}`} ` +
+      `(situação "${r.status}")${motivo?.trim() ? ` — ${motivo.trim()}` : ""}`,
+    authorId: eu.userId ?? "equipe",
+    authorName: eu.userName,
+    metadata: {
+      channel: "whatsapp",
+      stage: "assinatura_excluida",
+      requestId: id,
+      contactId: r.contactId,
+      status: r.status,
+      origem: r.origin,
+      criadoEm: r.createdAt.toISOString(),
+      assinadoEm: r.signedAt?.toISOString() ?? null,
+      documentHash: r.documentHash,
+      signedHash: r.signedHash,
+      motivo: motivo?.trim() ?? null,
+    },
+  }).catch(() => {});
+
+  if (assinado) {
+    await postInternalNote(
+      r.contactId,
+      `🗑️ Contrato ASSINADO removido da lista por ${eu.userName}${motivo?.trim() ? ` — ${motivo.trim()}` : ""}. ` +
+        `O PDF continua guardado; o registro do ciclo saiu da aba Contratos.`,
+    ).catch(() => {});
+  }
+
+  revalidatePath("/nova-dash");
   return { ok: true };
 }
 

@@ -15,7 +15,7 @@ import {
   getArchivedCards, setArchiveStatus, type ArchivedCard, type ArchiveStatus,
 } from '@/app/_actions/cards/archive-card';
 import { CardDialog } from './CardDialog';
-import { CaiqueFolders } from './CaiqueFolders';
+import { FolderReport } from './FolderReport';
 import type { ExtendedKanbanCard } from './card-dialog/types';
 
 // Configuração visual de cada categoria de arquivamento.
@@ -211,9 +211,9 @@ const InfoRow: React.FC<{ icon: React.ElementType; value?: string }> = ({ icon: 
   );
 };
 
-// Sub-visões da aba: a listagem clássica de arquivados e a planilha de
-// controle das pastas enviadas pro Caique (coluna CAIQUE do Kanban).
-type View = 'arquivados' | 'caique';
+// Sub-visões da aba: a listagem clássica de arquivados e as planilhas de
+// controle das pastas enviadas (colunas CAIQUE e UNI do Kanban).
+type View = 'arquivados' | 'caique' | 'uni';
 
 export const ArchivedCards: React.FC = () => {
   const [view, setView] = useState<View>('arquivados');
@@ -322,7 +322,7 @@ export const ArchivedCards: React.FC = () => {
             <h2 className="font-black text-lg text-gray-900 dark:text-zinc-100 leading-tight">Arquivados</h2>
           </div>
 
-          {/* Toggle de sub-visão: listagem clássica x planilha das pastas do Caique */}
+          {/* Toggle de sub-visão: listagem clássica x planilhas de pastas */}
           <div className="flex items-center gap-1 ml-4 p-1 rounded-2xl bg-gray-100 dark:bg-zinc-800">
             <button
               onClick={() => setView('arquivados')}
@@ -348,6 +348,18 @@ export const ArchivedCards: React.FC = () => {
               <FolderOutput className="w-3.5 h-3.5" />
               Pastas Caique
             </button>
+            <button
+              onClick={() => setView('uni')}
+              className={cn(
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all',
+                view === 'uni'
+                  ? 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 shadow-sm'
+                  : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'
+              )}
+            >
+              <FolderOutput className="w-3.5 h-3.5" />
+              Pastas UNI
+            </button>
           </div>
         </div>
         {view === 'arquivados' && (
@@ -363,8 +375,9 @@ export const ArchivedCards: React.FC = () => {
         )}
       </div>
 
-      {/* Planilha das pastas do Caique (visão alternativa; a listagem clássica fica intacta abaixo) */}
-      {view === 'caique' && <CaiqueFolders />}
+      {/* Planilhas de pastas (visões alternativas; a listagem clássica fica intacta abaixo) */}
+      {view === 'caique' && <FolderReport kind="caique" />}
+      {view === 'uni' && <FolderReport kind="uni" />}
       {view === 'arquivados' && (<>
 
 

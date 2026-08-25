@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       authorId: true, internal: true, createdAt: true,
       editedAt: true, deletedAt: true, transcript: true,
       replyToId: true, replyToBody: true, replyToDirection: true,
+      waMessageId: true, reaction: true, reactionAuthorId: true,
     },
   });
 

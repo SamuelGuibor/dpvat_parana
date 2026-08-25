@@ -34,6 +34,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./prisma";
 import { createLog } from "./log";
+import { markPersonalDocChecklistItem } from "./admin-checklist";
 
 export type AiAuditType = "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
 
@@ -532,6 +533,7 @@ export async function runAiAudit({
     if (auditType === "documento_pessoal") {
       let status = "ok";
       let body = "";
+      let checklistMarked = false;
 
       // Renomeia o arquivo do documento pessoal conforme a regra dos 10 anos
       // ("DOCUMENTO PESSOAL ATUALIZADO/DESATUALIZADO (TIPO)").
@@ -594,6 +596,14 @@ export async function runAiAudit({
           `**${result.tipoDocumento ?? "Documento"}** expedido em **${result.dataExpedicao ?? "?"}** — dentro dos 10 anos: **ATUALIZADO**.` +
           fmtDivergencias(result.divergencias) +
           `\n\n${result.resumo ?? ""}`;
+
+        // Documento em dia → marca "DOCUMENTO PESSOAL (ATUALIZADO)" no
+        // Checklist Previdenciário da aba Arquivos.
+        checklistMarked = await markPersonalDocChecklistItem(cardId, isProcess, true)
+          .catch((err) => { console.error("[AI-AUDIT] Falha ao marcar checklist:", cardId, err); return false; });
+        if (checklistMarked) {
+          body += `\n\n_Checklist: "DOCUMENTO PESSOAL (ATUALIZADO)" marcado automaticamente._`;
+        }
       }
 
       const comment = await makeComment(status, body + renameNote + skippedNote);
@@ -604,7 +614,7 @@ export async function runAiAudit({
         authorName,
         userId: isProcess ? null : cardId,
         processId: isProcess ? cardId : null,
-        metadata: { auditType, status, trigger, commentId: comment.id, files: usedFiles, usage },
+        metadata: { auditType, status, trigger, commentId: comment.id, files: usedFiles, usage, checklistMarked },
       });
       return;
     }
