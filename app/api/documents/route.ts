@@ -4,6 +4,10 @@ import { getServerSession } from 'next-auth'
 import { db } from '../../_shared/lib/prisma'
 import { authOptions } from '../../_shared/lib/auth'
 import { createLog } from '../../_shared/lib/log'
+import {
+  inferCategory,
+  isDocumentCategory,
+} from '../../_shared/lib/document-categories'
 
 export async function POST(request: Request) {
   try {
@@ -17,11 +21,16 @@ export async function POST(request: Request) {
     }
 
     const createdDocuments = await Promise.all(
-      documents.map((doc: { key: string; name: string }) => {
+      documents.map((doc: { key: string; name: string; category?: string }) => {
         const data: any = {
           userId,
           key: doc.key,
           name: doc.name,
+          // Pasta escolhida no upload; se vier vazia/inválida, adivinha pelo
+          // nome do arquivo (sobra em OUTROS quando nada casa).
+          category: isDocumentCategory(doc.category)
+            ? doc.category
+            : inferCategory(doc.name),
         }
 
         if (processId) {
@@ -89,6 +98,7 @@ export async function GET(request: Request) {
         id: true,
         key: true,
         name: true,
+        category: true,
         processId: true,
         // Info do processo para permitir agrupar os documentos por processo
         // na área do cliente (documentos vindos de processos separados).
@@ -101,7 +111,15 @@ export async function GET(request: Request) {
       orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
     });
 
-    return NextResponse.json(documents);
+    // Anexos anteriores à feature de pastas ficam com category null: a pasta
+    // sai do nome do arquivo na leitura (e vira definitiva assim que alguém
+    // mover o arquivo pela aba Arquivos).
+    return NextResponse.json(
+      documents.map((doc) => ({
+        ...doc,
+        category: doc.category ?? inferCategory(doc.name),
+      })),
+    );
   } catch (error) {
     console.error('Erro ao buscar documentos:', error);
     return NextResponse.json({ error: 'Erro ao buscar documentos' }, { status: 500 });

@@ -5,6 +5,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
+import { inferCategory } from '@/app/_shared/lib/document-categories';
 import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
 
 // Documentos pessoais anexados na ficha do cliente (dentro do atendimento de
@@ -89,7 +90,7 @@ export async function confirmClientDocumentUpload(contactId: string, key: string
 
   if (contact.userId) {
     if (!key.startsWith(`uploads/user_${contact.userId}/`)) throw new Error('Anexo inválido.');
-    await db.document.create({ data: { userId: contact.userId, key, name } });
+    await db.document.create({ data: { userId: contact.userId, key, name, category: inferCategory(name) } });
   } else {
     if (!key.startsWith(`whatsapp/${contactId}/docs/`)) throw new Error('Anexo inválido.');
     const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];
@@ -129,7 +130,7 @@ export async function attachConversationMediaToCard(messageId: string): Promise<
       select: { id: true, deletedAt: true },
     });
     if (!dup) {
-      await db.document.create({ data: { userId: contact.userId, key: msg.mediaKey, name } });
+      await db.document.create({ data: { userId: contact.userId, key: msg.mediaKey, name, category: inferCategory(name) } });
     } else if (dup.deletedAt) {
       // O mesmo anexo já existe mas está na lixeira: restaurar em vez de criar
       // uma segunda linha com a mesma key (a purga da linha antiga apagaria o

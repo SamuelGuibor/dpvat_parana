@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
+import { inferCategory } from '@/app/_shared/lib/document-categories';
 import { createLog } from '@/app/_shared/lib/log';
 import { summarizeConversationToCard } from '@/app/_shared/lib/whatsapp/assist';
 import { hashPassword } from '@/app/_shared/lib/password';
@@ -356,7 +357,7 @@ async function migrateDraftDocuments(
   const drafts = (contact.draftDocuments as { key: string; name: string }[]) ?? [];
   if (!drafts.length) return;
   await db.document.createMany({
-    data: drafts.map((d) => ({ userId, key: d.key, name: d.name })),
+    data: drafts.map((d) => ({ userId, key: d.key, name: d.name, category: inferCategory(d.name) })),
   });
   await db.whatsAppContact.update({ where: { id: contact.id }, data: { draftDocuments: Prisma.DbNull } });
 }

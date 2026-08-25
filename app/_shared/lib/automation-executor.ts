@@ -5,6 +5,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { db } from "./prisma";
+import { inferCategory } from "./document-categories";
 import {
   fetchAutomationsByLabel,
   fetchTimeConditionAutomations,
@@ -346,6 +347,7 @@ async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<
           processId: isProcess ? cardId : null,
           key,
           name: outName,
+          category: inferCategory(outName),
         },
       });
     } catch (err) {

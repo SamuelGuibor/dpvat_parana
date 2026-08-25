@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -16,11 +16,18 @@ import { Input } from '@/app/_shared/ui/input';
 import { Label } from '@/app/_shared/ui/label';
 import { Separator } from '@/app/_shared/ui/separator';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/app/_shared/ui/select';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/app/_shared/ui/dropdown-menu';
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/app/_shared/ui/dialog';
 import {
   Download, Loader2, Trash, FileArchive, Eye, FileText, GripVertical,
-  Trash2, ArchiveRestore, Clock,
+  Trash2, ArchiveRestore, Clock, Folder, ArrowLeft, ChevronRight, FolderInput,
 } from 'lucide-react';
 import { CiEdit } from 'react-icons/ci';
 import { toast } from 'sonner';
@@ -31,6 +38,10 @@ import { deletDoc } from '@/app/_actions/documents/delete-document';
 import { listTrashedDocs, restoreDoc, purgeDoc, type TrashedDocDTO } from '@/app/_actions/documents/trash';
 import { DeleteConfirmDialog } from '@/app/nova-dash/card-dialog/DeleteConfirmDialog';
 import { AdminChecklist } from './AdminChecklist';
+import {
+  DOCUMENT_CATEGORIES, DEFAULT_DOCUMENT_CATEGORY, categoryLabel,
+  isDocumentCategory, type DocumentCategoryId,
+} from '@/app/_shared/lib/document-categories';
 import type { FileWithBase64 } from './types';
 
 interface Props {
@@ -39,7 +50,11 @@ interface Props {
   ownerId?: string;
 }
 
-interface Doc { id: string; key: string; name: string; }
+interface Doc { id: string; key: string; name: string; category?: string | null; }
+
+// Valor do seletor "Tipo de documento" no upload: AUTO deixa cada arquivo cair
+// na pasta que o nome indicar (inferCategory no servidor).
+const AUTO_CATEGORY = 'AUTO';
 
 function getExt(key: string) {
   const dot = key.lastIndexOf('.');
@@ -102,6 +117,12 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
 
+  // Navegação estilo Google Drive: null = tela das pastas; com valor = dentro
+  // da pasta, mostrando só os arquivos daquela categoria.
+  const [openFolder, setOpenFolder] = useState<DocumentCategoryId | null>(null);
+  const [uploadCategory, setUploadCategory] = useState<string>(AUTO_CATEGORY);
+  const [movingId, setMovingId] = useState<string | null>(null);
+
   // Lixeira (30 dias): itens excluídos ficam restauráveis antes da purga.
   const [trash, setTrash] = useState<TrashedDocDTO[]>([]);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -114,6 +135,27 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => { loadDocs(); loadTrash(); }, [cardId, isProcess]);
+
+  // Entrar numa pasta já deixa o upload apontado pra ela (sair volta ao AUTO).
+  useEffect(() => {
+    setUploadCategory(openFolder ?? AUTO_CATEGORY);
+  }, [openFolder]);
+
+  // Um balde por categoria; anexo sem categoria (ou com valor desconhecido)
+  // cai em OUTROS pra nunca sumir da tela.
+  const docsByCategory = useMemo(() => {
+    const map = new Map<DocumentCategoryId, Doc[]>(
+      DOCUMENT_CATEGORIES.map((c) => [c.id, [] as Doc[]]),
+    );
+    for (const doc of docs) {
+      const id = isDocumentCategory(doc.category) ? doc.category : DEFAULT_DOCUMENT_CATEGORY;
+      map.get(id)!.push(doc);
+    }
+    return map;
+  }, [docs]);
+
+  // Lista mostrada na tabela: só os arquivos da pasta aberta.
+  const visibleDocs = openFolder ? docsByCategory.get(openFolder) ?? [] : [];
 
   async function loadTrash() {
     try {
@@ -184,19 +226,25 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
 
       const valid = uploaded.filter(Boolean) as { key: string; name: string }[];
 
+      // Pasta do lote: escolha explícita do seletor vale pra todos; em AUTO o
+      // servidor decide arquivo a arquivo pelo nome.
+      const chosen = uploadCategory === AUTO_CATEGORY ? undefined : uploadCategory;
+
       await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: ownerId,
           processId: isProcess ? cardId : null,
-          documents: valid,
+          documents: valid.map((v) => ({ ...v, category: chosen })),
         }),
       });
 
       await loadDocs();
       setFiles([]);
       setBase64Files([]);
+      // Leva pra pasta onde os arquivos acabaram de cair (Drive faz o mesmo).
+      if (chosen && isDocumentCategory(chosen)) setOpenFolder(chosen);
       toast.success('Upload concluído.');
     } catch (err: any) {
       console.error(err);
@@ -304,11 +352,19 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = docs.findIndex((d) => d.id === active.id);
-    const newIndex = docs.findIndex((d) => d.id === over.id);
+    // A reordenação acontece DENTRO da pasta aberta: os índices salvos valem
+    // só entre os arquivos daquela categoria (empate com outra pasta não
+    // importa, porque as listas nunca se misturam na tela).
+    const oldIndex = visibleDocs.findIndex((d) => d.id === active.id);
+    const newIndex = visibleDocs.findIndex((d) => d.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    const next = arrayMove(docs, oldIndex, newIndex);
-    setDocs(next);
+    const next = arrayMove(visibleDocs, oldIndex, newIndex);
+    // Reinsere a pasta reordenada no lugar dela dentro da lista completa.
+    const queue = [...next];
+    const merged = docs.map((d) =>
+      next.some((n) => n.id === d.id) ? queue.shift()! : d,
+    );
+    setDocs(merged);
     try {
       const res = await fetch('/api/documents/reorder', {
         method: 'PUT',
@@ -320,6 +376,30 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       console.error(err);
       toast.error('Erro ao salvar a ordem dos arquivos.');
       await loadDocs();
+    }
+  }
+
+  // Mover de pasta: muda a categoria do anexo (organização real, não só nome).
+  async function moveDoc(doc: Doc, category: DocumentCategoryId) {
+    const current = isDocumentCategory(doc.category) ? doc.category : DEFAULT_DOCUMENT_CATEGORY;
+    if (current === category) return;
+    setMovingId(doc.id);
+    // Otimista: o arquivo já sai da pasta aberta; se falhar, recarrega.
+    setDocs((p) => p.map((d) => (d.id === doc.id ? { ...d, category } : d)));
+    try {
+      const res = await fetch('/api/documents/category', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: doc.id, category }),
+      });
+      if (!res.ok) throw new Error('Erro ao mover');
+      toast.success(`Movido para ${categoryLabel(category)}.`);
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao mover o arquivo de pasta.');
+      await loadDocs();
+    } finally {
+      setMovingId(null);
     }
   }
 
@@ -377,10 +457,34 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       </Dropzone>
 
       {files.length > 0 && (
-        <Button onClick={uploadFiles} disabled={uploading}>
-          {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          Enviar {files.length} arquivo{files.length > 1 ? 's' : ''}
-        </Button>
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Tipo de documento = pasta de destino. Definido ANTES de enviar,
+              para o arquivo já nascer no lugar certo. */}
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-500">Tipo de documento</Label>
+            <Select value={uploadCategory} onValueChange={setUploadCategory}>
+              <SelectTrigger className="h-9 w-72">
+                <SelectValue placeholder="Escolha a pasta" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_CATEGORY}>Detectar pelo nome (automático)</SelectItem>
+                {DOCUMENT_CATEGORIES.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Azul explícito (padrão das ações principais do painel): o
+              variant default é quase preto e some no modo escuro. */}
+          <Button
+            onClick={uploadFiles}
+            disabled={uploading}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Enviar {files.length} arquivo{files.length > 1 ? 's' : ''}
+          </Button>
+        </div>
       )}
 
       {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -394,8 +498,35 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       )}
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>Arquivos Anexados ({docs.length})</Label>
+        <div className="flex items-center justify-between gap-2">
+          {openFolder ? (
+            // Trilha de navegação: "Arquivos › PASTA", com voltar (Drive).
+            <div className="flex min-w-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-gray-500"
+                onClick={() => setOpenFolder(null)}
+                title="Voltar para as pastas"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Voltar
+              </Button>
+              <button
+                type="button"
+                onClick={() => setOpenFolder(null)}
+                className="text-sm text-gray-500 hover:underline dark:text-zinc-400"
+              >
+                Arquivos
+              </button>
+              <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+              <span className="truncate text-sm font-medium">
+                {categoryLabel(openFolder)} ({visibleDocs.length})
+              </span>
+            </div>
+          ) : (
+            <Label>Pastas de Documentos ({docs.length} arquivo{docs.length === 1 ? '' : 's'})</Label>
+          )}
           <div className="flex items-center gap-2">
             {trash.length > 0 && (
               <Button
@@ -427,9 +558,48 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
             )}
           </div>
         </div>
-        {docs.length === 0 ? (
+        {!openFolder ? (
+          // Tela inicial: as pastas, como no Drive — abre com clique duplo.
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
+              Clique duas vezes na pasta para abrir.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {DOCUMENT_CATEGORIES.map((cat) => {
+                const count = docsByCategory.get(cat.id)?.length ?? 0;
+                // OUTROS é a sobra: só aparece quando tem algo dentro.
+                if (cat.id === 'OUTROS' && count === 0) return null;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onDoubleClick={() => setOpenFolder(cat.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setOpenFolder(cat.id);
+                      }
+                    }}
+                    title="Clique duas vezes para abrir"
+                    className="flex select-none items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-gray-50 hover:border-gray-300 dark:hover:bg-zinc-800 dark:hover:border-zinc-600"
+                  >
+                    <Folder
+                      className={`h-8 w-8 shrink-0 ${count > 0 ? 'text-amber-500' : 'text-gray-300 dark:text-zinc-600'}`}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{cat.label}</p>
+                      <p className="text-xs text-gray-500 dark:text-zinc-400">
+                        {count} arquivo{count === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : visibleDocs.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-zinc-400 border-2 border-dashed rounded-lg">
-            Nenhum documento encontrado
+            Nenhum documento nesta pasta
           </div>
         ) : (
           <div className="border rounded-lg overflow-hidden">
@@ -449,8 +619,8 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                <SortableContext items={docs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
-                {docs.map((doc) => (
+                <SortableContext items={visibleDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
+                {visibleDocs.map((doc) => (
                   <SortableRow key={doc.id} id={doc.id}>
                   {({ attributes, listeners }) => (<>
                     <td className="p-3">
@@ -517,6 +687,31 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                             onClick={() => handleDownload(doc.key, doc.name)} disabled={downloading === doc.key}>
                             {downloading === doc.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                           </Button>
+                          {/* Mover de pasta: mesma ideia do "Organizar" do Drive. */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" title="Mover para outra pasta"
+                                disabled={movingId === doc.id}>
+                                {movingId === doc.id
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : <FolderInput className="h-4 w-4" />}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Mover para</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {DOCUMENT_CATEGORIES.map((cat) => (
+                                <DropdownMenuItem
+                                  key={cat.id}
+                                  disabled={cat.id === openFolder}
+                                  onSelect={() => moveDoc(doc, cat.id)}
+                                >
+                                  <Folder className="mr-2 h-4 w-4 text-amber-500" />
+                                  {cat.label}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600"
                             onClick={() => setDeletingDoc(doc)}>
                             <Trash className="h-4 w-4" />

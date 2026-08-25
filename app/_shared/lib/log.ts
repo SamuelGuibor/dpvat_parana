@@ -10,6 +10,7 @@ export type LogAction =
   | "document_remove"   // mandou o documento pra lixeira (30 dias restaurável)
   | "document_restore"  // restaurou um documento da lixeira
   | "document_purge"    // excluiu definitivamente (manual ou cron dos 30 dias)
+  | "document_move"     // mudou o arquivo de pasta na aba Arquivos
   | "comment_add"
   | "create"
   | "password_view"  // equipe visualizou a senha de acesso do cliente (auditoria)

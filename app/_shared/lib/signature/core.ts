@@ -3,6 +3,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Prisma } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
+import { inferCategory } from "@/app/_shared/lib/document-categories";
 import { logWhatsAppEvent, createLog } from "@/app/_shared/lib/log";
 import { hashPassword } from "@/app/_shared/lib/password";
 import { runAutomations } from "@/app/_shared/lib/automation-executor";
@@ -1255,7 +1256,7 @@ async function attachSignedPdf(
         userId = process.userId;
       }
       for (const f of files) {
-        await db.document.create({ data: { userId: userId!, processId, key: f.key, name: f.name } });
+        await db.document.create({ data: { userId: userId!, processId, key: f.key, name: f.name, category: inferCategory(f.name) } });
       }
       return "card";
     }

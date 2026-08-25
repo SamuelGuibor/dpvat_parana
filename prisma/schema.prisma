@@ -448,6 +448,10 @@ model Document {
   name       String
   // Ordem manual na aba Arquivos (menor = mais acima); null = ordem de criação.
   sortOrder  Int?
+  // Pasta do arquivo na aba Arquivos (PROCURACAO, DOCS_INSS, ...): os ids
+  // válidos vivem em app/_shared/lib/document-categories.ts. null = anexo
+  // anterior à feature; a listagem infere a pasta pelo nome e cai em OUTROS.
+  category   String?
   uploadedAt DateTime  @default(now())
   processId  String?
   // Lixeira (estilo galeria do celular): excluir marca deletedAt e o arquivo
@@ -461,6 +465,7 @@ model Document {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([deletedAt])
+  @@index([category])
 }
 
 model Contact {
