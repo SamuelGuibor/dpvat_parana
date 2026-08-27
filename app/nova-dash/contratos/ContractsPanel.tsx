@@ -72,6 +72,7 @@ const ROTULOS_DA_TRILHA: Record<string, string> = {
   tutorial_fechou: "✖️ fechou a explicação (pulou)",
   tutorial_ouviu: "🔊 ouviu a explicação em voz",
   abriu_o_link: "abriu o link",
+  retomou: "↩️ voltou e continuou de onde parou",
   leu_o_documento: "viu o documento",
   codigo_enviado: "código enviado",
   codigo_bloqueado: "errou o código 5x (bloqueado)",

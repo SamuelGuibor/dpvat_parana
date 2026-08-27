@@ -120,6 +120,74 @@ export function SignFlow({
     [token],
   );
 
+  // ---- Retomar de onde parou ------------------------------------------------
+  // O cliente sai da aba (foi buscar o código, atendeu alguém, o celular
+  // desligou) e volta. Sem isto ele reaparecia na tela 1 e refazia tudo.
+  //
+  // O que fica guardado no navegador DELE: só a etapa e as conveniências (modo
+  // de assinar, nome digitado, o que ele já marcou como entendido). A
+  // ASSINATURA e o CÓDIGO nunca são guardados — assinar precisa ser um ato
+  // feito na hora, e um desenho ressuscitado de outra sessão não provaria a
+  // vontade de assinar. Por isso a retomada NUNCA passa da tela da assinatura:
+  // quem parou na tela do código volta pra assinar de novo.
+  const RETOMADA_MAXIMA = 3;
+  const chaveRetomada = `assinatura:${token}`;
+
+  useEffect(() => {
+    if (jaAssinado) {
+      // Ciclo concluído: não há o que retomar, e o rascunho não serve mais.
+      try {
+        localStorage.removeItem(`assinatura:${token}`);
+      } catch {
+        // Navegador sem armazenamento (aba anônima, cookies bloqueados): a
+        // página funciona igual, só não retoma.
+      }
+      return;
+    }
+    try {
+      const bruto = localStorage.getItem(`assinatura:${token}`);
+      if (!bruto) return;
+      const salvo = JSON.parse(bruto) as {
+        passo?: number;
+        modo?: Modo;
+        nomeDigitado?: string;
+        tutorialResolvido?: number[];
+      };
+      const alvo = Math.min(Number(salvo.passo) || 1, RETOMADA_MAXIMA);
+      if (alvo <= 1) return;
+
+      if (salvo.modo === "desenho" || salvo.modo === "digitado") setModo(salvo.modo);
+      if (salvo.nomeDigitado) setNomeDigitado(salvo.nomeDigitado);
+      if (Array.isArray(salvo.tutorialResolvido)) setTutorialResolvido(salvo.tutorialResolvido);
+      setPasso(alvo);
+
+      const primeiroNome = cliente.nome ? cliente.nome.split(" ")[0] : "";
+      setAviso(
+        (Number(salvo.passo) || 1) > RETOMADA_MAXIMA
+          ? `Oi de novo${primeiroNome ? `, ${primeiroNome}` : ""}! Voltei de onde você parou. Só preciso que você faça a assinatura mais uma vez, tá? 😊`
+          : `Oi de novo${primeiroNome ? `, ${primeiroNome}` : ""}! Continuei de onde você parou. 😊`,
+      );
+      registrarPasso(token, "retomou", `voltou na etapa ${alvo}`).catch(() => {});
+    } catch {
+      // Rascunho corrompido/ilegível: começa do início, sem atrapalhar ninguém.
+    }
+    // Só na abertura: depois disso quem manda na etapa é o próprio fluxo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, jaAssinado]);
+
+  // Guarda o progresso a cada mudança (barato: é um JSON minúsculo).
+  useEffect(() => {
+    if (jaAssinado || passo >= 5) return;
+    try {
+      localStorage.setItem(
+        chaveRetomada,
+        JSON.stringify({ passo, modo, nomeDigitado, tutorialResolvido }),
+      );
+    } catch {
+      // Sem armazenamento: segue sem retomada.
+    }
+  }, [chaveRetomada, jaAssinado, passo, modo, nomeDigitado, tutorialResolvido]);
+
   // ---- Canvas da assinatura -------------------------------------------------
   const prepararCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -280,6 +348,12 @@ export function SignFlow({
       if (res.bloqueado) setAjudaPedida(true);
       return;
     }
+    // Assinou: o rascunho de retomada perdeu a função.
+    try {
+      localStorage.removeItem(chaveRetomada);
+    } catch {
+      // Sem armazenamento — nada a limpar.
+    }
     irPara(5, "concluiu");
   };
 
@@ -322,6 +396,8 @@ export function SignFlow({
           </p>
           <a
             href="https://wa.me/5541997862323"
+            target="_blank"
+            rel="noopener noreferrer"
             className="mt-8 inline-flex items-center justify-center w-full h-14 rounded-2xl bg-emerald-600 text-white text-lg font-semibold"
           >
             Abrir o WhatsApp
@@ -404,26 +480,24 @@ export function SignFlow({
           )}
           <Avancar
             onClick={() => {
-              if (!rolouODocumento) setAviso("Pode continuar — o documento fica sempre disponível para baixar.");
+              if (!rolouODocumento) setAviso("Pode continuar — dá pra rolar o documento aqui quando quiser.");
               irPara(3, "leu_o_documento");
             }}
             texto="Já vi, continuar"
           />
+          {/* ANTES de assinar o documento é só para LEITURA na tela: sem botão
+              de baixar e com a barra do leitor de PDF escondida (#toolbar=0,
+              que é onde ficam baixar/imprimir). A cópia do cliente sai na tela
+              final, já assinada. Isto é UI, não segurança: quem abrir o
+              endereço do PDF direto continua conseguindo o arquivo. */}
           <div className="rounded-2xl overflow-hidden border-2 border-slate-200 bg-white">
             <iframe
-              src={`/api/signature/pdf/${token}`}
+              src={`/api/signature/pdf/${token}#toolbar=0&navpanes=0`}
               title="Documentos para assinar"
               className="w-full h-[55vh]"
               onLoad={() => setRolouODocumento(true)}
             />
           </div>
-          
-          <a
-            href={`/api/signature/pdf/${token}?download=1`}
-            className="w-full h-14 rounded-2xl border-2 border-slate-300 text-slate-700 text-lg font-semibold flex items-center justify-center active:scale-[0.98] transition"
-          >
-            ⬇ Baixar para ler depois
-          </a>
         </>
       )}
 
@@ -450,8 +524,13 @@ export function SignFlow({
           >
             📋 Colar código copiado
           </button>
+          {/* Aba nova de propósito: o cliente vai ao WhatsApp buscar o código e
+              volta — se saísse desta página, perderia a assinatura que acabou
+              de fazer (ela só existe na memória do navegador). */}
           <a
             href="https://wa.me/5541997862323"
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full h-12 rounded-xl border-2 border-slate-300 text-slate-600 text-base font-semibold flex items-center justify-center"
           >
             💬 Abrir o WhatsApp para copiar
