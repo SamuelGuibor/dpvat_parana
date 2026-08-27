@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import QRCode from "qrcode";
-import { generateSignaturePdf, findAnchors, stampSignedPdf, buildSignedParts, sha256, EXPECTED_SIGNATURE_SPOTS } from "@/app/_shared/lib/signature/pdf";
+import { generateSignaturePdf, findAnchors, stampSignedPdf, buildSignedParts, sha256, EXPECTED_SIGNATURE_SPOTS, SIGNATURE_TEMPLATES } from "@/app/_shared/lib/signature/pdf";
 
 // SMOKE do motor de PDF — usa o docx-converter DE VERDADE, por isso não roda no
 // `npm test` normal. Para rodar e ver o resultado:
@@ -11,7 +11,7 @@ import { generateSignaturePdf, findAnchors, stampSignedPdf, buildSignedParts, sh
 //   npm run sign:pdf
 //
 // Ele grava dois arquivos na área temporária e imprime o caminho: abra o
-// "-assinado.pdf" e confira se a assinatura caiu em cima das 3 linhas.
+// "-assinado.pdf" e confira se a assinatura caiu em cima das 8 linhas.
 
 // Roda por `npm run sign:pdf` (funciona em qualquer shell) ou com a
 // variável SIGNATURE_SMOKE=1 no ambiente.
@@ -34,10 +34,10 @@ const DADOS = {
 };
 
 describe.skipIf(!ativo)("motor de PDF da assinatura", () => {
-  it("preenche os 3 arquivos, acha as âncoras e carimba a assinatura", async () => {
+  it("preenche os 4 arquivos, acha as âncoras e carimba a assinatura", async () => {
     const { pdf, parts } = await generateSignaturePdf(DADOS);
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
-    expect(parts.length).toBe(3);
+    expect(parts.length).toBe(SIGNATURE_TEMPLATES.length);
     console.log("partes:", parts.map((p) => `${p.slug}: páginas ${p.pageStart + 1}-${p.pageStart + p.pageCount}`));
 
     const hash = sha256(pdf);
@@ -68,7 +68,7 @@ describe.skipIf(!ativo)("motor de PDF da assinatura", () => {
         { label: "IP do signatário", value: "189.45.12.9" },
         { label: "Dispositivo", value: "Android 14 — Chrome 120" },
         { label: "Telefone verificado por código", value: "+55 41 99999-9999 às 14:31" },
-        { label: "Aceite do termo", value: "Ao confirmar, você assina os 3 documentos eletronicamente." },
+        { label: "Aceite do termo", value: "Ao confirmar, você assina os 4 documentos eletronicamente." },
       ],
       signedAt: new Date("2026-08-18T17:32:00Z"),
     });

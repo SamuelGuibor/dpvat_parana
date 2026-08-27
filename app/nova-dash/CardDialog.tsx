@@ -8,8 +8,9 @@ import {
 } from '@/app/_shared/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
 import { Button } from '@/app/_shared/ui/button';
-import { Link, Trash2, Loader2, MessageCircle } from 'lucide-react';
+import { Link, Trash2, Loader2, MessageCircle, Sparkles } from 'lucide-react';
 import useSWR from 'swr';
+import { useSession } from 'next-auth/react';
 import { findWhatsAppContactForCard } from '@/app/_actions/whatsapp/client-info';
 import { toast } from 'sonner';
 
@@ -30,6 +31,8 @@ import { IntegrationsTab } from './card-dialog/IntegrationsTab';
 import { DeleteConfirmDialog } from './card-dialog/DeleteConfirmDialog';
 
 import { getLabels } from "@/app/_actions/labels/get-labels";
+import { canUseDocIa } from '@/app/_shared/lib/doc-ia-access';
+import { DocIaDialog } from './card-dialog/doc-ia/DocIaDialog';
 import { RoteirosTab } from './card-dialog/ScriptTab';
 import { LogsTab } from './card-dialog/LogsTab';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
@@ -62,6 +65,12 @@ export const CardDialog: React.FC<CardDialogProps> = ({
   const [savingCard, setSavingCard] = useState(false);
   const { perms } = usePermissions();
   const [labels, setLabels] = useState<any[]>([]);
+
+  // Gerador de Documento (IA) — botão HARDCODED (doc-ia-access.ts), fora do
+  // sistema de permissões: só aparece pra quem está na allowlist.
+  const { data: session } = useSession();
+  const showDocIa = canUseDocIa(session?.user as { id?: string; email?: string } | undefined);
+  const [docIaOpen, setDocIaOpen] = useState(false);
 
   // ===== Rascunho automático (recupera preenchimento em caso de fechamento
   // acidental ou travamento). O rascunho fica só no navegador (localStorage). =====
@@ -293,15 +302,26 @@ export const CardDialog: React.FC<CardDialogProps> = ({
             Manual de Instruções <Link className="w-4 h-4 inline-block" />
           </a>
           <DialogDescription>Edição detalhada do processo</DialogDescription>
-          {waContactId && (
-            <button
-              onClick={openWhatsAppConversation}
-              title="Abrir a conversa deste cliente no WhatsApp (aba nova)"
-              className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
-            >
-              <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa no WhatsApp
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {waContactId && (
+              <button
+                onClick={openWhatsAppConversation}
+                title="Abrir a conversa deste cliente no WhatsApp (aba nova)"
+                className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
+              >
+                <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa no WhatsApp
+              </button>
+            )}
+            {showDocIa && (
+              <button
+                onClick={() => setDocIaOpen(true)}
+                title="Gerar documento a partir de um modelo .docx com tags + IA"
+                className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-violet-700"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Gerar Documento (IA)
+              </button>
+            )}
+          </div>
           {/* Tags do card: gerenciadas SÓ aqui; o kanban exibe (badge + "+N"). */}
           <CardTagsBar
             cardId={cardId}
@@ -377,6 +397,16 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           </div>
         </div>
       </DialogContent>
+
+      {showDocIa && docIaOpen && (
+        <DocIaDialog
+          open={docIaOpen}
+          onClose={() => setDocIaOpen(false)}
+          card={editedCard}
+          cardId={cardId}
+          isProcess={isProcess}
+        />
+      )}
 
       <DeleteConfirmDialog
         open={confirmDelete}

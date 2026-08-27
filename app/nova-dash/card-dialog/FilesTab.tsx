@@ -283,12 +283,15 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     }
   }
 
-  async function handleDownloadAll() {
+  // Sem argumento = zip do card inteiro; com a pasta = só o que está dentro
+  // dela (botão "Baixar esta pasta", 27/08/2026).
+  async function handleDownloadAll(category?: DocumentCategoryId) {
     try {
       setDownloadingAll(true);
       const params = new URLSearchParams();
       if (isProcess) params.set('processId', cardId);
       else params.set('userId', cardId);
+      if (category) params.set('category', category);
 
       const res = await fetch(`/api/documents/download-all?${params.toString()}`);
       if (!res.ok) {
@@ -304,7 +307,7 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
       // Tenta usar o filename do header; senão um nome padrão.
       const disposition = res.headers.get('Content-Disposition') || '';
       const match = disposition.match(/filename="?([^"]+)"?/);
-      link.download = match?.[1] || 'documentos.zip';
+      link.download = match?.[1] || (category ? `${categoryLabel(category)}.zip` : 'documentos.zip');
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -540,11 +543,31 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                 Lixeira ({trash.length})
               </Button>
             )}
-            {docs.length > 0 && (
+            {/* Dentro de uma pasta o zip é SÓ dela; na tela das pastas, do
+                card inteiro (27/08/2026). */}
+            {openFolder ? (
+              visibleDocs.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadAll(openFolder)}
+                  disabled={downloadingAll}
+                  className="h-8"
+                  title={`Baixar os ${visibleDocs.length} arquivo(s) de ${categoryLabel(openFolder)}`}
+                >
+                  {downloadingAll ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileArchive className="w-4 h-4 mr-2" />
+                  )}
+                  Baixar esta pasta (.zip)
+                </Button>
+              )
+            ) : docs.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleDownloadAll}
+                onClick={() => handleDownloadAll()}
                 disabled={downloadingAll}
                 className="h-8"
               >
@@ -559,10 +582,11 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
           </div>
         </div>
         {!openFolder ? (
-          // Tela inicial: as pastas, como no Drive — abre com clique duplo.
+          // Tela inicial: as pastas. Abre com UM clique (27/08/2026) — o
+          // clique duplo obrigava a equipe a repetir o gesto o dia todo.
           <div className="space-y-2">
             <p className="text-xs text-gray-500 dark:text-zinc-400">
-              Clique duas vezes na pasta para abrir.
+              Clique na pasta para abrir.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {DOCUMENT_CATEGORIES.map((cat) => {
@@ -573,14 +597,14 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
                   <button
                     key={cat.id}
                     type="button"
-                    onDoubleClick={() => setOpenFolder(cat.id)}
+                    onClick={() => setOpenFolder(cat.id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
                         setOpenFolder(cat.id);
                       }
                     }}
-                    title="Clique duas vezes para abrir"
+                    title={`Abrir ${cat.label}`}
                     className="flex select-none items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-gray-50 hover:border-gray-300 dark:hover:bg-zinc-800 dark:hover:border-zinc-600"
                   >
                     <Folder

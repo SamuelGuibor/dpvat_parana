@@ -16,7 +16,9 @@ import {
 } from "@/app/_shared/lib/whatsapp/bot";
 import { sendSystemWhatsApp, findOrCreateContactByPhone } from "@/app/_shared/lib/whatsapp/outbound";
 import { whatsappRecipients } from "@/app/_shared/lib/whatsapp/service";
+import { runFlowForContact } from "@/app/_shared/lib/whatsapp/flow-runner";
 import { generateSignaturePdf, sha256, type SignaturePart } from "./pdf";
+import { SIGNATURE_HOWTO_FLOW_NAME } from "./howto-flow";
 import { newSignatureToken, tokenExpiry, signUrlFor } from "./tokens";
 
 /** Coluna pra onde o card vai assim que o cliente termina de assinar. */
@@ -104,6 +106,10 @@ const s3 = new S3Client({
 
 const AUTHOR_ID = "whatsapp-bot";
 const AUTHOR_NAME = "🖊️ Assinatura eletrônica";
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 /**
  * Chave geral do fluxo AUTOMÁTICO (o gatilho na qualificação). Desligada, a
@@ -207,14 +213,27 @@ function norm(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
 
+interface CepInfo {
+  logradouro: string;
+  bairro: string;
+  localidade: string;
+  uf: string;
+}
+
+// O mesmo CEP é consultado na validação, na pergunta ao cliente e de novo
+// quando ele responde — 10 min de memo evitam três idas ao ViaCEP por conversa.
+const cepCache = new Map<string, { at: number; data: CepInfo | "inexistente" }>();
+const CEP_CACHE_TTL_MS = 10 * 60_000;
+
 /**
- * Confere o CEP no ViaCEP e ENRIQUECE o endereço (rua/bairro/cidade/estado
- * faltantes vêm do CEP). Devolve pendência quando o CEP não existe ou quando a
- * cidade não bate. ViaCEP fora do ar NÃO trava o fluxo (só loga).
+ * Consulta o ViaCEP. "inexistente" = os Correios não conhecem o CEP;
+ * null = CEP fora de formato OU serviço indisponível (nunca trava o fluxo).
  */
-async function checkAndEnrichCep(fields: ExtractedFields): Promise<MissingField | null> {
-  const cep = fields.cep?.value?.replace(/\D/g, "") ?? "";
+async function lookupCep(rawCep: string): Promise<CepInfo | "inexistente" | null> {
+  const cep = rawCep.replace(/\D/g, "");
   if (cep.length !== 8) return null;
+  const hit = cepCache.get(cep);
+  if (hit && Date.now() - hit.at < CEP_CACHE_TTL_MS) return hit.data;
   try {
     const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {
       signal: AbortSignal.timeout(6000),
@@ -222,35 +241,146 @@ async function checkAndEnrichCep(fields: ExtractedFields): Promise<MissingField 
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as {
-      erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string;
+      erro?: boolean | string; logradouro?: string; bairro?: string; localidade?: string; uf?: string;
     };
-    if (data.erro) {
-      return {
-        key: "cep",
-        label: FIELD_LABELS.cep,
-        reason: `CEP ${fields.cep.value} não existe na base dos Correios (região rural? dígito trocado?) — confirmar endereço com o cliente`,
-      };
-    }
-    if (data.localidade && fields.cidade?.value && norm(data.localidade) !== norm(fields.cidade.value)) {
-      return {
-        key: "cep",
-        label: FIELD_LABELS.cep,
-        reason: `CEP pertence a ${data.localidade}/${data.uf}, mas o cliente informou ${fields.cidade.value} — confirmar qual está certo`,
-      };
-    }
-    const fill = (key: ContractFieldKey, value?: string) => {
-      if (value && (!fields[key]?.value || fields[key].confidence < MIN_CONFIDENCE[key])) {
-        fields[key] = { value, confidence: 0.95, source: "inferido" };
-      }
-    };
-    fill("rua", data.logradouro);
-    fill("bairro", data.bairro);
-    fill("cidade", data.localidade);
-    fill("estado", data.uf ? UF_NAMES[data.uf] ?? data.uf : undefined);
+    const info: CepInfo | "inexistente" = data.erro
+      ? "inexistente"
+      : {
+          logradouro: String(data.logradouro ?? "").trim(),
+          bairro: String(data.bairro ?? "").trim(),
+          localidade: String(data.localidade ?? "").trim(),
+          uf: String(data.uf ?? "").trim().toUpperCase(),
+        };
+    cepCache.set(cep, { at: Date.now(), data: info });
+    return info;
   } catch (err) {
     console.warn("[SIGN] ViaCEP indisponível (seguindo sem a checagem):", err);
+    return null;
   }
+}
+
+/** CEP em 00000-000 (o que não tiver 8 dígitos volta como veio). */
+function formatCep(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : raw.trim();
+}
+
+/**
+ * Confere o CEP no ViaCEP e ENRIQUECE o endereço (rua/bairro/cidade/estado
+ * faltantes vêm do CEP). Devolve pendência quando o CEP não existe ou quando a
+ * cidade não bate. ViaCEP fora do ar NÃO trava o fluxo (só loga).
+ */
+async function checkAndEnrichCep(fields: ExtractedFields): Promise<MissingField | null> {
+  const info = await lookupCep(fields.cep?.value ?? "");
+  if (!info) return null;
+  if (info === "inexistente") {
+    return {
+      key: "cep",
+      label: FIELD_LABELS.cep,
+      reason: `CEP ${fields.cep.value} não existe na base dos Correios (região rural? dígito trocado?) — confirmar endereço com o cliente`,
+    };
+  }
+  if (info.localidade && fields.cidade?.value && norm(info.localidade) !== norm(fields.cidade.value)) {
+    return {
+      key: "cep",
+      label: FIELD_LABELS.cep,
+      reason: `CEP pertence a ${info.localidade}/${info.uf}, mas o cliente informou ${fields.cidade.value} — confirmar qual está certo`,
+    };
+  }
+  const fill = (key: ContractFieldKey, value?: string) => {
+    if (value && (!fields[key]?.value || fields[key].confidence < MIN_CONFIDENCE[key])) {
+      fields[key] = { value, confidence: 0.95, source: "inferido" };
+    }
+  };
+  fill("rua", info.logradouro);
+  fill("bairro", info.bairro);
+  fill("cidade", info.localidade);
+  fill("estado", info.uf ? UF_NAMES[info.uf] ?? info.uf : undefined);
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// SEGUNDA VALIDAÇÃO DO ENDEREÇO (27/08) — divergência de RUA pelo CEP
+//
+// Caso real: o cliente escreveu "Irati PR bairro Lagoa Jardim São Miguel 149,
+// CEP 84504-692". A IA leu "Rua Jardim São Miguel" com confiança alta — mas
+// aquele CEP é da Rua Maria Wasilewski de Almeida. Cidade e bairro batiam, e
+// como a `rua` já vinha preenchida o enriquecimento acima não a corrige.
+//
+// Não dá pra escolher sozinho (pode ser o nome do loteamento em vez da rua, ou
+// um dígito trocado no CEP): o bot mostra as DUAS e pergunta qual é a certa.
+// ---------------------------------------------------------------------------
+
+/** Tipos de logradouro e prefixos de loteamento que o cliente troca à vontade. */
+const STREET_PREFIX_RE =
+  /^(r|rua|av|avenida|al|alameda|tv|trav|travessa|rod|rodovia|est|estrada|pc|praca|largo|via|linha|servidao|jd|jardim|vl|vila|conj|conjunto|res|residencial|loteamento)\.?\s+/;
+
+/** Nome de rua reduzido ao essencial ("Rua Jardim São Miguel" → "sao miguel"). */
+function normStreet(s: string): string {
+  let out = norm(s).replace(/[.,ºª°\-/]/g, " ").replace(/\s+/g, " ").trim();
+  for (let i = 0; i < 2 && STREET_PREFIX_RE.test(out); i++) out = out.replace(STREET_PREFIX_RE, "");
+  return out.trim();
+}
+
+/** Duas grafias da MESMA rua? (igualdade, contenção ou 60% das palavras). */
+function sameStreet(a: string, b: string): boolean {
+  const x = normStreet(a);
+  const y = normStreet(b);
+  if (!x || !y) return false;
+  if (x === y || x.includes(y) || y.includes(x)) return true;
+  const wx = new Set(x.split(" ").filter((w) => w.length > 2));
+  const wy = new Set(y.split(" ").filter((w) => w.length > 2));
+  if (!wx.size || !wy.size) return false;
+  let common = 0;
+  for (const w of wx) if (wy.has(w)) common++;
+  return common / Math.min(wx.size, wy.size) >= 0.6;
+}
+
+export interface CepMismatch {
+  cep: string;
+  /** A rua que o cliente falou. */
+  clientStreet: string;
+  /** A rua que o CEP aponta nos Correios. */
+  cepStreet: string;
+  cepBairro: string;
+  cidade: string;
+  uf: string;
+}
+
+/**
+ * Marca (fora das chaves do contrato, logo inerte em buildDados/validação) de
+ * que o cliente JÁ escolheu qual das duas ruas vale — sem ela a divergência
+ * seria redetectada a cada mensagem e o bot perguntaria em loop.
+ */
+const CEP_CHOICE_MARK = "_ruaConfirmadaPeloCliente";
+
+function cepChoiceMade(fields: ExtractedFields): boolean {
+  return (fields as unknown as Record<string, unknown>)[CEP_CHOICE_MARK] === true;
+}
+
+function setCepChoiceMade(fields: ExtractedFields, done: boolean): void {
+  if (done) (fields as unknown as Record<string, unknown>)[CEP_CHOICE_MARK] = true;
+  else delete (fields as unknown as Record<string, unknown>)[CEP_CHOICE_MARK];
+}
+
+/** Divergência rua informada × rua do CEP, ou null quando não há o que perguntar. */
+async function detectCepMismatch(fields: ExtractedFields): Promise<CepMismatch | null> {
+  if (cepChoiceMade(fields)) return null;
+  const clientStreet = fields.rua?.value?.trim() ?? "";
+  if (!clientStreet) return null;
+  // Rua que veio do PRÓPRIO ViaCEP (enriquecimento) não diverge de nada.
+  if (fields.rua?.source === "inferido") return null;
+  const info = await lookupCep(fields.cep?.value ?? "");
+  if (!info || info === "inexistente" || !info.logradouro) return null;
+  if (sameStreet(clientStreet, info.logradouro)) return null;
+  return {
+    cep: formatCep(fields.cep.value),
+    clientStreet,
+    cepStreet: info.logradouro,
+    cepBairro: info.bairro,
+    cidade: info.localidade,
+    uf: info.uf,
+  };
 }
 
 /** Valida a extração campo a campo (incl. ViaCEP); vazio = pode gerar documento. */
@@ -428,7 +558,7 @@ export function buildDados(fields: ExtractedFields): Record<string, string> {
  */
 function summaryMessage(dados: Record<string, string>): string {
   return [
-    "Antes de eu te mandar o documento pra assinar, confere comigo se está tudo certinho? 📋",
+    "Antes de eu te mandar o documento pra assinar, confere comigo se está tudo certinho?",
     "",
     `👤 Nome: ${dados.name}`,
     `🪪 RG: ${dados.rg}`,
@@ -438,8 +568,52 @@ function summaryMessage(dados: Record<string, string>): string {
     `🏠 Endereço: ${dados.rua}, nº ${dados.numero}, ${dados.bairro}`,
     `📮 CEP: ${dados.cep} — ${dados.cidade}/${dados.estado}`,
     "",
-    "Se estiver tudo certo, responde *SIM* pra mim. Se tiver alguma coisa errada, me fala qual que eu corrijo, tá bom? 😊",
+    "Se estiver tudo certo, responde *SIM* pra mim. Se tiver alguma coisa errada, me fala qual que eu corrijo, tá bom?",
   ].join("\n");
+}
+
+/**
+ * Pergunta binária quando o CEP aponta uma rua diferente da que o cliente
+ * falou. Duas opções numeradas: o público responde muito melhor a "1 ou 2" do
+ * que a uma pergunta aberta.
+ */
+function cepQuestionMessage(m: CepMismatch): string {
+  return [
+    "Antes de gerar o seu documento, preciso tirar uma dúvida rapidinho sobre o seu endereço.",
+    "",
+    `Você me passou a rua *${m.clientStreet}*, mas o CEP *${m.cep}* que você me mandou é da rua ` +
+    `*${m.cepStreet}*${m.cepBairro ? ` (${m.cepBairro})` : ""}, em ${m.cidade}/${m.uf}.`,
+    "",
+    "Qual dos dois está certo?",
+    "",
+    `*1* — ${m.clientStreet}`,
+    `*2* — ${m.cepStreet}`,
+    "",
+    "Me responde só *1* ou *2*. Se quem estiver errado for o CEP, pode me mandar o CEP certo que eu ajusto aqui.",
+  ].join("\n");
+}
+
+/**
+ * Manda o resumo pro cliente confirmar — ou, quando o CEP aponta outra rua, a
+ * pergunta de qual das duas é a certa (o resumo sai depois da resposta dele).
+ */
+async function sendSummaryOrCepQuestion(
+  contactId: string,
+  contact: { phone: string; name: string | null },
+  fields: ExtractedFields,
+): Promise<"resumo" | "pergunta_cep"> {
+  const mismatch = await detectCepMismatch(fields);
+  if (mismatch) {
+    await sendBotReply(contactId, contact.phone, contact.name, cepQuestionMessage(mismatch), 1500);
+    await postInternalNote(
+      contactId,
+      `🖊️ Endereço divergente: o CEP ${mismatch.cep} é da rua "${mismatch.cepStreet}", mas o cliente ` +
+      `informou "${mismatch.clientStreet}". O bot perguntou qual das duas está certa antes de mandar o resumo.`,
+    ).catch(() => {});
+    return "pergunta_cep";
+  }
+  await sendBotReply(contactId, contact.phone, contact.name, summaryMessage(buildDados(fields)), 1500);
+  return "resumo";
 }
 
 export type DeliveryMode = "bot" | "atendente" | "nao_enviado";
@@ -612,11 +786,23 @@ async function issueSignature(
       1500,
     );
     await sendBotReply(contactId, contact.phone, contact.name, signUrl, 1200);
-    await sendBotReply(
-      contactId, contact.phone, contact.name,
-      "Vou te explicar: você abre o link, confere seus dados, assina com o dedo na tela e digita um código que eu mando aqui. Se travar em qualquer parte, é só me chamar. 😊",
-      1500,
-    );
+
+    // Fluxo "como assinar": passo a passo em texto + áudio + vídeo (cadastrado
+    // pelo `npm run sign:flow`, editável na tela de Fluxos do inbox). Se o
+    // fluxo ainda não existir no banco, cai na explicação em texto de antes.
+    await sleepMs(1500);
+    const howtoSent = await runFlowForContact(SIGNATURE_HOWTO_FLOW_NAME, {
+      id: contactId,
+      phone: contact.phone,
+      name: contact.name,
+    });
+    if (!howtoSent) {
+      await sendBotReply(
+        contactId, contact.phone, contact.name,
+        "Vou te explicar: você abre o link, confere seus dados, assina com o dedo na tela e digita um código que eu mando aqui. Se travar em qualquer parte, é só me chamar. 😊",
+        0,
+      );
+    }
   }
 
   await postInternalNote(
@@ -747,15 +933,21 @@ export async function maybeStartSignatureFlow(
       },
     });
 
-    await sendBotReply(contactId, contact.phone, contact.name, summaryMessage(buildDados(fields)), 1500);
+    const sent = await sendSummaryOrCepQuestion(contactId, contact, fields);
     await postInternalNote(
       contactId,
       `🖊️ Dados do KIT extraídos pela IA (${documentsRead} documento(s) lidos). ` +
-      `Resumo enviado ao cliente para CONFIRMAÇÃO — após o "sim", o contrato vai pra assinatura.`,
+      (sent === "resumo"
+        ? `Resumo enviado ao cliente para CONFIRMAÇÃO — após o "sim", o contrato vai pra assinatura.`
+        : `O resumo sai depois que o cliente disser qual endereço está certo.`),
     );
-    await logSignature(contactId, contact, "assinatura: resumo enviado para confirmação do cliente", {
-      stage: "confirmando", requestId: request.id, documentsRead,
-    });
+    await logSignature(
+      contactId, contact,
+      sent === "resumo"
+        ? "assinatura: resumo enviado para confirmação do cliente"
+        : "assinatura: CEP aponta outra rua — bot perguntou qual está certa",
+      { stage: "confirmando", requestId: request.id, documentsRead },
+    );
     return "confirming";
   } catch (err) {
     console.error("[SIGN] Falha no fluxo de assinatura:", contactId, err);
@@ -861,10 +1053,11 @@ export async function handleCollectionReply(
         },
       });
       await sendBotReply(contactId, contact.phone, contact.name, "Anotei tudo, obrigado! 🙌", 1200);
-      await sendBotReply(contactId, contact.phone, contact.name, summaryMessage(buildDados(fields)), 1500);
+      const sent = await sendSummaryOrCepQuestion(contactId, contact, fields);
       await postInternalNote(
         contactId,
-        `🖊️ Dados do contrato COMPLETADOS pelo cliente (${documentsRead} documento(s) lidos). Resumo enviado para confirmação.`,
+        `🖊️ Dados do contrato COMPLETADOS pelo cliente (${documentsRead} documento(s) lidos). ` +
+        (sent === "resumo" ? "Resumo enviado para confirmação." : "Falta o cliente dizer qual endereço está certo."),
       );
       await logSignature(contactId, contact, "assinatura: coleta concluída — resumo enviado para confirmação", {
         stage: "confirmando", requestId: request.id, documentsRead,
@@ -917,6 +1110,124 @@ export async function handleCollectionReply(
 
 const CONFIRM_MAX_ROUNDS = 2;
 
+type CepChoice = "cliente" | "cep";
+
+/**
+ * Lê a resposta do cliente à pergunta das duas ruas: o número, o nome de uma
+ * delas, ou nada (null). Deliberadamente conservador — endereço errado invalida
+ * a procuração, então na dúvida é melhor perguntar de novo do que chutar.
+ */
+function parseCepChoice(text: string, m: CepMismatch): CepChoice | null {
+  // "1º)", "2ª -", "opção 2." e afins viram "1"/"2" soltos.
+  const t = norm(text).replace(/[.!,;:()ºª°-]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+
+  const one = /(^|\s)(1|1o|1a|um|primeir\w*|de cima)(\s|$)/.test(t);
+  const two = /(^|\s)(2|2o|2a|dois|duas|segund\w*|de baixo)(\s|$)/.test(t);
+  if (one !== two) return one ? "cliente" : "cep";
+
+  const hitClient = sameStreet(text, m.clientStreet);
+  const hitCep = sameStreet(text, m.cepStreet);
+  if (hitClient !== hitCep) return hitClient ? "cliente" : "cep";
+  return null;
+}
+
+/**
+ * Resposta do cliente à pergunta "qual das duas ruas é a certa?" (sub-etapa do
+ * status "confirmando"). Resolvida a dúvida, o resumo normal segue em frente;
+ * duas respostas ilegíveis seguidas viram atendente.
+ */
+async function handleCepChoiceReply(
+  request: { id: string; confirmRounds: number },
+  contactId: string,
+  contact: { phone: string; name: string | null },
+  contactLabel: string,
+  fields: ExtractedFields,
+  clientText: string,
+  mismatch: CepMismatch,
+): Promise<boolean> {
+  const rounds = request.confirmRounds + 1;
+
+  const toHuman = async (reason: string, queueReason: string) => {
+    await sendBotReply(
+      contactId, contact.phone, contact.name,
+      "Sem problema! Vou pedir pra um dos nossos atendentes confirmar esse endereço com você direitinho, tá bom? Já já alguém te chama por aqui.",
+      1500,
+    ).catch(() => {});
+    await failToHuman(
+      contactId, contact, fields,
+      [{ key: "rua", label: FIELD_LABELS.rua, reason }],
+      "o endereço do contrato precisou de conferência humana",
+      request.id,
+    );
+    await qualifyToQueue(contactId, contactLabel, queueReason);
+  };
+
+  // 1) Ele mandou OUTRO CEP → quem estava errado era o CEP, não a rua.
+  const typed = clientText.match(/\b(\d{5})[-.\s]?(\d{3})\b/);
+  if (typed && `${typed[1]}${typed[2]}` !== mismatch.cep.replace(/\D/g, "")) {
+    fields.cep = { value: `${typed[1]}-${typed[2]}`, confidence: 1, source: "conversa" };
+    const missing = await validateExtraction(fields);
+    if (missing.length || rounds > CONFIRM_MAX_ROUNDS) {
+      await toHuman(
+        `cliente trocou o CEP para ${fields.cep.value} e o endereço continuou inconsistente`,
+        "endereço do contrato precisa de atendente (CEP corrigido não fecha)",
+      );
+      return true;
+    }
+    await db.signatureRequest.update({
+      where: { id: request.id },
+      data: { extracted: fields as unknown as Prisma.InputJsonValue, confirmRounds: rounds },
+    });
+    await sendBotReply(contactId, contact.phone, contact.name, "Corrigi o CEP aqui! Só confere comigo:", 1200);
+    await sendSummaryOrCepQuestion(contactId, contact, fields);
+    return true;
+  }
+
+  // 2) Escolha entre as duas ruas.
+  const choice = parseCepChoice(clientText, mismatch);
+  if (choice) {
+    if (choice === "cep") {
+      fields.rua = { value: mismatch.cepStreet, confidence: 0.95, source: "conversa" };
+      // Escolheu a rua do CEP → o bairro do mesmo registro dos Correios vale
+      // mais do que o que ele lembrou de cabeça (e ainda vai no resumo).
+      if (mismatch.cepBairro && norm(mismatch.cepBairro) !== norm(fields.bairro?.value ?? "")) {
+        fields.bairro = { value: mismatch.cepBairro, confidence: 0.95, source: "conversa" };
+      }
+    }
+    setCepChoiceMade(fields, true);
+    await db.signatureRequest.update({
+      where: { id: request.id },
+      // Zera as rodadas: daqui pra frente elas contam a confirmação do resumo.
+      data: { extracted: fields as unknown as Prisma.InputJsonValue, confirmRounds: 0 },
+    });
+    await postInternalNote(
+      contactId,
+      `🖊️ Endereço confirmado pelo cliente: rua "${choice === "cep" ? mismatch.cepStreet : mismatch.clientStreet}" ` +
+      `(ele escolheu entre a que tinha informado e a do CEP ${mismatch.cep}).`,
+    ).catch(() => {});
+    await sendBotReply(contactId, contact.phone, contact.name, "Perfeito, anotei! 🙌", 1200);
+    await sendSummaryOrCepQuestion(contactId, contact, fields);
+    return true;
+  }
+
+  // 3) Não deu pra entender a resposta.
+  if (rounds > CONFIRM_MAX_ROUNDS) {
+    await toHuman(
+      `cliente não escolheu entre "${mismatch.clientStreet}" e "${mismatch.cepStreet}" (CEP ${mismatch.cep}) em ${CONFIRM_MAX_ROUNDS} tentativas`,
+      "endereço do contrato precisa de atendente (divergência de CEP não resolvida)",
+    );
+    return true;
+  }
+  await db.signatureRequest.update({ where: { id: request.id }, data: { confirmRounds: rounds } });
+  await sendBotReply(
+    contactId, contact.phone, contact.name,
+    `Desculpa, não consegui entender. Me responde só com o número, por favor:\n\n*1* — ${mismatch.clientStreet}\n*2* — ${mismatch.cepStreet}`,
+    1500,
+  );
+  return true;
+}
+
 /**
  * Intercepta a mensagem do cliente quando há um ciclo em "confirmando".
  * Devolve true quando a mensagem foi tratada aqui (o cérebro normal NÃO roda).
@@ -937,6 +1248,14 @@ export async function handleConfirmationReply(
   const fields = request.extracted as unknown as ExtractedFields;
 
   try {
+    // Sub-etapa da confirmação: enquanto a divergência de rua × CEP estiver de
+    // pé, o que o cliente respondeu é a ESCOLHA do endereço, não o "sim" do
+    // resumo — o resumo nem chegou a ser enviado.
+    const mismatch = await detectCepMismatch(fields);
+    if (mismatch) {
+      return await handleCepChoiceReply(request, contactId, contact, contactLabel, fields, clientText, mismatch);
+    }
+
     const res = await fetch(`${CHATBOT_URL}/confirm-contract-data`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-bot-secret": CHATBOT_SECRET },
@@ -972,6 +1291,9 @@ export async function handleConfirmationReply(
       for (const c of out.corrections) {
         if ((CONTRACT_FIELD_KEYS as readonly string[]).includes(c.field)) {
           fields[c.field] = { value: c.value.trim(), confidence: 1, source: "conversa" };
+          // Mexeu no endereço → a escolha anterior de rua não vale mais; o CEP
+          // novo tem que ser conferido do zero.
+          if (c.field === "rua" || c.field === "cep") setCepChoiceMade(fields, false);
         }
       }
       const missing = await validateExtraction(fields);
@@ -996,7 +1318,7 @@ export async function handleConfirmationReply(
         data: { extracted: fields as unknown as Prisma.InputJsonValue, confirmRounds: rounds },
       });
       await sendBotReply(contactId, contact.phone, contact.name, out.reply || "Corrigi aqui! Dá uma olhada de novo, por favor:", 1200);
-      await sendBotReply(contactId, contact.phone, contact.name, summaryMessage(buildDados(fields)), 1500);
+      await sendSummaryOrCepQuestion(contactId, contact, fields);
       return true;
     }
 

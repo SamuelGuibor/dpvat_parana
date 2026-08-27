@@ -5,6 +5,9 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getServerSession } from "next-auth";
 import { db } from "@/app/_shared/lib/prisma";
 import { authOptions } from "@/app/_shared/lib/auth";
+import {
+  categoryLabel, inferCategory, isDocumentCategory,
+} from "@/app/_shared/lib/document-categories";
 
 // Rota depende de request.url (params da query), então é sempre dinâmica.
 export const dynamic = "force-dynamic";
@@ -61,6 +64,13 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     const processId = searchParams.get("processId");
+    // "Baixar esta pasta" (27/08/2026): sem o parâmetro, o zip continua sendo
+    // de TODOS os anexos do card.
+    const categoryParam = searchParams.get("category");
+    const category = isDocumentCategory(categoryParam) ? categoryParam : null;
+    if (categoryParam && !category) {
+      return NextResponse.json({ error: "Pasta inválida" }, { status: 400 });
+    }
 
     if (!userId && !processId) {
       return NextResponse.json({ error: "userId ou processId é obrigatório" }, { status: 400 });
@@ -71,14 +81,25 @@ export async function GET(request: Request) {
       ? { processId, deletedAt: null }
       : { userId: userId!, deletedAt: null };
 
-    const documents = await db.document.findMany({
+    const allDocuments = await db.document.findMany({
       where,
-      select: { id: true, key: true, name: true },
+      select: { id: true, key: true, name: true, category: true },
       orderBy: { createdAt: "asc" },
     });
 
+    // Anexo anterior à feature de pastas tem category null: a pasta sai do
+    // nome do arquivo, igual à leitura de /api/documents.
+    const documents = category
+      ? allDocuments.filter(
+          (d) => (isDocumentCategory(d.category) ? d.category : inferCategory(d.name)) === category,
+        )
+      : allDocuments;
+
     if (documents.length === 0) {
-      return NextResponse.json({ error: "Nenhum documento para baixar" }, { status: 404 });
+      return NextResponse.json(
+        { error: category ? "Esta pasta está vazia" : "Nenhum documento para baixar" },
+        { status: 404 },
+      );
     }
 
     // Nome amigável para o arquivo zip (nome da pessoa/processo).
@@ -121,7 +142,9 @@ export async function GET(request: Request) {
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
-    const zipName = `documentos_${sanitizeFilename(ownerName)}.zip`;
+    const zipName = category
+      ? `${sanitizeFilename(categoryLabel(category))}_${sanitizeFilename(ownerName)}.zip`
+      : `documentos_${sanitizeFilename(ownerName)}.zip`;
 
     return new NextResponse(new Uint8Array(zipBuffer), {
       headers: {

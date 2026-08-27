@@ -35,6 +35,8 @@ import { PermissionsProvider, usePermissions } from '@/app/nova-dash/_components
 import { GlobalSearch } from '@/app/nova-dash/_components/GlobalSearch';
 import { isTeamRole } from '@/app/_shared/lib/permissions';
 import { DashboardTour, START_DASH_TOUR_EVENT } from '@/app/nova-dash/_components/DashboardTour';
+import { EventsDialog, EventsButton } from '@/app/nova-dash/_components/EventsDialog';
+import { countEventsSoon } from '@/app/_actions/events/event-actions';
 export const dynamic = "force-dynamic";
 
 // Abas do topo (20/08/2026): estilo "underline nav" — texto discreto, hover
@@ -54,6 +56,18 @@ export default function Page() {
 function PageInner() {
   const [activeTab, setActiveTab] = useState('kanban');
   const [open, setOpen] = useState(false);
+  // Agenda de eventos (27/08/2026): ícone no cabeçalho com o que vem nas
+  // próximas 24h. Recontagem a cada 5min e sempre que alguém mexe na agenda.
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [eventsSoon, setEventsSoon] = useState(0);
+  const refreshEventsCount = React.useCallback(() => {
+    countEventsSoon().then(setEventsSoon).catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshEventsCount();
+    const t = setInterval(refreshEventsCount, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [refreshEventsCount]);
   const { isDark: darkReaderOn } = useDarkMode();
   const { perms } = usePermissions();
   const { data: session, status } = useSession();
@@ -198,6 +212,7 @@ function PageInner() {
               >
                 <HelpCircle className="h-5 w-5 text-gray-500" />
               </Button>
+              <EventsButton count={eventsSoon} onOpen={() => setEventsOpen(true)} />
               <span data-tour="dark-mode" className="inline-flex">
                 <DarkModeToggle />
               </span>
@@ -208,6 +223,11 @@ function PageInner() {
               </div>
 
               <Team open={open} onClose={() => setOpen(false)} />
+              <EventsDialog
+                open={eventsOpen}
+                onOpenChange={setEventsOpen}
+                onChanged={refreshEventsCount}
+              />
 
               <div className="flex items-center gap-2 pl-1 ml-1 border-l border-gray-200 dark:border-zinc-700">
                 <span data-tour="notifications" className="inline-flex">

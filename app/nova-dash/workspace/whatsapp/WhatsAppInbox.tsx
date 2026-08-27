@@ -27,6 +27,7 @@ import {
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
+  searchWhatsAppConversations, getWhatsAppConversationByContact,
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
 import {
@@ -190,6 +191,30 @@ export function WhatsAppInbox() {
   const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
 
   const [search, setSearch] = useState('');
+  // BUSCA NO SERVIDOR (27/08/2026): a lista carregada é só o TOPO (as mais
+  // recentes). Filtrar só ela fazia conversas antigas "sumirem" do inbox —
+  // pesquisar um nome não achava nada e a conversa parecia ter evaporado.
+  // Agora o termo também vai ao banco e o resultado é fundido na lista.
+  const [remoteResults, setRemoteResults] = useState<WhatsAppConversationDTO[]>([]);
+  const [searchingServer, setSearchingServer] = useState(false);
+  const searchSeq = useRef(0);
+  useEffect(() => {
+    const term = search.trim();
+    const seq = ++searchSeq.current;
+    if (term.length < 2) {
+      setRemoteResults([]);
+      setSearchingServer(false);
+      return;
+    }
+    setSearchingServer(true);
+    const t = setTimeout(() => {
+      searchWhatsAppConversations(term)
+        .then((rows) => { if (searchSeq.current === seq) setRemoteResults(rows); })
+        .catch(() => { if (searchSeq.current === seq) setRemoteResults([]); })
+        .finally(() => { if (searchSeq.current === seq) setSearchingServer(false); });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
   // Coluna Copiloto (lg+) e CardDialog do cliente vinculado.
   const [copilotOpen, setCopilotOpen] = useState(true);
   const [cardDialogOpen, setCardDialogOpen] = useState(false);
@@ -410,7 +435,28 @@ export function WhatsAppInbox() {
     return () => window.removeEventListener('open-whatsapp-conversation', openConversation);
   }, []);
 
-  const active = conversations.find((c) => c.contactId === activeContactId) ?? null;
+  // Conversa aberta: procura na lista, depois nos resultados da busca. Quem
+  // está FORA dos dois (contato antigo aberto pela agenda, por exemplo) é
+  // hidratado sob demanda — antes a thread abria vazia e parecia que a
+  // conversa "não abria" (27/08/2026).
+  const listActive = useMemo(
+    () => conversations.find((c) => c.contactId === activeContactId)
+      ?? remoteResults.find((c) => c.contactId === activeContactId)
+      ?? null,
+    [conversations, remoteResults, activeContactId],
+  );
+  const [fetchedActive, setFetchedActive] = useState<WhatsAppConversationDTO | null>(null);
+  const hasListActive = !!listActive;
+  useEffect(() => {
+    if (!activeContactId || hasListActive) return;
+    let cancelled = false;
+    getWhatsAppConversationByContact(activeContactId)
+      .then((c) => { if (!cancelled && c) setFetchedActive(c); })
+      .catch(() => { /* a thread ainda carrega pelas mensagens */ });
+    return () => { cancelled = true; };
+  }, [activeContactId, hasListActive]);
+  const active = listActive
+    ?? (fetchedActive?.contactId === activeContactId ? fetchedActive : null);
 
   // Ficha do cliente da conversa aberta: alimenta o Copiloto (aba Ficha /
   // checklist) e o atalho "Card #N" do cabeçalho.
@@ -491,10 +537,18 @@ export function WhatsAppInbox() {
     const now = new Date();
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   };
+  // Lista carregada + o que a busca no servidor trouxe de fora dela (sem
+  // duplicar quem já está nas duas).
+  const searchUniverse = useMemo(() => {
+    if (!remoteResults.length) return conversations;
+    const known = new Set(conversations.map((c) => c.contactId));
+    return [...conversations, ...remoteResults.filter((r) => !known.has(r.contactId))];
+  }, [conversations, remoteResults]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     const digits = term.replace(/\D/g, '');
-    return conversations.filter((c) => {
+    return searchUniverse.filter((c) => {
       if (term) {
         const nameMatch = (c.contactName ?? '').toLowerCase().includes(term);
         const phoneMatch = digits.length >= 2 && c.contactPhone.includes(digits);
@@ -512,7 +566,7 @@ export function WhatsAppInbox() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, search, tagFilter, todayOnly, columnFilter, numberFilter, readFilter]);
+  }, [searchUniverse, search, tagFilter, todayOnly, columnFilter, numberFilter, readFilter]);
 
   // Contagem do chip "Hoje" (independe dos outros filtros, senão o número
   // mudaria ao clicar no próprio chip) e colunas disponíveis pro seletor.
@@ -1164,8 +1218,17 @@ export function WhatsAppInbox() {
             </div>
             {tagFilterActive && (
               <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#26483c] px-2 py-1.5 text-[11px] font-semibold text-[#a9f2d8]">
-                <Search className="h-3 w-3 shrink-0" />
-                {filtered.length} resultado{filtered.length === 1 ? '' : 's'} {search.trim() ? 'pra essa busca' : 'com essas tags'}, em <b>todas as pastas</b>.
+                {searchingServer
+                  ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                  : <Search className="h-3 w-3 shrink-0" />}
+                {searchingServer ? (
+                  <>Procurando em todo o histórico…</>
+                ) : (
+                  <>
+                    {filtered.length} resultado{filtered.length === 1 ? '' : 's'} {search.trim() ? 'pra essa busca' : 'com essas tags'}, em <b>todas as pastas</b>
+                    {search.trim() ? <> e em <b>todo o histórico</b></> : null}.
+                  </>
+                )}
               </div>
             )}
             </>)}
@@ -1193,8 +1256,22 @@ export function WhatsAppInbox() {
             )}
             {conversations.length > 0 && visibleItems.length === 0 && (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
-                <Search className="mb-2 h-6 w-6 opacity-40" />
-                <p className="text-sm">Nada encontrado com esse filtro.</p>
+                {searchingServer ? (
+                  <>
+                    <Loader2 className="mb-2 h-6 w-6 animate-spin opacity-60" />
+                    <p className="text-sm">Procurando no histórico…</p>
+                  </>
+                ) : (
+                  <>
+                    <Search className="mb-2 h-6 w-6 opacity-40" />
+                    <p className="text-sm">Nada encontrado com esse filtro.</p>
+                    {search.trim().length >= 2 && (
+                      <p className="mt-1 text-xs">
+                        Sem conversa com esse termo — veja na <b>Agenda de contatos</b>.
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
@@ -1260,6 +1337,18 @@ export function WhatsAppInbox() {
                   Mostrando {Math.min(visibleCount, visibleItems.length)} de {visibleItems.length} · Carregar mais
                 </button>
               </div>
+            )}
+
+            {/* A lista carrega só as mais recentes: dizer isso em voz alta
+                evita a sensação de "sumiu conversa" — o que está fora do topo
+                aparece pela busca, que agora vai ao banco (27/08/2026). */}
+            {!tagFilterActive && conversationsTotal > conversations.length && conversations.length > 0 && (
+              <p className="px-3 pb-1 pt-2 text-center text-[10px] leading-relaxed text-[#7fae9c]">
+                Mostrando as {conversations.length.toLocaleString('pt-BR')} conversas mais recentes
+                de {conversationsTotal.toLocaleString('pt-BR')}.
+                <br />
+                Use a <b>busca</b> acima para achar as anteriores — ela procura em todo o histórico.
+              </p>
             )}
             </>)}
           </div>

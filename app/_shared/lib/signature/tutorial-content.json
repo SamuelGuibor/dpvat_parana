@@ -1,0 +1,60 @@
+{
+  "_comentario": [
+    "Conteúdo do tutorial da página /assinar/<token>, em formato de CHAT: cada",
+    "etapa é uma sequência de balõezinhos curtos, como mensagens de WhatsApp.",
+    "",
+    "Este arquivo é a ÚNICA fonte da verdade — é lido pela página (SignFlow.tsx)",
+    "e pelo gerador de voz (scripts/gerar-vozes.mjs). Editou o texto aqui?",
+    "Rode `npm run sign:voz` de novo, senão a voz fica dizendo o texto antigo.",
+    "",
+    "Regra de escrita: frase curta, uma ideia por balão, sem jargão. Quem lê",
+    "isso muitas vezes lê com dificuldade — escreva como você falaria."
+  ],
+  "etapas": {
+    "1": {
+      "emoji": "👋",
+      "titulo": "Como funciona",
+      "mensagens": [
+        "Oi! Eu vou te acompanhar aqui, passo a passo. 😊",
+        "Assinar leva uns 2 minutinhos, tudo pelo celular. Você não precisa instalar nada, nem ir ao cartório.",
+        "Dá o play no vídeo aqui embaixo pra ver como é. Depois é só tocar no botão verde Começar."
+      ]
+    },
+    "2": {
+      "emoji": "📄",
+      "titulo": "Seus documentos",
+      "mensagens": [
+        "Estes são os documentos que você vai assinar.",
+        "Role a telinha pra ler com calma. Se preferir, toque em Baixar para ler depois — dá pra mostrar pra alguém de confiança.",
+        "Quando terminar, toque no botão verde Já vi, continuar."
+      ]
+    },
+    "3": {
+      "emoji": "✍️",
+      "titulo": "Sua assinatura",
+      "mensagens": [
+        "Agora é a sua assinatura!",
+        "Assine com o dedo no quadro branco, do mesmo jeito que você assinaria num papel.",
+        "Não ficou boa? Toque em Apagar e faça de novo, sem pressa.",
+        "Se for mais fácil, toque em Digitar nome que a gente escreve por você."
+      ]
+    },
+    "4": {
+      "emoji": "🔢",
+      "titulo": "Confirme que é você",
+      "mensagens": [
+        "Falta só uma coisinha: eu mandei 6 números no seu WhatsApp.",
+        "Abra a conversa, copie o código e volte aqui. O botão Colar código preenche sozinho pra você.",
+        "Aí é só tocar em Assinar agora e pronto! ✅"
+      ]
+    },
+    "5": {
+      "emoji": "✅",
+      "titulo": "Assinado",
+      "mensagens": [
+        "Pronto, sua assinatura foi registrada! Muito obrigada.",
+        "Agora um atendente da nossa equipe continua com você pelo WhatsApp. Pode ficar tranquilo."
+      ]
+    }
+  }
+}

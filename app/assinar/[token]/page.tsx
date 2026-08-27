@@ -3,9 +3,10 @@ import { loadByToken } from "@/app/_shared/lib/signature/tokens";
 import { SignFlow } from "./SignFlow";
 
 // Página PÚBLICA de assinatura. Sem login, sem app, sem cadastro: o token do
-// link é a credencial. Tudo o que o cliente precisa fazer cabe em 6 telas, uma
-// decisão por vez — muita gente aqui não lê bem, então cada passo tem botão de
-// áudio e nenhuma decisão depende de ler um parágrafo.
+// link é a credencial. Tudo o que o cliente precisa fazer cabe em 5 telas, uma
+// decisão por vez — muita gente aqui não lê bem, então a abertura traz um
+// tutorial (sempre) com vídeo, cada passo tem botão de áudio e nenhuma decisão
+// depende de ler um parágrafo.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // carimbar o PDF leva alguns segundos

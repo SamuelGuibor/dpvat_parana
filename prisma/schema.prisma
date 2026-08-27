@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   // Runtime usa o endpoint POOLED do Neon (conexões rápidas e estáveis);
   // o Prisma CLI (migrations) usa a conexão direta via DIRECT_URL.
   url       = env("DATABASE_URL")
@@ -220,14 +220,14 @@ model ChatRead {
 // Canal customizado (privado por natureza): só os membros veem/escrevem.
 // Os canais "general" e "dm:*" NÃO têm linha aqui — são tratados por convenção.
 model ChatChannel {
-  id          String              @id @default(cuid())
-  name        String
-  createdById String
-  createdAt   DateTime            @default(now())
+  id           String              @id @default(cuid())
+  name         String
+  createdById  String
+  createdAt    DateTime            @default(now())
   // "Modo aviso": quando true, só o dono (createdById) pode enviar mensagens —
   // os demais membros só leem (tipo mural/anúncios). Alternável só pelo dono.
-  announceOnly Boolean            @default(false)
-  members     ChatChannelMember[]
+  announceOnly Boolean             @default(false)
+  members      ChatChannelMember[]
 
   @@map("chat_channels")
 }
@@ -331,21 +331,21 @@ model Label {
 }
 
 model Automation {
-  id             String            @id @default(cuid())
+  id             String           @id @default(cuid())
   name           String
   // Categoria/setor livre pra organizar a lista (ex.: "Roteiro", "WhatsApp",
   // "Prazos"). Sem valor fixo no schema — o filtro na UI é sobre os valores
   // já usados.
   category       String?
-  isActive       Boolean           @default(true)
+  isActive       Boolean          @default(true)
   triggerLabelId String
-  cardType       String            @default("both")
-  conditionLogic String            @default("AND")
-  conditions     Json              @default("[]")
-  actions        Json              @default("[]")
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  triggerLabel   Label             @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
+  cardType       String           @default("both")
+  conditionLogic String           @default("AND")
+  conditions     Json             @default("[]")
+  actions        Json             @default("[]")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  triggerLabel   Label            @relation(fields: [triggerLabelId], references: [id], onDelete: Cascade)
   fires          AutomationFire[]
 
   @@map("automations")
@@ -606,57 +606,57 @@ model WhatsAppNumber {
 // são referências soltas, sem FK, para não criar cascade com dados de
 // clientes).
 model WhatsAppContact {
-  id             String                @id @default(cuid())
-  phone          String // E.164, ex: 5541999999999
+  id                String                @id @default(cuid())
+  phone             String // E.164, ex: 5541999999999
   // Número da empresa que atende este contato. Null só em linha legada ainda
   // não backfillada (o ingest "adota" a linha na primeira mensagem nova).
-  numberId       String?
-  name           String?
-  userId         String?
-  processId      String?
-  optedOut       Boolean               @default(false)
+  numberId          String?
+  name              String?
+  userId            String?
+  processId         String?
+  optedOut          Boolean               @default(false)
   // Opt-in documentado (exigência anti-spam da Meta): quando e como o cliente
   // aceitou receber mensagens. Preenchido automaticamente na 1ª mensagem
   // recebida ("inbound"). Sem opt-in, envio proativo fora da janela de 24h é
   // pulado (dentro da janela sempre pode, pois o cliente acabou de escrever).
-  optedInAt      DateTime?
-  optInSource    String? // inbound | manual
+  optedInAt         DateTime?
+  optInSource       String? // inbound | manual
   // Rascunho da ficha do cliente preenchida no atendimento, quando o contato
   // ainda não tem User vinculado. Vira User no "Adicionar cliente".
-  clientDraft    Json?
+  clientDraft       Json?
   // Documentos pessoais anexados na ficha antes do contato virar cliente:
   // [{ key, name, uploadedAt }]. Migram para Document real no "Adicionar cliente".
-  draftDocuments Json?
+  draftDocuments    Json?
   // Atribuição de origem (Click-to-WhatsApp ads): preenchido na PRIMEIRA
   // mensagem que chega com objeto `referral` da Meta e nunca sobrescrito
   // (first touch). adPlatform é derivado da source_url (facebook | instagram).
-  adPlatform     String?
-  adSourceType   String? // ad | post | page
-  adSourceId     String? // ID do anúncio/post na Meta
-  adSourceUrl    String?
-  adHeadline     String?
-  ctwaClid       String? // click id p/ API de Conversões
-  adReferral     Json? // payload cru do referral, para auditoria
+  adPlatform        String?
+  adSourceType      String? // ad | post | page
+  adSourceId        String? // ID do anúncio/post na Meta
+  adSourceUrl       String?
+  adHeadline        String?
+  ctwaClid          String? // click id p/ API de Conversões
+  adReferral        Json? // payload cru do referral, para auditoria
   // Ficha por IA: quais campos foram preenchidos pela IA (e quando) —
   // { "cidade": "2026-08-06T22:10:00.000Z" }. Serve só para marcar a origem na
   // ficha; quando um humano edita o campo, a marca sai.
-  aiFilledFields Json?
+  aiFilledFields    Json?
   // Hospital citado pelo cliente. A IA NUNCA preenche o campo hospital (é um
   // select com cadastro próprio) — deixa a dica aqui para o atendente escolher
   // a opção certa na mão.
-  hospitalHint   String?
+  hospitalHint      String?
   // Último estágio do funil reportado à API de Conversões da Meta (dedupe:
   // não reenvia o mesmo estágio pro mesmo lead). Ex.: LeadQualificado.
-  metaLeadStage   String?
-  metaLeadStageAt DateTime?
+  metaLeadStage     String?
+  metaLeadStageAt   DateTime?
   // Origem de importação em massa ("botconversa" = planilha da migração de
   // 18/08/2026). Contato marcado NUNCA cai no bot: vai direto pra fila humana
   // com a nota de validação (ver service.ts).
-  importSource   String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  conversation   WhatsAppConversation?
-  messages       WhatsAppMessage[]
+  importSource      String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  conversation      WhatsAppConversation?
+  messages          WhatsAppMessage[]
   signatureRequests SignatureRequest[]
 
   @@unique([numberId, phone])
@@ -671,19 +671,19 @@ model WhatsAppContact {
 // manifesto de auditoria → anexado ao card → conversa volta pra fila para
 // VALIDAÇÃO humana.
 model SignatureRequest {
-  id            String    @id @default(cuid())
-  contactId     String
+  id        String @id @default(cuid())
+  contactId String
   // extracao_falhou | confirmando | confirmacao_expirada | aguardando |
   // visualizado | assinado | validado | recusado | expirado | erro | cancelado
-  status        String    @default("aguardando")
+  status    String @default("aguardando")
 
   // --- link público --------------------------------------------------------
-  token         String    @unique // 32 bytes aleatórios; vira /assinar/<token>
-  expiresAt     DateTime // 7 dias — link vencido mostra tela amigável
+  token     String   @unique // 32 bytes aleatórios; vira /assinar/<token>
+  expiresAt DateTime // 7 dias — link vencido mostra tela amigável
 
   // --- origem (bot x equipe) ----------------------------------------------
   // bot | manual_card | manual_inbox | manual_offline
-  origin        String    @default("bot")
+  origin        String  @default("bot")
   createdById   String?
   createdByName String?
   // bot | atendente | nao_enviado (só gerou o link/PDF, entrega manual)
@@ -713,19 +713,19 @@ model SignatureRequest {
   audit         Json?
 
   // --- ciclo ---------------------------------------------------------------
-  confirmRounds Int       @default(0)
-  remindersSent Int       @default(0)
+  confirmRounds  Int             @default(0)
+  remindersSent  Int             @default(0)
   nextReminderAt DateTime?
-  sentAt        DateTime?
-  viewedAt      DateTime?
-  signedAt      DateTime?
-  validatedAt   DateTime?
-  validatedById String?
-  refusedReason String?
-  error         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  contact       WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sentAt         DateTime?
+  viewedAt       DateTime?
+  signedAt       DateTime?
+  validatedAt    DateTime?
+  validatedById  String?
+  refusedReason  String?
+  error          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  contact        WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([status, nextReminderAt])
   @@index([contactId, createdAt])
@@ -733,56 +733,56 @@ model SignatureRequest {
 }
 
 model WhatsAppConversation {
-  id              String                     @id @default(cuid())
-  contactId       String                     @unique
+  id               String                     @id @default(cuid())
+  contactId        String                     @unique
   // Denormalizado do contato (o dashboard filtra conversas por número direto).
-  numberId        String?
+  numberId         String?
   // "standby" (28/07/2026): cliente sumiu no meio da triagem — em vez de
   // fechar, entra no ciclo de recuperação (até 3 provocações em ~3 dias).
-  status          String                     @default("bot") // bot | queued | human | standby | closed
-  assignedToId    String?
+  status           String                     @default("bot") // bot | queued | human | standby | closed
+  assignedToId     String?
   // Só relevante quando status="closed": null/false = não qualificada
   // (default), true = qualificada. Decidido no botão de encerrar ou pela IA.
-  qualified       Boolean?
+  qualified        Boolean?
   // Desfecho do atendimento (categoria de encerramento decidida pela IA ou
   // pelo atendente): qualificado | nao_qualificado | perguntas | novo_acidente
   // | transferido | sem_resposta (esgotou o ciclo de recuperação sem retorno).
   // Null enquanto em andamento.
-  closeCategory   String?
+  closeCategory    String?
   // Ciclo de RECUPERAÇÃO (status "standby"): provocações enviadas pelo cron
   // pra resgatar quem sumiu no meio da triagem. O contador NÃO zera quando o
   // cliente responde (pausa e retoma se ele sumir de novo); só zera no
   // desfecho real (qualificou/encerrou). Máx. 3 tentativas.
-  recoveryAttempts Int                       @default(0)
+  recoveryAttempts Int                        @default(0)
   recoveryNextAt   DateTime? // quando o cron pode disparar a próxima provocação
   recoveryOutcome  String? // recuperado | esgotado | opt_out (último desfecho do ciclo)
   // Cérebro da IA (persistido por conversa; o microserviço é stateless):
-  botMemory       String? // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
-  botState        String? // etapa da conversa (triagem_seguro, coleta_cpf...)
-  botFailCount    Int                        @default(0) // "não entendi" seguidos; 2 → escala pra humano
-  botNudge30At    DateTime? // "ainda está aí?" enviado (silêncio de 30min)
-  botNudge24At    DateTime? // follow-up de ~24h enviado
+  botMemory        String? // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
+  botState         String? // etapa da conversa (triagem_seguro, coleta_cpf...)
+  botFailCount     Int                        @default(0) // "não entendi" seguidos; 2 → escala pra humano
+  botNudge30At     DateTime? // "ainda está aí?" enviado (silêncio de 30min)
+  botNudge24At     DateTime? // follow-up de ~24h enviado
   // Urgência detectada pela IA — destaca a conversa no inbox até um atendente
   // assumir ou encerrar.
-  urgent          Boolean                    @default(false)
+  urgent           Boolean                    @default(false)
   // SLA da fila de espera: quando entrou na fila e quando o último alerta de
   // "cliente esperando demais" foi disparado pelo cron (evita spam).
-  queuedAt        DateTime?
-  queueAlertAt    DateTime?
+  queuedAt         DateTime?
+  queueAlertAt     DateTime?
   // Último alerta de FALHA DE ENTREGA (status "failed" da Meta ou mensagem
   // parada em "sent" sem "delivered" = provável bloqueio/número errado) —
   // debounce para não repetir o aviso. O envio ao número NÃO é bloqueado:
   // a equipe é avisada para verificar número/bloqueio/janela de 24h.
-  deliveryAlertAt DateTime?
-  lastMessageAt   DateTime                   @default(now())
+  deliveryAlertAt  DateTime?
+  lastMessageAt    DateTime                   @default(now())
   // Legado: marcador global de leitura (mantido como fallback na migração
   // para leitura POR ATENDENTE — ver WhatsAppConversationRead).
-  lastReadAt      DateTime?
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  contact         WhatsAppContact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  tags            WhatsAppConversationTag[]
-  reads           WhatsAppConversationRead[]
+  lastReadAt       DateTime?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  contact          WhatsAppContact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tags             WhatsAppConversationTag[]
+  reads            WhatsAppConversationRead[]
 
   @@index([status])
   @@index([assignedToId])
@@ -921,47 +921,47 @@ model WhatsAppFlow {
 // faltou) é o que, mais tarde, será destilado no playbook injetado no prompt do
 // bot — ver app/_shared/lib/whatsapp/brain.ts.
 model WhatsAppReview {
-  id             String    @id @default(cuid())
-  contactId      String
-  conversationId String?
+  id                 String    @id @default(cuid())
+  contactId          String
+  conversationId     String?
   // Ponteiro para o snapshot imutável no S3 (fonte da verdade do conteúdo).
-  s3Key          String    @unique
+  s3Key              String    @unique
   // ---- Metadados copiados do snapshot (para filtrar/ordenar sem ler o S3) ---
-  contactName    String?
-  contactPhone   String
-  closeCategory  String?
-  qualified      Boolean?
+  contactName        String?
+  contactPhone       String
+  closeCategory      String?
+  qualified          Boolean?
   // Como o atendimento terminou: bot_disqualify | bot_resolve | cron_silencio |
   // manual. Diz se quem decidiu foi a IA ou um humano.
-  closedReason   String
-  messageCount   Int       @default(0)
+  closedReason       String
+  messageCount       Int       @default(0)
   // false = um atendente assumiu em algum momento (a conversa não é 100% da IA).
-  botOnly        Boolean   @default(true)
+  botOnly            Boolean   @default(true)
   // ---- Julgamento humano ---------------------------------------------------
-  status         String    @default("pendente") // pendente | revisado
-  verdict        String? // aprovado | parcial | reprovado
-  comment        String? // o que faltou / por que estava correto
-  errorTags      String[]  @default([])
+  status             String    @default("pendente") // pendente | revisado
+  verdict            String? // aprovado | parcial | reprovado
+  comment            String? // o que faltou / por que estava correto
+  errorTags          String[]  @default([])
   // "Era assim que devia ter respondido" — o campo mais valioso para treino.
-  correctReply   String?
-  reviewerId     String?
-  reviewerName   String?
-  reviewedAt     DateTime?
+  correctReply       String?
+  reviewerId         String?
+  reviewerName       String?
+  reviewedAt         DateTime?
   // ---- Lição destilada (passo A do cérebro) --------------------------------
   // Extraída pela IA logo após o julgamento: o comentário livre do supervisor
   // vira uma regra curta e generalizável. Vazia/nula é resultado LEGÍTIMO —
   // aprovação sem nada notável não deve virar regra (encheria o playbook de
   // obviedade). O supervisor pode corrigir o texto na tela.
-  lesson         String?
+  lesson             String?
   // Etapas da conversa em que a lição se aplica (triagem_seguro, coleta_cpf...).
   // É por aqui que a busca de exemplos por estado vai funcionar, sem embeddings.
-  lessonStates   String[]  @default([])
+  lessonStates       String[]  @default([])
   // Seção do playbook: QUALIFICACAO | CONTEXTO | TOM | INFORMACAO |
   // ENCAMINHAMENTO | RITMO | OUTRO.
-  lessonSection  String?
+  lessonSection      String?
   // true quando o humano reescreveu a lição — sinal de que a extração errou,
   // útil para calibrar o prompt de destilação depois.
-  lessonEdited   Boolean   @default(false)
+  lessonEdited       Boolean   @default(false)
   // ---- Autonomia futura ----------------------------------------------------
   // Pré-veredito sugerido pela própria IA (fase 5). Nulo enquanto a revisão for
   // 100% manual — o humano continua sendo quem decide.
@@ -972,11 +972,11 @@ model WhatsAppReview {
   // julgamento. As revisões julgadas mais recentes viram o bloco "EXEMPLOS
   // REVISADOS PELA EQUIPE" do system prompt do bot — few-shot com atendimentos
   // reais aprovados/reprovados. Null = não entra como exemplo.
-  exampleExcerpt String?
+  exampleExcerpt     String?
   // Marca quando esta review já foi absorvida por uma versão do playbook.
-  distilledAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  distilledAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([status, createdAt])
   @@index([contactId])
@@ -1087,31 +1087,31 @@ model WhatsAppInstructions {
 }
 
 model WhatsAppTemplate {
-  id          String  @id @default(cuid())
+  id              String   @id @default(cuid())
   // Templates pertencem à WABA — cada número/WABA tem seu próprio catálogo.
   // Null = catálogo do número default (legado).
-  numberId    String?
-  name        String // nome aprovado na Meta
-  language    String  @default("pt_BR")
-  bodyVars    Int     @default(0)
+  numberId        String?
+  name            String // nome aprovado na Meta
+  language        String   @default("pt_BR")
+  bodyVars        Int      @default(0)
   // Texto de referência com {{1}} {{2}}... só pra equipe saber o que digitar
   // em cada variável — não é enviado à Meta (ela já tem o template aprovado).
-  bodyPreview String?
+  bodyPreview     String?
   // Ciclo de vida na Meta (03/08/2026): antes só existiam os APPROVED aqui,
   // porque a sincronização descartava o resto — quem criava um template não
   // tinha como acompanhar a análise. Agora espelhamos todos os status.
   // APPROVED | PENDING | REJECTED | PAUSED | DISABLED
-  status      String  @default("APPROVED")
+  status          String   @default("APPROVED")
   // UTILITY | MARKETING | AUTHENTICATION — a Meta exige na criação e reprova
   // quando o conteúdo não bate com a categoria escolhida.
-  category    String  @default("UTILITY")
+  category        String   @default("UTILITY")
   // Motivo devolvido pela Meta quando status=REJECTED (para a equipe corrigir
   // e reenviar sem adivinhar).
-  rejectedReason String?
+  rejectedReason  String?
   // Id do template na Graph API — chega na criação e no webhook de status.
-  metaId      String?
+  metaId          String?
   // Cabeçalho de TEXTO (a Meta permite no máx. 1 variável e 60 caracteres).
-  headerText  String?
+  headerText      String?
   // Cabeçalho de MÍDIA (16/08/2026): formato aprovado na Meta (TEXT | IMAGE |
   // VIDEO | DOCUMENT | null = sem cabeçalho). A mídia padrão enviada em cada
   // disparo fica no S3 (headerMediaKey) — a Meta exige a mídia em TODO envio,
@@ -1119,9 +1119,9 @@ model WhatsAppTemplate {
   headerFormat    String?
   headerMediaKey  String?
   headerMediaType String?
-  footerText  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  footerText      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 
   @@unique([numberId, name])
   @@map("whatsapp_templates")
@@ -1137,12 +1137,12 @@ model AppSetting {
 }
 
 model Botconversa {
-  id        String    @id @default(cuid())
-  nome      String
-  evento    String
-  telefone  String
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
+  id         String    @id @default(cuid())
+  nome       String
+  evento     String
+  telefone   String
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
   // Migração Botconversa → sistema próprio: a equipe marca manualmente os
   // leads já tratados (aba "BotConversa" do Espaço de Trabalho).
   marcado    Boolean   @default(false)
@@ -1188,7 +1188,7 @@ model PontoAdjustment {
   id          String   @id @default(cuid())
   userId      String
   date        String // chave "YYYY-MM-DD" (Brasília)
-  minutes     Int    // com sinal: compensação < 0, abono > 0
+  minutes     Int // com sinal: compensação < 0, abono > 0
   kind        String   @default("compensation") // compensation | credit
   note        String?
   createdById String
@@ -1301,4 +1301,33 @@ model ProjectCost {
   @@index([chargedAt])
   @@index([service])
   @@map("project_costs")
+}
+
+// Agenda de EVENTOS da equipe (27/08/2026) — o "Eventos" do Discord aplicado
+// ao escritório: horário em que um cliente virá, uma perícia, uma audiência.
+// Fica num ícone do cabeçalho da nova-dash, com contador do que vem hoje.
+//
+// Horário sempre em UTC no banco (DateTime do Prisma); a montagem do dia/hora
+// exibido passa por app/_shared/utils/date-br.ts, como o resto do CRM.
+model Event {
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  // Início obrigatório; fim opcional (evento "às 14h" sem duração definida).
+  startsAt      DateTime
+  endsAt        DateTime?
+  // Onde: "Escritório", "Fórum de Curitiba", link de reunião...
+  location      String?
+  // Cliente do compromisso. O vínculo com o card é opcional — clientName
+  // sozinho já serve pra quem só quer anotar o nome.
+  clientName    String?
+  userId        String?
+  processId     String?
+  createdById   String
+  createdByName String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([startsAt])
+  @@map("events")
 }

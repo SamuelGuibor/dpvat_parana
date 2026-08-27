@@ -24,7 +24,10 @@ const OPT_OUT_EXACT = /^(descadastr\w*|stop|unsubscribe|sair|cancelar\s+inscrica
 
 // Frases claras de descadastro em qualquer ponto do texto.
 const OPT_OUT_PATTERNS: RegExp[] = [
-  /\b(pare?|para|parem|parar)\s+(de\s+)?(me\s+)?(mandar|enviar|manda|envia|encaminhar|receber)/,
+  // O "de" é OBRIGATÓRIO: sem ele, "para" vira a preposição e frases normais
+  // como "dá PARA ENVIAR por SMS?" casavam como descadastro (falso positivo
+  // real de 25/08: cliente perguntou do código e foi marcado opt-out).
+  /\b(pare|para|parem|parar)\s+de\s+(me\s+)?(mandar|enviar|manda|envia|encaminhar|receber)/,
   /\b(nao|nunca)\s+quero\s+(mais\s+)?(receber|essas mensagens|ser incomodad)/,
   /\b(nao|nunca)\s+me\s+(mande|manda|mandem|envie|envia|enviem|perturbe|perturbem|procure|procurem)/,
   /\bsair\s+d(a|essa)\s+lista/,

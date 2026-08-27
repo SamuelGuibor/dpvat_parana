@@ -6,10 +6,13 @@
 // category null e caem em OUTROS — a não ser que o nome deixe a pasta óbvia,
 // e aí inferCategory() resolve (também usado no backfill da migration).
 
+// A ORDEM aqui é a ordem em que a aba Arquivos exibe as pastas. As três
+// primeiras seguem a ordem de conferência da equipe (27/08/2026):
+// identificação → procuração → hipossuficiência.
 export const DOCUMENT_CATEGORIES = [
+  { id: 'IDENTIFICACAO', label: 'DOCUMENTO DE IDENTIFICAÇÃO' },
   { id: 'PROCURACAO', label: 'PROCURAÇÃO' },
   { id: 'HIPOSSUFICIENCIA', label: 'DECLARAÇÃO DE HIPOSSUFICIÊNCIA' },
-  { id: 'IDENTIFICACAO', label: 'DOCUMENTO DE IDENTIFICAÇÃO' },
   { id: 'EXAME_MEDICO', label: 'EXAME MÉDICO' },
   { id: 'DOCS_INSS', label: 'DOCS INSS' },
   { id: 'PROCESSO', label: 'PROCESSO' },
@@ -45,9 +48,14 @@ function normalize(text: string): string {
 // antes de tudo porque o roteiro costuma citar processo/INSS no nome.
 const PATTERNS: { id: DocumentCategoryId; re: RegExp }[] = [
   { id: 'ROTEIRO', re: /ROTEIRO/ },
-  { id: 'PROCURACAO', re: /PROCURA/ },
+  // O KIT previdenciário É a procuração + contrato: vai pra PROCURAÇÃO, e não
+  // pra OUTROS como caía antes (27/08/2026).
+  { id: 'PROCURACAO', re: /PROCURA|\bKIT\b/ },
   { id: 'HIPOSSUFICIENCIA', re: /HIPOSSUFICI|HIPO SUFICI|DECLARACAO DE HIPO/ },
-  { id: 'DOCS_INSS', re: /\bINSS\b|\bCNIS\b|MEU ?INSS|CARTA DE CONCESSAO|EXTRATO PREVIDENCIARIO|SENHA GOV/ },
+  // DOCS INSS vem ANTES de EXAME MÉDICO de propósito: laudo/perícia do INSS é
+  // documento previdenciário e fica na pasta do INSS, não junto dos exames do
+  // hospital (27/08/2026).
+  { id: 'DOCS_INSS', re: /\bINSS\b|\bCNIS\b|MEU ?INSS|CARTA DE CONCESSAO|EXTRATO PREVIDENCIARIO|SENHA GOV|PERICI|\bSABI\b|COMUNICADO DE DECISAO|COMUNICACAO DE DECISAO|AUXILIO ?(DOENCA|ACIDENTE|POR INCAPACIDADE)|\bBPC\b|\bLOAS\b|APOSENTADORIA|AFASTAMENTO E SALARIOS|BENEFICIO|\bNB\b|\bDIB\b|\bDER\b/ },
   { id: 'EXAME_MEDICO', re: /EXAME|LAUDO|PRONTUARIO|ATESTADO|MEDIC|RAIO ?X|RESSONANCIA|TOMOGRAFIA|ULTRASSOM|RECEITUARIO/ },
   { id: 'IDENTIFICACAO', re: /\bRG\b|\bCNH\b|IDENTIDADE|IDENTIFICACAO|\bCPF\b|DOC(UMENTO)? PESSOAL|CERTIDAO DE (NASCIMENTO|CASAMENTO)/ },
   { id: 'PROCESSO', re: /PROCESSO|PETICAO|SENTENCA|DESPACHO|ACAO JUDICIAL|CONTRATO/ },

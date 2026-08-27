@@ -24,8 +24,6 @@ import { verifyUrlFor } from "./tokens";
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
-export const KIT_TEMPLATE_ASSINATURA = "_KIT_PREV_CSS_ASSINATURA.docx";
-
 /** Tudo o que o cliente assina, na ordem em que aparece no PDF final. */
 export interface SignatureTemplateMeta {
   file: string;
@@ -38,13 +36,13 @@ export interface SignatureTemplateMeta {
 
 export const SIGNATURE_TEMPLATES: SignatureTemplateMeta[] = [
   {
-    file: KIT_TEMPLATE_ASSINATURA,
+    file: "KIT_PREV_CSS_ASSINATURA.docx",
     slug: "kit",
-    label: "KIT previdenciário — procuração, contrato e declaração",
+    label: "KIT previdenciário — procuração e contrato",
     fileName: "KIT previdenciário (assinado).pdf",
   },
   {
-    file: "PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURA.docx",
+    file: "-PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURA.docx",
     slug: "proc-curitiba",
     label: "Procuração específica — Curitiba",
     fileName: "Procuração específica Curitiba (assinada).pdf",
@@ -54,6 +52,12 @@ export const SIGNATURE_TEMPLATES: SignatureTemplateMeta[] = [
     slug: "proc-taynara",
     label: "Procuração específica — Dra. Taynara",
     fileName: "Procuração específica Taynara (assinada).pdf",
+  },
+  {
+    file: "DECLARACAO_DE_HIPOSSUFICIENCIA_ASSINATURA.docx",
+    slug: "decl-hipossuficiencia",
+    label: "Declaração de hipossuficiência",
+    fileName: "Declaração de hipossuficiência (assinada).pdf",
   },
 ];
 
@@ -72,7 +76,7 @@ export interface SignaturePart {
   signedKey?: string;
 }
 
-/** Linhas de assinatura do cliente: 3 no KIT + 2 na Curitiba + 3 na Taynara. */
+/** Linhas do cliente: 2 no KIT + 2 na Curitiba + 3 na Taynara + 1 na hipossuficiência. */
 export const EXPECTED_SIGNATURE_SPOTS = 8;
 
 const ANCHOR = "assinatura_cliente";
@@ -122,7 +126,7 @@ async function convertDocx(docx: Buffer): Promise<Buffer> {
 }
 
 /**
- * Preenche os 3 templates com âncoras, converte cada um e junta tudo em UM
+ * Preenche os templates com âncoras, converte cada um e junta tudo em UM
  * PDF (o cliente lê e assina o pacote de uma vez). Devolve também as
  * FRONTEIRAS de página de cada documento — gravadas no ciclo, elas permitem
  * separar o PDF assinado de volta em um arquivo por documento.

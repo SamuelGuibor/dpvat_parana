@@ -1,6 +1,6 @@
 // Gera as variantes *_ASSINATURA.docx das procurações específicas, inserindo a
 // âncora invisível <<assinatura_cliente>> (branca, 6pt) em cada linha de
-// assinatura — mesmo padrão do _KIT_PREV_CSS_ASSINATURA.docx — e garante o
+// assinatura — mesmo padrão do KIT_PREV_CSS_ASSINATURA.docx — e garante o
 // [[name]] impresso embaixo das linhas do KIT.
 //
 // Os templates desenham a "linha de assinatura" de 3 jeitos diferentes, e cada
@@ -19,7 +19,18 @@ import PizZip from "pizzip";
 const TEMPLATES = [
   "-PROCURAÇÃO-ESPECÍFICA_CURITIBA.docx",
   "-PROCURAÇÃO-ESPECÍFICA-TAYNARA.docx",
+  "DECLARACAO_DE_HIPOSSUFICIENCIA.docx",
 ];
+
+// Quantas âncoras cada template PRECISA ter no fim. Bate o resultado com o
+// esperado: template reeditado que perde uma linha de assinatura (ou ganha uma)
+// derruba o script aqui, e não silenciosamente no meio do ciclo de assinatura.
+// A soma com as 2 âncoras do KIT tem que dar EXPECTED_SIGNATURE_SPOTS.
+const EXPECTED = {
+  "-PROCURAÇÃO-ESPECÍFICA_CURITIBA.docx": 2,
+  "-PROCURAÇÃO-ESPECÍFICA-TAYNARA.docx": 3,
+  "DECLARACAO_DE_HIPOSSUFICIENCIA.docx": 1,
+};
 
 const ANCHOR_RUN =
   '<w:r><w:rPr><w:color w:val="FFFFFF"/><w:sz w:val="12"/><w:szCs w:val="12"/></w:rPr>' +
@@ -161,7 +172,7 @@ function addNameUnderAnchoredLines(documentXml, label) {
   return out;
 }
 
-const KIT = "_KIT_PREV_CSS_ASSINATURA.docx";
+const KIT = "KIT_PREV_CSS_ASSINATURA.docx";
 {
   const kitPath = path.join("templates-assinatura", KIT);
   const zip = new PizZip(fs.readFileSync(kitPath));
@@ -176,8 +187,12 @@ for (const name of TEMPLATES) {
   const zip = new PizZip(fs.readFileSync(src));
   const doc = zip.file("word/document.xml").asText();
   const { xml, anchored } = addAnchors(doc, name);
-  if (!anchored) {
-    console.error(`ERRO: nenhuma âncora inserida em ${name} — conferir o template.`);
+  const esperado = EXPECTED[name];
+  if (anchored !== esperado) {
+    console.error(
+      `ERRO: ${name} recebeu ${anchored} âncora(s), esperado ${esperado} — ` +
+      "conferir o template (e EXPECTED_SIGNATURE_SPOTS em signature/pdf.ts).",
+    );
     process.exitCode = 1;
     continue;
   }

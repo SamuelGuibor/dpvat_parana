@@ -11,7 +11,9 @@
     "test": "vitest run",
     "sign:seed": "vitest run tests/signature-seed.smoke.test.ts",
     "sign:pdf": "vitest run tests/signature-pdf.smoke.test.ts",
-    "sign:templates": "vitest run tests/signature-templates.smoke.test.ts"
+    "sign:templates": "vitest run tests/signature-templates.smoke.test.ts",
+    "sign:flow": "vitest run tests/signature-flow-seed.smoke.test.ts",
+    "sign:voz": "node scripts/gerar-vozes.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

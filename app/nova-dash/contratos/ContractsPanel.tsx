@@ -64,6 +64,25 @@ const FILTROS = [
   { chave: "expirado", rotulo: "Vencido" },
 ];
 
+// Como o cliente usou o TUTORIAL da página de assinatura. Serve pra saber quem
+// pulou a explicação e travou depois — esse é caso de ligar, não de insistir no
+// lembrete automático.
+const ROTULOS_DA_TRILHA: Record<string, string> = {
+  tutorial_entendi: "✅ entendeu a explicação",
+  tutorial_fechou: "✖️ fechou a explicação (pulou)",
+  tutorial_ouviu: "🔊 ouviu a explicação em voz",
+  abriu_o_link: "abriu o link",
+  leu_o_documento: "viu o documento",
+  codigo_enviado: "código enviado",
+  codigo_bloqueado: "errou o código 5x (bloqueado)",
+  pediu_ajuda: "🙋 pediu ajuda",
+  assinou: "✍️ assinou",
+};
+
+function rotuloDoPasso(passo: string): string {
+  return ROTULOS_DA_TRILHA[passo] ?? passo.replace(/_/g, " ");
+}
+
 function data(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("pt-BR", {
@@ -580,7 +599,7 @@ function PainelDetalhe({
               {detalhe.trilha.map((e, i) => (
                 <li key={i} className="flex gap-3 text-xs">
                   <span className="w-28 shrink-0 text-gray-400">{data(e.at)}</span>
-                  <span className="font-medium text-gray-800 dark:text-zinc-200">{e.passo.replace(/_/g, " ")}</span>
+                  <span className="font-medium text-gray-800 dark:text-zinc-200">{rotuloDoPasso(e.passo)}</span>
                   {e.detalhe && <span className="text-gray-400">— {e.detalhe}</span>}
                   {e.ip && <span className="ml-auto text-gray-300">{e.ip}</span>}
                 </li>

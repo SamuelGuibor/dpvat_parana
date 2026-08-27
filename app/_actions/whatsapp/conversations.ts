@@ -4,6 +4,7 @@
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
+import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
@@ -15,6 +16,11 @@ import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 // bot → queued (handoff) → human (atendente assume) → closed.
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
+
+// Quantas conversas a lista do inbox carrega de uma vez (as mais recentes)
+// e quantas a busca no servidor devolve.
+const LIST_PAGE = 1000;
+const SEARCH_PAGE = 300;
 
 /** Busca contactId + nome/telefone para anexar aos logs de auditoria. */
 async function convContact(conversationId: string) {
@@ -165,16 +171,18 @@ function mediaTypeLabel(mediaType: string): string {
   return 'Documento';
 }
 
-export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
-  const me = await requireTeamMember();
-
+// Montagem do DTO da lista, compartilhada pelas três entradas: a lista normal
+// do inbox (mais recentes), a BUSCA no servidor e a hidratação de UMA conversa
+// pelo contato. Antes só existia a lista capada — quem estava fora do topo não
+// aparecia na busca nem abria pela agenda (27/08/2026).
+async function loadConversations(
+  where: Prisma.WhatsAppConversationWhereInput | undefined,
+  take: number,
+): Promise<WhatsAppConversationDTO[]> {
   const conversations = await db.whatsAppConversation.findMany({
+    where,
     orderBy: { lastMessageAt: 'desc' },
-    // O dropdown de encerradas e o filtro por tag contam em cima DESTA lista:
-    // com take menor que o total de conversas, encerradas antigas sumiam da
-    // contagem (ex.: "Contratados" mostrava 19 de 26). 1000 cobre a base atual
-    // (~450) com folga; quando chegar perto disso, paginar de verdade.
-    take: 1000,
+    take,
     include: {
       contact: {
         select: {
@@ -361,6 +369,62 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
   });
+}
+
+/**
+ * Lista do inbox: as conversas mais recentes. O dropdown de encerradas e o
+ * filtro por tag contam em cima DESTA lista — com take menor que o total,
+ * encerradas antigas sumiam da contagem. Quem fica FORA deste topo é achável
+ * pela busca no servidor (searchWhatsAppConversations).
+ */
+export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
+  await requireTeamMember();
+  return loadConversations(undefined, LIST_PAGE);
+}
+
+/**
+ * BUSCA no servidor (27/08/2026): procura em TODAS as conversas, não só nas
+ * carregadas na lista. Casa por nome do contato, nome do CARD vinculado (o
+ * nome que a lista de fato exibe) e telefone. Sem isso, quem tinha conversa
+ * antiga simplesmente "sumia" do inbox ao ser pesquisado.
+ */
+export async function searchWhatsAppConversations(term: string): Promise<WhatsAppConversationDTO[]> {
+  await requireTeamMember();
+  const q = term.trim();
+  if (q.length < 2) return [];
+  const digits = q.replace(/\D/g, '');
+  // O nome EXIBIDO na lista é o do card quando o contato já virou cliente, e
+  // WhatsAppContact não tem relação com User (só o userId solto) — então o
+  // casamento por nome de card sai de uma busca separada em users.
+  const cardMatches = await db.user.findMany({
+    where: { name: { contains: q, mode: 'insensitive' } },
+    select: { id: true },
+    take: 300,
+  });
+  const cardIds = cardMatches.map((u) => u.id);
+  return loadConversations(
+    {
+      OR: [
+        { contact: { name: { contains: q, mode: 'insensitive' as const } } },
+        ...(cardIds.length ? [{ contact: { userId: { in: cardIds } } }] : []),
+        ...(digits.length >= 2 ? [{ contact: { phone: { contains: digits } } }] : []),
+      ],
+    },
+    SEARCH_PAGE,
+  );
+}
+
+/**
+ * Hidrata UMA conversa pelo contato — usado ao abrir alguém pela agenda ou
+ * pela busca: sem isso, contato fora do topo da lista abria a thread "vazia"
+ * porque o cabeçalho procurava a conversa dentro da lista carregada.
+ */
+export async function getWhatsAppConversationByContact(
+  contactId: string,
+): Promise<WhatsAppConversationDTO | null> {
+  await requireTeamMember();
+  const [conv] = await loadConversations({ contactId }, 1);
+  return conv ?? null;
 }
 
 export interface AttendantDTO {
