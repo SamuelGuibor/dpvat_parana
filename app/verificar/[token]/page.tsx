@@ -7,7 +7,14 @@ import Image from "next/image";
 // que ele existe, quem assinou, quando e com qual impressão digital.
 //
 // Ela mostra o MÍNIMO necessário para conferir: nome parcial, CPF mascarado,
-// datas e hashes. Nunca o documento em si nem o endereço do cliente.
+// datas e hashes — nunca o endereço do cliente.
+//
+// 27/08/2026: quando o ciclo JÁ ESTÁ assinado, a página também libera o
+// download do PDF assinado, igual à tela de pós-assinatura. O QR carrega o
+// MESMO token do link de assinatura (verifyUrlFor/signUrlFor), então quem
+// escaneia já podia baixar o arquivo por /api/signature/pdf/<token> — o botão
+// só deixa de esconder o caminho. Enquanto NÃO está assinado, nada é
+// oferecido: a versão em branco do contrato não é assunto de quem verifica.
 
 export const dynamic = "force-dynamic";
 
@@ -111,13 +118,34 @@ export default async function VerificarPage({
                 <Linha rotulo="Impressão digital do documento (SHA-256)" valor={request.documentHash ?? "—"} mono />
                 <Linha rotulo="Impressão digital do documento assinado" valor={request.signedHash ?? "—"} mono />
               </dl>
+
+              {assinado && (
+                <div className="mt-6 space-y-3">
+                  <a
+                    href={`/api/signature/pdf/${token}?download=1`}
+                    className="w-full h-14 rounded-2xl bg-emerald-600 text-white text-base font-bold flex items-center justify-center"
+                  >
+                    ⬇ Baixar os documentos assinados
+                  </a>
+                  <a
+                    href={`/api/signature/pdf/${token}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full h-12 rounded-2xl border-2 border-slate-300 text-slate-700 text-base font-semibold flex items-center justify-center"
+                  >
+                    Abrir no navegador
+                  </a>
+                </div>
+              )}
             </>
           )}
         </div>
 
         <p className="text-center text-xs text-slate-400 leading-relaxed">
           Assinatura eletrônica nos termos da MP 2.200-2/2001, art. 10, §2º e da Lei 14.063/2020.
-          Para obter uma cópia do documento, fale com o escritório.
+          {assinado
+            ? " O arquivo baixado aqui é o mesmo PDF assinado, com o manifesto de assinatura."
+            : " Para obter uma cópia do documento, fale com o escritório."}
         </p>
       </div>
     </main>

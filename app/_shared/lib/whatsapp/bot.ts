@@ -168,6 +168,10 @@ interface BotDecision {
   // (ex.: agradecimento pós-despedida). Sem esta flag, desfecho terminal com
   // reply vazio é tratado como falha da IA e recebe texto de fallback.
   silent?: boolean;
+  // O microserviço detectou e descartou raciocínio/JSON vazado no texto do
+  // cliente (27/08/2026). Sem texto, o fluxo cai pra fila humana — a flag faz
+  // o log dizer o motivo real em vez de "a IA devolveu resposta vazia".
+  leaked?: boolean;
   // Tokens gastos na chamada ao Claude (o microserviço devolve; alimenta o
   // custo semanal/mensal no dashboard do chatbot).
   usage?: BotUsage | null;
@@ -228,19 +232,81 @@ function looksLikeJsonFragment(text: string): boolean {
   return false;
 }
 
-/** Remove fragmentos de JSON vazados pela IA antes de qualquer envio. */
+// ---------------------------------------------------------------------------
+// Vazamento de RACIOCÍNIO (27/08/2026, casos Sebastião Lourenço/Edivaldo/
+// Victor): a saída é JSON válido, mas o modelo escreveu o rascunho do próprio
+// pensamento dentro do texto do cliente ("categoria: mesmo assunto...",
+// "action reply curta.", "step final", "let's write actual reply.}") — e cada
+// item de `replies` virou uma mensagem no WhatsApp. Como são frases inteiras,
+// escapavam de looksLikeJsonFragment. A correção de fundo está no
+// microserviço (campo `rationale` no schema, onde o modelo pensa de verdade);
+// este espelho aqui é a ÚLTIMA barreira antes do envio e vale mesmo com o
+// micro rodando código antigo.
+// ---------------------------------------------------------------------------
+const REASONING_PATTERNS: RegExp[] = [
+  // Rótulo interno em inglês abrindo a mensagem ("action reply curta.").
+  /^\s*(action|step|state|reply|replies|rationale|memory|final answer|thinking)/i,
+  // Rótulo de deliberação em pt-BR com dois-pontos ("categoria: ...").
+  /^\s*(categoria|avalia[çc][ãa]o|an[áa]lise|racioc[íi]nio|delibera[çc][ãa]o|decis[ãa]o|passo|nota interna|resumo interno)\s*[:=]/i,
+  // Atribuição de campo do schema no meio da prosa ("state=coleta_documentos").
+  /(state|action|closeCategory|handoffReason|flowName|replies|intent|silent|confidence|memory|rationale)\s*[:=]\s*["'\[]?[a-z_]/i,
+  // Rascunho em inglês ("let's write actual reply", "final json").
+  /(let'?s|final json|actual reply|i (should|will|need to)|we (should|need to))/i,
+  // Chave de JSON solta no meio do texto — mensagem de WhatsApp não tem { }.
+  /[{}]/,
+  // Fala SOBRE o cliente em 3ª pessoa (o bot fala COM ele, sempre "você").
+  /o cliente/i,
+  // Planejamento da própria resposta.
+  /(vou (responder|usar|mandar uma)|n[ãa]o repetir|melhor apenas|responder curto|sem repetir cobran[çc]a)/i,
+  // Degeneração de amostragem: alfabeto que não é o nosso (CJK/cirílico).
+  /[Ѐ-ӿ　-ヿ一-鿿가-힯]/,
+];
+
+/** Texto que é rascunho de raciocínio, e não mensagem pronta pro cliente. */
+function looksLikeReasoning(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return REASONING_PATTERNS.some((re) => re.test(t));
+}
+
+// Etapas em que `replies` (várias mensagens em sequência) é legítimo: só o
+// disparo do roteiro comercial, único caso previsto nas instruções.
+const SCRIPT_STATES = new Set([
+  "script_beneficio_1", "script_beneficio_2", "script_beneficio_3",
+  "script_honorarios", "script_fechamento", "pergunta_interesse",
+]);
+
+/** Remove fragmentos de JSON e raciocínio vazados pela IA antes de qualquer envio. */
 function sanitizeDecision(d: BotDecision): BotDecision {
   const rawReplies = Array.isArray(d.replies) ? d.replies : [];
-  const replies = rawReplies.filter((r) => typeof r === "string" && !looksLikeJsonFragment(r));
-  // No `reply` único só o teste estrutural: mensagem curta legítima ("Ok!")
-  // não pode ser descartada por parecer token solto.
-  const reply = typeof d.reply === "string" && d.reply && isJsonSkeleton(d.reply) ? "" : d.reply;
-  if (replies.length !== rawReplies.length || reply !== d.reply) {
+  let replies = rawReplies.filter(
+    (r) => typeof r === "string" && !looksLikeJsonFragment(r) && !looksLikeReasoning(r),
+  );
+  // No `reply` único o teste de token solto NÃO se aplica: mensagem curta
+  // legítima ("Ok!") não pode ser descartada por parecer fragmento.
+  const replyLeaked = typeof d.reply === "string" && !!d.reply
+    && (isJsonSkeleton(d.reply) || looksLikeReasoning(d.reply));
+  const reply = replyLeaked ? "" : d.reply;
+  // Uma sequência é um bloco só: se um pedaço saiu podre, o resto também não
+  // é confiável — descarta a sequência inteira.
+  const leaked = replyLeaked || replies.length !== rawReplies.length;
+  if (replies.length !== rawReplies.length) replies = [];
+  // Fora das etapas do roteiro, várias mensagens em sequência é saída
+  // degenerada: ignora `replies` e segue só com `reply`.
+  if (replies.length && !SCRIPT_STATES.has(d.state)) {
     console.warn(
-      `[WHATSAPP BOT] Resposta da IA continha fragmento(s) de JSON — descartados ${rawReplies.length - replies.length} item(ns) de replies${reply !== d.reply ? " + reply" : ""}.`,
+      `[WHATSAPP BOT] replies com ${replies.length} item(ns) fora do roteiro (state=${d.state}) — ignorado; usando só 'reply'.`,
+    );
+    replies = [];
+  }
+  if (leaked) {
+    console.error(
+      "[WHATSAPP BOT] VAZAMENTO: a IA escreveu raciocínio/JSON no texto do cliente — descartado. " +
+      `state=${d.state} | reply=${JSON.stringify((d.reply ?? "").slice(0, 300))} | ` +
+      `replies=${JSON.stringify(rawReplies.map((r) => String(r).slice(0, 200)))}`,
     );
   }
-  return { ...d, reply, replies };
+  return { ...d, reply, replies, leaked: leaked || d.leaked };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1304,7 +1370,12 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // bot, ninguém avisado). Agora joga pra fila humana com o motivo, pra um
         // atendente assumir na hora em vez de o cliente ficar sem resposta.
         if (outgoing.length === 0) {
-          await handoffToQueue(contactId, contactLabel, "IA devolveu resposta vazia (sem texto para enviar ao cliente)");
+          await handoffToQueue(
+            contactId, contactLabel,
+            decision.leaked
+              ? "a IA vazou raciocínio no lugar da resposta (texto descartado antes do envio)"
+              : "IA devolveu resposta vazia (sem texto para enviar ao cliente)",
+          );
         }
         break; // continue com resposta: só seguiu a conversa
     }
@@ -1347,6 +1418,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // sem o campo no schema); [] = veio e a IA não citou regra nenhuma.
         appliedRules: decision.appliedRules,
         hasAppliedRulesField: "appliedRules" in decision,
+        // Quantas vezes a rede de segurança de vazamento de raciocínio pegou
+        // algo — dá pra medir se o campo `rationale` resolveu de fato.
+        leaked: decision.leaked ? true : undefined,
       },
     });
 
