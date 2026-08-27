@@ -536,6 +536,7 @@ export const ArchivedCards: React.FC = () => {
             setCards((prev) => prev.filter((c) => c.id !== id));
             setSelected(null);
           }}
+          onArchive={() => { setSelected(null); load(); }}
           cardId={selected.id}
           ownerId={selected.ownerId}
           isProcess={selected.isProcess}

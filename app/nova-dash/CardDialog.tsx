@@ -29,6 +29,8 @@ import { FilesTab } from './card-dialog/FilesTab';
 import { CommentsTab } from './card-dialog/CommentsTab';
 import { IntegrationsTab } from './card-dialog/IntegrationsTab';
 import { DeleteConfirmDialog } from './card-dialog/DeleteConfirmDialog';
+import { ArchiveBar } from './card-dialog/ArchiveBar';
+import type { ArchiveStatus } from '@/app/_actions/cards/archive-card';
 
 import { getLabels } from "@/app/_actions/labels/get-labels";
 import { canUseDocIa } from '@/app/_shared/lib/doc-ia-access';
@@ -43,6 +45,11 @@ interface CardDialogProps {
   onClose: () => void;
   onUpdate: (card: ExtendedKanbanCard) => void;
   onDelete?: (id: string) => void;
+  /**
+   * Arquivou/desarquivou pelo card. O quadro tira (ou repõe) o card na hora —
+   * sem isto o card arquivado continuaria na coluna até o próximo polling.
+   */
+  onArchive?: (id: string, status: ArchiveStatus | null) => void;
   isProcess?: boolean;
   ownerId?: string;
   cardId: string;
@@ -57,7 +64,7 @@ const EDITABLE_FIELDS = [
 ] as const;
 
 export const CardDialog: React.FC<CardDialogProps> = ({
-  card, open, onClose, onUpdate, onDelete,
+  card, open, onClose, onUpdate, onDelete, onArchive,
   isProcess = false, ownerId, cardId,
 }) => {
   const [editedCard, setEditedCard] = useState<ExtendedKanbanCard>(card);
@@ -381,14 +388,31 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           </TabsContent>
         </Tabs>
 
-        <div className="flex justify-between items-center gap-2 mt-4 pt-4 border-t">
+        <div className="flex flex-wrap items-start justify-between gap-3 mt-4 pt-4 border-t">
           {perms.delete_cards ? (
-            <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setConfirmDelete(true)}>
+            <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => setConfirmDelete(true)}>
               <Trash2 className="w-4 h-4 mr-2" />
               Excluir
             </Button>
           ) : <span />}
-          <div className="flex gap-2">
+
+          {/* Arquivar: ocupa o espaço vazio do rodapé, entre Excluir e Salvar. */}
+          <ArchiveBar
+            cardId={cardId}
+            isProcess={isProcess}
+            cardName={editedCard.title}
+            current={(editedCard.archiveStatus as ArchiveStatus | null) ?? null}
+            canArchive={!!perms.archive_cards}
+            onChanged={(status) => {
+              setEditedCard((p) => ({ ...p, archiveStatus: status }));
+              onArchive?.(cardId, status);
+              // Descarta o rascunho local: o card já saiu (ou voltou) do quadro.
+              try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+              onClose();
+            }}
+          />
+
+          <div className="flex gap-2 shrink-0">
             <Button variant="outline" onClick={handleCancel} disabled={savingCard}>Cancelar</Button>
             <Button onClick={handleSave} disabled={savingCard}>
               {savingCard ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}

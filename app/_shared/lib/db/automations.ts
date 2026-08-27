@@ -43,6 +43,10 @@ export type AutomationAction = {
   waText?: string;
   waTemplateName?: string;
   waTemplateVars?: string[];
+  // Linha da empresa (WhatsAppNumber.id) que envia. Vazio = a linha é deduzida
+  // do dono do template (o catálogo é por WABA) e, sem template, vale a linha
+  // do contato / o número default.
+  waNumberId?: string;
   // Ação "move": coluna de destino. É uma ação TERMINAL — depois de mover,
   // nada mais roda para a coluna antiga; as automações da coluna de destino
   // disparam em seguida (com limite de encadeamento contra loops).

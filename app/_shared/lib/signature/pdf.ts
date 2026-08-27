@@ -42,7 +42,7 @@ export const SIGNATURE_TEMPLATES: SignatureTemplateMeta[] = [
     fileName: "KIT previdenciário (assinado).pdf",
   },
   {
-    file: "-PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURA.docx",
+    file: "PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURA.docx",
     slug: "proc-curitiba",
     label: "Procuração específica — Curitiba",
     fileName: "Procuração específica Curitiba (assinada).pdf",

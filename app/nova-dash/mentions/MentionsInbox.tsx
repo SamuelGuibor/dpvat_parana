@@ -357,7 +357,7 @@ function OriginBadge({ m }: { m: MentionDTO }) {
   }
   return (
     <span
-      title={m.targetExists ? m.targetName : 'Card apagado'}
+      title={!m.targetExists ? 'Card apagado' : m.archived ? `${m.targetName} — card arquivado` : m.targetName}
       className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold ring-1 ${
         m.targetExists
           ? 'bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-950/40 dark:text-blue-300'
@@ -369,6 +369,11 @@ function OriginBadge({ m }: { m: MentionDTO }) {
         <span className="inline-flex items-center gap-0.5 opacity-70"><Hash className="h-2.5 w-2.5" />{m.cardNumber}</span>
       )}
       <span className="truncate">{m.targetName}</span>
+      {m.targetExists && m.archived && (
+        <span className="shrink-0 rounded bg-white/70 px-1 text-[9px] font-bold uppercase tracking-wide text-gray-500 dark:bg-zinc-900/70 dark:text-zinc-400">
+          arquivado
+        </span>
+      )}
     </span>
   );
 }

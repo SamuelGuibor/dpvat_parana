@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from 'react';
 import { Input } from '@/app/_shared/ui/input';
 import { Label } from '@/app/_shared/ui/label';
-import { Calendar, Eye, EyeOff, KeyRound, Loader2, Check } from 'lucide-react';
+import { Calendar, Eye, EyeOff, KeyRound, Layers, Loader2, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { getClientAccessPassword, setClientAccessPassword } from '@/app/_actions/users/client-password';
 import type { ExtendedKanbanCard } from './types';
@@ -13,6 +13,7 @@ import {
   NACIONALIDADES,
 } from './constants';
 import { HospitalCombobox } from './HospitalCombobox';
+import { SoftSelect } from './SoftSelect';
 import { maskCpf, maskPhone, maskCep, isValidCpf, formatPhone, onlyDigits } from '@/app/_shared/utils/format';
 
 // O banco guarda só dígitos — na exibição aplicamos a máscara; ao digitar, a
@@ -32,6 +33,16 @@ interface Props {
 }
 
 const labelClass = 'text-xs font-medium text-gray-600 dark:text-zinc-400';
+// Cada serviço ganha uma cor fixa só para a bolinha do select — ajuda a bater o
+// olho e ver que serviço é sem ler o texto.
+const SERVICE_COLORS: Record<string, string> = {
+  'INSS': '#2563eb',
+  'Seguro de Vida': '#7c3aed',
+  'RCF': '#0891b2',
+  'DPVAT': '#059669',
+  'SPVAT': '#d97706',
+  'TRABALHISTA': '#db2777',
+};
 const inputClass =
   'h-9 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:border-zinc-800 dark:placeholder:text-zinc-500';
 const selectClass =
@@ -276,6 +287,38 @@ function ClientAccessPassword({ cardId, isProcess }: { cardId?: string; isProces
 export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: Props) {
   return (
     <div className="space-y-4 px-1 pb-2">
+      {/* Organização do card — Serviço e Coluna são CONFIGURAÇÃO, não dado
+          pessoal do cliente. Ficavam no fim de "Dados Pessoais", onde só quem
+          rolava a ficha inteira achava; mas os dados são preenchidos uma vez, no
+          começo, e quem abre o card depois (outro setor) quase sempre vem só
+          para MOVER de coluna. Por isso o bloco vem primeiro. */}
+      <Section title="Organização do card">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+          <SoftSelect
+            id="service"
+            label="Serviço"
+            value={editedCard.service}
+            placeholder="Selecione um serviço"
+            icon={<Layers className="h-4 w-4" />}
+            options={SERVICE_OPTIONS.map((s) => ({ value: s, label: s, color: SERVICE_COLORS[s] }))}
+            onSelect={(v) => onChange('service', v)}
+          />
+          <SoftSelect
+            id="labelId"
+            label="Coluna"
+            value={editedCard.labelId || ''}
+            placeholder="Selecione uma coluna"
+            options={labels.map((l: any) => ({ value: l.id, label: l.name, color: l.color }))}
+            onSelect={(v, opt) => {
+              onChange('labelId', v);
+              // `role` espelha o nome da coluna — quem lê o card fora do kanban
+              // depende dele, então os dois andam sempre juntos.
+              if (opt) onChange('role', opt.label);
+            }}
+          />
+        </div>
+      </Section>
+
       {/* Dados Pessoais */}
       <Section title="Dados Pessoais">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
@@ -299,27 +342,6 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
 
           <Field id="profissao" label="Profissão" value={editedCard.profissao} onChange={onChange} />
           <Field id="senha_inss" label="Senha INSS" value={editedCard.senha_inss} onChange={onChange} />
-
-          <SelectField id="service" label="Serviço" value={editedCard.service}
-            options={toOptions(SERVICE_OPTIONS)} onChange={onChange} placeholder="Selecione um serviço" />
-          <div className="space-y-1">
-            <Label htmlFor="labelId" className={labelClass}>Coluna</Label>
-            <select
-              id="labelId"
-              value={editedCard.labelId || ''}
-              onChange={(e) => {
-                const selected = labels.find((l: any) => l.id === e.target.value);
-                onChange('labelId', e.target.value);
-                if (selected) onChange('role', selected.name);
-              }}
-              className={selectClass}
-            >
-              <option value="">Selecione uma Coluna</option>
-              {labels.map((l: any) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-          </div>
         </div>
       </Section>
 

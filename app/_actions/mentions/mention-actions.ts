@@ -39,6 +39,8 @@ export interface MentionDTO {
   cardStatus: string | null;
   /** False quando o card foi apagado depois da menção. */
   targetExists: boolean;
+  /** Card fora do quadro (arquivado). Abre assim mesmo. */
+  archived: boolean;
   /** Quem foi marcado. Só vem preenchido na visão de equipe. */
   recipientId?: string;
   recipientName?: string;
@@ -108,10 +110,10 @@ async function enrich(rows: MentionRow[]): Promise<MentionDTO[]> {
       ? db.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, image: true } })
       : Promise.resolve([]),
     userCardIds.length
-      ? db.user.findMany({ where: { id: { in: userCardIds } }, select: { id: true, cardNumber: true, status: true } })
+      ? db.user.findMany({ where: { id: { in: userCardIds } }, select: { id: true, cardNumber: true, status: true, archiveStatus: true } })
       : Promise.resolve([]),
     processIds.length
-      ? db.process.findMany({ where: { id: { in: processIds } }, select: { id: true, cardNumber: true, status: true } })
+      ? db.process.findMany({ where: { id: { in: processIds } }, select: { id: true, cardNumber: true, status: true, archiveStatus: true } })
       : Promise.resolve([]),
   ]);
 
@@ -148,6 +150,9 @@ async function enrich(rows: MentionRow[]): Promise<MentionDTO[]> {
       cardNumber: card?.cardNumber ?? null,
       cardStatus: card?.status ?? null,
       targetExists: isCardMention ? !!card : true,
+      // Card arquivado ainda abre (o quadro busca nos arquivados), mas a linha
+      // avisa antes do clique — senão parece que a menção "não faz nada".
+      archived: !!card?.archiveStatus,
     };
   });
 }

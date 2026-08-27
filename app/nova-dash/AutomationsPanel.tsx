@@ -48,6 +48,7 @@ import {
   Tag,
 } from "lucide-react";
 import { listWhatsAppTemplates } from "../_actions/whatsapp/templates";
+import { listWaNumberOptions } from "../_actions/whatsapp/numbers";
 import { toast } from "sonner";
 import { useConfirm } from "@/app/_shared/ui/confirm-dialog";
 import { MentionsInput, Mention } from "react-mentions";
@@ -78,6 +79,7 @@ type Action = {
   waText?: string;
   waTemplateName?: string;
   waTemplateVars?: string[];
+  waNumberId?: string;
   moveLabelId?: string;
   tagId?: string;
 };
@@ -89,7 +91,13 @@ type WaTemplateOption = {
   name: string;
   bodyVars: number;
   bodyPreview: string | null;
+  // Linha dona do template — o catálogo é POR WABA, então um template da linha
+  // B simplesmente não existe para um contato atendido pela linha A.
+  numberId: string | null;
+  numberLabel: string | null;
 };
+
+type WaNumberOption = { id: string; label: string; displayPhone: string | null; isDefault: boolean };
 
 type AutomationData = {
   id: string;
@@ -136,7 +144,10 @@ const TIME_IN_COLUMN_OPERATORS = [
 ];
 
 const DUE_DATE_OPERATORS = [
-  { value: "beforeDueDate", label: "faltam até (dias) para vencer" },
+  // "exatamente" e não "até": a automação de 10 dias tem que bater no dia 10,
+  // não em qualquer dia de 10 pra baixo — senão um card que chega faltando 3
+  // dias dispara os avisos de 10, 5 e 2 na mesma varredura.
+  { value: "beforeDueDate", label: "faltam exatamente (dias) para vencer" },
   { value: "afterDueDate", label: "venceu há mais de (dias)" },
 ];
 
@@ -440,6 +451,7 @@ function ActionRow({
   onRemove,
   mentionUsers,
   waTemplates,
+  waNumbers,
   labels,
   triggerLabelId,
   cardTags,
@@ -450,6 +462,7 @@ function ActionRow({
   onRemove: () => void;
   mentionUsers: MentionableUser[];
   waTemplates: WaTemplateOption[];
+  waNumbers: WaNumberOption[];
   labels: Label[];
   triggerLabelId: string;
   cardTags: CardTagOption[];
@@ -467,6 +480,11 @@ function ActionRow({
   }
 
   const selectedWaTemplate = waTemplates.find((t) => t.name === action.waTemplateName) ?? null;
+  // Linha escolhida à mão que não é a dona do template = envio que a Meta
+  // recusa fora da janela de 24h. Avisa em vez de deixar falhar em silêncio.
+  const templateNumberMismatch =
+    !!action.waNumberId && !!selectedWaTemplate?.numberId &&
+    action.waNumberId !== selectedWaTemplate.numberId;
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -647,6 +665,37 @@ function ActionRow({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
+                Enviar por qual número da empresa
+              </label>
+              <Select
+                value={action.waNumberId ?? "__auto__"}
+                onValueChange={(v) => onChange({ ...action, waNumberId: v === "__auto__" ? undefined : v })}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Automático" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__auto__" className="text-xs">
+                    Automático (pelo template, ou o número que já atende o cliente)
+                  </SelectItem>
+                  {waNumbers.map((n) => (
+                    <SelectItem key={n.id} value={n.id} className="text-xs">
+                      {n.label}{n.displayPhone ? ` · ${n.displayPhone}` : ""}{n.isDefault ? " (padrão)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {templateNumberMismatch && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  O template <span className="font-mono">{selectedWaTemplate?.name}</span> pertence à linha
+                  {" "}<strong>{selectedWaTemplate?.numberLabel}</strong> — fora da janela de 24h ele só sai por ela.
+                  Escolha essa linha aqui (ou deixe no automático, que já usa a linha do template).
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-zinc-300">
                 Mensagem (enviada quando a janela de 24h está aberta)
               </label>
               <textarea
@@ -691,6 +740,7 @@ function ActionRow({
                   {waTemplates.map((t) => (
                     <SelectItem key={t.id} value={t.name} className="text-xs">
                       {t.name} {t.bodyVars > 0 ? `(${t.bodyVars} variáve${t.bodyVars > 1 ? "is" : "l"})` : ""}
+                      {t.numberLabel ? ` · ${t.numberLabel}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -914,6 +964,12 @@ function AutomationEditor({
     "wa-templates",
     () => listWhatsAppTemplates(true).catch(() => []),
   );
+  // Linhas da empresa — o envio precisa saber por QUAL número sair (o catálogo
+  // de templates é por WABA e o mesmo cliente pode ter contato nas duas).
+  const { data: waNumbers = [] } = useSWR<WaNumberOption[]>(
+    "wa-numbers",
+    () => listWaNumberOptions().catch(() => []),
+  );
 
   useEffect(() => {
     if (open) {
@@ -1126,6 +1182,7 @@ function AutomationEditor({
                   index={i}
                   mentionUsers={mentionUsers}
                   waTemplates={waTemplates}
+                  waNumbers={waNumbers}
                   labels={labels}
                   triggerLabelId={triggerLabelId}
                   cardTags={cardTags}

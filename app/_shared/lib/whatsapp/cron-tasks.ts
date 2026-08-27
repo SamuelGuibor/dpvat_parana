@@ -112,9 +112,14 @@ const RECOVERY_DAILY_CAP = (() => {
 })();
 
 // Desfechos que NÃO são "sumiu no meio da triagem".
+// 'nao_qualificado' entrou em 27/08/2026: o lead que a triagem DESCARTOU (já
+// aposentado, já recebe benefício, sem cobertura...) estava caindo no ciclo de
+// recuperação e sendo provocado de novo — exatamente quem já disse "não".
+// Os desfechos "nq_*" (motivo detalhado da desqualificação) são cobertos pelo
+// prefixo em standbyBlockReason, sem precisar listar um a um.
 const NON_RECOVERABLE_CATEGORIES = new Set([
   'qualificado', 'contratado_perdido', 'perguntas', 'novo_acidente',
-  'transferido', 'descartado', 'sem_resposta',
+  'transferido', 'descartado', 'sem_resposta', 'nao_qualificado',
 ]);
 const HUMAN_TOUCH_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
 
@@ -214,6 +219,14 @@ async function standbyBlockReason(conv: {
   if (conv.contact.optedOut) return 'contato em opt-out';
   if (conv.recoveryAttempts >= (await recoveryMaxAttempts(conv.numberId))) return 'ciclo de recuperação já esgotado';
   if (conv.qualified === true) return 'lead já qualificado';
+  // Lead DESQUALIFICADO nunca entra (nem continua) no ciclo de recuperação.
+  // A recuperação existe pra quem SUMIU no meio da triagem (qualified null);
+  // insistir com quem já foi analisado e descartado — "já sou aposentado",
+  // "já dei entrada", "já tenho advogado" — é o que mais gera denúncia de spam.
+  if (conv.qualified === false) return 'lead desqualificado na triagem';
+  if (conv.closeCategory?.startsWith('nq_')) {
+    return `desfecho "${conv.closeCategory}" é desqualificação`;
+  }
   if (conv.closeCategory && NON_RECOVERABLE_CATEGORIES.has(conv.closeCategory)) {
     return `desfecho "${conv.closeCategory}" não é triagem incompleta`;
   }
@@ -823,6 +836,10 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
       const useFinalTemplate = isFinal;
       const sent = await sendSystemWhatsApp({
         phone: conv.contact.phone,
+        // Multi-número: o mesmo telefone pode existir como dois contatos (um
+        // por linha). Resolver só pelo phone caía no gêmeo da outra linha e a
+        // provocação saía pelo número errado — a conversa em standby é ESTA.
+        contactId: conv.contactId,
         clientName: conv.contact.name,
         text: message,
         templateName: useFinalTemplate ? RECOVERY_TEMPLATE_FINAL : RECOVERY_TEMPLATE_1,

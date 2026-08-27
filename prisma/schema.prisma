@@ -359,10 +359,15 @@ model AutomationFire {
   id           String     @id @default(cuid())
   automationId String
   cardId       String
+  // CICLO a que este disparo se refere: a data de vencimento considerada
+  // ("due:2026-09-01") ou a entrada na coluna ("col:2026-08-27"). Sem isso o
+  // aviso era único POR CARD para sempre — benefício prorrogado ou perícia
+  // remarcada nunca gerava um aviso novo. Vazio = disparo anterior a 27/08/2026.
+  cycleKey     String     @default("")
   firedAt      DateTime   @default(now())
   automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
 
-  @@unique([automationId, cardId])
+  @@unique([automationId, cardId, cycleKey])
   @@map("automation_fires")
 }
 

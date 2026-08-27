@@ -196,3 +196,65 @@ export async function getArchivedCards(): Promise<ArchivedCard[]> {
     return tb - ta;
   });
 }
+
+/**
+ * Um card arquivado pelo id — para ABRIR o card fora da aba Arquivados.
+ *
+ * A caixa de Menções e Tarefas manda o quadro abrir o card, e o quadro só
+ * conhece os cards ATIVOS: com o card arquivado o clique voltava pro Kanban e
+ * não abria nada (nem erro). Aqui o quadro consegue montar o diálogo mesmo
+ * assim, mostrando em que arquivo o card está.
+ */
+export async function getArchivedCardById(
+  id: string,
+  isProcess: boolean
+): Promise<ArchivedCard | null> {
+  noStore();
+  await requirePermission("view_archived");
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  if (isProcess) {
+    const p: any = await db.process.findUnique({ where: { id }, select: archivedProcessSelect });
+    if (!p) return null;
+    return {
+      id: p.id,
+      isProcess: true,
+      name: p.name || "Sem nome",
+      cardNumber: p.cardNumber ?? null,
+      archiveStatus: p.archiveStatus as ArchiveStatus,
+      archivedAt: p.archivedAt ? p.archivedAt.toISOString() : null,
+      service: p.service || "",
+      labelId: p.labelId ?? null,
+      label: p.label ?? null,
+      cpf: p.cpf || "",
+      telefone: p.telefone || "",
+      email: p.email || "",
+      cidade: p.cidade || "",
+      estado: p.estado || "",
+      ownerId: p.userId,
+      obs: p.observacao || "",
+    };
+  }
+
+  const u: any = await db.user.findUnique({ where: { id }, select: archivedUserSelect });
+  if (!u) return null;
+  return {
+    id: u.id,
+    isProcess: false,
+    name: u.name || "Sem nome",
+    cardNumber: u.cardNumber ?? null,
+    archiveStatus: u.archiveStatus as ArchiveStatus,
+    archivedAt: u.archivedAt ? u.archivedAt.toISOString() : null,
+    service: u.service || "",
+    labelId: u.labelId ?? null,
+    label: u.label ?? null,
+    cpf: u.cpf || "",
+    telefone: u.telefone || "",
+    email: u.email || "",
+    cidade: u.cidade || "",
+    estado: u.estado || "",
+    ownerId: u.id,
+    obs: u.obs || "",
+  };
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}

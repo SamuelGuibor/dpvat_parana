@@ -31,15 +31,37 @@ export function normalizePhoneBR(raw: string): string | null {
   return digits;
 }
 
+type ResolvedContact = {
+  id: string;
+  phone: string;
+  name: string | null;
+  optedOut: boolean;
+  optedInAt: Date | null;
+  numberId: string | null;
+};
+
+const CONTACT_FIELDS = {
+  id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true,
+} as const;
+
 /**
  * Resolve o contato do WhatsApp a partir do telefone do card. Primeiro tenta
  * casar com um contato existente pelos últimos 8 dígitos (cobre máscara e o
  * 9º dígito); se não existir, cria um contato novo com o número normalizado.
+ *
+ * MULTI-NÚMERO (27/08/2026): o MESMO telefone existe como dois contatos quando
+ * o cliente falou com as duas linhas da empresa (231 casos hoje) — e a busca
+ * por telefone escolhia um deles sem critério (`LIMIT 1` sem ordenação). Com
+ * `wantedNumberId` a resolução passa a ser determinística: o contato DAQUELA
+ * linha; se ele ainda não existe, um contato legado (numberId null) é adotado
+ * pela linha, e só em último caso um contato novo é criado — herdando opt-out
+ * e opt-in do gêmeo (quem pediu para não receber, não recebe por linha nenhuma).
  */
 export async function findOrCreateContactByPhone(
   rawPhone: string,
   name?: string | null,
-): Promise<{ id: string; phone: string; name: string | null; optedOut: boolean; optedInAt: Date | null; numberId: string | null } | null> {
+  wantedNumberId?: string | null,
+): Promise<ResolvedContact | null> {
   const digits = rawPhone.replace(/\D/g, "");
   const last8 = digits.slice(-8);
   if (last8.length < 8) return null;
@@ -47,29 +69,87 @@ export async function findOrCreateContactByPhone(
   const rows = await db.$queryRaw<{ id: string }[]>(Prisma.sql`
     SELECT id FROM "whatsapp_contacts"
     WHERE right(regexp_replace(phone, '\\D', '', 'g'), 8) = ${last8}
-    LIMIT 1
   `);
-  if (rows.length) {
-    return db.whatsAppContact.findUnique({
-      where: { id: rows[0].id },
-      select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
+  const twins = rows.length
+    ? await db.whatsAppContact.findMany({
+        where: { id: { in: rows.map((r) => r.id) } },
+        select: CONTACT_FIELDS,
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+
+  if (twins.length) {
+    if (!wantedNumberId) {
+      // Sem linha pedida: mantém o comportamento antigo, mas determinístico —
+      // um contato já vinculado a uma linha vale mais que um legado solto.
+      return twins.find((t) => t.numberId) ?? twins[0];
+    }
+    const exact = twins.find((t) => t.numberId === wantedNumberId);
+    if (exact) return exact;
+
+    const legacy = twins.find((t) => !t.numberId);
+    if (legacy) {
+      const adopted = await db.whatsAppContact.update({
+        where: { id: legacy.id },
+        data: { numberId: wantedNumberId },
+        select: CONTACT_FIELDS,
+      });
+      return adopted;
+    }
+
+    // Só existe gêmeo em OUTRA linha → abre o contato desta linha herdando o
+    // consentimento (opt-out é global por decisão do cliente; o opt-in é o
+    // aceite dele com o escritório, não com um chip específico).
+    const donor = twins[0];
+    const normalizedTwin = normalizePhoneBR(rawPhone) ?? donor.phone;
+    const created = await db.whatsAppContact.create({
+      data: {
+        phone: normalizedTwin,
+        name: donor.name ?? name ?? null,
+        numberId: wantedNumberId,
+        optedOut: donor.optedOut,
+        optedInAt: donor.optedInAt,
+        optInSource: donor.optedInAt ? "manual" : null,
+        userId: null,
+      },
+      select: CONTACT_FIELDS,
     });
+    return created;
   }
 
   const normalized = normalizePhoneBR(rawPhone);
   if (!normalized) return null;
   // phone deixou de ser unique global (multi-número) → find-or-create manual.
-  // Contato criado pelo sistema (sem mensagem recebida) nasce sem numberId e
-  // envia pelo número default; o webhook o adota quando o cliente responder.
+  // Sem linha pedida o contato nasce sem numberId e envia pelo número default;
+  // o webhook o adota quando o cliente responder.
   const existing = await db.whatsAppContact.findFirst({
-    where: { phone: normalized },
-    select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
+    where: { phone: normalized, ...(wantedNumberId ? { numberId: wantedNumberId } : {}) },
+    select: CONTACT_FIELDS,
   });
   if (existing) return existing;
   const created = await db.whatsAppContact.create({
-    data: { phone: normalized, name: name ?? null },
+    data: { phone: normalized, name: name ?? null, numberId: wantedNumberId ?? null },
+    select: CONTACT_FIELDS,
   });
-  return { id: created.id, phone: created.phone, name: created.name, optedOut: created.optedOut, optedInAt: created.optedInAt, numberId: created.numberId };
+  return created;
+}
+
+/**
+ * Linha (WhatsAppNumber) que deve enviar. O catálogo de templates é POR WABA:
+ * um template aprovado na linha B simplesmente NÃO EXISTE para a linha A, e o
+ * envio era pulado com "template não cadastrado". Quando o chamador não diz a
+ * linha, deduzimos pelo dono do template — assim uma automação antiga, feita
+ * antes do multi-número, passa a sair pela linha certa sem ser reeditada.
+ */
+async function resolveNumberForTemplate(templateName?: string | null): Promise<string | null> {
+  if (!templateName) return null;
+  const rows = await db.whatsAppTemplate.findMany({
+    where: { name: templateName, status: "APPROVED" },
+    select: { numberId: true },
+  });
+  const ids = [...new Set(rows.map((r) => r.numberId).filter((v): v is string => !!v))];
+  // Em mais de uma linha o nome é ambíguo — deixa a resolução normal decidir.
+  return ids.length === 1 ? ids[0] : null;
 }
 
 /** Janela de 24h da Meta: aberta se o CLIENTE mandou mensagem nas últimas 24h. */
@@ -205,6 +285,13 @@ export interface SystemSendInput {
    * já sabe o contato (ex.: ciclo de assinatura), deve passá-lo aqui.
    */
   contactId?: string;
+  /**
+   * Linha da empresa (WhatsAppNumber.id) que deve enviar. Sem isto, a linha é
+   * deduzida do dono do template; sem template, vale a linha do contato (ou a
+   * default). Ignorado quando `contactId` é passado — ali a thread já está
+   * escolhida.
+   */
+  numberId?: string | null;
   /** Texto livre — usado quando a janela de 24h está aberta. */
   text: string;
   /**
@@ -248,12 +335,13 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
   try {
     // Com contactId o envio usa AQUELE contato (e a linha dele); a resolução
     // por telefone fica só para quem não sabe o contato (ex.: envio por card).
+    const wantedNumberId = input.numberId ?? (await resolveNumberForTemplate(input.templateName));
     const contact = input.contactId
       ? await db.whatsAppContact.findUnique({
           where: { id: input.contactId },
           select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
         })
-      : await findOrCreateContactByPhone(input.phone, input.clientName);
+      : await findOrCreateContactByPhone(input.phone, input.clientName, wantedNumberId);
     if (!contact) return { sent: false, via: null, reason: input.contactId ? "contato não encontrado" : "telefone do card inválido" };
     if (contact.optedOut) {
       await logWhatsAppEvent({
@@ -369,9 +457,22 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       orderBy: { numberId: { sort: "desc", nulls: "last" } },
     });
     if (!template) {
+      // Catálogo é por WABA: o template pode existir, só que em OUTRA linha.
+      // Dizer isso poupa o "sincronize com a Meta" que não resolve nada.
+      const owners = await db.whatsAppTemplate.findMany({
+        where: { name: input.templateName },
+        select: { numberId: true },
+      });
+      const ownerIds = [...new Set(owners.map((t) => t.numberId).filter((v): v is string => !!v))];
+      const elsewhere = ownerIds.length
+        ? await db.whatsAppNumber.findMany({ where: { id: { in: ownerIds } }, select: { label: true } })
+        : [];
+      const hint = elsewhere.length
+        ? ` — ele existe na linha ${elsewhere.map((n) => `"${n.label}"`).join(" / ")}, mas o contato é atendido por outra linha`
+        : " (sincronize com a Meta)";
       await logWhatsAppEvent({
         action: "wa_text",
-        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: template "${input.templateName}" não cadastrado (sincronize com a Meta)`,
+        message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: template "${input.templateName}" não está no catálogo desta linha${hint}`,
         authorId: input.authorId,
         authorName: input.authorName,
         contactId: contact.id,
@@ -379,7 +480,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
         contactPhone: contact.phone,
         metadata: { source: input.source, automated: true, skipped: true, reason: "sem template" },
       });
-      return { sent: false, via: "template", reason: `template "${input.templateName}" não cadastrado (sincronize com a Meta)` };
+      return { sent: false, via: "template", reason: `template "${input.templateName}" não está no catálogo desta linha${hint}` };
     }
     // Desde 03/08/2026 o cadastro guarda TODOS os status da Meta (antes só os
     // aprovados). Sem esta guarda, um template em análise/reprovado seria

@@ -41,7 +41,8 @@ import { createUser } from '../_actions/users/create-user';
 import { findDuplicateClient, type DuplicateHit } from '../_actions/users/find-duplicate';
 import { searchArchivedCards, type ArchivedSearchHit } from '../_actions/cards/search-archived';
 import { maskCpf, isValidCpf, onlyDigits } from '@/app/_shared/utils/format';
-import { setArchiveStatus, type ArchiveStatus } from '../_actions/cards/archive-card';
+import { setArchiveStatus, getArchivedCardById, type ArchiveStatus } from '../_actions/cards/archive-card';
+import { ARCHIVE_LABELS, DESTRUCTIVE_ARCHIVE } from '../_shared/lib/archive-catalog';
 import { toast } from "sonner";
 import {
   ArchiveX,
@@ -1508,13 +1509,16 @@ export const KanbanBoard: React.FC = () => {
       const { id, isProcess } = (e as CustomEvent<{ id: string; isProcess: boolean }>).detail;
       const item = items.find((i) => i.id === id && !!i.isProcess === isProcess);
       if (item) openCardFromItem(item);
+      else void openArchivedCard(id, isProcess);
     }
     window.addEventListener('open-kanban-card', handleOpenCard);
     return () => window.removeEventListener('open-kanban-card', handleOpenCard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
-  // Pedido de abertura vindo da busca global quando o board ainda não estava
-  // montado (troca de aba): o sinal fica no sessionStorage até os items chegarem.
+  // Pedido de abertura vindo da busca global ou da caixa de Menções quando o
+  // board ainda não estava montado (troca de aba): o sinal fica no
+  // sessionStorage até os items chegarem.
   useEffect(() => {
     if (!items.length) return;
     try {
@@ -1522,10 +1526,11 @@ export const KanbanBoard: React.FC = () => {
       if (!raw) return;
       const { id, isProcess } = JSON.parse(raw) as { id: string; isProcess: boolean };
       const item = items.find((i) => i.id === id && !!i.isProcess === isProcess);
-      if (item) {
-        sessionStorage.removeItem('kanban-open-card');
-        openCardFromItem(item);
-      }
+      sessionStorage.removeItem('kanban-open-card');
+      if (item) openCardFromItem(item);
+      // Card fora do quadro = ARQUIVADO. Antes o pedido morria aqui: o clique
+      // na menção trocava pra aba Kanban e nada abria (nem aviso).
+      else void openArchivedCard(id, isProcess);
     } catch {
       sessionStorage.removeItem('kanban-open-card');
     }
@@ -1584,6 +1589,51 @@ export const KanbanBoard: React.FC = () => {
     };
     setSelectedCard(card);
     setSearchOpen(false);
+  }
+
+  /**
+   * Abre um card que NÃO está no quadro — ou seja, arquivado. O diálogo do card
+   * carrega o resto pelo cardId; aqui só montamos o mínimo (nome, coluna de
+   * origem, arquivo em que ele está) para ele não abrir em branco.
+   */
+  async function openArchivedCard(id: string, isProcess: boolean) {
+    try {
+      const a = await getArchivedCardById(id, isProcess);
+      if (!a) {
+        toast.error('Esse card não está no quadro e também não foi encontrado nos arquivados.');
+        return;
+      }
+      setSelectedCard({
+        id: a.id,
+        title: a.name,
+        description: a.obs ?? '',
+        assignee: '',
+        labelId: a.labelId,
+        label: a.label ? { ...a.label, timeLimitDays: null } : null,
+        status: a.label?.name ?? '',
+        timer: 0,
+        comments: [],
+        attachments: [],
+        observations: a.obs ?? '',
+        checklistItems: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        statusStartedAt: null,
+        afastadoAte: null,
+        service: a.service,
+        isProcess: a.isProcess,
+        ownerId: a.ownerId,
+        commentCount: 0,
+        attachmentCount: 0,
+        cardNumber: a.cardNumber,
+        archiveStatus: a.archiveStatus,
+      } as unknown as KanbanCard);
+      setSearchOpen(false);
+      toast.info(`Este card está arquivado em "${ARCHIVE_LABELS[a.archiveStatus] ?? a.archiveStatus}". Dá para desarquivar no rodapé do card.`);
+    } catch (err) {
+      console.error('[KANBAN] Falha ao abrir card arquivado:', err);
+      toast.error('Não foi possível abrir esse card arquivado.');
+    }
   }
 
   // Pausa o polling enquanto há mutações locais em voo (drag/drop/arquivar)
@@ -1946,21 +1996,6 @@ export const KanbanBoard: React.FC = () => {
     if (selectedIdRef.current === cardId) setSelectedCard(null);
   }, []);
 
-  const ARCHIVE_LABELS: Record<ArchiveStatus, string> = useMemo(() => ({
-    pagos_ccs: "APTOS CCS",
-    pagos_uni: "APTOS UNI",
-    enviados_taynara: "ENVIADOS TAYNARA",
-    enviados_evelyn: "ENVIADOS EVELYN",
-    enviados_joinville: "ENVIADOS JOINVILLE",
-    pastas_negadas_ccs: "PASTAS NEGADAS CCS",
-    pastas_negadas_uni: "PASTAS NEGADAS UNI",
-    perdeu_contato_definitivo: "PERDEU CONTATO - DEFINITIVO",
-    nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
-    descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
-    desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
-    voltar_um_dia: "VOLTAR UM DIA",
-  }), []);
-
   // Arquiva um card (pago / não qualificado / arquivado): remove do board de forma
   // otimista e persiste. Se falhar, recarrega para o card reaparecer. O toast de
   // sucesso traz "Desfazer" — arquivar deixou de ser um clique sem volta.
@@ -2002,23 +2037,18 @@ export const KanbanBoard: React.FC = () => {
         setRefreshKey((k) => k + 1);
       })
       .finally(() => { pendingMutationsRef.current--; });
-  }, [items, ARCHIVE_LABELS]);
+  }, [items]);
 
   // Status "definitivos" (encerram a relação com o cliente) pedem confirmação;
   // os demais arquivam direto (e sempre há o Desfazer no toast).
   const [confirmArchive, setConfirmArchive] = useState<{ cardId: string; status: ArchiveStatus } | null>(null);
-  const DESTRUCTIVE_ARCHIVE: ArchiveStatus[] = useMemo(
-    () => ["perdeu_contato_definitivo", "desistiram_expressamente", "descartados_analise_interna"],
-    []
-  );
-
   const handleArchiveCard = useCallback((cardId: string, status: ArchiveStatus) => {
     if (DESTRUCTIVE_ARCHIVE.includes(status)) {
       setConfirmArchive({ cardId, status });
       return;
     }
     performArchive(cardId, status);
-  }, [DESTRUCTIVE_ARCHIVE, performArchive]);
+  }, [performArchive]);
 
   const toggleCollapse = (colId: string) => {
     setCollapsedColumns((prev) => ({ ...prev, [colId]: !prev[colId] }));
@@ -2308,6 +2338,12 @@ export const KanbanBoard: React.FC = () => {
             onClose={() => setSelectedCard(null)}
             onUpdate={handleCardUpdate}
             onDelete={handleDeleteCard}
+            onArchive={(id, status) => {
+              // Arquivou pelo próprio card: tira do quadro na hora (ou recarrega
+              // quando foi um desarquivamento, pra ele reaparecer na coluna).
+              if (status) handleDeleteCard(id);
+              else setRefreshKey((k) => k + 1);
+            }}
             cardId={selectedCard.id}
             ownerId={selectedCard.ownerId}
             isProcess={selectedCard.isProcess}

@@ -17,6 +17,9 @@ import { createLog } from "./log";
 import { runAiAudit } from "./ai-audit";
 import { appendSheetRow } from "./google-sheets";
 import { brDateVars } from "../utils/date-br";
+import {
+  type CardData, getVars, evalConditions, fireCycleKey,
+} from "./automation-conditions";
 
 // Limite de movimentos encadeados por ação "move" (coluna A move pra B, que
 // move pra C...). Evita loop infinito entre automações que se apontam.
@@ -29,94 +32,6 @@ const s3 = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
 });
-
-type CardData = Record<string, string | boolean | null | undefined | Date>;
-
-function getVars(card: CardData): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(card)) {
-    if (v === null || v === undefined) {
-      out[k] = "";
-    } else if (v instanceof Date) {
-      out[k] = v.toLocaleDateString("pt-BR");
-    } else {
-      out[k] = String(v);
-    }
-  }
-  return out;
-}
-
-// Dias corridos entre duas datas (arredondado, ignora hora do dia).
-function daysBetween(a: Date, b: Date): number {
-  const MS_DAY = 86_400_000;
-  return Math.floor((a.getTime() - b.getTime()) / MS_DAY);
-}
-
-function evalConditions(
-  conds: AutomationCondition[],
-  logic: string,
-  card: CardData,
-  tagNames: string[],
-  now: Date = new Date()
-): boolean {
-  if (conds.length === 0) return true;
-  const normalizedTags = tagNames.map((t) => t.toLowerCase().trim());
-  const results = conds.map((c) => {
-    const cv = c.value.toLowerCase().trim();
-    // Campo especial "tags": compara contra a lista de tags do card.
-    if (c.field === "tags") {
-      switch (c.operator) {
-        case "hasTag":
-        case "equals":
-        case "contains":    return normalizedTags.includes(cv);
-        case "notHasTag":
-        case "notEquals":   return !normalizedTags.includes(cv);
-        case "isEmpty":     return normalizedTags.length === 0;
-        case "isNotEmpty":  return normalizedTags.length > 0;
-        default:            return false;
-      }
-    }
-    // Campo especial: tempo (dias) que o card está na coluna atual, medido
-    // a partir de statusStartedAt.
-    if (c.field === "__time_in_column__") {
-      const started = card.statusStartedAt;
-      if (!started) return false;
-      const days = daysBetween(now, new Date(started as any));
-      const threshold = Number(c.value);
-      if (Number.isNaN(threshold)) return false;
-      if (c.operator === "moreThanDays") return days >= threshold;
-      if (c.operator === "lessThanDays") return days < threshold;
-      return false;
-    }
-    // Campo especial: posição de hoje em relação a uma data do card
-    // (padrão afastadoAte) — value = nº de dias de folga da data.
-    if (c.field === "__due_date__") {
-      const dateField = c.dateField || "afastadoAte";
-      const due = card[dateField];
-      if (!due) return false;
-      const dueDate = new Date(due as any);
-      if (Number.isNaN(dueDate.getTime())) return false;
-      const daysUntil = daysBetween(dueDate, now) * -1; // positivo = falta X dias
-      const threshold = Number(c.value);
-      if (Number.isNaN(threshold)) return false;
-      if (c.operator === "beforeDueDate") return daysUntil >= 0 && daysUntil <= threshold;
-      if (c.operator === "afterDueDate") return daysUntil < 0 && Math.abs(daysUntil) >= threshold;
-      return false;
-    }
-    const fv = String(card[c.field] ?? "").toLowerCase().trim();
-    switch (c.operator) {
-      case "equals":      return fv === cv;
-      case "notEquals":   return fv !== cv;
-      case "contains":    return fv.includes(cv);
-      case "startsWith":  return fv.startsWith(cv);
-      case "endsWith":    return fv.endsWith(cv);
-      case "isEmpty":     return !fv;
-      case "isNotEmpty":  return !!fv;
-      default:            return false;
-    }
-  });
-  return logic === "OR" ? results.some(Boolean) : results.every(Boolean);
-}
 
 function fillTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\[\[(\w+)\]\]/g, (_, k) => vars[k] ?? "");
@@ -178,8 +93,23 @@ async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<
 
   if (action.type === "whatsapp" && action.waText) {
     const phone = String(cardData.telefone ?? cardData.telefone_secundario ?? "").trim();
+    // Falha de envio agora vira LOG DO CARD, não só console.warn: o motivo
+    // ("sem opt-in", "template de outra linha", "intervalo mínimo") é a única
+    // pista de por que o cliente não recebeu o aviso, e ninguém lê o console.
+    const logSkip = (reason: string) =>
+      createLog({
+        action: "wa_text",
+        message: `automação "${auto.name}": WhatsApp NÃO enviado — ${reason}`,
+        authorId,
+        authorName: `🤖 Bot (Automação)`,
+        userId: isProcess ? null : cardId,
+        processId: isProcess ? cardId : null,
+        metadata: { automationId: auto.id, automationName: auto.name, skipped: true, reason },
+      }).catch(() => { /* log nunca derruba a automação */ });
+
     if (!phone) {
       console.warn(`[AUTOMATION] Card ${cardId} sem telefone — ação de WhatsApp pulada (auto ${auto.id}).`);
+      await logSkip("o card não tem telefone cadastrado");
     } else {
       const result = await sendSystemWhatsApp({
         phone,
@@ -187,12 +117,14 @@ async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<
         text: fillTemplate(action.waText, vars),
         templateName: action.waTemplateName || null,
         templateVars: (action.waTemplateVars ?? []).map((v) => fillTemplate(v, vars)),
+        numberId: action.waNumberId || null,
         authorId,
         authorName: `🤖 Bot (Automação: ${auto.name})`,
         source: "automation",
       });
       if (!result.sent) {
         console.warn(`[AUTOMATION] WhatsApp não enviado (auto ${auto.id}): ${result.reason}`);
+        await logSkip(result.reason ?? "motivo não informado");
       }
     }
   }
@@ -448,9 +380,17 @@ export async function runTimeBasedAutomations() {
       const wantsProcess = auto.cardType !== "user";
       const wantsUser = auto.cardType !== "process";
 
+      // Card ARQUIVADO mantém o labelId (pra voltar à coluna certa quando for
+      // desarquivado), então sem este filtro a varredura de prazo continuava
+      // mandando aviso de perícia/benefício para cliente já pago, desistente
+      // ou descartado. GHOST é o card-fantasma interno, nunca um cliente.
       const [processCards, userCards] = await Promise.all([
-        wantsProcess ? db.process.findMany({ where: { labelId: auto.triggerLabelId } }) : Promise.resolve([]),
-        wantsUser ? db.user.findMany({ where: { labelId: auto.triggerLabelId } }) : Promise.resolve([]),
+        wantsProcess
+          ? db.process.findMany({ where: { labelId: auto.triggerLabelId, archiveStatus: null } })
+          : Promise.resolve([]),
+        wantsUser
+          ? db.user.findMany({ where: { labelId: auto.triggerLabelId, archiveStatus: null, role: { not: "GHOST" } } })
+          : Promise.resolve([]),
       ]);
 
       const usesTags = conds.some((c) => c.field === "tags");
@@ -474,14 +414,17 @@ export async function runTimeBasedAutomations() {
 
           if (!evalConditions(conds, auto.conditionLogic, cardData, tagNames)) continue;
 
-          // Já disparou pra este card nesta automação — não repete.
+          // Já disparou pra este card nesta automação NESTE CICLO — não repete.
+          // O ciclo é a data de vencimento considerada (ou a entrada na coluna):
+          // prorrogou o benefício / remarcou a perícia → ciclo novo → avisa de novo.
+          const cycleKey = fireCycleKey(conds, cardData);
           const already = await db.automationFire.findUnique({
-            where: { automationId_cardId: { automationId: auto.id, cardId } },
+            where: { automationId_cardId_cycleKey: { automationId: auto.id, cardId, cycleKey } },
           }).catch(() => null);
           if (already) continue;
 
           try {
-            await db.automationFire.create({ data: { automationId: auto.id, cardId } });
+            await db.automationFire.create({ data: { automationId: auto.id, cardId, cycleKey } });
           } catch {
             continue; // corrida entre execuções do cron — outra já marcou
           }

@@ -38,6 +38,8 @@ export interface ExtendedKanbanCard extends KanbanCard {
   afastadoAte?: string | null;
   senha_inss?: string;
   cardNumber?: number | null;
+  /** Estado de arquivamento (null = card ativo no quadro). */
+  archiveStatus?: string | null;
   attachments: { id?: string; key: string; name: string; size?: number; uploadedAt: Date }[];
 }
 
