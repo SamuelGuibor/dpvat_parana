@@ -136,3 +136,36 @@ export function brDateVars(date: Date | string | number = new Date()) {
     ano: String(brYear(date)),
   };
 }
+
+/**
+ * "YYYY-MM-DDTHH:mm" digitado por quem está no Brasil → instante real (UTC).
+ *
+ * Sem isto, `new Date('2026-08-28T11:00')` é lido no fuso de quem executa: na
+ * Vercel (UTC) vira 11:00Z, que o CRM depois mostra como 08:00 de Brasília.
+ * Aqui a string é tratada SEMPRE como horário de Brasília, não importa onde o
+ * código rode (servidor ou navegador).
+ */
+export function brLocalToDate(value: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(value.trim());
+  if (!m) return new Date(NaN);
+  const asUtc = Date.UTC(
+    Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+    Number(m[4]), Number(m[5]), m[6] ? Number(m[6]) : 0,
+  );
+  // Mesma manobra do brStartOfDay: mede o offset no instante alvo e desloca.
+  return new Date(asUtc - brOffsetMinutes(new Date(asUtc)) * 60_000);
+}
+
+/** Instante → { day: "YYYY-MM-DD", time: "HH:mm" } no fuso de Brasília. */
+export function brDateTimeParts(
+  date: Date | string | number = new Date(),
+): { day: string; time: string } {
+  const p = Object.fromEntries(
+    partsFmt.formatToParts(new Date(date)).filter((x) => x.type !== 'literal')
+      .map((x) => [x.type, x.value]),
+  ) as Record<string, string>;
+  return {
+    day: `${p.year}-${p.month}-${p.day}`,
+    time: `${String(Number(p.hour) % 24).padStart(2, '0')}:${p.minute}`,
+  };
+}

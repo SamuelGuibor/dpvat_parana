@@ -22,7 +22,7 @@ import {
   listUpcomingEvents, listPastEvents, createEvent, updateEvent, deleteEvent,
   type EventDTO, type EventInput,
 } from '@/app/_actions/events/event-actions';
-import { BR_TZ, brDayKey } from '@/app/_shared/utils/date-br';
+import { BR_TZ, brDateTimeParts, brDayKey } from '@/app/_shared/utils/date-br';
 
 // "Eventos" (27/08/2026): a agenda dos compromissos combinados com clientes —
 // quem vem ao escritório e quando, perícia, audiência. Mesmo desenho do
@@ -64,6 +64,12 @@ function dateKey(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** "YYYY-MM-DD" → Date na meia-noite LOCAL — o que o Calendar espera receber. */
+function dateFromKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 /** Estado do formulário: dia e hora separados (o servidor recebe juntos). */
 interface FormState {
   title: string;
@@ -76,13 +82,13 @@ interface FormState {
 }
 
 function emptyForm(): FormState {
-  const next = new Date();
-  next.setMinutes(0, 0, 0);
-  next.setHours(next.getHours() + 1);
+  // Sugere a próxima hora cheia — sempre lida em Brasília, não no fuso do
+  // navegador, pra hora sugerida e hora salva serem a mesma coisa.
+  const { day, time } = brDateTimeParts(new Date(Date.now() + 60 * 60 * 1000));
   return {
     title: '',
-    date: next,
-    startTime: `${pad(next.getHours())}:00`,
+    date: dateFromKey(day),
+    startTime: `${time.slice(0, 2)}:00`,
     endTime: '',
     clientName: '',
     location: 'Escritório',
@@ -91,13 +97,14 @@ function emptyForm(): FormState {
 }
 
 function formFromEvent(e: EventDTO): FormState {
-  const start = new Date(e.startsAt);
-  const end = e.endsAt ? new Date(e.endsAt) : null;
+  // Dia e hora sempre em Brasília: é o mesmo fuso em que o card mostra o
+  // evento, então abrir pra editar não pode trocar o horário.
+  const start = brDateTimeParts(e.startsAt);
   return {
     title: e.title,
-    date: start,
-    startTime: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
-    endTime: end ? `${pad(end.getHours())}:${pad(end.getMinutes())}` : '',
+    date: dateFromKey(start.day),
+    startTime: start.time,
+    endTime: e.endsAt ? brDateTimeParts(e.endsAt).time : '',
     clientName: e.clientName ?? '',
     location: e.location ?? '',
     description: e.description ?? '',

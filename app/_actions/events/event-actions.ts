@@ -3,6 +3,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
+import { brLocalToDate } from '@/app/_shared/utils/date-br';
 
 // Agenda de EVENTOS da equipe (27/08/2026) — o "Eventos" do Discord aplicado
 // ao escritório: horário em que um cliente virá, uma perícia, uma audiência.
@@ -36,7 +37,7 @@ export interface EventDTO {
 
 export interface EventInput {
   title: string;
-  /** "YYYY-MM-DDTHH:mm" (horário local de quem digitou, que é o de Brasília). */
+  /** "YYYY-MM-DDTHH:mm" sempre interpretado como horário de Brasília. */
   startsAt: string;
   endsAt?: string | null;
   location?: string | null;
@@ -70,9 +71,13 @@ function toDTO(
   };
 }
 
-/** Converte o valor do <input type="datetime-local"> em Date. */
+/**
+ * Converte "YYYY-MM-DDTHH:mm" (o que a equipe digitou, em horário de Brasília)
+ * no instante real. `new Date(value)` puro lia a string no fuso de quem roda
+ * — na Vercel, UTC — e o evento das 11h aparecia como 8h pra todo mundo.
+ */
 function parseLocal(value: string, field: string): Date {
-  const d = new Date(value);
+  const d = brLocalToDate(value);
   if (Number.isNaN(d.getTime())) throw new Error(`Data/hora inválida em ${field}.`);
   return d;
 }
