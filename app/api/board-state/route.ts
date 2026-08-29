@@ -9,6 +9,40 @@ import { fetchProcesses } from "@/app/_shared/lib/db/processes";
 // Estado completo do board numa ÚNICA requisição. Antes cada tick de 7s do
 // kanban fazia 5 chamadas (3 server actions + card-counts + card-tags/lookup)
 // = 5 invocações serverless e 5 getServerSession por tick, por usuário.
+//
+// Cheque de versão (?v=): a carga completa custa ~1 MB de egress do Neon por
+// tick e na maioria dos ticks NADA mudou. O hash abaixo é calculado DENTRO do
+// Postgres (só o md5 atravessa a rede); se bater com o `v` do cliente, a
+// resposta é { unchanged: true } e o payload gordo nem é consultado.
+
+// Hash de tudo que o payload do board reflete: cards ativos (User/Process),
+// colunas, contagens de comentários/anexos e tags (tabelas de junção
+// implícitas incluídas — connect/disconnect de tag não toca updatedAt).
+async function computeBoardVersion(): Promise<string | null> {
+  try {
+    const rows = await db.$queryRaw<{ v: string }[]>`
+      SELECT md5(concat_ws('|',
+        (SELECT concat(count(*), ':', coalesce(max("updatedAt")::text, ''))
+           FROM "User"
+          WHERE role <> 'GHOST' AND role NOT LIKE 'ADMIN%' AND "archiveStatus" IS NULL),
+        (SELECT concat(count(*), ':', coalesce(max("updatedAt")::text, ''))
+           FROM "Process" WHERE "archiveStatus" IS NULL),
+        (SELECT concat(count(*), ':', coalesce(max("updatedAt")::text, '')) FROM "Label"),
+        (SELECT concat(count(*), ':', coalesce(max("updatedAt")::text, '')) FROM "Comment"),
+        (SELECT concat(count(*), ':', coalesce(max(coalesce("updatedAt", "uploadedAt"))::text, ''))
+           FROM "Document"),
+        (SELECT coalesce(md5(string_agg(id || name || color, ',' ORDER BY id)), '') FROM card_tags),
+        (SELECT coalesce(md5(string_agg("A" || "B", ',' ORDER BY "A", "B")), '') FROM "_UserCardTags"),
+        (SELECT coalesce(md5(string_agg("A" || "B", ',' ORDER BY "A", "B")), '') FROM "_ProcessCardTags")
+      )) AS v`;
+    return rows[0]?.v ?? null;
+  } catch (err) {
+    // Falhou o cheque? Segue o fluxo antigo (carga completa) — nunca pode
+    // derrubar o board por causa de uma otimização de tráfego.
+    console.error("[BOARD-STATE] versão indisponível:", err);
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +75,21 @@ function mapBasic(row: any, isProcess: boolean) {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.role?.startsWith("ADMIN")) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
   try {
+    const clientVersion = new URL(req.url).searchParams.get("v");
+    const version = await computeBoardVersion();
+
+    // Cliente já tem esta versão → tick barato, sem payload.
+    if (clientVersion && version && clientVersion === version) {
+      return NextResponse.json({ unchanged: true, v: version });
+    }
+
     const [labels, usersRaw, processesRaw] = await Promise.all([
       fetchLabels(),
       fetchUsers(),
@@ -102,7 +144,7 @@ export async function GET() {
     for (const u of uTags) tags.users[u.id] = u.cardTags;
     for (const p of pTags) tags.processes[p.id] = p.cardTags;
 
-    return NextResponse.json({ labels, users, processes, counts, tags });
+    return NextResponse.json({ labels, users, processes, counts, tags, v: version });
   } catch (err) {
     console.error("[BOARD-STATE]", err);
     return NextResponse.json({ error: "Erro ao carregar o board" }, { status: 500 });

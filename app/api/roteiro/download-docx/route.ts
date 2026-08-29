@@ -124,7 +124,7 @@ async function extractFieldsViaAI(content: string): Promise<Record<string, strin
 // regex (endereço dividido em partes e valores multi-linha). Nesses, a IA
 // sobrescreve o regex mesmo quando o regex já trouxe algo.
 const AI_PREFERRED_FIELDS = new Set([
-  "rua", "numero", "bairro", "cidade", "estado", "cep",
+  
   "quais_sequelas", "outros_afastamentos", "tempo_afastamento", "descricao_fatos",
 ]);
 
@@ -206,6 +206,7 @@ export async function POST(request: Request) {
           nome_mae: record.nome_mae || "",
           status: record.service || "",
           senha_inss: "Não apurado",
+          descricao_fatos: record.descricao_fatos || "",
         };
 
         // Campos que o escritório tem com certeza no card → banco manda.
@@ -213,7 +214,7 @@ export async function POST(request: Request) {
           "name", "cpf", "rg", "email", "telefone",
           "endereco", "rua", "numero", "bairro", "cidade", "estado", "cep",
           "estado_civil", "nome_mae", "data_nascimento", "nacionalidade",
-          "profissao", "status", "hospital",
+          "profissao", "status", "hospital", "descricao_fatos"
         ]);
 
         for (const [key, dbVal] of Object.entries(dbMap)) {

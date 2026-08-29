@@ -1649,6 +1649,11 @@ export const KanbanBoard: React.FC = () => {
   // a identidade de labels/items/counts/tags e re-renderizava o board inteiro.
   const lastSigRef = useRef({ labels: '', items: '', counts: '', tags: '' });
 
+  // Versão do board devolvida pelo servidor. Enviada de volta a cada tick
+  // (?v=): se nada mudou no banco, a resposta é { unchanged: true } de ~50
+  // bytes em vez do payload completo (~1 MB de egress do Neon por tick).
+  const boardVersionRef = useRef<string | null>(null);
+
   // Estados de erro visíveis: falha no load inicial (tela com retry) e perda
   // de conexão durante o polling (banner discreto com dados desatualizados).
   const [loadError, setLoadError] = useState(false);
@@ -1661,9 +1666,20 @@ export const KanbanBoard: React.FC = () => {
       setLoadError(false);
       // UMA requisição agregada por tick (antes eram 5: labels + users +
       // processes + counts + tags, cada uma com sessão/queries próprias).
-      const res = await fetch('/api/board-state', { cache: 'no-store' });
+      // No polling silencioso, manda a versão conhecida: resposta vazia
+      // quando nada mudou. Load inicial e refresh manual forçam carga cheia.
+      const v = silent ? boardVersionRef.current : null;
+      const url = v ? `/api/board-state?v=${encodeURIComponent(v)}` : '/api/board-state';
+      const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error(`board-state HTTP ${res.status}`);
       const data = await res.json();
+
+      if (data.unchanged) {
+        pollFailsRef.current = 0;
+        setConnLost(false);
+        return;
+      }
+      boardVersionRef.current = typeof data.v === 'string' ? data.v : null;
 
       const labelsData = data.labels ?? [];
       const labelsSig = JSON.stringify(labelsData);
