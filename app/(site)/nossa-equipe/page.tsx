@@ -192,23 +192,12 @@ const teamMembers = [
     name: 'Vitória de Oliveira',
     role: 'Analista Administrativo',
     specialty: 'Especialista na Aréa Administrativa',
-    image: '/avatar.JPG',
+    image: '/vitoria.jpeg',
     email: 'vitoria.oliveira@segurosparana.com.br',
     experience: '3 anos de experiência',
     education: 'Bacharelado em Teologia - FABAPAR',
     bio: 'Atendimento humanizado e dedicado aos clientes.',
   },
-  {
-    id: 18,
-    name: 'Emmanuelle Cavalcante Faria ',
-    role: 'Auxiliar Administrativa',
-    specialty: 'Especialista na Aréa Administrativa',
-    image: '/ema.jpeg',
-    email: 'emmanuelle.Cavalcante@segurosparana.com.br',
-    experience: '1 ano de experiência',
-    education: 'Especialista em Tele Atendimento',
-    bio: 'Atendimento humanizado e dedicado aos clientes.',
-  }
 ];
 
 interface TeamMemberCardProps {
