@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import fs from "fs";
-import path from "path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import { loadDocTemplateBuffer } from "@/app/_shared/lib/doc-templates";
 
 export async function gerarProcuracao(
   dados: any,
@@ -13,16 +12,13 @@ export async function gerarProcuracao(
   baseDir: "templates" | "templates-assinatura" = "templates",
 ) {
   const filename = template || "procuracao.docx";
-  // ATENÇÃO: o prefixo do diretório precisa ser um LITERAL em cada ramo. Com
-  // `path.join(process.cwd(), baseDir, ...)` (variável), o file tracing da
-  // Vercel não resolve o diretório e inclui o PROJETO INTEIRO (.git, public,
-  // node_modules) em cada função — o deploy estourou em 1.48GB (20/08). Os
-  // .docx em si já entram pelo outputFileTracingIncludes do next.config.
-  const templatePath = baseDir === "templates-assinatura"
-    ? path.join(process.cwd(), "templates-assinatura", filename)
-    : path.join(process.cwd(), "templates", filename);
-
-  const content = fs.readFileSync(templatePath, "binary");
+  // Os dois grupos agora são gerenciáveis: um modelo enviado pela equipe vive
+  // no S3 (tabela doc_templates) e loadDocTemplateBuffer resolve S3-ou-disco
+  // — para templates/ (procuração) e templates-assinatura/ (KIT do bot).
+  const content = await loadDocTemplateBuffer(
+    filename,
+    baseDir === "templates-assinatura" ? "assinatura" : "procuracao",
+  );
 
   const zip = new PizZip(content);
 

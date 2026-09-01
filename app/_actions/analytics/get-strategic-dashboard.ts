@@ -84,7 +84,9 @@ export async function getStrategicDashboardData(
       getFunnelAnalytics(fromISO, toISO),
       getKanbanFlowAnalytics(fromISO, toISO),
       canViewChatbot
-        ? Promise.all([getChatbotAnalytics(7, null), listWaNumberOptions()]).then(
+        // A aba Chatbot nasce no MESMO período do calendário do dashboard
+        // (antes era 7 dias fixos, ignorando o filtro).
+        ? Promise.all([getChatbotAnalytics(7, null, fromISO, toISO), listWaNumberOptions()]).then(
             ([analytics, numberOptions]) => ({ analytics, numberOptions }),
           )
         : Promise.resolve(null),

@@ -8,8 +8,8 @@ import { ensureDefaultNumber, invalidateNumberCache } from '@/app/_shared/lib/wh
 
 // Cadastro de NÚMEROS da empresa (multi-tenant): a tela de Números do
 // workspace cria/edita as credenciais da Meta por número. Token nunca volta
-// pro client — só um sufixo mascarado. Gestão restrita ao ADMIN++
-// (manage_team): API key é o segredo mais sensível do sistema.
+// pro client — só um sufixo mascarado. Gestão pela permissão dedicada
+// manage_wa_numbers (padrão: só ADMIN++): API key é o segredo mais sensível.
 
 export interface WaNumberDTO {
   id: string;
@@ -91,7 +91,7 @@ export async function createWaNumber(input: {
   accessToken: string;
   apiVersion?: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  await requirePermission('manage_team');
+  await requirePermission('manage_wa_numbers');
   const label = input.label.trim();
   const phoneNumberId = input.phoneNumberId.trim();
   const token = input.accessToken.trim();
@@ -131,7 +131,7 @@ export async function updateWaNumber(input: {
   apiVersion?: string;
   active?: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
-  await requirePermission('manage_team');
+  await requirePermission('manage_wa_numbers');
   const row = await db.whatsAppNumber.findUnique({ where: { id: input.id } });
   if (!row) return { ok: false, error: 'Número não encontrado.' };
 
@@ -157,7 +157,7 @@ export async function updateWaNumber(input: {
 
 /** Marca o número default (fallback de envio sem numberId). */
 export async function setDefaultWaNumber(id: string): Promise<{ ok: boolean; error?: string }> {
-  await requirePermission('manage_team');
+  await requirePermission('manage_wa_numbers');
   const row = await db.whatsAppNumber.findUnique({ where: { id }, select: { id: true, active: true } });
   if (!row?.active) return { ok: false, error: 'Número não encontrado ou inativo.' };
   await db.$transaction([
@@ -174,7 +174,7 @@ export async function setDefaultWaNumber(id: string): Promise<{ ok: boolean; err
  * eventos, templates). Idempotente — rodar de novo só pega o que ficou nulo.
  */
 export async function importEnvNumber(): Promise<{ ok: boolean; error?: string; adopted?: Record<string, number> }> {
-  await requirePermission('manage_team');
+  await requirePermission('manage_wa_numbers');
   const result = await ensureDefaultNumber();
   if ('error' in result) return { ok: false, error: result.error };
   return { ok: true, adopted: result.adopted };

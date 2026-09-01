@@ -7,7 +7,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import { fetchAdNames } from '@/app/_shared/lib/whatsapp/meta-ad-names';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
-import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
+import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDay, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
 
 // Métricas do chatbot para o dashboard (abaixo da Visão do Gestor). Deriva
 // tudo dos logs de WhatsApp (action começando com "wa_"):
@@ -120,7 +120,12 @@ export async function getChatbotDashboardAccess(): Promise<boolean> {
   return !!session?.user?.id && canViewChatbotDashboard(session.user.email);
 }
 
-export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId: string | null = null): Promise<ChatbotAnalytics> {
+export async function getChatbotAnalytics(
+  periodDays: 7 | 30 | 90 = 7,
+  numberId: string | null = null,
+  fromISO?: string,
+  toISO?: string,
+): Promise<ChatbotAnalytics> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
   if (!canViewChatbotDashboard(session.user.email)) {
@@ -130,7 +135,27 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId:
   // Todo corte de dia é no fuso de Brasília: em produção o Node roda em UTC e
   // das 21h em diante o servidor já virava o dia (o gráfico abria um bucket de
   // amanhã enquanto aqui ainda era hoje).
-  const since = brStartOfDaysAgo(periodDays - 1);
+  //
+  // from/to (ISO) têm prioridade sobre periodDays — o calendário do dashboard
+  // manda o intervalo livre; os botões 7/30/90 continuam funcionando.
+  let since = brStartOfDaysAgo(periodDays - 1);
+  let until: Date | null = null;
+  let seriesDays: number = periodDays;
+  let seriesUntil = new Date();
+  if (fromISO && toISO) {
+    const f = new Date(fromISO);
+    const t = new Date(toISO);
+    if (!Number.isNaN(f.getTime()) && !Number.isNaN(t.getTime()) && f <= t) {
+      since = f;
+      until = t;
+      seriesUntil = t;
+      seriesDays = Math.min(
+        Math.max(Math.round((brStartOfDay(t).getTime() - brStartOfDay(f).getTime()) / 86_400_000) + 1, 1),
+        366,
+      );
+    }
+  }
+  const createdIn = until ? { gte: since, lte: until } : { gte: since };
 
   // Filtro MULTI-NÚMERO: null = visão agregada (todos os números, como sempre
   // foi). Mensagens/contatos filtram direto pela coluna numberId (indexada);
@@ -140,13 +165,13 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId:
 
   const [rawLogs, humanMessages, newContacts] = await Promise.all([
     db.log.findMany({
-      where: { action: { startsWith: 'wa_' }, createdAt: { gte: since } },
+      where: { action: { startsWith: 'wa_' }, createdAt: createdIn },
       orderBy: { createdAt: 'desc' },
       select: { id: true, action: true, message: true, authorId: true, authorName: true, metadata: true, createdAt: true },
     }),
     // Mensagens humanas do período — alimenta a 1ª resposta após assumir.
     db.whatsAppMessage.findMany({
-      where: { direction: 'out', sentByBot: false, internal: false, createdAt: { gte: since }, authorId: { not: null }, ...numberFilter },
+      where: { direction: 'out', sentByBot: false, internal: false, createdAt: createdIn, authorId: { not: null }, ...numberFilter },
       orderBy: { createdAt: 'asc' },
       select: { contactId: true, authorId: true, createdAt: true },
     }),
@@ -155,7 +180,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId:
     // progresso do kanban criam contatos "fantasma" a partir do telefone do
     // card, e esses não são leads (o cliente nunca escreveu).
     db.whatsAppContact.findMany({
-      where: { createdAt: { gte: since }, optInSource: 'inbound', ...numberFilter },
+      where: { createdAt: createdIn, optInSource: 'inbound', ...numberFilter },
       select: { id: true, adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
     }),
   ]);
@@ -196,7 +221,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId:
   // Série diária: um ponto por dia do período (dias sem lead entram zerados,
   // senão o gráfico "pula" a data e a queda fica invisível).
   const dailyMap = new Map<string, ChatbotAnalytics['adOrigins']['daily'][number]>();
-  for (const key of brDayKeySeries(periodDays)) {
+  for (const key of brDayKeySeries(seriesDays, seriesUntil)) {
     dailyMap.set(key, {
       date: key,
       label: brLabelFromKey(key),
@@ -333,7 +358,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId:
     const meta = (l.metadata ?? {}) as any;
 
     // Métricas/atividade respeitam o filtro de período ativo.
-    if (l.createdAt < since) continue;
+    if (l.createdAt < since || (until && l.createdAt > until)) continue;
 
     // Avisos da Meta (webhook administrativo) → seção "Saúde da conta".
     // Não entram na atividade da equipe nem nas estatísticas de atendente.
@@ -482,7 +507,7 @@ export async function getChatbotAnalytics(periodDays: 7 | 30 | 90 = 7, numberId:
     .filter((s) => s.assumed || s.closed || s.messages)
     .sort((a, b) => b.messages - a.messages);
 
-  return { periodDays, bot, closeCategories, team: { attendants }, adOrigins, autoNotify, activity, accountEvents };
+  return { periodDays: seriesDays, bot, closeCategories, team: { attendants }, adOrigins, autoNotify, activity, accountEvents };
 }
 
 // ─── Funil de leads por período: tags aplicadas + desfechos do bot ──────────
@@ -644,6 +669,8 @@ export async function getAdLeadOutcomes(
   sourceKey: string | null,
   periodDays: 7 | 30 | 90 = 7,
   numberId: string | null = null,
+  fromISO?: string,
+  toISO?: string,
 ): Promise<AdLeadOutcome[]> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado.');
@@ -651,9 +678,15 @@ export async function getAdLeadOutcomes(
     throw new Error('Acesso restrito.');
   }
 
-  const since = brStartOfDaysAgo(periodDays - 1);
+  // from/to (ISO) têm prioridade sobre periodDays (calendário do dashboard).
+  let createdAt: { gte: Date; lte?: Date } = { gte: brStartOfDaysAgo(periodDays - 1) };
+  if (fromISO && toISO) {
+    const f = new Date(fromISO);
+    const t = new Date(toISO);
+    if (!Number.isNaN(f.getTime()) && !Number.isNaN(t.getTime())) createdAt = { gte: f, lte: t };
+  }
   const contacts = await db.whatsAppContact.findMany({
-    where: { createdAt: { gte: since }, optInSource: 'inbound', ...(numberId ? { numberId } : {}) },
+    where: { createdAt, optInSource: 'inbound', ...(numberId ? { numberId } : {}) },
     select: {
       id: true, name: true, phone: true, createdAt: true, userId: true,
       adPlatform: true, adSourceId: true, adHeadline: true, adSourceUrl: true,

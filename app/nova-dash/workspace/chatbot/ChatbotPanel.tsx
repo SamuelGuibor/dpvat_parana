@@ -16,12 +16,14 @@ import type { ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-anal
 
 interface NumberOption { id: string; label: string; displayPhone: string | null }
 
-export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId: controlledNumberId }: {
+export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId: controlledNumberId, range }: {
   initialAnalytics?: ChatbotAnalytics | null;
   numberOptions?: NumberOption[];
   /** Número CONTROLADO pelo seletor global do dashboard (17/08/2026). Quando
    *  presente (mesmo null = "todos"), o seletor próprio desta aba some. */
   numberId?: string | null;
+  /** Calendário do dashboard (ISO) — vira o período padrão da aba. */
+  range?: { from: string; to: string };
 }) {
   const isControlled = controlledNumberId !== undefined;
   const [options, setOptions] = useState<NumberOption[]>(numberOptions ?? []);
@@ -54,7 +56,7 @@ export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId:
           </select>
         )}
       </div>
-      <ChatbotDashboard numberId={numberId} initialData={initialAnalytics} />
+      <ChatbotDashboard numberId={numberId} initialData={initialAnalytics} range={range} />
     </div>
   );
 }

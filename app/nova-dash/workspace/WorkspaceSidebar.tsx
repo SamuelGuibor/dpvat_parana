@@ -1,9 +1,9 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck } from 'lucide-react';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros';
+export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros' | 'seguranca';
 
 interface Props {
   active: WorkspaceSection;
@@ -13,8 +13,10 @@ interface Props {
   canReviewAi: boolean;
   /** Permissão view_costs — hoje só o ADMIN++ enxerga os custos do projeto. */
   canViewCosts: boolean;
-  /** manage_team (ADMIN++) — gestão de números/API keys do WhatsApp. */
+  /** Permissão manage_wa_numbers — gestão de números/API keys do WhatsApp. */
   canManageNumbers: boolean;
+  /** manage_team (ADMIN++) — trava de IP e configurações de segurança. */
+  canManageSecurity: boolean;
   chatUnread: number;
   reviewPending: number;
 }
@@ -32,7 +34,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, chatUnread, reviewPending }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canManageSecurity, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -58,6 +60,10 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
         // Números do WhatsApp (API keys da Meta) — exclusivo do ADMIN++.
         ...(canManageNumbers
           ? [{ key: 'numeros' as const, label: 'Números', desc: 'WhatsApp e API keys', icon: Phone }]
+          : []),
+        // Trava de IP da dashboard — exclusivo do manage_team (ADMIN++).
+        ...(canManageSecurity
+          ? [{ key: 'seguranca' as const, label: 'Segurança', desc: 'IPs liberados', icon: ShieldCheck }]
           : []),
       ],
     },

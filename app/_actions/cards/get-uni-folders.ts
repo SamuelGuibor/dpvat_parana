@@ -26,7 +26,7 @@ interface GetUniFoldersProps {
 
 export async function getUniFolders({ from, to }: GetUniFoldersProps): Promise<UniFoldersResult> {
   noStore();
-  // Mesma permissão da aba Arquivados — a planilha vive dentro dela.
-  await requirePermission("view_archived");
+  // Permissão própria (antes herdava view_archived — hoje é granular).
+  await requirePermission("view_pagos_uni");
   return buildFolderReport({ keyword: "UNI", from, to });
 }

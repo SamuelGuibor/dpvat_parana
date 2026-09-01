@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/app/_shared/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_shared/ui/select';
-import { Mail, MessageCircle, PenLine, Copy, Loader2, Send, Link2, Download } from 'lucide-react';
+import { Mail, MessageCircle, PenLine, Copy, Loader2, Send, Link2, Download, Settings2 } from 'lucide-react';
 import { gerarContratoDoCard } from '@/app/_actions/signature/contracts';
 import type { DeliveryMode } from '@/app/_shared/lib/signature/core';
 import { IoIosDocument } from 'react-icons/io';
 import type { ExtendedKanbanCard } from './types';
 import { toast } from 'sonner';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import { TemplateManagerDialog } from './TemplateManagerDialog';
 
 interface Template {
   filename: string;
@@ -62,6 +64,9 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [gerando, setGerando] = useState<DeliveryMode | null>(null);
   const [linkAssinatura, setLinkAssinatura] = useState<string | null>(null);
+  // Gestão dos modelos .docx (adicionar/renomear/excluir) — manage_templates.
+  const { perms } = usePermissions();
+  const [managerOpen, setManagerOpen] = useState(false);
 
   // Gera o KIT para assinatura eletrônica com os dados DO CARD. As três formas
   // de entrega mudam só quem manda o link: as validações (CPF, CEP nos
@@ -89,13 +94,20 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
     }
   }
 
-  useEffect(() => {
+  function loadTemplates() {
     fetch("/api/procuracao/templates")
       .then((res) => res.json())
       .then((data: Template[]) => {
         setTemplates(data);
-        if (data.length > 0) setSelectedTemplate(data[0].filename);
+        setSelectedTemplate((prev) =>
+          prev && data.some((t) => t.filename === prev) ? prev : data[0]?.filename ?? "",
+        );
       });
+  }
+
+  useEffect(() => {
+    loadTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function generateProcuracao() {
@@ -138,7 +150,18 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
             <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
               <IoIosDocument className="w-7 h-7 text-white" />
             </div>
-            <h4 className="text-lg font-black text-indigo-950">Geração de Procuração</h4>
+            <h4 className="text-lg font-black text-indigo-950 flex-1">Geração de Procuração</h4>
+            {perms.manage_templates && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setManagerOpen(true)}
+                className="rounded-xl border-indigo-200 text-indigo-700 bg-white/70"
+                title="Adicionar, renomear ou excluir modelos"
+              >
+                <Settings2 className="w-4 h-4 mr-1.5" /> Modelos
+              </Button>
+            )}
           </div>
           <div className="space-y-3 relative z-10">
             <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
@@ -254,6 +277,16 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
           />
         </div>
       </div>
+
+      {managerOpen && (
+        <TemplateManagerDialog
+          open={managerOpen}
+          onClose={(changed) => {
+            setManagerOpen(false);
+            if (changed) loadTemplates();
+          }}
+        />
+      )}
     </div>
   );
 }

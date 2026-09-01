@@ -16,6 +16,7 @@ import {
 } from '@/app/_actions/cards/archive-card';
 import { CardDialog } from './CardDialog';
 import { FolderReport } from './FolderReport';
+import { usePermissions } from './_components/PermissionsProvider';
 import type { ExtendedKanbanCard } from './card-dialog/types';
 
 // Configuração visual de cada categoria de arquivamento.
@@ -216,6 +217,11 @@ const InfoRow: React.FC<{ icon: React.ElementType; value?: string }> = ({ icon: 
 type View = 'arquivados' | 'caique' | 'uni';
 
 export const ArchivedCards: React.FC = () => {
+  // As planilhas de pagos têm permissão própria (view_pagos_caique/uni) —
+  // quem não tem nem vê os botões; o servidor valida de novo nas actions.
+  const { perms } = usePermissions();
+  const canCaique = perms.view_pagos_caique;
+  const canUni = perms.view_pagos_uni;
   const [view, setView] = useState<View>('arquivados');
   const [cards, setCards] = useState<ArchivedCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,7 +342,7 @@ export const ArchivedCards: React.FC = () => {
               <Archive className="w-3.5 h-3.5" />
               Arquivados
             </button>
-            <button
+            {canCaique && <button
               onClick={() => setView('caique')}
               className={cn(
                 'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all',
@@ -347,8 +353,8 @@ export const ArchivedCards: React.FC = () => {
             >
               <FolderOutput className="w-3.5 h-3.5" />
               Pastas Caique
-            </button>
-            <button
+            </button>}
+            {canUni && <button
               onClick={() => setView('uni')}
               className={cn(
                 'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all',
@@ -359,7 +365,7 @@ export const ArchivedCards: React.FC = () => {
             >
               <FolderOutput className="w-3.5 h-3.5" />
               Pastas UNI
-            </button>
+            </button>}
           </div>
         </div>
         {view === 'arquivados' && (
@@ -376,8 +382,8 @@ export const ArchivedCards: React.FC = () => {
       </div>
 
       {/* Planilhas de pastas (visões alternativas; a listagem clássica fica intacta abaixo) */}
-      {view === 'caique' && <FolderReport kind="caique" />}
-      {view === 'uni' && <FolderReport kind="uni" />}
+      {view === 'caique' && canCaique && <FolderReport kind="caique" />}
+      {view === 'uni' && canUni && <FolderReport kind="uni" />}
       {view === 'arquivados' && (<>
 
 

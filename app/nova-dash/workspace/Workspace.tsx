@@ -9,6 +9,7 @@ import { countPendingReviews } from '@/app/_actions/whatsapp/reviews';
 import { ManagerDashboard } from './manager/ManagerDashboard';
 import { CostsPanel } from './costs/CostsPanel';
 import { NumbersPanel } from './numbers/NumbersPanel';
+import { SecurityPanel } from './security/SecurityPanel';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { isManager } from '@/app/_shared/lib/managers';
@@ -26,7 +27,8 @@ export function Workspace() {
 
   const canReviewAi = !permsLoading && perms.review_ai;
   const canViewCosts = !permsLoading && perms.view_costs;
-  const canManageNumbers = !permsLoading && perms.manage_team;
+  const canManageNumbers = !permsLoading && perms.manage_wa_numbers;
+  const canManageSecurity = !permsLoading && perms.manage_team;
 
   // A aba Chatbot do dashboard resolve a própria allowlist na carga única
   // (get-strategic-dashboard) — nada a pré-buscar aqui.
@@ -65,13 +67,14 @@ export function Workspace() {
     || (section === 'revisao-ia' && !canReviewAi)
     || (section === 'custos' && !canViewCosts)
     || (section === 'numeros' && !canManageNumbers)
+    || (section === 'seguranca' && !canManageSecurity)
       ? 'meu-espaco'
       : section;
 
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} chatUnread={chatUnread} reviewPending={reviewPending} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} canManageSecurity={canManageSecurity} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
         {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
@@ -80,6 +83,7 @@ export function Workspace() {
         {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
         {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
         {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
+        {effective === 'seguranca' && <div className="h-full overflow-y-auto"><SecurityPanel /></div>}
       </div>
     </div>
   );

@@ -1,15 +1,12 @@
 "use server";
 
 import { db } from "@/app/_shared/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/_shared/lib/auth";
+import { requireTeam } from "@/app/_shared/lib/permissions-server";
 
 export async function getAdmins() {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.email) {
-    throw new Error("Usuário não autenticado");
-  }
+  // Lista CPF/e-mail/permissões de toda a equipe — restrito a membros da
+  // equipe (antes qualquer sessão autenticada, inclusive cliente, acessava).
+  await requireTeam();
 
   const admins = await db.user.findMany({
     where: {

@@ -1141,6 +1141,25 @@ model AppSetting {
   @@map("app_settings")
 }
 
+// Modelos .docx de procuração/contrato do "Gerar Procuração". Sobrepõe a
+// pasta templates/ do repositório: linha com s3Key = modelo enviado pela
+// equipe (vive no S3); linha sem s3Key = ajuste (label/hidden) de um modelo
+// do repositório. filename é o identificador estável usado pelo gerador.
+model DocTemplate {
+  id        String   @id @default(cuid())
+  filename  String   @unique
+  label     String?
+  s3Key     String?
+  hidden    Boolean  @default(false)
+  // procuracao = modelos do "Gerar Procuração" (templates/);
+  // assinatura = modelos do KIT de contrato do bot (templates-assinatura/).
+  kind      String   @default("procuracao")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("doc_templates")
+}
+
 model Botconversa {
   id         String    @id @default(cuid())
   nome       String

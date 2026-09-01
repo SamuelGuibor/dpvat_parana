@@ -43,15 +43,16 @@ export const StrategicDashboard: React.FC = () => {
     listWaNumberOptions().then(setNumberOptions).catch(() => setNumberOptions([]));
   }, []);
 
-  // Leads do NOSSO sistema no Fluxo de Eventos Rápidos (segue o número).
+  // Leads do NOSSO sistema no Fluxo de Eventos Rápidos (segue o número E o
+  // calendário — antes era uma janela fixa de 90 dias).
   const [systemLeads, setSystemLeads] = useState<BotKanbanLead[]>([]);
   useEffect(() => {
     let alive = true;
-    getBotKanbanLeads(numberId)
+    getBotKanbanLeads(numberId, dateRange.from.toISOString(), dateRange.to.toISOString())
       .then((rows) => { if (alive) setSystemLeads(rows); })
       .catch(() => { if (alive) setSystemLeads([]); });
     return () => { alive = false; };
-  }, [numberId]);
+  }, [numberId, dateRange]);
 
   const fetchAllData = useCallback(async (range: DateRange) => {
     setLoading(true);
@@ -157,7 +158,10 @@ export const StrategicDashboard: React.FC = () => {
 
         <TabsContent value="analytics" className="space-y-4">
           <MiniKanban data={kanban} systemItems={systemLeads} />
-          <LeadOriginSection numberId={numberId} />
+          <LeadOriginSection
+            numberId={numberId}
+            range={{ from: dateRange.from.toISOString(), to: dateRange.to.toISOString() }}
+          />
 
         </TabsContent>
 
@@ -171,7 +175,12 @@ export const StrategicDashboard: React.FC = () => {
 
         {chatbot && (
           <TabsContent value="chatbot">
-            <ChatbotPanel initialAnalytics={chatbot.analytics} numberOptions={chatbot.numberOptions} numberId={numberId} />
+            <ChatbotPanel
+              initialAnalytics={chatbot.analytics}
+              numberOptions={chatbot.numberOptions}
+              numberId={numberId}
+              range={{ from: dateRange.from.toISOString(), to: dateRange.to.toISOString() }}
+            />
           </TabsContent>
         )}
 

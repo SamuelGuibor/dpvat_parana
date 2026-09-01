@@ -2,7 +2,7 @@
 
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam, requirePermission } from '@/app/_shared/lib/permissions-server';
-import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex } from '@/app/_shared/utils/date-br';
+import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey } from '@/app/_shared/utils/date-br';
 
 // Funil do bot da IA (substitui o Funil de leads antigo, que contava pelo
 // BotConversa). Tudo aqui sai do NOSSO banco — conversas, mensagens e tags do
@@ -74,11 +74,20 @@ export async function getBotFunnel(
     }
   }
   const inRange = until ? { gte: since, lte: until } : { gte: since };
-  const monthStart = brStartOfMonth();
   const byNumber = numberId ? { numberId } : {};
 
-  // Série mensal: sempre o ano corrente (Brasília), independente do filtro.
-  const yearStart = new Date(new Date().getFullYear(), 0, 1);
+  // "Meta do mês" e a série "Mensal" acompanham o calendário: a referência é
+  // o FIM do período selecionado (antes eram sempre o mês/ano correntes,
+  // ignorando o filtro). Selecionou março → meta de março + série do ano de
+  // março.
+  const ref = until ?? new Date();
+  const monthStart = brStartOfMonth(ref);
+  const monthEnd = brStartOfMonth(new Date(monthStart.getTime() + 40 * 86_400_000));
+  const inGoalMonth = { gte: monthStart, lt: monthEnd };
+  const refYear = Number(brDayKey(ref).slice(0, 4));
+  const yearStart = brStartOfDay(new Date(Date.UTC(refYear, 0, 1, 12)));
+  const yearEnd = brStartOfDay(new Date(Date.UTC(refYear + 1, 0, 1, 12)));
+  const inRefYear = { gte: yearStart, lt: yearEnd };
 
   const [started, inConversation, docsSentRows, notHired, disqualified, tagCounts, monthHiredBot, goalRow,
     monthHiredLegacy, yearHiredTags, yearRejected, yearOpen] =
@@ -121,7 +130,7 @@ export async function getBotFunnel(
       }),
       db.whatsAppConversationTag.count({
         where: {
-          createdAt: { gte: monthStart },
+          createdAt: inGoalMonth,
           tag: { name: HIRED_TAG },
           ...(numberId ? { conversation: { numberId } } : {}),
         },
@@ -133,10 +142,10 @@ export async function getBotFunnel(
       // visão "todos os números" — filtro por número é só do sistema novo.
       numberId
         ? Promise.resolve(0)
-        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: { gte: monthStart } } }),
+        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: inGoalMonth } }),
       db.whatsAppConversationTag.findMany({
         where: {
-          createdAt: { gte: yearStart },
+          createdAt: inRefYear,
           tag: { name: HIRED_TAG },
           ...(numberId ? { conversation: { numberId } } : {}),
         },
@@ -146,7 +155,7 @@ export async function getBotFunnel(
         where: {
           ...byNumber,
           status: 'closed',
-          updatedAt: { gte: yearStart },
+          updatedAt: inRefYear,
           OR: [
             { closeCategory: 'nao_qualificado' },
             { closeCategory: { startsWith: 'nq_' } },
@@ -156,7 +165,7 @@ export async function getBotFunnel(
         select: { updatedAt: true },
       }),
       db.whatsAppConversation.findMany({
-        where: { ...byNumber, status: { not: 'closed' }, createdAt: { gte: yearStart } },
+        where: { ...byNumber, status: { not: 'closed' }, createdAt: inRefYear },
         select: { createdAt: true },
       }),
     ]);
@@ -216,14 +225,26 @@ export interface BotKanbanLead {
 
 const KANBAN_WINDOW_DAYS = 90;
 
-export async function getBotKanbanLeads(numberId: string | null): Promise<BotKanbanLead[]> {
+/** from/to (ISO) seguem o calendário do dashboard; sem eles, 90 dias fixos. */
+export async function getBotKanbanLeads(
+  numberId: string | null,
+  fromISO?: string,
+  toISO?: string,
+): Promise<BotKanbanLead[]> {
   await requireTeam();
-  const since = brStartOfDaysAgo(KANBAN_WINDOW_DAYS - 1);
+  let createdIn: { gte: Date; lte?: Date } = { gte: brStartOfDaysAgo(KANBAN_WINDOW_DAYS - 1) };
+  if (fromISO && toISO) {
+    const f = new Date(fromISO);
+    const t = new Date(toISO);
+    if (!Number.isNaN(f.getTime()) && !Number.isNaN(t.getTime())) {
+      createdIn = { gte: f, lte: t };
+    }
+  }
   const byNumber = numberId ? { numberId } : {};
 
   const [convs, docsRows, numbers] = await Promise.all([
     db.whatsAppConversation.findMany({
-      where: { ...byNumber, createdAt: { gte: since } },
+      where: { ...byNumber, createdAt: createdIn },
       orderBy: { lastMessageAt: 'desc' },
       take: 1000,
       select: {
@@ -238,7 +259,7 @@ export async function getBotKanbanLeads(numberId: string | null): Promise<BotKan
         ...byNumber,
         direction: 'out',
         internal: false,
-        createdAt: { gte: since },
+        createdAt: createdIn,
         body: { contains: DOCS_FINGERPRINT, mode: 'insensitive' },
       },
       select: { contactId: true },

@@ -9,6 +9,7 @@ import {
   type PermissionKey,
   type PermissionMap,
 } from "./permissions";
+import { checkDashboardIpAccess } from "./ip-access";
 
 export interface SessionPermissions {
   userId: string;
@@ -53,10 +54,19 @@ export async function getSessionPermissions(): Promise<SessionPermissions | null
   };
 }
 
-/** Exige sessão de equipe; lança se não houver. */
+/**
+ * Exige sessão de equipe; lança se não houver.
+ * Também aplica a trava de IP da dashboard: fora dos IPs liberados, só quem
+ * tem bypass_ip_lock (a página /nova-dash tem o mesmo gate no layout — aqui
+ * é a defesa em profundidade que cobre todas as server actions e APIs).
+ */
 export async function requireTeam(): Promise<SessionPermissions> {
   const ctx = await getSessionPermissions();
   if (!ctx) throw new Error("Acesso restrito à equipe.");
+  const ipCheck = await checkDashboardIpAccess(ctx.permissions.bypass_ip_lock);
+  if (!ipCheck.allowed) {
+    throw new Error("Acesso à dashboard permitido apenas pela internet do escritório.");
+  }
   return ctx;
 }
 

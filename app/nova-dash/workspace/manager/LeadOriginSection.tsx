@@ -43,11 +43,24 @@ const PLATFORM_META: Record<string, {
 // períodos e o segmento não pode "andar" de lugar).
 const PLATFORM_ORDER = ['facebook', 'instagram', 'meta', 'organic'] as const;
 
-export function LeadOriginSection({ numberId }: { numberId: string | null }) {
-  const [period, setPeriod] = useState<7 | 30 | 90>(7);
+export function LeadOriginSection({
+  numberId,
+  range,
+}: {
+  numberId: string | null;
+  /** Calendário do dashboard (ISO). Presente → modo "Calendário" por padrão. */
+  range?: { from: string; to: string };
+}) {
+  // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
+  const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
   const [data, setData] = useState<ChatbotAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const useRange = period === 'range' && !!range;
+  const periodDays = period === 'range' ? 30 : period;
+  const rangeFrom = useRange ? range!.from : undefined;
+  const rangeTo = useRange ? range!.to : undefined;
 
   // Drill-down da campanha: clicar num anúncio (ou no Orgânico) abre o modal
   // com cada lead, seu desfecho e o motivo do não qualificado.
@@ -57,21 +70,21 @@ export function LeadOriginSection({ numberId }: { numberId: string | null }) {
     if (!leadModal) return;
     let alive = true;
     setLeadRows(null);
-    getAdLeadOutcomes(leadModal.sourceKey, period, numberId)
+    getAdLeadOutcomes(leadModal.sourceKey, periodDays, numberId, rangeFrom, rangeTo)
       .then((rows) => { if (alive) setLeadRows(rows); })
       .catch(() => { if (alive) setLeadRows([]); });
     return () => { alive = false; };
-  }, [leadModal, period, numberId]);
+  }, [leadModal, periodDays, numberId, rangeFrom, rangeTo]);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    getChatbotAnalytics(period, numberId)
+    getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
       .then((d) => { if (alive) { setData(d); setError(null); } })
       .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [period, numberId]);
+  }, [periodDays, numberId, rangeFrom, rangeTo]);
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -110,12 +123,17 @@ export function LeadOriginSection({ numberId }: { numberId: string | null }) {
                 </div>
                 <div className="rounded-2xl border-2 border-gray-300 px-4 py-2 text-center dark:border-zinc-700">
                   <p className="text-3xl font-extrabold tabular-nums text-gray-700 dark:text-zinc-300">{data.adOrigins.totalNewContacts}</p>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">leads · {period} dias</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    leads · {useRange ? 'período do calendário' : `${period} dias`}
+                  </p>
                 </div>
               </div>
             );
           })()}
           <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
+            {range && (
+              <Button size="sm" variant={period === 'range' ? 'default' : 'ghost'} onClick={() => setPeriod('range')} className="h-7 px-3 text-xs">Calendário</Button>
+            )}
             {([7, 30, 90] as const).map((p) => (
               <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} onClick={() => setPeriod(p)} className="h-7 px-3 text-xs">{p} dias</Button>
             ))}
@@ -451,7 +469,7 @@ export function LeadOriginSection({ numberId }: { numberId: string | null }) {
       {leadModal && (
         <LeadOutcomesDialog
           title={leadModal.title}
-          periodDays={period}
+          periodDays={useRange ? null : periodDays}
           rows={leadRows}
           onClose={() => setLeadModal(null)}
         />
@@ -469,7 +487,8 @@ function LeadOutcomesDialog({
   title, periodDays, rows, onClose,
 }: {
   title: string;
-  periodDays: number;
+  /** null = período livre do calendário (o texto vira "do período"). */
+  periodDays: number | null;
   rows: AdLeadOutcome[] | null;
   onClose: () => void;
 }) {
@@ -512,7 +531,11 @@ function LeadOutcomesDialog({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="truncate text-lg font-extrabold tracking-tight text-gray-900 dark:text-zinc-100">{title}</h3>
-              <p className="text-xs text-gray-400">leads dos últimos {periodDays} dias e o desfecho de cada um</p>
+              <p className="text-xs text-gray-400">
+                {periodDays === null
+                  ? 'leads do período selecionado no calendário e o desfecho de cada um'
+                  : `leads dos últimos ${periodDays} dias e o desfecho de cada um`}
+              </p>
             </div>
             <button
               onClick={onClose}

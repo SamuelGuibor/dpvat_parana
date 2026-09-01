@@ -26,7 +26,7 @@ interface GetCaiqueFoldersProps {
 
 export async function getCaiqueFolders({ from, to }: GetCaiqueFoldersProps): Promise<CaiqueFoldersResult> {
   noStore();
-  // Mesma permissão da aba Arquivados — a planilha vive dentro dela.
-  await requirePermission("view_archived");
+  // Permissão própria (antes herdava view_archived — hoje é granular).
+  await requirePermission("view_pagos_caique");
   return buildFolderReport({ keyword: "CAIQUE", from, to });
 }

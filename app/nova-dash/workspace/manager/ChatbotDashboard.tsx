@@ -110,19 +110,28 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
   );
 }
 
-export function ChatbotDashboard({ numberId = null, initialData = null }: {
+export function ChatbotDashboard({ numberId = null, initialData = null, range }: {
   numberId?: string | null;
-  /** Analytics do período padrão (7d, todos os números), vindo da carga única
-   *  do dashboard — evita refetch na primeira renderização. */
+  /** Analytics do período inicial, vindo da carga única do dashboard —
+   *  evita refetch na primeira renderização. */
   initialData?: ChatbotAnalytics | null;
+  /** Calendário do dashboard (ISO). Presente → modo "Calendário" por padrão. */
+  range?: { from: string; to: string };
 } = {}) {
-  const [period, setPeriod] = useState<7 | 30 | 90>(7);
+  // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
+  const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
   const [data, setData] = useState<ChatbotAnalytics | null>(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
 
+  const useRange = period === 'range' && !!range;
+  const periodDays = period === 'range' ? 30 : period;
+  const rangeFrom = useRange ? range!.from : undefined;
+  const rangeTo = useRange ? range!.to : undefined;
+
   // Com initialData (carga única do dashboard), o primeiro fetch é pulado —
-  // ele só volta a rodar quando o usuário troca o período ou o número.
+  // ele só volta a rodar quando o usuário troca o período, o número ou o
+  // calendário.
   const skipFirstFetch = useRef(Boolean(initialData));
   useEffect(() => {
     if (skipFirstFetch.current) {
@@ -131,12 +140,12 @@ export function ChatbotDashboard({ numberId = null, initialData = null }: {
     }
     let alive = true;
     setLoading(true);
-    getChatbotAnalytics(period, numberId)
+    getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
       .then((d) => { if (alive) { setData(d); setError(null); } })
       .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [period, numberId]);
+  }, [periodDays, numberId, rangeFrom, rangeTo]);
 
   return (
     <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
@@ -144,6 +153,9 @@ export function ChatbotDashboard({ numberId = null, initialData = null }: {
         <div>
         </div>
         <div className="flex gap-1 rounded-lg border border-gray-200 p-1 dark:border-zinc-700">
+          {range && (
+            <Button size="sm" variant={period === 'range' ? 'default' : 'ghost'} onClick={() => setPeriod('range')} className="h-7 px-3 text-xs">Calendário</Button>
+          )}
           {([7, 30, 90] as const).map((p) => (
             <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} onClick={() => setPeriod(p)} className="h-7 px-3 text-xs">{p} dias</Button>
           ))}
@@ -168,7 +180,7 @@ export function ChatbotDashboard({ numberId = null, initialData = null }: {
               understoodRate: data.bot.understoodRate,
               successRate: data.bot.successRate,
               qualifyTime: formatDuration(data.bot.avgQualifyMinutes),
-              periodDays: period,
+              periodDays: data.periodDays,
             }}
           />
 

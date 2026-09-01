@@ -5,6 +5,11 @@ import path from "path";
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import QRCode from "qrcode";
 import { gerarProcuracao } from "@/app/_shared/utils/gerarProcuracao";
+import {
+  BUILTIN_SIGNATURE_TEMPLATES,
+  customSignatureSlug,
+  listVisibleDocTemplates,
+} from "@/app/_shared/lib/doc-templates";
 import { verifyUrlFor } from "./tokens";
 
 // Montagem do documento assinável e do PDF assinado.
@@ -34,32 +39,34 @@ export interface SignatureTemplateMeta {
   fileName: string;
 }
 
-export const SIGNATURE_TEMPLATES: SignatureTemplateMeta[] = [
-  {
-    file: "KIT_PREV_CSS_ASSINATURA.docx",
-    slug: "kit",
-    label: "KIT previdenciário — procuração e contrato",
-    fileName: "KIT previdenciário (assinado).pdf",
-  },
-  {
-    file: "PROCURAÇÃO-ESPECÍFICA_CURITIBA_ASSINATURA.docx",
-    slug: "proc-curitiba",
-    label: "Procuração específica — Curitiba",
-    fileName: "Procuração específica Curitiba (assinada).pdf",
-  },
-  {
-    file: "-PROCURAÇÃO-ESPECÍFICA-TAYNARA_ASSINATURA.docx",
-    slug: "proc-taynara",
-    label: "Procuração específica — Dra. Taynara",
-    fileName: "Procuração específica Taynara (assinada).pdf",
-  },
-  {
-    file: "DECLARACAO_DE_HIPOSSUFICIENCIA_ASSINATURA.docx",
-    slug: "decl-hipossuficiencia",
-    label: "Declaração de hipossuficiência",
-    fileName: "Declaração de hipossuficiência (assinada).pdf",
-  },
-];
+// Os 4 modelos ORIGINAIS do KIT (metadados fixos em doc-templates.ts). O
+// pacote assinável de verdade sai de listSignatureTemplates(), que respeita a
+// tela de Modelos: originais ocultados saem, modelos enviados pela equipe
+// entram no fim. Este export continua para testes/scripts.
+export const SIGNATURE_TEMPLATES: SignatureTemplateMeta[] =
+  BUILTIN_SIGNATURE_TEMPLATES.map((t) => ({ ...t }));
+
+/** Lista viva do que compõe o KIT — gerenciada na tela de Modelos do card. */
+export async function listSignatureTemplates(): Promise<SignatureTemplateMeta[]> {
+  const visible = await listVisibleDocTemplates("assinatura");
+  if (!visible.length) {
+    throw new Error(
+      "Nenhum modelo de contrato ativo — restaure ao menos um na tela de Modelos.",
+    );
+  }
+  return visible.map((t) => {
+    const builtin = BUILTIN_SIGNATURE_TEMPLATES.find((b) => b.file === t.filename);
+    if (builtin) {
+      return { file: builtin.file, slug: builtin.slug, label: t.label || builtin.label, fileName: builtin.fileName };
+    }
+    return {
+      file: t.filename,
+      slug: customSignatureSlug(t.filename),
+      label: t.label,
+      fileName: `${t.label} (assinado).pdf`,
+    };
+  });
+}
 
 /**
  * Fronteiras de cada documento dentro do PDF único (gravadas no ciclo na hora
@@ -134,9 +141,10 @@ async function convertDocx(docx: Buffer): Promise<Buffer> {
 export async function generateSignaturePdf(
   dados: Record<string, string>,
 ): Promise<{ pdf: Buffer; parts: SignaturePart[] }> {
+  const templates = await listSignatureTemplates();
   const buffers: Buffer[] = [];
   // Sequencial de propósito: o docx-converter (LibreOffice) sofre com rajadas.
-  for (const template of SIGNATURE_TEMPLATES) {
+  for (const template of templates) {
     const docx = await gerarProcuracao(dados, template.file, "templates-assinatura");
     buffers.push(await convertDocx(docx));
   }
@@ -147,9 +155,9 @@ export async function generateSignaturePdf(
     const src = await PDFDocument.load(buffers[i]);
     const pages = await merged.copyPages(src, src.getPageIndices());
     parts.push({
-      slug: SIGNATURE_TEMPLATES[i].slug,
-      label: SIGNATURE_TEMPLATES[i].label,
-      fileName: SIGNATURE_TEMPLATES[i].fileName,
+      slug: templates[i].slug,
+      label: templates[i].label,
+      fileName: templates[i].fileName,
       pageStart: merged.getPageCount(),
       pageCount: pages.length,
     });

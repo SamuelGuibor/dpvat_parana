@@ -9,28 +9,12 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getMyPermissions } from "@/app/_actions/team/permissions";
-import type { PermissionMap } from "@/app/_shared/lib/permissions";
+import { PERMISSION_KEYS, type PermissionMap } from "@/app/_shared/lib/permissions";
 
-const NO_PERMISSIONS: PermissionMap = {
-  create_hospitals: false,
-  run_ai_audit: false,
-  view_archived: false,
-  archive_cards: false,
-  delete_cards: false,
-  view_tickets: false,
-  manage_automations: false,
-  create_columns: false,
-  edit_columns: false,
-  delete_columns: false,
-  manager_dashboard: false,
-  review_ai: false,
-  manage_wa_contacts: false,
-  view_costs: false,
-  view_all_mentions: false,
-  manage_ponto: false,
-  manage_contracts: false,
-  manage_team: false,
-};
+// Derivado do catálogo — permissão nova entra aqui sozinha, sem sync manual.
+const NO_PERMISSIONS = Object.fromEntries(
+  PERMISSION_KEYS.map((k) => [k, false]),
+) as PermissionMap;
 
 interface PermissionsState {
   /** true enquanto o fetch inicial não terminou. */

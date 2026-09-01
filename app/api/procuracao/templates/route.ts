@@ -1,19 +1,16 @@
-import fs from "fs";
-import path from "path";
 import { NextResponse } from "next/server";
+import { listVisibleDocTemplates } from "@/app/_shared/lib/doc-templates";
+
+// Lista de modelos do "Gerar Procuração": pasta templates/ do repositório +
+// modelos enviados pela equipe (tabela doc_templates), menos os ocultados.
+// Variantes internas da assinatura eletrônica nunca aparecem aqui (moram em
+// templates-assinatura/ e o merge filtra "ASSINATURA" no nome).
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const templatesDir = path.join(process.cwd(), "templates");
-  // Variantes internas da assinatura eletrônica moram em templates-assinatura/;
-  // o filtro extra garante que uma cópia perdida aqui nunca aparece no front.
-  const files = fs
-    .readdirSync(templatesDir)
-    .filter((f) => f.endsWith(".docx") && !f.toUpperCase().includes("ASSINATURA"));
-
-  const templates = files.map((filename) => ({
-    filename,
-    label: filename.replace(".docx", ""),
+  const templates = (await listVisibleDocTemplates()).map((t) => ({
+    filename: t.filename,
+    label: t.label,
   }));
-
   return NextResponse.json(templates);
 }
