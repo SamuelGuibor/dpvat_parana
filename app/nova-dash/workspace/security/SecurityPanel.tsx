@@ -43,6 +43,16 @@ export function SecurityPanel() {
     e.endsWith('*') ? currentIp.toLowerCase().startsWith(e.slice(0, -1).toLowerCase()) : e.toLowerCase() === currentIp.toLowerCase(),
   );
 
+  // No wifi da empresa todo mundo divide o MESMO IPv4 público (NAT), mas no
+  // IPv6 cada máquina tem um endereço próprio — o que identifica a rede é o
+  // prefixo (4 primeiros blocos). Liberar o prefixo cobre o escritório inteiro.
+  const networkPrefix = useMemo(() => {
+    if (!currentIp.includes(':')) return null;
+    const parts = currentIp.split(':');
+    if (parts.length < 4 || parts.slice(0, 4).some((p) => !p)) return null;
+    return `${parts.slice(0, 4).join(':')}:*`;
+  }, [currentIp]);
+
   function addIp(value: string) {
     const v = value.trim();
     if (!v) return;
@@ -120,12 +130,26 @@ export function SecurityPanel() {
             </span>
           )}
         </div>
-        {!ips.includes(currentIp) && (
-          <Button size="sm" variant="outline" className="rounded-xl" onClick={() => addIp(currentIp)}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Adicionar meu IP
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {networkPrefix && !ips.includes(networkPrefix) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-xl border-emerald-200 text-emerald-700 dark:border-emerald-900 dark:text-emerald-300"
+              title={`Libera ${networkPrefix} — todos os computadores desta rede wifi de uma vez`}
+              onClick={() => addIp(networkPrefix)}
+            >
+              <Wifi className="mr-1.5 h-3.5 w-3.5" />
+              Adicionar prefixo da rede
+            </Button>
+          )}
+          {!ips.includes(currentIp) && (
+            <Button size="sm" variant="outline" className="rounded-xl" onClick={() => addIp(currentIp)}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Adicionar meu IP
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Lista */}
