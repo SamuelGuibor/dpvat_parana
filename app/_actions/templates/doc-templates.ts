@@ -69,7 +69,11 @@ export async function getDocTemplateUploadUrl(
   const builtinHit =
     builtinFilenames("procuracao").includes(filename) ||
     builtinFilenames("assinatura").includes(filename);
-  if (existing?.s3Key || builtinHit) {
+  // Se foi excluído (hidden), o nome está livre pra reenvio — o novo arquivo
+  // ocupa o lugar do antigo (mesmo filename, mesmo slug/ordem no KIT), sem
+  // precisar renomear. Só bloqueia quando o modelo está ativo de verdade.
+  const blocked = existing?.hidden ? false : Boolean(existing?.s3Key) || builtinHit;
+  if (blocked) {
     throw new Error(`Já existe um modelo chamado "${filename}" — renomeie o arquivo.`);
   }
 
