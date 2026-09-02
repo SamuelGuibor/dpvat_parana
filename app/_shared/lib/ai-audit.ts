@@ -35,6 +35,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./prisma";
 import { createLog } from "./log";
 import { markPersonalDocChecklistItem } from "./admin-checklist";
+import { recordMentions } from "./mention-inbox";
 
 export type AiAuditType = "documento_pessoal" | "inss_roteiro" | "inss_pre_envio";
 
@@ -534,6 +535,8 @@ export async function runAiAudit({
       let status = "ok";
       let body = "";
       let checklistMarked = false;
+      let mentionResponsible: { id: string; name: string | null } | null = null;
+      let mentionMotivo = "";
 
       // Renomeia o arquivo do documento pessoal conforme a regra dos 10 anos
       // ("DOCUMENTO PESSOAL ATUALIZADO/DESATUALIZADO (TIPO)").
@@ -574,6 +577,8 @@ export async function runAiAudit({
       } else if (result.situacao === "desatualizado") {
         status = "reprovado";
         const responsible = await notifyResponsible("Documento pessoal vencido detectado pela IA");
+        mentionResponsible = responsible;
+        mentionMotivo = "Documento pessoal vencido detectado pela IA — verificar com o cliente.";
         const mention = responsible ? `\n\n@[${responsible.name}](${responsible.id}) — documento vencido, verificar com o cliente.` : "";
         body =
           `**${result.tipoDocumento ?? "Documento"}** expedido em **${result.dataExpedicao ?? "?"}** — emitido há mais de 10 anos: **DESATUALIZADO**. Etiqueta "${EXPIRED_DOC_TAG}" aplicada.` +
@@ -584,6 +589,8 @@ export async function runAiAudit({
         // à responsável para verificação manual (regra da skill).
         status = "alerta";
         const responsible = await notifyResponsible("Data de expedição ilegível — documento pendente de verificação manual");
+        mentionResponsible = responsible;
+        mentionMotivo = "Data de expedição ilegível — verificar manualmente.";
         const mention = responsible ? `\n\n@[${responsible.name}](${responsible.id}) — data de expedição ilegível, verificar manualmente.` : "";
         body =
           `**${result.tipoDocumento ?? "Documento"}** localizado, mas a data de expedição está ilegível — **PENDENTE de verificação manual** (sem palpite). Etiqueta "${EXPIRED_DOC_TAG}" aplicada por precaução.` +
@@ -607,6 +614,19 @@ export async function runAiAudit({
       }
 
       const comment = await makeComment(status, body + renameNote + skippedNote);
+      if (mentionResponsible) {
+        await recordMentions({
+          recipientIds: [mentionResponsible.id],
+          authorId: null,
+          authorName: AI_AUDIT_AUTHOR,
+          source: "comment",
+          text: mentionMotivo,
+          targetName,
+          commentId: comment.id,
+          userId: isProcess ? null : cardId,
+          processId: isProcess ? cardId : null,
+        });
+      }
       await createLog({
         action: "ai_audit",
         message: `auditou o documento pessoal via IA (${status === "ok" ? "sem pendências" : status === "alerta" ? "com alertas" : "documento vencido"})`,

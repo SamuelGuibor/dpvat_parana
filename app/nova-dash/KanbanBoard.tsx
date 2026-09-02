@@ -2195,8 +2195,9 @@ export const KanbanBoard: React.FC = () => {
                       {archivedMatches.map((hit) => (
                         <li
                           key={`arch-${hit.isProcess ? 'p' : 'u'}-${hit.id}`}
-                          title="Card arquivado — veja na aba Arquivados"
-                          className="flex items-center gap-3 bg-amber-50/40 px-4 py-2.5 dark:bg-amber-950/20"
+                          title="Card arquivado — clique para abrir"
+                          onClick={() => openArchivedCard(hit.id, hit.isProcess)}
+                          className="flex items-center gap-3 bg-amber-50/40 px-4 py-2.5 dark:bg-amber-950/20 cursor-pointer hover:bg-amber-100/60 dark:hover:bg-amber-900/30 transition-colors"
                         >
                           <div className="shrink-0 rounded-lg bg-amber-100 px-2 py-1 font-mono text-base font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                             {hit.cardNumber != null ? `#${hit.cardNumber}` : '—'}
