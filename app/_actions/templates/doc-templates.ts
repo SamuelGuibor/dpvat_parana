@@ -6,7 +6,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { requirePermission, requireTeam } from "@/app/_shared/lib/permissions-server";
 import {
-  builtinFilenames,
+  BUILTIN_SIGNATURE_TEMPLATES,
   listAllDocTemplates,
   listVisibleDocTemplates,
   type DocTemplateInfo,
@@ -65,15 +65,12 @@ export async function getDocTemplateUploadUrl(
   if (!base) throw new Error("Nome do modelo vazio.");
   const filename = `${base}.docx`;
 
+  // Match é só pelo banco (ver doc-templates.ts) — se o modelo foi excluído
+  // de vez, a linha some e o nome fica livre pra reenvio na hora, mesmo que
+  // o filename bata com um dos 4 originais do KIT ou um arquivo ainda não
+  // migrado do repositório: o upload cria/assume a linha e passa a valer.
   const existing = await db.docTemplate.findUnique({ where: { filename } });
-  const builtinHit =
-    builtinFilenames("procuracao").includes(filename) ||
-    builtinFilenames("assinatura").includes(filename);
-  // Se foi excluído (hidden), o nome está livre pra reenvio — o novo arquivo
-  // ocupa o lugar do antigo (mesmo filename, mesmo slug/ordem no KIT), sem
-  // precisar renomear. Só bloqueia quando o modelo está ativo de verdade.
-  const blocked = existing?.hidden ? false : Boolean(existing?.s3Key) || builtinHit;
-  if (blocked) {
+  if (existing?.s3Key) {
     throw new Error(`Já existe um modelo chamado "${filename}" — renomeie o arquivo.`);
   }
 
@@ -102,6 +99,22 @@ export async function confirmDocTemplateUpload(input: {
   if (!input.key.startsWith("doc-templates/")) throw new Error("Chave inválida.");
   const k = normalizeKind(input.kind);
 
+  // Assinatura: preserva a posição do KIT quando o nome bate com um dos 4
+  // originais (reenvio no lugar de um excluído); modelo novo vai pro fim.
+  let sortOrder = 0;
+  if (k === "assinatura") {
+    const builtinIdx = BUILTIN_SIGNATURE_TEMPLATES.findIndex((t) => t.file === input.filename);
+    if (builtinIdx >= 0) {
+      sortOrder = builtinIdx;
+    } else {
+      const max = await db.docTemplate.aggregate({
+        where: { kind: "assinatura" },
+        _max: { sortOrder: true },
+      });
+      sortOrder = Math.max(max._max.sortOrder ?? 0, BUILTIN_SIGNATURE_TEMPLATES.length - 1) + 1;
+    }
+  }
+
   await db.docTemplate.upsert({
     where: { filename: input.filename },
     create: {
@@ -109,9 +122,9 @@ export async function confirmDocTemplateUpload(input: {
       label: input.label?.trim() || null,
       s3Key: input.key,
       kind: k,
+      sortOrder,
     },
-    // upsert cobre a linha "fantasma" de um builtin removido do disco.
-    update: { s3Key: input.key, label: input.label?.trim() || null, hidden: false, kind: k },
+    update: { s3Key: input.key, label: input.label?.trim() || null, hidden: false, kind: k, sortOrder },
   });
   return listAllDocTemplates(k);
 }
@@ -136,9 +149,12 @@ export async function renameDocTemplate(
 }
 
 /**
- * Exclui um modelo: enviado → some de vez (S3 + banco); do repositório →
- * fica oculto (dá para restaurar). No grupo assinatura, o KIT nunca pode
- * ficar sem nenhum modelo ativo (o bot não teria o que mandar assinar).
+ * Exclui um modelo de vez (S3 + banco) — sem "ocultar": o match agora é só
+ * pelo banco, então a linha sumindo já libera o nome pra um reenvio (mesmo
+ * nome = atualizar o conteúdo, sem precisar renomear). O "oculta e restaura"
+ * só se aplica ao raro modelo ainda não migrado pro banco (sem s3Key).
+ * No grupo assinatura, o KIT nunca pode ficar sem nenhum modelo ativo (o bot
+ * não teria o que mandar assinar).
  */
 export async function deleteDocTemplate(
   filename: string,

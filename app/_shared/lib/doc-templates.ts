@@ -11,11 +11,19 @@ import { db } from "./prisma";
 //   <<assinatura_cliente>>). O pacote assinável é montado pela lista visível
 //   deste grupo — ocultar/enviar um modelo muda o que o cliente assina.
 //
-// Antes eram só arquivos fixos no repositório — adicionar, renomear ou excluir
-// exigia deploy. Agora a tabela doc_templates sobrepõe as pastas: um modelo
-// enviado pela equipe vive no S3 (s3Key preenchida); um modelo do repositório
-// pode ganhar nome de exibição (label) ou ser ocultado (hidden) sem sair do
-// disco. O `filename` é o identificador estável que o front manda pro gerador.
+// Antes eram só arquivos fixos no repositório. Desde 02/09 todo modelo é
+// gerenciado pelo banco: o conteúdo vive no S3 (doc_templates.s3Key) e o
+// MATCH de "qual modelo é esse" é feito só pela linha do banco — nunca mais
+// pelo arquivo físico em templates/ ou templates-assinatura/. Isso evita a
+// "reativação fantasma": antes, excluir um modelo original só escondia a
+// linha (hidden=true) e o arquivo do repositório continuava valendo como
+// fallback, então reenviar um .docx com o MESMO nome (pra atualizar o
+// conteúdo) ficava bloqueado — ou, se destravado, o disco voltava a aparecer
+// assim que a linha do banco fosse apagada de vez. Migração pontual dos 4
+// modelos de assinatura + dos de templates/: scripts/migrate-templates-to-db.mjs.
+// O `filename` é o identificador estável que o front manda pro gerador — os
+// nomes hardcoded do KIT (BUILTIN_SIGNATURE_TEMPLATES) continuam existindo só
+// como metadado (slug/label/nome do PDF final), não como fonte de conteúdo.
 
 export type DocTemplateKind = "procuracao" | "assinatura";
 
@@ -94,36 +102,49 @@ export async function listAllDocTemplates(
   const signatureLabelOf = (filename: string) =>
     BUILTIN_SIGNATURE_TEMPLATES.find((t) => t.file === filename)?.label;
 
-  const builtins: DocTemplateInfo[] = builtinFilenames(kind).map((filename) => {
-    const row = byFilename.get(filename);
-    return {
-      filename,
-      label:
-        row?.label ||
-        (kind === "assinatura" ? signatureLabelOf(filename) : undefined) ||
-        filename.replace(/\.docx$/i, ""),
-      source: "builtin",
-      hidden: row?.hidden ?? false,
-      kind,
-    };
-  });
-
-  const customs: DocTemplateInfo[] = rows
+  // Fonte da verdade: a linha do banco com conteúdo em S3. É o caso normal
+  // pós-migração — nenhum fallback pro arquivo físico aqui, pra não reativar
+  // um modelo que já foi excluído de vez.
+  const managed: DocTemplateInfo[] = rows
     .filter((r) => r.s3Key)
     .map((r) => ({
       filename: r.filename,
-      label: r.label || r.filename.replace(/\.docx$/i, ""),
+      label:
+        r.label ||
+        (kind === "assinatura" ? signatureLabelOf(r.filename) : undefined) ||
+        r.filename.replace(/\.docx$/i, ""),
       source: "custom",
       hidden: r.hidden,
       kind,
     }));
 
-  // Procuração: ordem alfabética (é um seletor). Assinatura: builtins na ordem
-  // do KIT + customs por ordem de criação (é a ordem do PDF final).
+  // Fallback só para o que ainda não passou pela migração pro banco (não
+  // deveria sobrar nenhum depois de rodar scripts/migrate-templates-to-db.mjs).
+  const unmigrated: DocTemplateInfo[] = builtinFilenames(kind)
+    .filter((f) => !byFilename.get(f)?.s3Key)
+    .map((filename) => {
+      const row = byFilename.get(filename);
+      return {
+        filename,
+        label:
+          row?.label ||
+          (kind === "assinatura" ? signatureLabelOf(filename) : undefined) ||
+          filename.replace(/\.docx$/i, ""),
+        source: "builtin",
+        hidden: row?.hidden ?? false,
+        kind,
+      };
+    });
+
+  const all = [...managed, ...unmigrated];
+
+  // Procuração: ordem alfabética (é um seletor). Assinatura: sortOrder (é a
+  // ordem do PDF final do KIT).
   if (kind === "procuracao") {
-    return [...builtins, ...customs].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+    return all.sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   }
-  return [...builtins, ...customs];
+  const orderOf = (filename: string) => byFilename.get(filename)?.sortOrder ?? 9999;
+  return all.sort((a, b) => orderOf(a.filename) - orderOf(b.filename));
 }
 
 /** Só os visíveis — seletor do "Gerar Procuração" / montagem do KIT. */

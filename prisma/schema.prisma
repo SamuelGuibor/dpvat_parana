@@ -1154,6 +1154,9 @@ model DocTemplate {
   // procuracao = modelos do "Gerar Procuração" (templates/);
   // assinatura = modelos do KIT de contrato do bot (templates-assinatura/).
   kind      String   @default("procuracao")
+  // Ordem no KIT de assinatura (o pacote assinável segue esta ordem). Não
+  // usado em procuracao, que ordena por label.
+  sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
