@@ -58,22 +58,21 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
     }
   };
 
-  // Pizza "Distribuição de Status" — mesmos agrupamentos do gráfico antigo do
-  // dashboard, agora contados pelo sistema. "Iniciado" = o que sobra do total
-  // depois das demais fatias (aproximação: as fatias vêm de contagens
-  // independentes).
-  const distribution = data
+  // Etapas EXCLUSIVAS da coorte (cada conversa em uma só) — somam exatamente
+  // "Iniciados". Alimentam as Barras (funil do período) e a Pizza. Antes a
+  // pizza tirava "Iniciado" por subtração de contagens sobrepostas e a fatia
+  // dava negativo (sumia sempre).
+  const stages = data
     ? [
-        {
-          name: 'Iniciado',
-          value: Math.max(0, data.started - data.inConversation - data.docsSent - data.disqualified - data.notHired - data.hired),
-          color: '#f59e0b',
-        },
-        { name: 'Em conversa | Envio Documentos', value: data.inConversation + data.docsSent, color: '#3b82f6' },
-        { name: 'Não Qualificado | Não contratado', value: data.disqualified + data.notHired, color: '#ef4444' },
+        { name: 'Em conversa', value: data.inConversation, color: '#3b82f6' },
+        { name: 'Lista docs', value: data.docsSent, color: '#6366f1' },
+        { name: 'Não contratado', value: data.notHired, color: '#f59e0b' },
+        { name: 'Não qualificado', value: data.disqualified, color: '#ef4444' },
         { name: 'Contratado', value: data.hired, color: '#10b981' },
-      ].filter((d) => d.value > 0)
+        { name: 'Outros', value: data.others, color: '#9ca3af' },
+      ]
     : [];
+  const distribution = stages.filter((d) => d.value > 0);
 
   return (
     <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -83,7 +82,7 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
         </span>
         Funil do bot
         <span className="text-xs font-semibold text-gray-400">
-          contado pelo sistema{range ? '' : ` · ${period} dias`}
+          conversas criadas no período{range ? '' : ` · ${period} dias`}
         </span>
       </h2>
 
@@ -102,6 +101,7 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
             <Kpi label="Não qualificados" value={data.disqualified} className="text-rose-600" />
             <Kpi label="Qualificados" value={data.qualified} className="text-teal-600" />
             <Kpi label="Contratados" value={data.hired} className="text-emerald-600" />
+            <Kpi label="Outros desfechos" value={data.others} />
             {/* Meta do mês com barra embutida (clique no lápis para editar) */}
             <div className="rounded-xl border border-gray-100 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="flex items-center justify-between text-[11px] font-semibold text-gray-400">
@@ -155,10 +155,10 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
           <div className="flex min-h-[260px] flex-col rounded-xl border border-gray-100 p-3 dark:border-zinc-800">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
-                {chart === 'bar' ? 'Funil do período' : chart === 'pie' ? 'Distribuição de status' : 'Processos por mês'}
+                {chart === 'bar' ? 'Funil do período' : chart === 'pie' ? 'Distribuição de status' : 'Processos por mês (ano do período)'}
               </p>
               <div className="flex overflow-hidden rounded-full border border-gray-200 text-[11px] font-semibold dark:border-zinc-700">
-                {([['bar', 'Barras'], ['pie', 'Pizza']] as const).map(([c, label]) => (
+                {([['bar', 'Barras'], ['pie', 'Pizza'], ['month', 'Mensal']] as const).map(([c, label]) => (
                   <button
                     key={c}
                     onClick={() => setChart(c)}
@@ -174,6 +174,19 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
             <div className="min-h-0 flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 {chart === 'bar' ? (
+                  <BarChart data={stages} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.35} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" width={96} tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,.12)', fontSize: 12 }}
+                      formatter={(v: number) => [v.toLocaleString('pt-BR'), 'conversas']}
+                    />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 10, fill: '#64748b' }}>
+                      {stages.map((d) => <Cell key={d.name} fill={d.color} />)}
+                    </Bar>
+                  </BarChart>
+                ) : chart === 'month' ? (
                   <BarChart data={data.monthly} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.35} />
                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />

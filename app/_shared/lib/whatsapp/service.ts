@@ -417,7 +417,7 @@ export async function ingestIncomingMessage(
     });
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
-      data: { status: "closed", assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
+      data: { status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
     });
     return { contactId: contact.id, numberId: contact.numberId, conversationStatus: "closed", message: dto, isNew: true };
   }

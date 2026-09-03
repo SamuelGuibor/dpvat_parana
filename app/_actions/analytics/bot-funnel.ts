@@ -8,14 +8,25 @@ import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey 
 // BotConversa). Tudo aqui sai do NOSSO banco — conversas, mensagens e tags do
 // WhatsApp — respeitando o filtro de número do Desempenho do Chatbot.
 //
-// Etapas (acordadas em 17/08/2026):
-// - Iniciados: contatos novos que mandaram mensagem no período.
-// - Em conversa: IA qualificando (status bot) ou resgatando (standby).
-// - Lista docs: a IA (ou o fluxo manual) mandou a lista de documentos.
-// - Não contratados: sumiram após o ciclo completo de recuperação.
-// - Não qualificados: encerradas como não qualificadas (qualquer motivo).
-// - Qualificados/Contratados: pelas tags "Qualificada"/"Contratados" (a data
-//   da tag delimita o período — ver WhatsAppConversationTag.createdAt).
+// Unificação de 03/09/2026: o Funil e o Fluxo de Eventos Rápidos passaram a
+// sair da MESMA classificação, por COORTE — conversas CRIADAS no período,
+// cada uma em exatamente uma etapa (o estado atual dela). Antes o Funil
+// contava eventos do período (tag, encerramento, última mensagem) em cima de
+// conversas de qualquer idade e com sobreposição entre etapas, enquanto o
+// Fluxo mostrava só as criadas no período — os dois nunca batiam.
+//
+// Etapas (uma por conversa, nesta ordem de prioridade):
+// - Contratado: tem a tag "Contratados".
+// - Não qualificado: encerrada como nao_qualificado / nq_*.
+// - Não contratado: encerrada como sem_resposta (sumiu após a recuperação).
+// - Lista docs: recebeu a lista de documentos, ou tem a tag "Qualificada".
+// - Iniciado: aberta e a IA ainda não avançou nenhuma etapa (sem botState).
+// - Em conversa: aberta, em qualquer status (bot, standby, fila, humano).
+// - Outros: encerrada por outro motivo (perguntas, transferido, descartado...).
+//
+// No Funil: Iniciados = TODAS as conversas da coorte; Em conversa = Iniciado +
+// Em conversa do Fluxo; Qualificados = tag "Qualificada" na coorte (marco que
+// se sobrepõe às demais etapas — é o único KPI não exclusivo).
 
 // Fingerprint da mensagem de coleta de documentos (bot e fluxo manual usam o
 // mesmo texto). Se o texto do bot mudar, atualizar aqui junto.
@@ -27,6 +38,15 @@ const HIRED_TAG = 'Contratados';
 const GOAL_KEY = 'monthly_hired_goal';
 const GOAL_DEFAULT = 60;
 
+export type BotStage =
+  | 'iniciado'
+  | 'em_conversa'
+  | 'enviou_documentos'
+  | 'nao_contratado'
+  | 'nao_qualificado'
+  | 'contratado'
+  | 'outros';
+
 export interface BotFunnelData {
   started: number;
   inConversation: number;
@@ -35,6 +55,8 @@ export interface BotFunnelData {
   disqualified: number;
   qualified: number;
   hired: number;
+  /** Encerradas por outros motivos (perguntas, transferido, descartado...). */
+  others: number;
   /** Contratados no mês corrente (Brasília) × meta configurada. */
   monthHired: number;
   monthGoal: number;
@@ -44,12 +66,100 @@ export interface BotFunnelData {
   monthHiredLegacy: number;
   // Série do ano corrente pro gráfico "Mensal" (mesma leitura do antigo
   // Processos por Mês, agora contada pelo nosso banco): aprovados = tag
-  // Contratados; indeferidos = encerradas nq_*/nao_qualificado/sem_resposta;
-  // emAndamento = conversas AINDA abertas, pelo mês de criação.
+  // Contratados; indeferidos = encerradas nq_*/nao_qualificado/sem_resposta
+  // (pela data real de encerramento); emAndamento = conversas AINDA abertas,
+  // pelo mês de criação.
   monthly: { month: string; aprovados: number; indeferidos: number; emAndamento: number }[];
 }
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+export interface BotKanbanLead {
+  id: string;
+  nome: string;
+  telefone: string;
+  /** Mesmas chaves de etapa do MiniKanban legado (iniciado, em_conversa...). */
+  evento: BotStage;
+  createdAt: string | null;
+  updatedAt: string | null;
+  numberLabel: string | null;
+}
+
+const KANBAN_WINDOW_DAYS = 90;
+
+function parseRange(fromISO?: string, toISO?: string): { from: Date; to: Date } | null {
+  if (!fromISO || !toISO) return null;
+  const f = new Date(fromISO);
+  const t = new Date(toISO);
+  if (Number.isNaN(f.getTime()) || Number.isNaN(t.getTime())) return null;
+  return { from: f, to: t };
+}
+
+/**
+ * Coorte do período: conversas criadas em [from, to], cada uma classificada
+ * em UMA etapa. Base comum do Funil e do Fluxo de Eventos Rápidos.
+ */
+async function loadCohort(numberId: string | null, from: Date, to: Date | null) {
+  const createdIn = to ? { gte: from, lte: to } : { gte: from };
+  const byNumber = numberId ? { numberId } : {};
+
+  const [convs, docsRows, numbers] = await Promise.all([
+    // Sem teto: o kanban é virtualizado e o funil precisa da coorte inteira.
+    db.whatsAppConversation.findMany({
+      where: { ...byNumber, createdAt: createdIn },
+      orderBy: { lastMessageAt: 'desc' },
+      select: {
+        id: true, status: true, closeCategory: true, botState: true, numberId: true,
+        createdAt: true, updatedAt: true,
+        contact: { select: { id: true, name: true, phone: true } },
+        tags: { select: { tag: { select: { name: true } } } },
+      },
+    }),
+    // A lista de documentos pode ter saído DEPOIS do fim do período (coorte
+    // antiga) — o que importa é ter saído desde a criação da conversa.
+    db.whatsAppMessage.findMany({
+      where: {
+        ...byNumber,
+        direction: 'out',
+        internal: false,
+        createdAt: { gte: from },
+        body: { contains: DOCS_FINGERPRINT, mode: 'insensitive' },
+      },
+      select: { contactId: true },
+      distinct: ['contactId'],
+    }),
+    db.whatsAppNumber.findMany({ select: { id: true, label: true } }),
+  ]);
+
+  const docsSet = new Set(docsRows.map((r) => r.contactId));
+  const labelOf = new Map(numbers.map((n) => [n.id, n.label]));
+
+  let qualified = 0;
+  const leads = convs.map((c): BotKanbanLead => {
+    const tagNames = c.tags.map((t) => t.tag.name);
+    if (tagNames.includes(QUALIFIED_TAG)) qualified++;
+    const closed = c.status === 'closed';
+    let evento: BotStage;
+    if (tagNames.includes(HIRED_TAG)) evento = 'contratado';
+    else if (closed && (c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_'))) evento = 'nao_qualificado';
+    else if (closed && c.closeCategory === 'sem_resposta') evento = 'nao_contratado';
+    else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG)) evento = 'enviou_documentos';
+    else if (!closed && !c.botState) evento = 'iniciado';
+    else if (!closed) evento = 'em_conversa';
+    else evento = 'outros';
+    return {
+      id: c.id,
+      nome: c.contact.name ?? c.contact.phone,
+      telefone: c.contact.phone,
+      evento,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+      numberLabel: c.numberId ? labelOf.get(c.numberId) ?? null : null,
+    };
+  });
+
+  return { leads, qualified };
+}
 
 /**
  * from/to (ISO) têm prioridade sobre periodDays — o dashboard geral filtra por
@@ -63,17 +173,9 @@ export async function getBotFunnel(
 ): Promise<BotFunnelData> {
   await requireTeam();
   const days = Math.min(Math.max(Math.round(periodDays) || 7, 1), 365);
-  let since = brStartOfDaysAgo(days - 1);
-  let until: Date | null = null;
-  if (fromISO && toISO) {
-    const f = new Date(fromISO);
-    const t = new Date(toISO);
-    if (!Number.isNaN(f.getTime()) && !Number.isNaN(t.getTime())) {
-      since = f;
-      until = t;
-    }
-  }
-  const inRange = until ? { gte: since, lte: until } : { gte: since };
+  const range = parseRange(fromISO, toISO);
+  const since = range?.from ?? brStartOfDaysAgo(days - 1);
+  const until = range?.to ?? null;
   const byNumber = numberId ? { numberId } : {};
 
   // "Meta do mês" e a série "Mensal" acompanham o calendário: a referência é
@@ -89,45 +191,9 @@ export async function getBotFunnel(
   const yearEnd = brStartOfDay(new Date(Date.UTC(refYear + 1, 0, 1, 12)));
   const inRefYear = { gte: yearStart, lt: yearEnd };
 
-  const [started, inConversation, docsSentRows, notHired, disqualified, tagCounts, monthHiredBot, goalRow,
-    monthHiredLegacy, yearHiredTags, yearRejected, yearOpen] =
+  const [cohort, monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen] =
     await Promise.all([
-      db.whatsAppContact.count({ where: { ...byNumber, createdAt: inRange } }),
-      db.whatsAppConversation.count({
-        where: { ...byNumber, status: { in: ['bot', 'standby'] }, lastMessageAt: inRange },
-      }),
-      // Conversas distintas em que a lista de documentos foi enviada no período.
-      db.whatsAppMessage.findMany({
-        where: {
-          ...byNumber,
-          direction: 'out',
-          internal: false,
-          createdAt: inRange,
-          body: { contains: DOCS_FINGERPRINT, mode: 'insensitive' },
-        },
-        select: { contactId: true },
-        distinct: ['contactId'],
-      }),
-      db.whatsAppConversation.count({
-        where: { ...byNumber, status: 'closed', closeCategory: 'sem_resposta', updatedAt: inRange },
-      }),
-      db.whatsAppConversation.count({
-        where: {
-          ...byNumber,
-          status: 'closed',
-          updatedAt: inRange,
-          OR: [{ closeCategory: 'nao_qualificado' }, { closeCategory: { startsWith: 'nq_' } }],
-        },
-      }),
-      db.whatsAppConversationTag.groupBy({
-        by: ['tagId'],
-        _count: true,
-        where: {
-          createdAt: inRange,
-          tag: { name: { in: [QUALIFIED_TAG, HIRED_TAG] } },
-          ...(numberId ? { conversation: { numberId } } : {}),
-        },
-      }),
+      loadCohort(numberId, since, until),
       db.whatsAppConversationTag.count({
         where: {
           createdAt: inGoalMonth,
@@ -155,14 +221,14 @@ export async function getBotFunnel(
         where: {
           ...byNumber,
           status: 'closed',
-          updatedAt: inRefYear,
+          closedAt: inRefYear,
           OR: [
             { closeCategory: 'nao_qualificado' },
             { closeCategory: { startsWith: 'nq_' } },
             { closeCategory: 'sem_resposta' },
           ],
         },
-        select: { updatedAt: true },
+        select: { closedAt: true },
       }),
       db.whatsAppConversation.findMany({
         where: { ...byNumber, status: { not: 'closed' }, createdAt: inRefYear },
@@ -172,32 +238,24 @@ export async function getBotFunnel(
 
   const monthly = MONTHS.map((month) => ({ month, aprovados: 0, indeferidos: 0, emAndamento: 0 }));
   for (const t of yearHiredTags) monthly[brMonthIndex(t.createdAt)].aprovados++;
-  for (const c of yearRejected) monthly[brMonthIndex(c.updatedAt)].indeferidos++;
+  for (const c of yearRejected) if (c.closedAt) monthly[brMonthIndex(c.closedAt)].indeferidos++;
   for (const c of yearOpen) monthly[brMonthIndex(c.createdAt)].emAndamento++;
 
-  // groupBy devolve por tagId — resolve os nomes para separar as duas tags.
-  let qualified = 0;
-  let hired = 0;
-  if (tagCounts.length) {
-    const tags = await db.whatsAppTag.findMany({
-      where: { id: { in: tagCounts.map((t) => t.tagId) } },
-      select: { id: true, name: true },
-    });
-    const nameOf = new Map(tags.map((t) => [t.id, t.name]));
-    for (const t of tagCounts) {
-      if (nameOf.get(t.tagId) === QUALIFIED_TAG) qualified += t._count;
-      if (nameOf.get(t.tagId) === HIRED_TAG) hired += t._count;
-    }
-  }
+  const count: Record<BotStage, number> = {
+    iniciado: 0, em_conversa: 0, enviou_documentos: 0, nao_contratado: 0,
+    nao_qualificado: 0, contratado: 0, outros: 0,
+  };
+  for (const l of cohort.leads) count[l.evento]++;
 
   return {
-    started,
-    inConversation,
-    docsSent: docsSentRows.length,
-    notHired,
-    disqualified,
-    qualified,
-    hired,
+    started: cohort.leads.length,
+    inConversation: count.iniciado + count.em_conversa,
+    docsSent: count.enviou_documentos,
+    notHired: count.nao_contratado,
+    disqualified: count.nao_qualificado,
+    qualified: cohort.qualified,
+    hired: count.contratado,
+    others: count.outros,
     monthHired: monthHiredBot + monthHiredLegacy,
     monthHiredBot,
     monthHiredLegacy,
@@ -208,22 +266,11 @@ export async function getBotFunnel(
 
 // ---------------------------------------------------------------------------
 // Leads do NOSSO sistema no "Fluxo de Eventos Rápidos" (MiniKanban): cada
-// conversa vira um card na etapa derivada do estado real, com a etiqueta do
-// número que atendeu (Principal, Paraná DPVAT...). Os cards do sistema são
-// somente-leitura — a etapa muda sozinha conforme o atendimento anda.
-
-export interface BotKanbanLead {
-  id: string;
-  nome: string;
-  telefone: string;
-  /** Mesmas chaves de etapa do MiniKanban legado (iniciado, em_conversa...). */
-  evento: string;
-  createdAt: string | null;
-  updatedAt: string | null;
-  numberLabel: string | null;
-}
-
-const KANBAN_WINDOW_DAYS = 90;
+// conversa da coorte vira um card na etapa derivada do estado real, com a
+// etiqueta do número que atendeu (Principal, Paraná DPVAT...). Os cards do
+// sistema são somente-leitura — a etapa muda sozinha conforme o atendimento
+// anda. Mesma classificação do Funil (loadCohort) — os dois batem por
+// construção.
 
 /** from/to (ISO) seguem o calendário do dashboard; sem eles, 90 dias fixos. */
 export async function getBotKanbanLeads(
@@ -232,65 +279,13 @@ export async function getBotKanbanLeads(
   toISO?: string,
 ): Promise<BotKanbanLead[]> {
   await requireTeam();
-  let createdIn: { gte: Date; lte?: Date } = { gte: brStartOfDaysAgo(KANBAN_WINDOW_DAYS - 1) };
-  if (fromISO && toISO) {
-    const f = new Date(fromISO);
-    const t = new Date(toISO);
-    if (!Number.isNaN(f.getTime()) && !Number.isNaN(t.getTime())) {
-      createdIn = { gte: f, lte: t };
-    }
-  }
-  const byNumber = numberId ? { numberId } : {};
-
-  const [convs, docsRows, numbers] = await Promise.all([
-    db.whatsAppConversation.findMany({
-      where: { ...byNumber, createdAt: createdIn },
-      orderBy: { lastMessageAt: 'desc' },
-      take: 1000,
-      select: {
-        id: true, status: true, closeCategory: true, botState: true, numberId: true,
-        createdAt: true, updatedAt: true,
-        contact: { select: { id: true, name: true, phone: true } },
-        tags: { select: { tag: { select: { name: true } } } },
-      },
-    }),
-    db.whatsAppMessage.findMany({
-      where: {
-        ...byNumber,
-        direction: 'out',
-        internal: false,
-        createdAt: createdIn,
-        body: { contains: DOCS_FINGERPRINT, mode: 'insensitive' },
-      },
-      select: { contactId: true },
-      distinct: ['contactId'],
-    }),
-    db.whatsAppNumber.findMany({ select: { id: true, label: true } }),
-  ]);
-
-  const docsSet = new Set(docsRows.map((r) => r.contactId));
-  const labelOf = new Map(numbers.map((n) => [n.id, n.label]));
-
-  return convs.map((c): BotKanbanLead | null => {
-    const tagNames = c.tags.map((t) => t.tag.name);
-    let evento: string;
-    if (tagNames.includes(HIRED_TAG)) evento = 'contratado';
-    else if (c.status === 'closed' && (c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_'))) evento = 'nao_qualificado';
-    else if (c.status === 'closed' && c.closeCategory === 'sem_resposta') evento = 'nao_contratado';
-    else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG)) evento = 'enviou_documentos';
-    else if (c.status !== 'closed' && !c.botState) evento = 'iniciado';
-    else if (c.status !== 'closed') evento = 'em_conversa';
-    else return null; // encerradas por outros motivos (perguntas, transferido...) ficam fora
-    return {
-      id: c.id,
-      nome: c.contact.name ?? c.contact.phone,
-      telefone: c.contact.phone,
-      evento,
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
-      numberLabel: c.numberId ? labelOf.get(c.numberId) ?? null : null,
-    };
-  }).filter((x): x is BotKanbanLead => x !== null);
+  const range = parseRange(fromISO, toISO);
+  const { leads } = await loadCohort(
+    numberId,
+    range?.from ?? brStartOfDaysAgo(KANBAN_WINDOW_DAYS - 1),
+    range?.to ?? null,
+  );
+  return leads;
 }
 
 /** Ajusta a meta mensal de contratados (Visão do Gestor). */

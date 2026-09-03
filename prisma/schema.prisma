@@ -754,6 +754,10 @@ model WhatsAppConversation {
   // | transferido | sem_resposta (esgotou o ciclo de recuperação sem retorno).
   // Null enquanto em andamento.
   closeCategory    String?
+  // Quando o ÚLTIMO encerramento aconteceu (03/09/2026). Antes as métricas
+  // usavam updatedAt como proxy, e qualquer tag/nota depois "reencerrava" a
+  // conversa no mês corrente. Só faz sentido lida junto com status="closed".
+  closedAt         DateTime?
   // Ciclo de RECUPERAÇÃO (status "standby"): provocações enviadas pelo cron
   // pra resgatar quem sumiu no meio da triagem. O contador NÃO zera quando o
   // cliente responde (pausa e retoma se ele sumir de novo); só zera no

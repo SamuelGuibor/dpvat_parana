@@ -186,7 +186,7 @@ export async function blockWhatsAppContact(contactId: string): Promise<void> {
   await db.whatsAppConversation.updateMany({
     where: { contactId, status: { not: 'closed' } },
     data: {
-      status: 'closed', assignedToId: null, closeCategory: 'descartado', qualified: null,
+      status: 'closed', closedAt: new Date(), assignedToId: null, closeCategory: 'descartado', qualified: null,
       botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
       recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
     },

@@ -22,38 +22,22 @@ interface KanbanItem {
     readOnly?: boolean;
 }
 
-const STAGES = [
-    'iniciado',
-    'Em Conversa',
-    // 'Em Honorário',
-    'Lista de Documentos',
-    // 'Aguardando',
-    'Não Contratado',
-    'Não Qualificado',
-    'Contratado'
+// Etapas = as mesmas do Funil do bot (bot-funnel.ts, classificação por
+// coorte). "Outros" (03/09/2026) recebe as encerradas por perguntas,
+// transferido, descartado... — antes elas sumiam do kanban e o total nunca
+// batia com o "Iniciados" do Funil.
+const STAGE_DEFS: { key: string; label: string; color: string }[] = [
+    { key: 'iniciado', label: 'Iniciado', color: 'bg-purple-500' },
+    { key: 'em_conversa', label: 'Em Conversa', color: 'bg-blue-500' },
+    { key: 'enviou_documentos', label: 'Lista de Documentos', color: 'bg-cyan-500' },
+    { key: 'nao_contratado', label: 'Não Contratado', color: 'bg-amber-500' },
+    { key: 'nao_qualificado', label: 'Não Qualificado', color: 'bg-red-500' },
+    { key: 'contratado', label: 'Contratado', color: 'bg-green-500' },
+    { key: 'outros', label: 'Outros', color: 'bg-gray-400' },
 ];
-
-const STAGE_KEYS = [
-    'iniciado',
-    'em_conversa',
-    // 'em_honorario',
-    'enviou_documentos',
-    // 'aguardando',
-    'nao_contratado',
-    'nao_qualificado',
-    'contratado'
-];
-
-const STAGE_COLORS = [
-    'bg-purple-500',
-    'bg-blue-500',
-    'bg-cyan-500',
-    'bg-teal-500',
-    'bg-amber-500',
-    'bg-orange-500',
-    'bg-red-500',
-    'bg-green-500'
-];
+const STAGES = STAGE_DEFS.map((s) => s.label);
+const STAGE_KEYS = STAGE_DEFS.map((s) => s.key);
+const STAGE_COLORS = STAGE_DEFS.map((s) => s.color);
 
 
 function formatDate(date: string | null) {

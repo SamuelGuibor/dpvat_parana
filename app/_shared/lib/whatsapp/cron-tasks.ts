@@ -467,6 +467,7 @@ async function finalizeClose(
     where: { id: conv.id },
     data: {
       status: 'closed',
+      closedAt: new Date(),
       assignedToId: null,
       botFailCount: 0,
       botNudge30At: null,

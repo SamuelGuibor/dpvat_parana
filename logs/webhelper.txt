@@ -1,0 +1,7 @@
+
+
+[2026-09-03 01:14:40] Client version: no bootstrapper found
+[2026-09-03 01:14:40] Startup - webhelper launched pid: 9824 commandline: "C:\Program Files (x86)\Steam\bin\cef\cef.win64\steamwebhelper.exe"
+[2026-09-03 01:14:40] Browser - launching child process with: "C:\Program Files (x86)\Steam\bin\cef\cef.win64\steamwebhelper.exe" --type=gpu-process --start-stack-profiler --enable-chrome-runtime --user-data-dir="C:\Users\pc\AppData\Local\CEF\User Data" --user-agent-product="Valve Steam Client" /prefetch:2
+[2026-09-03 01:14:40] Browser - launching child process with: "C:\Program Files (x86)\Steam\bin\cef\cef.win64\steamwebhelper.exe" --type=utility --utility-sub-type=network.mojom.NetworkService --lang=pt-BR --service-sandbox-type=none --start-stack-profiler --enable-chrome-runtime --user-data-dir="C:\Users\pc\AppData\Local\CEF\User Data" --user-agent-product="Valve Steam Client" /prefetch:11
+[2026-09-03 01:14:40] Browser - launching child process with: "C:\Program Files (x86)\Steam\bin\cef\cef.win64\steamwebhelper.exe" --type=utility --utility-sub-type=storage.mojom.StorageService --lang=pt-BR --service-sandbox-type=service --enable-chrome-runtime --user-data-dir="C:\Users\pc\AppData\Local\CEF\User Data" --user-agent-product="Valve Steam Client" /prefetch:13

@@ -534,7 +534,7 @@ export async function closeConversation(
     // Ticket encerrado: zera a memória/estado do bot para que uma futura
     // conversa desse cliente comece do zero.
     // Desfecho real → ciclo de recuperação zerado por completo.
-    data: { status: 'closed', assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+    data: { status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
 
   // Tag automática = o próprio desfecho ("Não qualificada — sem cobertura
