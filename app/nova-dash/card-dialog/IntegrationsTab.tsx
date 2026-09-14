@@ -59,6 +59,12 @@ function IntegrationCard({
   );
 }
 
+// Bloco "Contrato para assinatura" (assinatura eletrônica própria) DESATIVADO
+// em 14/09/2026 — decisão do escritório: a coleta voltou pro WhatsApp. Código
+// preservado; pra voltar, mudar pra `true` (e reativar a aba Contratos em
+// nova-dash/page.tsx e o cron em cron-tasks.ts).
+const CONTRACT_BLOCK_ENABLED = false;
+
 export function IntegrationsTab({ editedCard, isProcess }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
@@ -186,6 +192,8 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
           </div>
         </div>
 
+        {/* Assinatura eletrônica desativada em 14/09/2026 (ver CONTRACT_BLOCK_ENABLED). */}
+        {CONTRACT_BLOCK_ENABLED && (
         <div className="group bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 rounded-2xl p-6 hover:shadow-xl hover:shadow-emerald-100/50 transition-all relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200/20 rounded-full -mr-16 -mt-16 group-hover:scale-125 transition-transform duration-500" />
           <div className="flex items-center gap-4 mb-4 relative z-10">
@@ -251,6 +259,7 @@ export function IntegrationsTab({ editedCard, isProcess }: Props) {
             </p>
           </div>
         </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <IntegrationCard

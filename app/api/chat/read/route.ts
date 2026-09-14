@@ -21,20 +21,24 @@ export async function GET() {
 
   const readMap = new Map(reads.map((r) => [r.channelId, r.lastReadAt]));
   const unread: Record<string, number> = {};
+  if (channelIds.length === 0) return NextResponse.json({ unread });
 
-  await Promise.all(
-    channelIds.map(async (channelId) => {
-      const lastReadAt = readMap.get(channelId);
-      const count = await db.chatMessage.count({
-        where: {
-          channelId,
-          authorId: { not: userId },
-          ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
-        },
-      });
-      if (count > 0) unread[channelId] = count;
-    }),
-  );
+  // Uma query agregada pra todos os canais (era um count() por canal, a cada
+  // 20s por aba aberta).
+  const groups = await db.chatMessage.groupBy({
+    by: ['channelId'],
+    where: {
+      authorId: { not: userId },
+      OR: channelIds.map((channelId) => {
+        const lastReadAt = readMap.get(channelId);
+        return { channelId, ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}) };
+      }),
+    },
+    _count: { _all: true },
+  });
+  for (const g of groups) {
+    if (g._count._all > 0) unread[g.channelId] = g._count._all;
+  }
 
   return NextResponse.json({ unread });
 }

@@ -66,6 +66,11 @@ async function loadAll(): Promise<WaCreds[]> {
   return creds;
 }
 
+/** Todas as credenciais ativas (painel de custos: consumo por WABA). */
+export async function listAllCreds(): Promise<WaCreds[]> {
+  return loadAll();
+}
+
 export function invalidateNumberCache() {
   cache = null;
 }

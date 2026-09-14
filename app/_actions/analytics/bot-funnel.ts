@@ -49,12 +49,23 @@ export type BotStage =
 
 export interface BotFunnelData {
   started: number;
+  /** Abertas em que a IA ainda não avançou etapa (sem botState). */
+  initiated: number;
+  /** Abertas com a triagem em andamento (bot, standby, fila, humano). */
   inConversation: number;
   docsSent: number;
   notHired: number;
   disqualified: number;
   qualified: number;
+  /**
+   * Contratados no período = etiquetas "Contratados" APLICADAS no período
+   * (+ legado BotConversa na visão "todos os números"). Mesma definição da
+   * Meta do mês (14/09/2026) — antes o card contava conversas CRIADAS no
+   * período que tinham a tag hoje, e os dois números nunca batiam.
+   */
   hired: number;
+  hiredBot: number;
+  hiredLegacy: number;
   /** Encerradas por outros motivos (perguntas, transferido, descartado...). */
   others: number;
   /** Contratados no mês corrente (Brasília) × meta configurada. */
@@ -102,17 +113,28 @@ function parseRange(fromISO?: string, toISO?: string): { from: Date; to: Date } 
 async function loadCohort(numberId: string | null, from: Date, to: Date | null) {
   const createdIn = to ? { gte: from, lte: to } : { gte: from };
   const byNumber = numberId ? { numberId } : {};
+  const inRange = (d: Date) => d >= from && (!to || d <= to);
 
   const [convs, docsRows, numbers] = await Promise.all([
     // Sem teto: o kanban é virtualizado e o funil precisa da coorte inteira.
+    // Coorte (14/09/2026) = conversas CRIADAS no período OU que receberam a
+    // etiqueta "Contratados" no período (contratação é um EVENTO datado pela
+    // etiqueta — mesma régua da Meta do mês; a conversa pode ter nascido
+    // antes).
     db.whatsAppConversation.findMany({
-      where: { ...byNumber, createdAt: createdIn },
+      where: {
+        ...byNumber,
+        OR: [
+          { createdAt: createdIn },
+          { tags: { some: { createdAt: createdIn, tag: { name: HIRED_TAG } } } },
+        ],
+      },
       orderBy: { lastMessageAt: 'desc' },
       select: {
         id: true, status: true, closeCategory: true, botState: true, numberId: true,
         createdAt: true, updatedAt: true,
         contact: { select: { id: true, name: true, phone: true } },
-        tags: { select: { tag: { select: { name: true } } } },
+        tags: { select: { createdAt: true, tag: { select: { name: true } } } },
       },
     }),
     // A lista de documentos pode ter saído DEPOIS do fim do período (coorte
@@ -139,8 +161,10 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
     const tagNames = c.tags.map((t) => t.tag.name);
     if (tagNames.includes(QUALIFIED_TAG)) qualified++;
     const closed = c.status === 'closed';
+    // Contratado só se a etiqueta foi aplicada DENTRO do período.
+    const hiredInRange = c.tags.some((t) => t.tag.name === HIRED_TAG && inRange(t.createdAt));
     let evento: BotStage;
-    if (tagNames.includes(HIRED_TAG)) evento = 'contratado';
+    if (hiredInRange) evento = 'contratado';
     else if (closed && (c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_'))) evento = 'nao_qualificado';
     else if (closed && c.closeCategory === 'sem_resposta') evento = 'nao_contratado';
     else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG)) evento = 'enviou_documentos';
@@ -191,7 +215,8 @@ export async function getBotFunnel(
   const yearEnd = brStartOfDay(new Date(Date.UTC(refYear + 1, 0, 1, 12)));
   const inRefYear = { gte: yearStart, lt: yearEnd };
 
-  const [cohort, monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen] =
+  const periodRange = until ? { gte: since, lte: until } : { gte: since };
+  const [cohort, monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen, hiredLegacy] =
     await Promise.all([
       loadCohort(numberId, since, until),
       db.whatsAppConversationTag.count({
@@ -234,6 +259,10 @@ export async function getBotFunnel(
         where: { ...byNumber, status: { not: 'closed' }, createdAt: inRefYear },
         select: { createdAt: true },
       }),
+      // Legado BotConversa no PERÍODO (mesma parcela que entra na meta).
+      numberId
+        ? Promise.resolve(0)
+        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: periodRange } }),
     ]);
 
   const monthly = MONTHS.map((month) => ({ month, aprovados: 0, indeferidos: 0, emAndamento: 0 }));
@@ -247,14 +276,29 @@ export async function getBotFunnel(
   };
   for (const l of cohort.leads) count[l.evento]++;
 
+  // "Total no período" = conversas CRIADAS no período (a coorte também traz
+  // conversas antigas etiquetadas Contratados no período — elas contam na
+  // etapa Contratado, não no total de novas).
+  const sinceMs = since.getTime();
+  const untilMs = until ? until.getTime() : Number.POSITIVE_INFINITY;
+  const createdInPeriod = cohort.leads.filter((l) => {
+    const t = l.createdAt ? new Date(l.createdAt).getTime() : 0;
+    return t >= sinceMs && t <= untilMs;
+  }).length;
+
   return {
-    started: cohort.leads.length,
-    inConversation: count.iniciado + count.em_conversa,
+    started: createdInPeriod,
+    // Iniciado e Em conversa separados (14/09/2026): o card somava os dois e
+    // dava 302 enquanto a coluna "Em Conversa" do Fluxo mostrava 297.
+    initiated: count.iniciado,
+    inConversation: count.em_conversa,
     docsSent: count.enviou_documentos,
     notHired: count.nao_contratado,
     disqualified: count.nao_qualificado,
     qualified: cohort.qualified,
-    hired: count.contratado,
+    hired: count.contratado + hiredLegacy,
+    hiredBot: count.contratado,
+    hiredLegacy,
     others: count.outros,
     monthHired: monthHiredBot + monthHiredLegacy,
     monthHiredBot,

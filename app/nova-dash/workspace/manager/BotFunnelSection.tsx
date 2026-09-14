@@ -12,13 +12,14 @@ import { getBotFunnel, setMonthlyHiredGoal, type BotFunnelData } from '@/app/_ac
 // KPIs compactos, à direita o mesmo funil como gráfico com toggle
 // Barras/Pizza. Tudo contado pelo nosso banco (nada do BotConversa
 
-function Kpi({ label, value, className }: { label: string; value: number; className?: string }) {
+function Kpi({ label, value, className, hint }: { label: string; value: number; className?: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-gray-100 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
       <p className={`text-[11px] font-semibold ${className ?? 'text-gray-400'}`}>{label}</p>
       <p className="text-xl font-extrabold tabular-nums text-gray-800 dark:text-zinc-100">
         {value.toLocaleString('pt-BR')}
       </p>
+      {hint && <p className="text-[10px] text-gray-400">{hint}</p>}
     </div>
   );
 }
@@ -64,6 +65,7 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
   // dava negativo (sumia sempre).
   const stages = data
     ? [
+        { name: 'Iniciado', value: data.initiated, color: '#a855f7' },
         { name: 'Em conversa', value: data.inConversation, color: '#3b82f6' },
         { name: 'Lista docs', value: data.docsSent, color: '#6366f1' },
         { name: 'Não contratado', value: data.notHired, color: '#f59e0b' },
@@ -94,13 +96,21 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* Esquerda: 8 KPIs compactos */}
           <div className="grid grid-cols-2 content-start gap-2">
-            <Kpi label="Iniciados" value={data.started} />
+            <Kpi label="Total no período" value={data.started} />
+            <Kpi label="Iniciado" value={data.initiated} className="text-purple-500" />
             <Kpi label="Em conversa" value={data.inConversation} className="text-blue-600" />
             <Kpi label="Lista docs" value={data.docsSent} className="text-indigo-500" />
             <Kpi label="Não contratados" value={data.notHired} />
             <Kpi label="Não qualificados" value={data.disqualified} className="text-rose-600" />
             <Kpi label="Qualificados" value={data.qualified} className="text-teal-600" />
-            <Kpi label="Contratados" value={data.hired} className="text-emerald-600" />
+            <Kpi
+              label="Contratados"
+              value={data.hired}
+              className="text-emerald-600"
+              hint={data.hiredLegacy > 0
+                ? `${data.hiredBot} do sistema + ${data.hiredLegacy} do BotConversa · etiquetas no período`
+                : 'etiquetas "Contratados" aplicadas no período'}
+            />
             <Kpi label="Outros desfechos" value={data.others} />
             {/* Meta do mês com barra embutida (clique no lápis para editar) */}
             <div className="rounded-xl border border-gray-100 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">

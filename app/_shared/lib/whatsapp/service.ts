@@ -20,6 +20,17 @@ const TEAM_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
 // não-qualificada recomeça limpa. Qualificado nunca expira.
 const STALE_CONTEXT_MS = 7 * 24 * 60 * 60_000;
 
+/**
+ * Desfechos que NÃO reabrem pro bot quando o cliente escreve de novo
+ * (14/09/2026): não qualificado (genérico e todos os sub-motivos nq_*) e
+ * descartado. Os demais (perguntas, transferido, qualificado, sem_resposta,
+ * novo_acidente...) continuam reabrindo normalmente.
+ */
+export function isSilencedCloseCategory(category: string | null | undefined): boolean {
+  if (!category) return false;
+  return category === "nao_qualificado" || category === "descartado" || category.startsWith("nq_");
+}
+
 export function whatsappChannelId(contactId: string): string {
   return `whatsapp:${contactId}`;
 }
@@ -261,7 +272,17 @@ export async function ingestIncomingMessage(
   // na reabertura, e só quando a conversa anterior é velha: recente (<7 dias) →
   // a IA volta sabendo com quem fala; velha e não-qualificada → começa limpa.
   // Qualificado nunca perde a ficha (retoma o fechamento de onde parou).
-  if (conversation.status === "closed" && !contact.optedOut && !wantsOptOut) {
+  //
+  // SILÊNCIO PÓS-DESQUALIFICAÇÃO (14/09/2026, decisão do escritório): conversa
+  // encerrada como NÃO QUALIFICADA (nao_qualificado / nq_*) ou DESCARTADA não
+  // volta pro bot quando o cliente escreve de novo. A mensagem é gravada e
+  // aparece como não lida na pasta do desfecho; se a equipe quiser retomar,
+  // usa o "Reabrir" do inbox. Antes qualquer "obrigado" de um aposentado ou de
+  // quem já tem advogado reabria a conversa e a IA voltava a conversar.
+  if (
+    conversation.status === "closed" && !contact.optedOut && !wantsOptOut
+    && !isSilencedCloseCategory(conversation.closeCategory)
+  ) {
     let staleContext = false;
     if (!conversation.qualified && (conversation.botMemory || conversation.botState)) {
       // A mensagem atual ainda não foi gravada — a mais recente do banco é a

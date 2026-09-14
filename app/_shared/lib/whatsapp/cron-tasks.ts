@@ -122,6 +122,8 @@ const NON_RECOVERABLE_CATEGORIES = new Set([
   'transferido', 'descartado', 'sem_resposta', 'nao_qualificado',
 ]);
 const HUMAN_TOUCH_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
+// Lembretes/expiração da assinatura eletrônica — desligados em 14/09/2026.
+const SIGNATURE_CRON_ENABLED = false;
 
 // MARCAPASSO DE ENVIO (13/08/2026): o cron disparava dezenas de provocações
 // no mesmo minuto (lotes de 4 em paralelo) — padrão que a Meta lê como spam e
@@ -1208,6 +1210,10 @@ export async function runSlaPhase(): Promise<CronResults> {
   // Vive na fase SLA de propósito: sem IA, termina em segundos, e o ciclo de
   // assinatura não pode esperar a fase de nudge (que tem orçamento de IA).
   await timed('sla-assinatura', async () => {
+    // Assinatura eletrônica DESATIVADA (14/09/2026): os clientes não entendiam
+    // o fluxo pelo site, o escritório voltou a colher pelo WhatsApp. Código
+    // preservado; pra reativar, apagar este guard (e ligar SIGNATURE_AUTO_ENABLED).
+    if (!SIGNATURE_CRON_ENABLED) return;
     try {
       const r = await runSignatureReminders(now);
       results.signatureReminders += r.reminders;

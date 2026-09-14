@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import {
   listWhatsAppConversations,
+  getWhatsAppInboxVersion,
   countWhatsAppUnread,
   countWhatsAppConversationsTotal,
   type WhatsAppConversationDTO,
@@ -42,13 +43,34 @@ export interface WhatsAppThreadMessage {
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((r) => r.json());
 
-/** Lista de conversas (fila, minhas, bot, encerradas). Polling de 15s. */
+/**
+ * Lista de conversas (fila, minhas, bot, encerradas).
+ *
+ * 14/09/2026: a lista NÃO faz mais polling direto. O que roda a cada 15s é
+ * `getWhatsAppInboxVersion` (um hash de umas 4 agregações); a lista completa
+ * só é rebuscada quando o hash muda. Antes, cada aba baixava 1.000 conversas
+ * hidratadas a cada 15s mesmo sem nada ter mudado. O SSE e as ações continuam
+ * chamando `refreshConversations` (mutate) direto.
+ */
 export function useWhatsAppConversations() {
   const { data, mutate, isLoading, error } = useSWR<WhatsAppConversationDTO[]>(
     'whatsapp-conversations',
     () => listWhatsAppConversations(),
-    { refreshInterval: 15_000, revalidateOnFocus: true, shouldRetryOnError: false },
+    // Rede de segurança a cada 2 min caso o hash não capture alguma mudança
+    // (ex.: nome do card editado).
+    { refreshInterval: 120_000, revalidateOnFocus: true, shouldRetryOnError: false },
   );
+  const { data: version } = useSWR<string>(
+    'whatsapp-inbox-version',
+    () => getWhatsAppInboxVersion(),
+    { refreshInterval: 15_000, revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const lastVersion = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!version) return;
+    if (lastVersion.current !== undefined && lastVersion.current !== version) mutate();
+    lastVersion.current = version;
+  }, [version, mutate]);
   return { conversations: data ?? [], refreshConversations: mutate, isLoading, error };
 }
 
@@ -83,7 +105,9 @@ export function useWhatsAppMessages(contactId: string | null) {
   const { data, mutate, isLoading } = useSWR<{ messages: WhatsAppThreadMessage[]; hasMore?: boolean }>(
     contactId ? `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}&limit=50` : null,
     fetcher,
-    { refreshInterval: 5_000, revalidateOnFocus: true },
+    // 8s (era 5s): o SSE do relay já entrega a mensagem na hora; este poll é
+    // só a rede de segurança e o refresh dos ticks de status/reações.
+    { refreshInterval: 8_000, revalidateOnFocus: true },
   );
 
   const recent = useMemo(() => data?.messages ?? [], [data]);

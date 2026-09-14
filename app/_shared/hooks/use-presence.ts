@@ -12,7 +12,9 @@ export interface PresenceMember {
   lastSeenAt: string | null;
 }
 
-const HEARTBEAT_MS = 30_000;
+// 2 min (era 30s): cada batida é uma ESCRITA no banco por aba aberta. A janela
+// de "online" na rota é de 5 min, com folga pra 2 batidas perdidas.
+const HEARTBEAT_MS = 120_000;
 
 /**
  * Presença em tempo (quase) real via heartbeat.

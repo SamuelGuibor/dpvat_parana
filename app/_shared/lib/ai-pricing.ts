@@ -28,6 +28,12 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
   "claude-sonnet-4-6": { input: 3, output: 15, label: "Sonnet 4.6" },
   "claude-sonnet-4-5": { input: 3, output: 15, label: "Sonnet 4.5" },
   "claude-haiku-4-5": { input: 1, output: 5, label: "Haiku 4.5" },
+  // Google (tabela pública do Gemini API, sem cache).
+  "gemini-2.5-pro": { input: 1.25, output: 10, label: "Gemini 2.5 Pro" },
+  "gemini-2.5-flash-lite": { input: 0.1, output: 0.4, label: "Gemini 2.5 Flash-Lite" },
+  "gemini-2.5-flash": { input: 0.3, output: 2.5, label: "Gemini 2.5 Flash" },
+  "gemini-2.0-flash-lite": { input: 0.075, output: 0.3, label: "Gemini 2.0 Flash-Lite" },
+  "gemini-2.0-flash": { input: 0.1, output: 0.4, label: "Gemini 2.0 Flash" },
 };
 
 /** Modelo assumido quando o log não diz qual foi (o mais usado pelo bot). */

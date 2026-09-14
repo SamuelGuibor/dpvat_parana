@@ -3,9 +3,9 @@ import { getServerSession } from 'next-auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { authOptions } from '@/app/_shared/lib/auth';
 
-// Considera "online" quem enviou heartbeat nos últimos 90s.
-// O client bate a cada 30s, então há folga para 2 batidas perdidas.
-const ONLINE_WINDOW_MS = 90_000;
+// Considera "online" quem enviou heartbeat nos últimos 5 min.
+// O client bate a cada 2 min, então há folga para 2 batidas perdidas.
+const ONLINE_WINDOW_MS = 300_000;
 
 async function buildList(currentUserId?: string) {
   // A "equipe" é quem tem role ADMIN* — os mesmos que têm acesso

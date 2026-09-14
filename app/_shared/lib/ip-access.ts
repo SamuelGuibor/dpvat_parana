@@ -37,12 +37,25 @@ export function parseIpList(raw: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+// Cache em memória da lista (14/09/2026): `requireTeam()` roda em TODA server
+// action e API da equipe, e cada uma lia esta linha de app_settings de novo.
+// 60s de cache por instância — quem edita a lista na tela vê o efeito em até
+// um minuto, e o `invalidateAllowedIpsCache()` zera na própria instância.
+const IP_CACHE_TTL_MS = 60_000;
+let ipCache: { list: string[]; expiresAt: number } | null = null;
+
+export function invalidateAllowedIpsCache(): void {
+  ipCache = null;
+}
+
 export async function getDashboardAllowedIps(): Promise<string[]> {
+  if (ipCache && ipCache.expiresAt > Date.now()) return ipCache.list;
   const row = await db.appSetting
     .findUnique({ where: { key: DASHBOARD_ALLOWED_IPS_KEY } })
     .catch(() => null);
-  if (row) return parseIpList(row.value);
-  return parseIpList(process.env.DASHBOARD_ALLOWED_IPS);
+  const list = row ? parseIpList(row.value) : parseIpList(process.env.DASHBOARD_ALLOWED_IPS);
+  ipCache = { list, expiresAt: Date.now() + IP_CACHE_TTL_MS };
+  return list;
 }
 
 /** Casa IP exato ou prefixo terminado em "*" (ex.: "2804:d55:830c:2900:*"). */

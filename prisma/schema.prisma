@@ -796,6 +796,7 @@ model WhatsAppConversation {
   @@index([status])
   @@index([assignedToId])
   @@index([numberId, lastMessageAt])
+  @@index([lastMessageAt(sort: Desc)])
   @@map("whatsapp_conversations")
 }
 
@@ -1315,6 +1316,24 @@ model DevTicket {
 // cartão chega em real: `amountCents` guarda o valor na moeda de origem (o que
 // o provedor mostra) e `amountBrlCents` o valor consolidado em real — é este
 // que soma nos totais e gráficos. Quando currency = BRL, os dois são iguais.
+// Consumo DIÁRIO por serviço puxado das APIs dos provedores (ou estimado
+// pelos logs de IA) — base do painel de custos com projeção (14/09/2026).
+// Um registro por (serviço, dia Brasília). `source`: api | logs | estimate.
+model CostSnapshot {
+  id          String   @id @default(cuid())
+  service     String
+  day         String // YYYY-MM-DD (Brasília)
+  amountCents Int
+  currency    String   @default("USD") // USD | BRL
+  source      String
+  detail      Json?
+  fetchedAt   DateTime @default(now())
+
+  @@unique([service, day])
+  @@index([day])
+  @@map("cost_snapshots")
+}
+
 model ProjectCost {
   id             String   @id @default(cuid())
   // Chave do serviço (vercel, neon, claude, ...) — ver SERVICES em _actions/costs.

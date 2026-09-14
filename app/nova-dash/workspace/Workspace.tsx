@@ -56,7 +56,9 @@ export function Workspace() {
   // Menção do chat clicada na caixa de Menções: page.tsx traz para cá, aqui
   // abrimos a seção do Chat (o canal em si o Chat lê do sessionStorage).
   useEffect(() => {
-    const openChat = () => setSection('chat');
+    // Chat geral desativado (14/09/2026): a menção antiga não abre mais a
+    // seção escondida.
+    const openChat = () => { /* chat desativado */ };
     window.addEventListener('open-chat-channel', openChat);
     return () => window.removeEventListener('open-chat-channel', openChat);
   }, []);

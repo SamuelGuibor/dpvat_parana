@@ -95,7 +95,10 @@ export function TeamPonto({ month, today, onMonthChange, refreshKey }: Props) {
 
   // A visão "agora" acompanha o dia sem depender de recarregar a aba.
   useEffect(() => {
-    const id = setInterval(load, 60_000);
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      load();
+    }, 60_000);
     return () => clearInterval(id);
   }, [load]);
 

@@ -8,6 +8,7 @@ import {
   DASHBOARD_ALLOWED_IPS_KEY,
   getClientIp,
   getDashboardAllowedIps,
+  invalidateAllowedIpsCache,
   ipMatches,
   parseIpList,
 } from "@/app/_shared/lib/ip-access";
@@ -69,6 +70,7 @@ export async function setDashboardAllowedIps(raw: string): Promise<IpLockSetting
     create: { key: DASHBOARD_ALLOWED_IPS_KEY, value },
     update: { value },
   });
+  invalidateAllowedIpsCache();
 
   await createLog({
     action: "update",

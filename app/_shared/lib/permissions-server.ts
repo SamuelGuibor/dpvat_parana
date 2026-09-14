@@ -24,9 +24,24 @@ export interface SessionPermissions {
  * A "Visão do Gestor" também é concedida pela allowlist de e-mails
  * (MANAGER_EMAILS) para manter compatibilidade com o mecanismo anterior.
  */
+// Cache curto por e-mail (14/09/2026): esta função roda em TODA server action
+// da equipe (via requireTeam) e em toda navegação do layout. 30s de cache por
+// instância corta a consulta de usuário repetida em cada poll; uma mudança de
+// permissão/role demora no máximo 30s pra valer. Nunca cacheia o "null".
+const PERM_CACHE_TTL_MS = 30_000;
+const permCache = new Map<string, { value: SessionPermissions; expiresAt: number }>();
+
+export function invalidateSessionPermissionsCache(email?: string): void {
+  if (email) permCache.delete(email);
+  else permCache.clear();
+}
+
 export async function getSessionPermissions(): Promise<SessionPermissions | null> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return null;
+
+  const cached = permCache.get(session.user.email);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
 
   const user = await db.user.findUnique({
     where: { email: session.user.email },
@@ -45,13 +60,15 @@ export async function getSessionPermissions(): Promise<SessionPermissions | null
     permissions.review_ai = false;
   }
 
-  return {
+  const value: SessionPermissions = {
     userId: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
     permissions,
   };
+  permCache.set(user.email, { value, expiresAt: Date.now() + PERM_CACHE_TTL_MS });
+  return value;
 }
 
 /**

@@ -20,6 +20,8 @@ export async function GET(req: Request) {
       processId: processId ?? undefined,
     },
     orderBy: { createdAt: 'desc' },
+    // Aba de comentários faz poll a cada 8s: limita ao que a tela mostra.
+    take: 300,
     include: {
       author: {
         select: {

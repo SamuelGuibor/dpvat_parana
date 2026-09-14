@@ -179,18 +179,24 @@ async function loadConversations(
   where: Prisma.WhatsAppConversationWhereInput | undefined,
   take: number,
 ): Promise<WhatsAppConversationDTO[]> {
+  // `select` explícito (não `include`): a conversa carrega botMemory (JSON
+  // grande) e uma dúzia de colunas de controle que a lista nunca mostra —
+  // 1.000 linhas disso a cada poll era tráfego puro Neon → Vercel.
   const conversations = await db.whatsAppConversation.findMany({
     where,
     orderBy: { lastMessageAt: 'desc' },
     take,
-    include: {
+    select: {
+      id: true, contactId: true, numberId: true, status: true, qualified: true,
+      closeCategory: true, urgent: true, assignedToId: true, lastMessageAt: true,
+      lastReadAt: true, createdAt: true, recoveryAttempts: true,
       contact: {
         select: {
           id: true, name: true, phone: true, optedOut: true, userId: true,
           clientDraft: true, adPlatform: true, draftDocuments: true,
         },
       },
-      tags: { include: { tag: true } },
+      tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
       // Leitura GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa
       // de contar como não-lida para o resto da equipe.
       reads: { orderBy: { lastReadAt: 'desc' }, take: 1, select: { lastReadAt: true } },
@@ -199,34 +205,63 @@ async function loadConversations(
   if (!conversations.length) return [];
 
   const contactIds = conversations.map((c) => c.contactId);
+  // Motivo do handoff só aparece na Fila — a nota do bot é buscada só pra elas.
+  const queuedContactIds = conversations.filter((c) => c.status === 'queued').map((c) => c.contactId);
 
-  // Última mensagem (preview), última mensagem RECEBIDA (janela de 24h) e
-  // última nota interna do BOT (motivo do handoff) por contato — distinct +
-  // orderBy desc devolve a primeira linha de cada grupo.
-  const [lastMessages, lastInbound, assignees, handoffNotes] = await Promise.all([
-    db.whatsAppMessage.findMany({
-      where: { contactId: { in: contactIds } },
-      orderBy: { createdAt: 'desc' },
-      distinct: ['contactId'],
-      select: { contactId: true, body: true, mediaType: true, direction: true, sentByBot: true, authorId: true, status: true },
-    }),
-    db.whatsAppMessage.findMany({
-      where: { contactId: { in: contactIds }, direction: 'in' },
-      orderBy: { createdAt: 'desc' },
-      distinct: ['contactId'],
-      select: { contactId: true, createdAt: true },
-    }),
+  // Última mensagem (preview) e última mensagem RECEBIDA (janela de 24h) por
+  // contato. ATENÇÃO (14/09/2026): isto era `findMany` + `distinct:['contactId']`
+  // + `orderBy createdAt`. O Prisma NÃO traduz esse distinct pra DISTINCT ON —
+  // ele puxava TODAS as mensagens dos 1.000 contatos (~30 mil linhas, com
+  // corpo) e deduplicava em memória, a cada poll de 15s. Era a maior fonte de
+  // tráfego de saída da Neon. Agora é um LATERAL LIMIT 1 por contato no
+  // Postgres, servido pelo índice (contactId, createdAt): 1 linha por contato.
+  const [lastRows, assignees, handoffNotes] = await Promise.all([
+    db.$queryRaw<{
+      contactId: string;
+      body: string | null; mediaType: string | null; direction: string | null;
+      sentByBot: boolean | null; authorId: string | null; status: string | null;
+      lastInboundAt: Date | null;
+    }[]>`
+      SELECT c."contactId",
+             lm.body, lm."mediaType", lm.direction, lm."sentByBot", lm."authorId", lm.status,
+             li."createdAt" AS "lastInboundAt"
+      FROM unnest(${contactIds}::text[]) AS c("contactId")
+      LEFT JOIN LATERAL (
+        SELECT m.body, m."mediaType", m.direction, m."sentByBot", m."authorId", m.status
+        FROM whatsapp_messages m
+        WHERE m."contactId" = c."contactId"
+        ORDER BY m."createdAt" DESC
+        LIMIT 1
+      ) lm ON true
+      LEFT JOIN LATERAL (
+        SELECT m."createdAt"
+        FROM whatsapp_messages m
+        WHERE m."contactId" = c."contactId" AND m.direction = 'in'
+        ORDER BY m."createdAt" DESC
+        LIMIT 1
+      ) li ON true
+    `,
     db.user.findMany({
       where: { id: { in: conversations.map((c) => c.assignedToId).filter(Boolean) as string[] } },
       select: { id: true, name: true },
     }),
-    db.whatsAppMessage.findMany({
-      where: { contactId: { in: contactIds }, internal: true, sentByBot: true },
-      orderBy: { createdAt: 'desc' },
-      distinct: ['contactId'],
-      select: { contactId: true, body: true },
-    }),
+    queuedContactIds.length
+      ? db.$queryRaw<{ contactId: string; body: string | null }[]>`
+          SELECT c."contactId", hn.body
+          FROM unnest(${queuedContactIds}::text[]) AS c("contactId")
+          JOIN LATERAL (
+            SELECT m.body
+            FROM whatsapp_messages m
+            WHERE m."contactId" = c."contactId" AND m.internal = true AND m."sentByBot" = true
+            ORDER BY m."createdAt" DESC
+            LIMIT 1
+          ) hn ON true
+        `
+      : Promise.resolve([] as { contactId: string; body: string | null }[]),
   ]);
+  const lastMessages = lastRows.filter((r) => r.direction !== null);
+  const lastInbound = lastRows.filter((r) => r.lastInboundAt !== null)
+    .map((r) => ({ contactId: r.contactId, createdAt: r.lastInboundAt as Date }));
 
   // Autores das últimas mensagens (selinho "quem atendeu por último" na lista)
   // que não estejam já cobertos pela query de atendentes atribuídos.
@@ -380,6 +415,27 @@ async function loadConversations(
 export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
   await requireTeamMember();
   return loadConversations(undefined, LIST_PAGE);
+}
+
+/**
+ * "Versão" do inbox (14/09/2026): um hash barato do estado que a lista
+ * exibe. O poll do client pergunta só isto; a lista completa (1.000
+ * conversas hidratadas) desce apenas quando o hash mudou — mesmo desenho do
+ * /api/board-state no Kanban. Cobre: qualquer conversa alterada (status,
+ * atribuição, desfecho, lastMessageAt), leituras, etiquetas e o total.
+ */
+export async function getWhatsAppInboxVersion(): Promise<string> {
+  await requireTeamMember();
+  const rows = await db.$queryRaw<{ v: string }[]>`
+    SELECT md5(concat_ws('|',
+      (SELECT concat(count(*), ':', coalesce(max("updatedAt")::text, ''), ':', coalesce(max("lastMessageAt")::text, ''))
+         FROM whatsapp_conversations),
+      (SELECT coalesce(max("lastReadAt")::text, '') FROM whatsapp_conversation_reads),
+      (SELECT concat(count(*), ':', coalesce(max("createdAt")::text, '')) FROM whatsapp_conversation_tags),
+      (SELECT coalesce(max("createdAt")::text, '') FROM whatsapp_messages)
+    )) AS v
+  `;
+  return rows[0]?.v ?? '';
 }
 
 /**

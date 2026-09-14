@@ -80,10 +80,10 @@ export interface ChatbotAnalytics {
       platforms: Record<string, number>;
       adName: string | null; adsetName: string | null; campaignName: string | null;
       // Desfecho dos leads deste anúncio — qual campanha CONVERTE, não só traz volume.
-      qualified: number; disqualified: number; pending: number;
+      qualified: number; disqualified: number; other: number; pending: number;
     }[];
     // Desfecho agregado por plataforma (inclui o orgânico, que não tem anúncio).
-    outcomesByPlatform: Record<string, { qualified: number; disqualified: number; pending: number }>;
+    outcomesByPlatform: Record<string, { qualified: number; disqualified: number; other: number; pending: number }>;
     // Leads novos por DIA no período, quebrados por plataforma — mostra se a
     // campanha está crescendo ou perdendo tração.
     daily: {
@@ -204,17 +204,25 @@ export async function getChatbotAnalytics(
 
   // Desfecho de cada lead novo (qualificado / não qualificado / em andamento)
   // — é o que liga a campanha ao RESULTADO, não só ao volume.
+  // Mesma régua do Funil do bot (14/09/2026): qualificado = tag "Qualificada"
+  // (ou qualified/closeCategory); não qualificado = SÓ nao_qualificado/nq_*;
+  // outros desfechos (sem resposta, perguntas, descartado...) ficam em
+  // "other" em vez de inflar os não qualificados.
   const leadConversations = await db.whatsAppConversation.findMany({
     where: { contactId: { in: newContacts.map((c) => c.id) } },
-    select: { contactId: true, status: true, qualified: true, closeCategory: true },
+    select: {
+      contactId: true, status: true, qualified: true, closeCategory: true,
+      tags: { select: { tag: { select: { name: true } } } },
+    },
   });
   const outcomeByContact = new Map(leadConversations.map((c) => [c.contactId, c]));
-  const outcomeOf = (contactId: string): 'qualified' | 'disqualified' | 'pending' => {
+  const outcomeOf = (contactId: string): 'qualified' | 'disqualified' | 'other' | 'pending' => {
     const conv = outcomeByContact.get(contactId);
     if (!conv) return 'pending';
-    if (conv.qualified === true || conv.closeCategory === 'qualificado') return 'qualified';
-    if (conv.status === 'closed') return 'disqualified';
-    return 'pending';
+    if (conv.qualified === true || conv.closeCategory === 'qualificado' || conv.tags.some((t) => t.tag.name === 'Qualificada')) return 'qualified';
+    if (conv.status !== 'closed') return 'pending';
+    if (conv.closeCategory === 'nao_qualificado' || conv.closeCategory?.startsWith('nq_')) return 'disqualified';
+    return 'other';
   };
 
   // Agrupa origem dos leads: por plataforma e por anúncio individual.
@@ -243,7 +251,7 @@ export async function getChatbotAnalytics(
 
     const outcome = outcomeOf(c.id);
     const platOutcome = adOrigins.outcomesByPlatform[platform]
-      ?? (adOrigins.outcomesByPlatform[platform] = { qualified: 0, disqualified: 0, pending: 0 });
+      ?? (adOrigins.outcomesByPlatform[platform] = { qualified: 0, disqualified: 0, other: 0, pending: 0 });
     platOutcome[outcome] += 1;
 
     const dk = brDayKey(c.createdAt);
@@ -262,7 +270,7 @@ export async function getChatbotAnalytics(
       entry = {
         platform, headline: c.adHeadline, sourceId: c.adSourceId, sourceUrl: c.adSourceUrl, count: 0,
         platforms: {}, adName: null, adsetName: null, campaignName: null,
-        qualified: 0, disqualified: 0, pending: 0,
+        qualified: 0, disqualified: 0, other: 0, pending: 0,
       };
       adKeyMap.set(key, entry);
       adOrigins.byAd.push(entry);
@@ -319,7 +327,19 @@ export async function getChatbotAnalytics(
   const activity: ChatbotActivityItem[] = [];
   const accountEvents: MetaAccountEvent[] = [];
 
+  // Desfechos por CONVERSA, pela data real de encerramento (closedAt) — a
+  // mesma régua das pastas do inbox. Antes contava eventos de log (wa_bot /
+  // wa_close): uma conversa reclassificada ou reaberta e fechada de novo
+  // entrava duas vezes e os totais nunca batiam com o inbox (14/09/2026).
   const closeCategories: Record<string, number> = {};
+  const closedGroups = await db.whatsAppConversation.groupBy({
+    by: ['closeCategory'],
+    where: { status: 'closed', closedAt: createdIn, ...numberFilter },
+    _count: { _all: true },
+  });
+  for (const g of closedGroups) {
+    closeCategories[g.closeCategory ?? 'sem_categoria'] = g._count._all;
+  }
 
   const autoNotify = {
     sent: 0,
@@ -374,12 +394,6 @@ export async function getChatbotAnalytics(
         });
       }
       continue;
-    }
-
-    // Conta o desfecho tanto quando quem encerra é a IA (wa_bot) quanto o
-    // atendente pelo menu "Encerrar" (wa_close).
-    if ((l.action === 'wa_bot' || l.action === 'wa_close') && typeof meta.closeCategory === 'string') {
-      closeCategories[meta.closeCategory] = (closeCategories[meta.closeCategory] ?? 0) + 1;
     }
 
     if (l.action === 'wa_bot') {
@@ -653,7 +667,7 @@ export interface AdLeadOutcome {
   name: string | null;
   phone: string;
   createdAt: string;
-  outcome: 'qualified' | 'disqualified' | 'pending';
+  outcome: 'qualified' | 'disqualified' | 'other' | 'pending';
   /** Motivo legível (categoria de encerramento) — null se em andamento. */
   reason: string | null;
   /** Nº do card, quando o lead virou cliente. */
@@ -706,7 +720,10 @@ export async function getAdLeadOutcomes(
   const [conversations, users] = await Promise.all([
     db.whatsAppConversation.findMany({
       where: { contactId: { in: mine.map((c) => c.id) } },
-      select: { contactId: true, status: true, qualified: true, closeCategory: true },
+      select: {
+        contactId: true, status: true, qualified: true, closeCategory: true,
+        tags: { select: { tag: { select: { name: true } } } },
+      },
     }),
     db.user.findMany({
       where: { id: { in: mine.map((c) => c.userId).filter((id): id is string => !!id) } },
@@ -718,9 +735,11 @@ export async function getAdLeadOutcomes(
 
   return mine.map((c) => {
     const conv = convByContact.get(c.id);
-    const qualified = conv?.qualified === true || conv?.closeCategory === 'qualificado';
+    const qualified = conv?.qualified === true || conv?.closeCategory === 'qualificado'
+      || !!conv?.tags.some((t) => t.tag.name === 'Qualificada');
     const closed = conv?.status === 'closed';
-    const outcome: AdLeadOutcome['outcome'] = qualified ? 'qualified' : closed ? 'disqualified' : 'pending';
+    const nq = conv?.closeCategory === 'nao_qualificado' || !!conv?.closeCategory?.startsWith('nq_');
+    const outcome: AdLeadOutcome['outcome'] = qualified ? 'qualified' : !closed ? 'pending' : nq ? 'disqualified' : 'other';
     return {
       contactId: c.id,
       name: c.name,

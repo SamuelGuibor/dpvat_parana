@@ -184,6 +184,10 @@ function PageInner() {
   const canViewArchived = perms.view_archived;
   const canViewTickets = perms.view_tickets;
   const canViewContracts = perms.manage_contracts;
+  // Aba Contratos (assinatura eletrônica) DESATIVADA em 14/09/2026 — decisão
+  // do escritório: os clientes não entendiam o fluxo pelo site, a coleta
+  // voltou pro WhatsApp. Código preservado; pra voltar, mudar pra `true`.
+  const CONTRACTS_TAB_ENABLED = false;
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? 'bg-zinc-950 text-zinc-100' : 'bg-gray-50 text-gray-900'}`}>
@@ -325,7 +329,7 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
-            {canViewContracts && (
+            {CONTRACTS_TAB_ENABLED && canViewContracts && (
               <TabsTrigger
                 value="contratos"
                 className={tabCls}
@@ -379,9 +383,11 @@ function PageInner() {
           <TabsContent value="tickets-dev">
             <TicketsBoard />
           </TabsContent>
-          <TabsContent value="contratos">
-            <ContractsPanel />
-          </TabsContent>
+          {CONTRACTS_TAB_ENABLED && (
+            <TabsContent value="contratos">
+              <ContractsPanel />
+            </TabsContent>
+          )}
           <TabsContent value="ponto">
             <WorkSessionPanel />
           </TabsContent>

@@ -157,7 +157,11 @@ export const StrategicDashboard: React.FC = () => {
         </TabsList>
 
         <TabsContent value="analytics" className="space-y-4">
-          <MiniKanban data={kanban} systemItems={systemLeads} />
+          {/* Legado BotConversa (14/09/2026): só os CONTRATADOS entram no
+              Fluxo — são a parcela que a Meta e o card "Contratados" somam.
+              As outras etapas legadas (em conversa, não qualificado...) não
+              existem no Funil e só inflavam as colunas. */}
+          <MiniKanban data={kanban.filter((k) => k.evento === 'contratado')} systemItems={systemLeads} />
           <LeadOriginSection
             numberId={numberId}
             range={{ from: dateRange.from.toISOString(), to: dateRange.to.toISOString() }}

@@ -49,9 +49,12 @@ export const LeadsTable: React.FC = () => {
   useEffect(() => {
     loadLeads();
 
+    // 60s (era 10s) e só com a aba visível: a lista de leads do site muda
+    // poucas vezes por dia.
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       loadLeads();
-    }, 10000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, []);

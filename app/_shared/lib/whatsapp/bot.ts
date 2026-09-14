@@ -1362,6 +1362,29 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
             "resolve sem texto e sem silent",
           );
         }
+        {
+          // 14/09/2026: "resolvido" NÃO serve pra cliente já cadastrado no
+          // Kanban nem pra quem mandou documento nesta conversa — a IA
+          // agradecia o prontuário, "resolvia" e a conversa caía em
+          // "Perguntas / dúvidas" sem ninguém dar andamento (caso Vicente).
+          // Nesses casos vai pra Fila com o motivo, e a equipe continua.
+          const [linked, conv] = await Promise.all([
+            db.whatsAppContact.findUnique({ where: { id: contactId }, select: { userId: true } }),
+            db.whatsAppConversation.findUnique({ where: { contactId }, select: { createdAt: true } }),
+          ]);
+          const docsReceived = conv
+            ? await db.whatsAppMessage.count({
+                where: { contactId, direction: "in", mediaKey: { not: null }, createdAt: { gte: conv.createdAt } },
+              })
+            : 0;
+          if (linked?.userId || docsReceived > 0) {
+            const reason = docsReceived > 0
+              ? `documentos recebidos (${docsReceived}) — dar andamento`
+              : "cliente cadastrado no Kanban — dar andamento";
+            await handoffToQueue(contactId, contactLabel, reason, "transferido");
+            break;
+          }
+        }
         await resolveAndClose(contactId, decision.closeCategory ?? "perguntas");
         break;
       default:

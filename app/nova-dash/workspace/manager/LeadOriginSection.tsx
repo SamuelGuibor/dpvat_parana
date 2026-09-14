@@ -107,9 +107,10 @@ export function LeadOriginSection({
               (acc, o) => ({
                 qualified: acc.qualified + o.qualified,
                 disqualified: acc.disqualified + o.disqualified,
+                other: acc.other + (o.other ?? 0),
                 pending: acc.pending + o.pending,
               }),
-              { qualified: 0, disqualified: 0, pending: 0 },
+              { qualified: 0, disqualified: 0, other: 0, pending: 0 },
             );
             return (
               <div className="flex items-stretch gap-2">
@@ -120,6 +121,10 @@ export function LeadOriginSection({
                 <div className="rounded-2xl border-2 border-rose-300 px-4 py-2 text-center dark:border-rose-800 dark:bg-rose-950/30">
                   <p className="text-3xl font-extrabold tabular-nums text-rose-700 dark:text-rose-300">{totals.disqualified}</p>
                   <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600/70 dark:text-rose-400/70">não qualif.</p>
+                </div>
+                <div className="rounded-2xl border-2 border-gray-200 px-4 py-2 text-center dark:border-zinc-800" title="Sem resposta, perguntas, descartados, transferidos... (não são não qualificados)">
+                  <p className="text-3xl font-extrabold tabular-nums text-gray-500 dark:text-zinc-400">{totals.other}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">outros desf.</p>
                 </div>
                 <div className="rounded-2xl border-2 border-gray-300 px-4 py-2 text-center dark:border-zinc-700">
                   <p className="text-3xl font-extrabold tabular-nums text-gray-700 dark:text-zinc-300">{data.adOrigins.totalNewContacts}</p>
@@ -494,7 +499,9 @@ function LeadOutcomesDialog({
 }) {
   const qualified = (rows ?? []).filter((l) => l.outcome === 'qualified');
   const disqualified = (rows ?? []).filter((l) => l.outcome === 'disqualified');
-  const pending = (rows ?? []).filter((l) => l.outcome === 'pending');
+  // "Outros desfechos" (sem resposta, perguntas, descartado...) ficam junto
+  // dos em andamento na faixa de baixo — não são não qualificados.
+  const pending = (rows ?? []).filter((l) => l.outcome === 'pending' || l.outcome === 'other');
   const conversion = rows?.length
     ? Math.round((qualified.length / (qualified.length + disqualified.length || 1)) * 100)
     : 0;
@@ -613,7 +620,7 @@ function LeadOutcomesDialog({
                 <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-zinc-800 md:col-span-2">
                   <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-800/50">
                     <Timer className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-extrabold text-gray-600 dark:text-zinc-300">Em andamento</span>
+                    <span className="text-sm font-extrabold text-gray-600 dark:text-zinc-300">Em andamento / outros desfechos</span>
                     <span className="ml-auto rounded-full bg-gray-400 px-2 py-0.5 text-[11px] font-bold tabular-nums text-white dark:bg-zinc-600">{pending.length}</span>
                   </div>
                   <ul className="grid divide-y divide-gray-100 dark:divide-zinc-800 md:grid-cols-2 md:divide-y-0">

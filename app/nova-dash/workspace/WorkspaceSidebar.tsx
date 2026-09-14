@@ -34,6 +34,9 @@ interface Group {
   items: Item[];
 }
 
+// Chat geral desativado em 14/09/2026 (ver item "Chats" abaixo).
+const CHAT_ENABLED = false;
+
 export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canManageSecurity, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
@@ -73,7 +76,12 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
     {
       title: 'Chats',
       items: [
-        { key: 'chat', label: 'Chat geral', desc: 'Conversas e canais', icon: MessagesSquare, badge: chatUnread },
+        // Chat geral DESATIVADO (14/09/2026, decisão do escritório): a equipe
+        // usa o Discord e o presencial; a aba ficava em desuso. Código
+        // preservado — pra voltar, basta reativar CHAT_ENABLED.
+        ...(CHAT_ENABLED
+          ? [{ key: 'chat' as const, label: 'Chat geral', desc: 'Conversas e canais', icon: MessagesSquare, badge: chatUnread }]
+          : []),
         // O WhatsApp virou aba própria no topo da nova-dash.
         // Curadoria do cérebro da IA — restrita a quem tem review_ai.
         ...(canReviewAi

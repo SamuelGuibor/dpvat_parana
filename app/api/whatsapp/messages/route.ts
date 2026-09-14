@@ -16,11 +16,8 @@ export async function GET(req: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
   }
-  const me = await db.user.findUnique({
-    where: { id: session.user.id },
-    select: { role: true },
-  });
-  if (!me || !TEAM_ROLES.includes(me.role)) {
+  // Role vem do JWT — a consulta extra de usuário rodava em TODO poll da thread.
+  if (!TEAM_ROLES.includes(session.user.role ?? '')) {
     return NextResponse.json({ error: 'Sem acesso' }, { status: 403 });
   }
 

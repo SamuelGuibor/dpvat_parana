@@ -191,7 +191,12 @@ export default function ProgressTimeline() {
     };
     fetchStatus();
 
-    const interval = setInterval(fetchStatus, 5000);
+    // 30s e só com a aba visível (era 5s sem pausa): página pública que o
+    // cliente deixa aberta — cada tick é uma invocação na Vercel.
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchStatus();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
