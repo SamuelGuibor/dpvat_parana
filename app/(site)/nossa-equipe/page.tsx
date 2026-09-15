@@ -126,7 +126,7 @@ const teamMembers = [
     name: 'Henrique Moreira da Silva',
     role: 'Auxiliar Administrativa',
     specialty: 'Especialista na Aréa Administrativa',
-    image: '/henrique.jpeg',
+    image: '/henrique.JPEG',
     email: 'henrique.paranaseguros@gmail.com',
     experience: '1 ano de experiência',
     education: 'Estudante de Direito',
