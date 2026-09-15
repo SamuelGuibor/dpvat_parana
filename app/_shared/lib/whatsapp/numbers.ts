@@ -16,6 +16,8 @@ export interface WaCreds {
   wabaId: string;
   apiVersion: string;
   label: string;
+  /** true = templates pausados neste número (custo); texto livre segue. */
+  templatesPaused: boolean;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -32,6 +34,7 @@ function envCreds(): WaCreds | null {
     wabaId: process.env.WHATSAPP_WABA_ID ?? "",
     apiVersion: process.env.WHATSAPP_API_VERSION ?? "v21.0",
     label: "Número principal",
+    templatesPaused: false,
   };
 }
 
@@ -49,13 +52,14 @@ async function loadAll(): Promise<WaCreds[]> {
         wabaId: n.wabaId ?? "",
         apiVersion: n.apiVersion,
         label: n.label,
+        templatesPaused: n.templatesPaused,
       });
     } catch (err) {
       // Chave de criptografia diferente da que salvou (ambiente local x Vercel
       // com WHATSAPP_CRED_KEY/NEXT_AUTH_SECRET distintos). Se é o número das
       // envs, o token das envs vale — segue funcionando; senão, avisa.
       if (env && env.phoneNumberId === n.phoneNumberId) {
-        creds.push({ ...env, numberId: n.id, label: n.label, wabaId: n.wabaId ?? env.wabaId, apiVersion: n.apiVersion });
+        creds.push({ ...env, numberId: n.id, label: n.label, wabaId: n.wabaId ?? env.wabaId, apiVersion: n.apiVersion, templatesPaused: n.templatesPaused });
         console.warn(`[WA NUMBERS] Token do número ${n.label} indecifrável nesta instância (chave diferente) — usando o token das envs. Alinhe WHATSAPP_CRED_KEY entre os ambientes.`);
       } else {
         console.error(`[WA NUMBERS] Token indecifrável do número ${n.label} (${n.id}) — recadastre a credencial.`, err);

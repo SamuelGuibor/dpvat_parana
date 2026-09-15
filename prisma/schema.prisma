@@ -597,6 +597,10 @@ model WhatsAppNumber {
   appSecretEnc   String? // app secret p/ HMAC do webhook (null = usa WHATSAPP_APP_SECRET global)
   apiVersion     String   @default("v21.0")
   active         Boolean  @default(true)
+  // Pausa SÓ os envios de template (pagos) por este número: texto livre na
+  // janela de 24h e o webhook seguem normais. Usado quando o pagamento da
+  // WABA está configurado errado e cada template vira custo indevido.
+  templatesPaused Boolean @default(false)
   // O número "original" (fallback de envio quando a conversa não tem numberId).
   isDefault      Boolean  @default(false)
   createdAt      DateTime @default(now())

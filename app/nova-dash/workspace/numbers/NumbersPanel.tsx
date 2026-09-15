@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Phone, Plus, RefreshCw, Star, Power, KeyRound, Download } from 'lucide-react';
+import { Phone, Plus, RefreshCw, Star, Power, KeyRound, Download, PauseCircle, PlayCircle } from 'lucide-react';
 import {
   listWaNumbers,
   createWaNumber,
@@ -141,6 +141,7 @@ export function NumbersPanel() {
                   {n.label}
                   {n.isDefault && <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900 dark:text-amber-300"><Star className="h-3 w-3" /> Padrão</span>}
                   {!n.active && <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-bold text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">Inativo</span>}
+                  {n.templatesPaused && <span className="flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-900 dark:text-red-300"><PauseCircle className="h-3 w-3" /> Templates pausados</span>}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-zinc-400">
                   {n.displayPhone ? `+${n.displayPhone} · ` : ''}phone_number_id {n.phoneNumberId}
@@ -171,6 +172,9 @@ export function NumbersPanel() {
                     <button onClick={() => { setTokenEditId(n.id); setTokenDraft(''); }} disabled={busy}
                       title="Rotacionar o token (valida na Meta antes de salvar)"
                       className="rounded-lg border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"><KeyRound className="h-4 w-4" /></button>
+                    <button onClick={() => run(() => updateWaNumber({ id: n.id, templatesPaused: !n.templatesPaused }), n.templatesPaused ? 'Envio de templates reativado. ✅' : 'Envio de templates pausado neste número.')} disabled={busy}
+                      title={n.templatesPaused ? 'Reativar envio de templates (pagos) por este número' : 'Pausar envio de templates (pagos) por este número: texto livre na janela de 24h e o webhook continuam'}
+                      className={`rounded-lg border p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-800 ${n.templatesPaused ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400' : 'border-gray-300 text-gray-500 dark:border-zinc-700 dark:text-zinc-400'}`}>{n.templatesPaused ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}</button>
                     <button onClick={() => run(() => updateWaNumber({ id: n.id, active: !n.active }), n.active ? 'Número desativado.' : 'Número reativado. ✅')} disabled={busy || n.isDefault}
                       title={n.isDefault ? 'O número padrão não pode ser desativado' : n.active ? 'Desativar (webhook passa a ignorar)' : 'Reativar'}
                       className="rounded-lg border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"><Power className="h-4 w-4" /></button>

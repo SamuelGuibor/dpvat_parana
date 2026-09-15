@@ -319,6 +319,16 @@ export async function sendTemplate(
    */
   buttonVar?: string | null,
 ): Promise<SendResult> {
+  // Número com templates PAUSADOS (ex.: pagamento da WABA configurado errado,
+  // cada template vira custo indevido): barra aqui, no único ponto por onde
+  // todo template sai (cron, automação, inbox, assinatura), sem chamar a Meta.
+  const creds = await getCreds(numberId);
+  if (creds?.templatesPaused) {
+    const msg = `Envio de templates pausado no número "${creds.label}" (tela Números). Nenhum template foi enviado.`;
+    console.warn(`[WHATSAPP] ${msg} template=${templateName} to=${phone}`);
+    return { waMessageId: null, error: msg };
+  }
+
   // A Meta rejeita variáveis com \n, \t ou 4+ espaços consecutivos (erro 132012).
   const clean = (v: string) => v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim();
   const cleanVars = vars.map(clean);

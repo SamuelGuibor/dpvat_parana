@@ -19,6 +19,7 @@ export interface WaNumberDTO {
   displayPhone: string | null;
   apiVersion: string;
   active: boolean;
+  templatesPaused: boolean;
   isDefault: boolean;
   tokenHint: string; // "•••• abc4" — prova que tem token sem expor nada
   createdAt: string;
@@ -27,12 +28,12 @@ export interface WaNumberDTO {
 function toDTO(n: {
   id: string; label: string; phoneNumberId: string; wabaId: string | null;
   displayPhone: string | null; apiVersion: string; active: boolean;
-  isDefault: boolean; accessTokenEnc: string; createdAt: Date;
+  templatesPaused: boolean; isDefault: boolean; accessTokenEnc: string; createdAt: Date;
 }): WaNumberDTO {
   return {
     id: n.id, label: n.label, phoneNumberId: n.phoneNumberId, wabaId: n.wabaId,
     displayPhone: n.displayPhone, apiVersion: n.apiVersion, active: n.active,
-    isDefault: n.isDefault,
+    templatesPaused: n.templatesPaused, isDefault: n.isDefault,
     tokenHint: `••••${n.accessTokenEnc.slice(-4)}`,
     createdAt: n.createdAt.toISOString(),
   };
@@ -130,6 +131,7 @@ export async function updateWaNumber(input: {
   accessToken?: string; // vazio/ausente = mantém o atual
   apiVersion?: string;
   active?: boolean;
+  templatesPaused?: boolean; // pausa só os envios de template (pagos)
 }): Promise<{ ok: boolean; error?: string }> {
   await requirePermission('manage_wa_numbers');
   const row = await db.whatsAppNumber.findUnique({ where: { id: input.id } });
@@ -149,6 +151,7 @@ export async function updateWaNumber(input: {
       ...(token ? { accessTokenEnc: encryptSecret(token) } : {}),
       ...(input.apiVersion?.trim() ? { apiVersion: input.apiVersion.trim() } : {}),
       ...(input.active !== undefined ? { active: input.active } : {}),
+      ...(input.templatesPaused !== undefined ? { templatesPaused: input.templatesPaused } : {}),
     },
   });
   invalidateNumberCache();
