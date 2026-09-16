@@ -91,8 +91,13 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
     },
   ];
 
+  // Grupo sem item nenhum não aparece (16/09/2026): pra quem não tem
+  // review_ai, o grupo "Chats" ficava só com o título solto na sidebar — o
+  // Chat geral foi desativado e a Revisão da IA é exclusiva do ADMIN++.
+  const visibleGroups = groups.filter((g) => g.items.length > 0);
+
   // Todos os itens achatados para a barra horizontal do mobile.
-  const flatItems = groups.flatMap((g) => g.items);
+  const flatItems = visibleGroups.flatMap((g) => g.items);
 
   return (
     <>
@@ -130,7 +135,7 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
       </div>
 
       <nav className="flex-1 space-y-4 overflow-y-auto p-3">
-        {groups.map((group, gi) => (
+        {visibleGroups.map((group, gi) => (
           <div key={group.title ?? gi}>
             {group.title && (
               <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">

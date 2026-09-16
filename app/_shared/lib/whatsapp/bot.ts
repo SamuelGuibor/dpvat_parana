@@ -589,11 +589,20 @@ async function createCardTaskForTeam(contactId: string, contactLabel: string, re
   }
 }
 
-/** Cliente NÃO elegível: encerra o ticket como "não qualificada". */
-async function disqualifyAndClose(contactId: string): Promise<void> {
+/**
+ * Cliente NÃO elegível: encerra o ticket como "não qualificada".
+ *
+ * `category` (16/09/2026): a IA agora devolve o SUB-MOTIVO da desqualificação
+ * (nq_acidente_muito_antigo, nq_sem_qualidade_de_segurado...) — as mesmas
+ * chaves do menu "Encerrar" do inbox. Só aceitamos prefixo "nq_" (qualquer
+ * outra coisa cai no genérico), pra nunca gravar uma categoria que não seja de
+ * não qualificado num encerramento por disqualify.
+ */
+async function disqualifyAndClose(contactId: string, category?: string | null): Promise<void> {
+  const closeCategory = category && category.startsWith("nq_") ? category : "nao_qualificado";
   // Cérebro: snapshot ANTES do update (que zera botMemory/botState logo abaixo).
   await captureConversation(contactId, "bot_disqualify", {
-    closeCategory: "nao_qualificado",
+    closeCategory,
     qualified: false,
   });
   await db.whatsAppConversation.update({
@@ -603,7 +612,7 @@ async function disqualifyAndClose(contactId: string): Promise<void> {
     // contexto e a IA responde curto em vez de recomeçar a triagem do zero
     // (caso Luiz: 4 ciclos de saudação→triagem→despedida na mesma tarde). A
     // limpeza acontece na REABERTURA, se a conversa estiver velha (service.ts).
-    data: { status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory: "nao_qualificado", botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+    data: { status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
   void reportLeadStageToMeta(contactId, "nao_qualificado");
 }
@@ -1332,7 +1341,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
             "disqualify sem texto e sem silent",
           );
         }
-        await disqualifyAndClose(contactId);
+        await disqualifyAndClose(contactId, decision.closeCategory);
         break;
       case "handoff":
         // Transferência sem texto: o cliente ficaria esperando sem saber que um
