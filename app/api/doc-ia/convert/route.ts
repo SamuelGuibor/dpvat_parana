@@ -42,7 +42,19 @@ export async function POST(req: NextRequest) {
         signal: AbortSignal.timeout(110_000),
       });
       if (!res.ok) {
-        throw new Error(`Converter respondeu ${res.status}`);
+        const detail = await res.text().catch(() => "");
+        // 4xx = o próprio .docx está inválido/corrompido (o converter valida
+        // o ZIP antes do LibreOffice). Repetir não muda nada → devolve o
+        // motivo real pro usuário em vez de "tente novamente".
+        if (res.status >= 400 && res.status < 500) {
+          let msg = `Converter respondeu ${res.status}`;
+          try {
+            msg = (JSON.parse(detail) as { error?: string }).error ?? msg;
+          } catch {}
+          console.error(`[DOC-IA] docx rejeitado pelo converter (${docx.length} bytes):`, msg);
+          return NextResponse.json({ error: msg }, { status: 422 });
+        }
+        throw new Error(`Converter respondeu ${res.status}: ${detail.slice(0, 200)}`);
       }
       const pdf = await res.arrayBuffer();
       return new NextResponse(pdf, {
