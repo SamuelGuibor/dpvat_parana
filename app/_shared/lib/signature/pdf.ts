@@ -120,11 +120,17 @@ async function convertDocx(docx: Buffer): Promise<Buffer> {
       });
       if (!res.ok) {
         const detail = (await res.text().catch(() => "")).slice(0, 200);
+        // 4xx = o .docx em si foi rejeitado (inválido/corrompido); repetir
+        // não resolve, então o catch abaixo sai na primeira.
+        if (res.status >= 400 && res.status < 500) {
+          console.error(`[SIGN] docx rejeitado pelo converter (${docx.length} bytes):`, detail);
+        }
         throw new Error(`docx-converter HTTP ${res.status}: ${detail}`);
       }
       return Buffer.from(await res.arrayBuffer());
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
+      if (/docx-converter HTTP 4\d\d/.test(lastError.message)) throw lastError;
       console.warn(`[SIGN] conversão falhou (tentativa ${attempt}/3):`, lastError.message);
       if (attempt < 3) await new Promise((r) => setTimeout(r, 1500 * attempt));
     }

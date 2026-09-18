@@ -42,6 +42,9 @@ interface SendResultRaw extends SendResult {
 
 async function postMessageRaw(payload: Record<string, unknown>, numberId?: string | null): Promise<SendResultRaw> {
   const c = await getCreds(numberId);
+  if (!c && numberId) {
+    return { waMessageId: null, error: "Este número foi desativado — a conversa é somente leitura." };
+  }
   if (!c) {
     return { waMessageId: null, error: "WhatsApp Cloud API não configurada (cadastre um número ou WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)." };
   }

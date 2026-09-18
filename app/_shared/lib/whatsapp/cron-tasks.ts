@@ -5,6 +5,7 @@ import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
+import { activeNumberConversationWhere } from '@/app/_shared/lib/whatsapp/numbers';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT, recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { brStartOfDay } from '@/app/_shared/utils/date-br';
 import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
@@ -603,10 +604,13 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   const now = Date.now();
   const results = emptyResults();
   const pacer = createPacer(budgetMs);
+  // Número desativado (somente leitura no inbox) fica fora de todos os crons.
+  const onlyActive = await activeNumberConversationWhere();
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   const silent30 = await db.whatsAppConversation.findMany({
     where: {
+      ...onlyActive,
       status: 'bot',
       botNudge30At: null,
       lastMessageAt: { lte: new Date(now - NUDGE_AFTER_MS) },
@@ -677,6 +681,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   // ---- 2. Encerramento por inatividade -------------------------------------
   const silentAfterNudge = await db.whatsAppConversation.findMany({
     where: {
+      ...onlyActive,
       status: 'bot',
       botNudge30At: { not: null, lte: new Date(now - CLOSE_AFTER_MS) },
     },
@@ -747,8 +752,10 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
   let recoveryBudget = Math.max(0, RECOVERY_DAILY_CAP - sentToday);
   let cappedToday = 0;
 
+  const onlyActive = await activeNumberConversationWhere();
   const dueRecovery = await db.whatsAppConversation.findMany({
     where: {
+      ...onlyActive,
       status: 'standby',
       recoveryNextAt: { not: null, lte: new Date(now) },
     },
@@ -935,11 +942,13 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
 export async function runSlaPhase(): Promise<CronResults> {
   const now = Date.now();
   const results = emptyResults();
+  const onlyActive = await activeNumberConversationWhere();
 
   // ---- 3. SLA da fila de espera ---------------------------------------------
   await timed('sla-fila', async () => {
     const candidates = await db.whatsAppConversation.findMany({
       where: {
+        ...onlyActive,
         status: 'queued',
         queuedAt: { not: null, lte: new Date(now - QUEUE_SLA_MS) },
       },
@@ -992,6 +1001,7 @@ export async function runSlaPhase(): Promise<CronResults> {
     const stalledCandidates = isBusinessHours(now)
       ? await db.whatsAppConversation.findMany({
           where: {
+            ...onlyActive,
             status: 'human',
             lastMessageAt: { lte: new Date(now - HUMAN_SLA_MS) },
           },

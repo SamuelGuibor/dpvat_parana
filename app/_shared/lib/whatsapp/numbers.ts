@@ -88,10 +88,32 @@ export async function getCreds(numberId?: string | null): Promise<WaCreds | null
   if (numberId) {
     const hit = rows.find((r) => r.numberId === numberId);
     if (hit) return hit;
-    // Linha desativada/removida: melhor avisar do que mandar pelo número errado.
-    console.error(`[WA NUMBERS] numberId ${numberId} não encontrado/inativo — usando default.`);
+    // Linha desativada/removida: NUNCA cai no default — o cliente receberia a
+    // mensagem por uma linha com a qual nunca falou (ex.: 2323 desativado em
+    // 18/09/2026 com 200 conversas em standby). Sem credencial = envio recusado.
+    console.error(`[WA NUMBERS] numberId ${numberId} não encontrado/inativo — envio bloqueado.`);
+    return null;
   }
   return (await getDefaultCreds()) ?? null;
+}
+
+/**
+ * Números DESATIVADOS na tela Números: o histórico fica no inbox só para
+ * consulta (somente leitura) — nada sai por eles nem pelos crons.
+ */
+export async function getInactiveNumberIds(): Promise<string[]> {
+  const rows = await db.whatsAppNumber.findMany({ where: { active: false }, select: { id: true } });
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Fragmento de `where` de conversa que exclui as de número desativado. O OR
+ * com null é proposital: `notIn` sozinho derruba as linhas legadas sem numberId.
+ */
+export async function activeNumberConversationWhere(): Promise<{ OR?: ({ numberId: null } | { numberId: { notIn: string[] } })[] }> {
+  const ids = await getInactiveNumberIds();
+  if (!ids.length) return {};
+  return { OR: [{ numberId: null }, { numberId: { notIn: ids } }] };
 }
 
 /** O número default (envio quando a conversa não tem numberId). */

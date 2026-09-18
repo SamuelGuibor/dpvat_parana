@@ -12,6 +12,7 @@ import {
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
   UserCheck, Columns3, Users, Phone, BookUser, Smile,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -1613,6 +1614,13 @@ export function WhatsAppInbox() {
               <div ref={endRef} />
             </div>
 
+            {/* Número desativado (tela Números): histórico só para consulta. */}
+            {active.readOnly ? (
+              <div className="flex items-center gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                <Lock className="h-4 w-4 shrink-0" />
+                <span>Somente leitura: este número foi desativado. O histórico fica disponível para consulta, mas não é possível enviar mensagens por aqui.</span>
+              </div>
+            ) : (<>
             {windowExpired && (
               <div className="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
                 <AlertCircle className="h-4 w-4 shrink-0" />
@@ -1643,6 +1651,7 @@ export function WhatsAppInbox() {
                 onRefresh={async () => { await Promise.all([mutateMessages(), refreshConversations()]); }}
               />
             </div>
+            </>)}
 
             <WhatsAppSendTemplateModal
               open={sendTemplateOpen}

@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
+import { getInactiveNumberIds } from '@/app/_shared/lib/whatsapp/numbers';
 import { CLOSE_CATEGORY_LABELS, CLOSE_CATEGORY_OPTIONS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
@@ -148,6 +149,9 @@ export interface WhatsAppConversationDTO {
   // Número da empresa que atende esta conversa (multi-número): o inbox filtra
   // e etiqueta por ele. Null em conversa legada ainda não adotada.
   numberId: string | null;
+  // Número desativado na tela Números: histórico só para consulta — a tela
+  // esconde o composer e o servidor recusa qualquer envio.
+  readOnly: boolean;
   tags: { id: string; name: string; color: string }[];
 }
 
@@ -332,6 +336,7 @@ async function loadConversations(
   // Rótulos dos motivos dinâmicos (nq_*) — uma query, cache pro map abaixo.
   const reasonRows = await db.whatsAppCloseReason.findMany({ select: { key: true, label: true } });
   const reasonLabelByKey = new Map(reasonRows.map((r) => [r.key, r.label]));
+  const inactiveNumberIds = new Set(await getInactiveNumberIds());
   const closeLabelOf = (cat: string | null): string | null => {
     if (!cat) return null;
     return CLOSE_CATEGORY_LABELS[cat] ?? reasonLabelByKey.get(cat) ?? cat;
@@ -401,6 +406,7 @@ async function loadConversations(
       kanbanColumn: c.contact.userId ? columnByUserId.get(c.contact.userId) ?? null : null,
       optedOut: c.contact.optedOut,
       numberId: c.numberId,
+      readOnly: !!c.numberId && inactiveNumberIds.has(c.numberId),
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
     };
   });
