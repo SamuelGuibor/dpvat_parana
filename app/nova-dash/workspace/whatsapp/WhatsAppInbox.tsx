@@ -58,6 +58,7 @@ import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
+import { brDayKey } from '@/app/_shared/utils/date-br';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -236,7 +237,31 @@ export function WhatsAppInbox() {
   const [attendantFilter, setAttendantFilter] = useState<string | null>(null);
   // Filtros novos (12/08/2026): "Hoje" = conversas que começaram no dia;
   // "Coluna do Kanban" = estágio do card do cliente vinculado.
-  const [todayOnly, setTodayOnly] = useState(false);
+  // Filtro por DATA DE ENTRADA do lead (21/09/2026, estilo BotConversa):
+  // substitui o antigo chip "Hoje" — presets + intervalo livre. Dias em
+  // "YYYY-MM-DD" (Brasília), inclusivos. Filtra só as conversas carregadas
+  // (as 1.000 mais recentes); a busca por nome é que vai ao banco inteiro.
+  const [dateRange, setDateRange] = useState<{ from: string; to: string; label: string } | null>(null);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const applyDatePreset = (preset: 'hoje' | 'ontem' | '7d' | '30d' | 'mes') => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const today = brDayKey(now);
+    if (preset === 'hoje') setDateRange({ from: today, to: today, label: 'Hoje' });
+    else if (preset === 'ontem') { const y = brDayKey(now - DAY); setDateRange({ from: y, to: y, label: 'Ontem' }); }
+    else if (preset === '7d') setDateRange({ from: brDayKey(now - 6 * DAY), to: today, label: 'Últimos 7 dias' });
+    else if (preset === '30d') setDateRange({ from: brDayKey(now - 29 * DAY), to: today, label: 'Últimos 30 dias' });
+    else setDateRange({ from: `${today.slice(0, 8)}01`, to: today, label: 'Este mês' });
+  };
+  const applyCustomRange = () => {
+    if (!customFrom && !customTo) return;
+    let from = customFrom || customTo;
+    let to = customTo || customFrom;
+    if (from > to) [from, to] = [to, from];
+    const fmt = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
+    setDateRange({ from, to, label: from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}` });
+  };
   const [columnFilter, setColumnFilter] = useState<string | null>(null);
 
   // Estado de leitura/fila (19/08/2026): triagem rápida do que ainda não foi
@@ -533,10 +558,10 @@ export function WhatsAppInbox() {
 
   // Busca por nome ou celular + filtro por tags (basta bater em uma das
   // selecionadas) + "Hoje" + coluna do Kanban.
-  const isToday = (iso: string) => {
-    const d = new Date(iso);
-    const now = new Date();
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const inDateRange = (iso: string) => {
+    if (!dateRange) return true;
+    const k = brDayKey(iso);
+    return k >= dateRange.from && k <= dateRange.to;
   };
   // Lista carregada + o que a busca no servidor trouxe de fora dela (sem
   // duplicar quem já está nas duas).
@@ -556,7 +581,7 @@ export function WhatsAppInbox() {
         if (!nameMatch && !phoneMatch) return false;
       }
       if (tagFilter.length && !c.tags.some((t) => tagFilter.includes(t.id))) return false;
-      if (todayOnly && !isToday(c.createdAt)) return false;
+      if (!inDateRange(c.createdAt)) return false;
       if (columnFilter && c.kanbanColumn !== columnFilter) return false;
       if (numberFilter && c.numberId !== numberFilter) return false;
       // Estado de leitura: "não lidas" = mensagem recebida depois da última
@@ -567,13 +592,13 @@ export function WhatsAppInbox() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchUniverse, search, tagFilter, todayOnly, columnFilter, numberFilter, readFilter]);
+  }, [searchUniverse, search, tagFilter, dateRange, columnFilter, numberFilter, readFilter]);
 
-  // Contagem do chip "Hoje" (independe dos outros filtros, senão o número
-  // mudaria ao clicar no próprio chip) e colunas disponíveis pro seletor.
-  const todayCount = useMemo(() => conversations.filter((c) => isToday(c.createdAt)).length,
+  // Contagem do chip de período (só o período, independe dos outros filtros)
+  // e colunas disponíveis pro seletor.
+  const dateCount = useMemo(() => conversations.filter((c) => inDateRange(c.createdAt)).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversations]);
+    [conversations, dateRange]);
   // Contagens dos chips de leitura/fila: também independem dos outros filtros
   // pelo mesmo motivo do "Hoje" — o número não pode mudar ao clicar no chip.
   const readCounts = useMemo(() => ({
@@ -666,7 +691,7 @@ export function WhatsAppInbox() {
   const tagFilterActive = tagFilter.length > 0 || search.trim().length > 0;
   const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
 
-  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter]);
+  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter, dateRange]);
 
   // Janela de 24h: sem mensagem recebida recente, a Meta só aceita template.
   const windowExpired = !!active && (
@@ -1010,18 +1035,58 @@ export function WhatsAppInbox() {
 
             <p className="truncate text-[13px] font-bold text-white pt-2">Filtros</p>
             <div className="mt-1.5 flex items-center gap-1">
-              {/* Novas do dia */}
-              <button
-                onClick={() => setTodayOnly((v) => !v)}
-                title="Só as conversas que começaram hoje"
-                className={chipCls(todayOnly)}
-              >
-                <Clock className="h-3.5 w-3.5 shrink-0" />
-                <span className={chipLabelCls(todayOnly)}>Hoje</span>
-                {todayOnly && (
-                  <span className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">{todayCount}</span>
-                )}
-              </button>
+              {/* Data de entrada do lead (presets + intervalo livre) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button title="Filtrar pela data de entrada do lead" className={chipCls(!!dateRange)}>
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    <span className={chipLabelCls(!!dateRange)}>{dateRange?.label ?? 'Data de entrada'}</span>
+                    {dateRange && (
+                      <span className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">{dateCount}</span>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-60">
+                  <DropdownMenuLabel>Entrada do lead</DropdownMenuLabel>
+                  {([['hoje', 'Hoje'], ['ontem', 'Ontem'], ['7d', 'Últimos 7 dias'], ['30d', 'Últimos 30 dias'], ['mes', 'Este mês']] as const).map(([k, label]) => (
+                    <DropdownMenuItem key={k} onSelect={() => applyDatePreset(k)}>
+                      {label}
+                      {dateRange?.label === label && <Check className="ml-auto h-3.5 w-3.5" />}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs">Período personalizado</DropdownMenuLabel>
+                  <div className="space-y-1.5 px-2 pb-2" onKeyDown={(e) => e.stopPropagation()}>
+                    <label className="flex items-center justify-between gap-2 text-xs">
+                      De
+                      <input type="date" value={customFrom} max={customTo || undefined}
+                        onChange={(e) => setCustomFrom(e.target.value)}
+                        className="rounded border px-1.5 py-0.5 text-xs" />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-xs">
+                      Até
+                      <input type="date" value={customTo} min={customFrom || undefined}
+                        onChange={(e) => setCustomTo(e.target.value)}
+                        className="rounded border px-1.5 py-0.5 text-xs" />
+                    </label>
+                    <button
+                      onClick={applyCustomRange}
+                      disabled={!customFrom && !customTo}
+                      className="w-full rounded bg-[#1d9e75] py-1 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Aplicar período
+                    </button>
+                  </div>
+                  {dateRange && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => { setDateRange(null); setCustomFrom(''); setCustomTo(''); }}>
+                        <X className="mr-2 h-3.5 w-3.5" /> Limpar filtro de data
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Número da empresa (multi-número) — só com 2+ linhas cadastradas */}
               {waNumbers.length >= 2 && (
