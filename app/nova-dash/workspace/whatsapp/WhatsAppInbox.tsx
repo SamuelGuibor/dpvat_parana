@@ -628,9 +628,7 @@ export function WhatsAppInbox() {
     // no fallback pelo `qualified` antigo (true→qualificada, senão→não qualificada).
     const byCategory = (cat: string) => closed.filter((c) => c.closeCategory === cat);
     return {
-      // Urgentes (detectados pela IA) primeiro na fila de espera.
-      queued: filtered.filter((c) => c.status === 'queued')
-        .sort((a, b) => Number(b.urgent) - Number(a.urgent)),
+      queued: filtered.filter((c) => c.status === 'queued'),
       // Todas as conversas em atendimento humano, de qualquer atendente — o
       // selinho no avatar diz quem falou por último, sem filtro obrigatório.
       ativas: filtered.filter((c) => c.status === 'human'),
@@ -649,7 +647,7 @@ export function WhatsAppInbox() {
 
   // Itens de cada pasta do rail (mesma fonte que os contadores dos ícones).
   // "Ativas" junta fila + atendimento humano — quem está na fila sempre
-  // aparece primeiro (e entre os da fila, urgente primeiro). "Só minhas"
+  // aparece primeiro. "Só minhas"
   // esconde o atendimento humano de outros atendentes, mas a fila (de
   // ninguém ainda) continua visível pra não perder a visão geral.
   const humanFilter = (c: WhatsAppConversationDTO) => {
@@ -1483,11 +1481,6 @@ export function WhatsAppInbox() {
                   Card #{clientInfo.cardNumber} ↗
                 </button>
               )}
-              {active.urgent && active.status !== 'closed' && (
-                <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
-                  <AlertTriangle className="h-3 w-3" /> Urgente
-                </span>
-              )}
               <span className={`hidden rounded-full px-2 py-0.5 text-xs font-semibold sm:inline ${STATUS_CHIP[active.status] ?? ''}`}>
                 {STATUS_LABEL[active.status] ?? active.status}
                 {active.status === 'closed' && ` · ${active.closeCategoryLabel ?? (active.qualified ? 'Qualificada' : 'Não qualificada')}`}
@@ -2112,9 +2105,6 @@ function ConversationGroup({
               <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 <span className={`truncate text-[13px] ${isQueued ? 'font-bold text-amber-200' : hasUnread ? 'font-bold text-white' : 'font-semibold'}`}>{c.contactName ?? formatPhone(c.contactPhone)}</span>
               </span>
-              {c.urgent && c.status !== 'closed' && (
-                <span className="shrink-0 animate-pulse rounded-full bg-red-500/20 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wide text-red-300 ring-1 ring-red-500/40">Urgente</span>
-              )}
               {c.status === 'standby' && c.recoveryAttempts > 0 && (
                 <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-violet-300 ring-1 ring-violet-400/30">
                   {Math.min(c.recoveryAttempts, recoveryCapOf(c.numberId))}ª de {recoveryCapOf(c.numberId)}

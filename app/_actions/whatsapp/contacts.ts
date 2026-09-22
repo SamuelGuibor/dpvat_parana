@@ -187,7 +187,7 @@ export async function blockWhatsAppContact(contactId: string): Promise<void> {
     where: { contactId, status: { not: 'closed' } },
     data: {
       status: 'closed', closedAt: new Date(), assignedToId: null, closeCategory: 'descartado', qualified: null,
-      botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
+      botFailCount: 0, queuedAt: null, queueAlertAt: null,
       recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
     },
   });

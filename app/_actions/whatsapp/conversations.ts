@@ -91,8 +91,6 @@ export interface WhatsAppConversationDTO {
   // dinâmicos da tabela whatsapp_close_reasons) — ex.: "Não qualificada — sem
   // cobertura INSS". Vai no chip "Encerrada · {label}" e nos grupos da pasta.
   closeCategoryLabel: string | null;
-  // Urgência detectada pela IA — some quando um atendente assume/encerra.
-  urgent: boolean;
   assignedToId: string | null;
   assignedToName: string | null;
   lastMessageAt: string;
@@ -192,7 +190,7 @@ async function loadConversations(
     take,
     select: {
       id: true, contactId: true, numberId: true, status: true, qualified: true,
-      closeCategory: true, urgent: true, assignedToId: true, lastMessageAt: true,
+      closeCategory: true, assignedToId: true, lastMessageAt: true,
       lastReadAt: true, createdAt: true, recoveryAttempts: true,
       contact: {
         select: {
@@ -369,7 +367,6 @@ async function loadConversations(
       qualified: c.qualified,
       closeCategory: c.closeCategory,
       closeCategoryLabel: c.status === 'closed' ? closeLabelOf(c.closeCategory) : null,
-      urgent: c.urgent,
       assignedToId: c.assignedToId,
       assignedToName: c.assignedToId ? nameById.get(c.assignedToId) ?? null : null,
       lastMessageAt: c.lastMessageAt.toISOString(),
@@ -511,7 +508,7 @@ export async function assumeConversation(conversationId: string): Promise<void> 
   const before = await convContact(conversationId);
   await db.whatsAppConversation.update({
     where: { id: conversationId },
-    // Assumiu: some o selo de urgência e zeram os marcadores de SLA da fila.
+    // Assumiu: zeram os marcadores de SLA da fila.
     // recoveryNextAt nulo: atendente assumiu → o ciclo de recuperação para.
     //
     // `qualified` é PRESERVADO (06/08/2026). Antes o assumir zerava o campo, e
@@ -519,7 +516,7 @@ export async function assumeConversation(conversationId: string): Promise<void> 
     // e abandonada pelo cliente, o cron a tratava como triagem incompleta e
     // disparava o ciclo de recuperação em cima de quem já estava com a equipe
     // (caso Daniel). Quem reclassifica o desfecho é o encerramento.
-    data: { status: 'human', assignedToId: me.id, urgent: false, queuedAt: null, queueAlertAt: null, recoveryNextAt: null },
+    data: { status: 'human', assignedToId: me.id, queuedAt: null, queueAlertAt: null, recoveryNextAt: null },
   });
   if (before) {
     // "Assumir" reabre quando estava encerrada; senão é uma atribuição normal.
@@ -596,7 +593,7 @@ export async function closeConversation(
     // Ticket encerrado: zera a memória/estado do bot para que uma futura
     // conversa desse cliente comece do zero.
     // Desfecho real → ciclo de recuperação zerado por completo.
-    data: { status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+    data: { status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
 
   // Tag automática = o próprio desfecho ("Não qualificada — sem cobertura

@@ -72,7 +72,6 @@ export interface ConversationSnapshot {
     botMemory: string | null;
     botState: string | null;
     botFailCount: number;
-    urgent: boolean;
     createdAt: string | null;
     lastMessageAt: string | null;
   };
@@ -142,7 +141,7 @@ export async function captureConversation(
         where: { contactId },
         select: {
           id: true, qualified: true, closeCategory: true, botMemory: true,
-          botState: true, botFailCount: true, urgent: true, createdAt: true,
+          botState: true, botFailCount: true, createdAt: true,
           lastMessageAt: true,
         },
       }),
@@ -255,7 +254,6 @@ export async function captureConversation(
         botMemory: conversation?.botMemory ?? null,
         botState: conversation?.botState ?? null,
         botFailCount: conversation?.botFailCount ?? 0,
-        urgent: conversation?.urgent ?? false,
         createdAt: conversation?.createdAt?.toISOString() ?? null,
         lastMessageAt: conversation?.lastMessageAt?.toISOString() ?? null,
       },

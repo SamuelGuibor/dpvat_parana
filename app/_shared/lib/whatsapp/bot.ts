@@ -81,6 +81,33 @@ function historyText(m: {
   return [body, marker].filter(Boolean).join(" ");
 }
 
+/**
+ * Autor de cada turno do histórico enviado à IA. Antes era só client/bot/agent
+ * e as mensagens proativas do sistema (recuperação, lembrete de assinatura...)
+ * iam como "bot" — a IA não sabia separar o que ela disse, o que a equipe
+ * disse e o que foi disparo automático, e travava com resposta vazia quando o
+ * cliente respondia a uma pergunta do atendente (128 handoffs em 30 dias até
+ * 22/09/2026).
+ */
+function historyRole(m: { direction: string; sentByBot: boolean; systemSource: string | null }): "client" | "bot" | "agent" | "system" {
+  if (m.direction === "in") return "client";
+  if (!m.sentByBot) return "agent";
+  return m.systemSource ? "system" : "bot";
+}
+
+const SYSTEM_SOURCE_LABELS: Record<string, string> = {
+  recovery: "recuperação de conversa parada",
+  automation: "automação do Kanban",
+  progress: "aviso de andamento do processo",
+  signature_otp: "código de verificação da assinatura",
+  signature_reminder: "lembrete de assinatura",
+  signature_resend: "reenvio do link de assinatura",
+};
+
+function systemSourceLabel(source: string): string {
+  return SYSTEM_SOURCE_LABELS[source] ?? source;
+}
+
 /** Cérebro a usar para este telefone: staging para números de teste, senão produção. */
 function brainUrlFor(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -155,7 +182,6 @@ interface BotDecision {
   state: string;
   intent: string;
   emotion: string;
-  urgent: boolean;
   understood: boolean;
   confidence: number;
   // A IA identificou (pelo contexto) que o cliente quer PARAR de receber
@@ -483,12 +509,11 @@ async function handoffToQueue(
   contactLabel: string,
   reason: string,
   closeCategory: string = "transferido",
-  urgent = false,
 ): Promise<void> {
   await db.whatsAppConversation.update({
     where: { contactId },
     // queuedAt alimenta o SLA da fila (cron alerta se ninguém assumir).
-    data: { status: "queued", assignedToId: null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null, ...(urgent ? { urgent: true } : {}) },
+    data: { status: "queued", assignedToId: null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null },
   });
 
   // Motivo da transferência visível NA THREAD (nota interna, só equipe).
@@ -612,7 +637,7 @@ async function disqualifyAndClose(contactId: string, category?: string | null): 
     // contexto e a IA responde curto em vez de recomeçar a triagem do zero
     // (caso Luiz: 4 ciclos de saudação→triagem→despedida na mesma tarde). A
     // limpeza acontece na REABERTURA, se a conversa estiver velha (service.ts).
-    data: { status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory, botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+    data: { status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
   });
   void reportLeadStageToMeta(contactId, "nao_qualificado");
 }
@@ -646,7 +671,7 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
       closeCategory: category, botFailCount: 0,
       // Ficha preservada em TODOS os desfechos (25/07/2026) — ver comentário no
       // disqualifyAndClose. A limpeza é na reabertura, por idade (service.ts).
-      urgent: false, queuedAt: null, queueAlertAt: null,
+      queuedAt: null, queueAlertAt: null,
       // Desfecho real → ciclo de recuperação zerado.
       recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
     },
@@ -1058,12 +1083,20 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         where: { contactId, internal: false, id: { notIn: burstIds }, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 30,
-        select: { direction: true, sentByBot: true, body: true, mediaType: true, transcript: true },
+        select: { direction: true, sentByBot: true, systemSource: true, authorId: true, body: true, mediaType: true, transcript: true },
       }),
       findLinkedCard(contactId),
       // Fluxos cadastrados COM descrição — a IA escolhe qual se encaixa.
       listFlowsForBot(),
     ]);
+
+    const authorIds = [...new Set(history.map((h) => h.authorId).filter((id): id is string => !!id))];
+    const authorNames = new Map(
+      authorIds.length
+        ? (await db.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } }))
+            .map((u) => [u.id, u.name?.split(" ")[0] ?? null] as const)
+        : [],
+    );
 
     const basePayload = {
       // Qual dos NOSSOS números atende esta conversa (multi-tenant): hoje o
@@ -1077,7 +1110,11 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       history: history
         .reverse()
         .map((h) => ({
-          role: h.direction === "in" ? "client" : h.sentByBot ? "bot" : "agent",
+          role: historyRole(h),
+          // Quem da equipe escreveu / que automação disparou — o micro põe no
+          // rótulo do turno ([atendente: Fulano], [mensagem automática: ...]).
+          author: h.direction === "out" && !h.sentByBot && h.authorId ? authorNames.get(h.authorId) ?? null : null,
+          source: h.direction === "out" && h.sentByBot && h.systemSource ? systemSourceLabel(h.systemSource) : null,
           text: historyText(h),
         }))
         .filter((h) => h.text),
@@ -1198,22 +1235,6 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       failCount = 0;
     }
 
-    // ---- Urgência: transfere na hora -------------------------------------
-    if (decision.urgent && decision.action === "continue") {
-      decision = {
-        ...decision,
-        action: "handoff",
-        handoffReason: decision.handoffReason ?? "urgência detectada",
-      };
-      await recordCodeIntervention({
-        contactId,
-        contactName: message.contactName,
-        botState: decision.state || null,
-        action: "handoff",
-        detail: "Trava de código: IA sinalizou urgência em action=continue → promovida a transferência automática.",
-      });
-    }
-
     // ---- Opt-out identificado pela IA (com contexto) ----------------------
     // MUDANÇA 25/07/2026 (caso "nah, acho que me confundi" → optedOut=true →
     // silêncio eterno): a IA NÃO marca mais optedOut sozinha. Falso positivo
@@ -1241,7 +1262,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         where: { contactId },
         data: {
           status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", qualified: false,
-          botFailCount: 0, urgent: false, queuedAt: null, queueAlertAt: null,
+          botFailCount: 0, queuedAt: null, queueAlertAt: null,
           recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
         },
       });
@@ -1357,7 +1378,6 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
           contactId, contactLabel,
           decision.handoffReason ?? "transferido pelo bot",
           decision.closeCategory ?? "transferido",
-          decision.urgent, // urgência da IA vira selo vermelho no inbox
         );
         break;
       case "resolve":
@@ -1401,7 +1421,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // texto. Antes isso deixava o cliente no vácuo (bot mudo, ainda em modo
         // bot, ninguém avisado). Agora joga pra fila humana com o motivo, pra um
         // atendente assumir na hora em vez de o cliente ficar sem resposta.
-        if (outgoing.length === 0) {
+        // silent=true em continue = o cliente só confirmou algo já combinado
+        // ("ok", 👍) — a conversa segue aberta com o bot, sem transferir.
+        if (outgoing.length === 0 && !decision.silent) {
           await handoffToQueue(
             contactId, contactLabel,
             decision.leaked
@@ -1438,7 +1460,6 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         emotion: decision.emotion,
         understood: decision.understood,
         confidence: decision.confidence,
-        urgent: decision.urgent,
         qualified: decision.action === "qualify" ? true : decision.action === "disqualify" ? false : undefined,
         // Categoria de encerramento (perguntas/qualificado/novo_acidente/...).
         closeCategory: decision.closeCategory ?? undefined,

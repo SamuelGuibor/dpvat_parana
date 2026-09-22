@@ -475,7 +475,6 @@ async function finalizeClose(
       botFailCount: 0,
       botNudge30At: null,
       botNudge24At: null,
-      urgent: false,
       queuedAt: null,
       queueAlertAt: null,
       recoveryNextAt: null,
@@ -514,7 +513,6 @@ async function enterStandby(conv: { id: string; contactId: string }): Promise<vo
       botFailCount: 0,
       botNudge30At: null,
       botNudge24At: null,
-      urgent: false,
       queuedAt: null,
       queueAlertAt: null,
       recoveryNextAt: nextBusinessSlot(Math.max(base, Date.now() + 60_000)),
@@ -968,7 +966,6 @@ export async function runSlaPhase(): Promise<CronResults> {
       try {
         const label = conv.contact.name ?? `+${conv.contact.phone}`;
         const waitingMin = conv.queuedAt ? Math.round((now - conv.queuedAt.getTime()) / 60_000) : 0;
-        const urgentPrefix = conv.urgent ? '🔴 URGENTE — ' : '';
         const stepIdx = QUEUE_ALERT_STEPS_MS.filter((s) => conv.queuedAt!.getTime() + s <= now).length;
         const stepSuffix = ` (aviso ${stepIdx}/${QUEUE_ALERT_STEPS_MS.length}${stepIdx >= QUEUE_ALERT_STEPS_MS.length ? ' — último' : ''})`;
 
@@ -979,7 +976,7 @@ export async function runSlaPhase(): Promise<CronResults> {
               authorId: 'whatsapp-bot',
               authorName: '🤖 Bot WhatsApp',
               targetName: label,
-              message: `${urgentPrefix}WhatsApp: ${label} está há ${waitingMin} min na fila sem atendimento!${stepSuffix}`,
+              message: `WhatsApp: ${label} está há ${waitingMin} min na fila sem atendimento!${stepSuffix}`,
               contactId: conv.contactId,
             },
           });

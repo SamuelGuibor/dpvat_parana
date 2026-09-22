@@ -86,7 +86,6 @@ const NODES: NodeDef[] = [
   { id: 'ia_debounce', c: 'ia', novo: true, name: 'debounce_de_rajada',   desc: 'Mensagens picadas em sequência são agregadas por ~8s e viram UMA chamada à IA — sem respostas fora de ordem.' },
   { id: 'ia_cache',    c: 'ia', novo: true, name: 'prompt_caching',       desc: 'O prompt fixo (roteiro inteiro) é cacheado na Anthropic — ~90% do input passa a custar 10% do preço.' },
   { id: 'ia_nudge',    c: 'ia', name: 'nudges_e_despedida',   desc: 'Silêncio de 30min → "precisa de algo mais?"; sem resposta → despedida contextual gerada pela IA e encerramento.' },
-  { id: 'ia_urgente',  c: 'ia', name: 'deteccao_de_urgencia', desc: 'A IA marca conversas urgentes — selo vermelho no inbox e prioridade na fila.' },
   { id: 'ia_staging',  c: 'ia', novo: true, name: 'ambiente_de_teste',    desc: 'Números de teste conversam com um cérebro de staging — prompts novos são validados sem tocar em cliente real.' },
   { id: 'ia_custo',    c: 'ia', name: 'custo_por_decisao',    desc: 'Tokens de cada chamada (input, output, cache) viram gasto semanal/mensal no dashboard.' },
 
@@ -147,7 +146,7 @@ const LINKS: [string, string][] = [
   ['ia_audio', 'wa_media'], ['ia_audio', 'in_gemini'],
   ['ia_triagem', 'wa_fila'], ['ia_triagem', 'in_claude'], ['ia_triagem', 'wa_flows'],
   ['ia_lookup', 'kb_status'], ['ia_memoria', 'ia_cache'],
-  ['ia_nudge', 'in_cron'], ['ia_custo', 'gs_chatbot'], ['ia_urgente', 'wa_fila'],
+  ['ia_nudge', 'in_cron'], ['ia_custo', 'gs_chatbot'],
   ['ia_staging', 'in_meta'], ['ia_debounce', 'in_meta'],
   ['wa_inbox', 'in_meta'], ['wa_inbox', 'in_relay'], ['wa_ficha', 'kb_board'],
   ['wa_tpl', 'in_meta'], ['wa_entrega', 'gs_sino'], ['wa_fila', 'gs_sino'],
