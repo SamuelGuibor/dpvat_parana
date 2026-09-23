@@ -1083,20 +1083,12 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         where: { contactId, internal: false, id: { notIn: burstIds }, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 30,
-        select: { direction: true, sentByBot: true, systemSource: true, authorId: true, body: true, mediaType: true, transcript: true },
+        select: { direction: true, sentByBot: true, systemSource: true, body: true, mediaType: true, transcript: true },
       }),
       findLinkedCard(contactId),
       // Fluxos cadastrados COM descrição — a IA escolhe qual se encaixa.
       listFlowsForBot(),
     ]);
-
-    const authorIds = [...new Set(history.map((h) => h.authorId).filter((id): id is string => !!id))];
-    const authorNames = new Map(
-      authorIds.length
-        ? (await db.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } }))
-            .map((u) => [u.id, u.name?.split(" ")[0] ?? null] as const)
-        : [],
-    );
 
     const basePayload = {
       // Qual dos NOSSOS números atende esta conversa (multi-tenant): hoje o
@@ -1111,9 +1103,11 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         .reverse()
         .map((h) => ({
           role: historyRole(h),
-          // Quem da equipe escreveu / que automação disparou — o micro põe no
-          // rótulo do turno ([atendente: Fulano], [mensagem automática: ...]).
-          author: h.direction === "out" && !h.sentByBot && h.authorId ? authorNames.get(h.authorId) ?? null : null,
+          // O NOME do atendente NÃO viaja mais para a IA (23/09/2026): o bot
+          // passou a citá-lo nas respostas ao cliente ("como o Leonardo pediu
+          // ...") — a conversa tem que soar como uma voz só do escritório. O
+          // rótulo do turno fica genérico ([atendente]); só a origem das
+          // mensagens automáticas continua indo ([mensagem automática: ...]).
           source: h.direction === "out" && h.sentByBot && h.systemSource ? systemSourceLabel(h.systemSource) : null,
           text: historyText(h),
         }))
