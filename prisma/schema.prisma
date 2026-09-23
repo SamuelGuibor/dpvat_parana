@@ -499,6 +499,10 @@ model Notification {
   recipient   User     @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([recipientId])
+  // O sino pede as 50 últimas do usuário (recipientId + createdAt desc). Com o
+  // índice só em recipientId o Postgres lia TODAS as linhas da pessoa (eram
+  // ~8 mil por usuário) e ordenava, a cada poll.
+  @@index([recipientId, createdAt])
 }
 
 // Caixa de menções e tarefas. Cada @menção (comentário de card ou chat da

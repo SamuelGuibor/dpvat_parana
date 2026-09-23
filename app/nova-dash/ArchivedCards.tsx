@@ -225,60 +225,82 @@ export const ArchivedCards: React.FC = () => {
   const [view, setView] = useState<View>('arquivados');
   const [cards, setCards] = useState<ArchivedCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
+  // Termo efetivamente enviado ao servidor — o `query` muda a cada tecla, este
+  // só depois da pausa de digitação (senão seria uma consulta por caractere).
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [counts, setCounts] = useState<Record<string, number>>({ all: 0 });
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ArchivedCard | null>(null);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Parâmetros da consulta: divisão escolhida + termo da lupa. A paginação
+  // recomeça sempre que qualquer um deles muda.
+  const params = useMemo(
+    () => ({
+      status: filter === 'all' ? undefined : (filter as ArchiveStatus),
+      query: debouncedQuery.trim(),
+    }),
+    [filter, debouncedQuery],
+  );
+
   const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await getArchivedCards();
-      setCards(data);
+      const page = await getArchivedCards(params);
+      setCards(page.cards);
+      setCounts(page.counts);
+      setTotal(page.total);
+      setHasMore(page.hasMore);
     } catch (err) {
       console.error(err);
       toast.error('Erro ao carregar arquivados');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [params]);
 
   useEffect(() => { load(); }, [load]);
 
-  const counts = useMemo(() => {
-    const c = {
-      all: cards.length,
-      pagos_ccs: 0,
-      pagos_uni: 0,
-      enviados_taynara: 0,
-      enviados_evelyn: 0,
-      enviados_joinville: 0,
-      pastas_negadas_ccs: 0,
-      pastas_negadas_uni: 0,
-      perdeu_contato_definitivo: 0,
-      nao_assinaram_procuracao: 0,
-      descartados_analise_interna: 0,
-      desistiram_expressamente: 0,
-    } as Record<Filter, number>; for (const card of cards) c[card.archiveStatus] += 1;
-    return c;
-  }, [cards]);
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const page = await getArchivedCards({ ...params, skip: cards.length });
+      setCards((prev) => [...prev, ...page.cards]);
+      setCounts(page.counts);
+      setTotal(page.total);
+      setHasMore(page.hasMore);
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao carregar mais');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [params, cards.length]);
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const qDigits = q.replace(/\D/g, '');
-    return cards.filter((c) => {
-      if (filter !== 'all' && c.archiveStatus !== filter) return false;
-      if (!q) return true;
-      const nameHit = c.name.toLowerCase().includes(q);
-      const cpfHit = qDigits.length > 0 && c.cpf.replace(/\D/g, '').includes(qDigits);
-      const numHit = qDigits.length > 0 && c.cardNumber != null && String(c.cardNumber).includes(qDigits);
-      return nameHit || cpfHit || numHit;
-    });
-  }, [cards, filter, query]);
+  // A lista já chega filtrada/recortada do servidor.
+  const visible = cards;
 
   async function handleRestore(card: ArchivedCard) {
     setRestoringId(card.id);
     // remoção otimista
     setCards((prev) => prev.filter((c) => c.id !== card.id));
+    // Os contadores vêm do servidor: sem ajuste otimista a aba ficaria com o
+    // número velho até o próximo carregamento.
+    setTotal((t) => Math.max(0, t - 1));
+    setCounts((prev) => ({
+      ...prev,
+      all: Math.max(0, (prev.all ?? 0) - 1),
+      [card.archiveStatus]: Math.max(0, (prev[card.archiveStatus] ?? 0) - 1),
+    }));
     try {
       await setArchiveStatus({ id: card.id, isProcess: card.isProcess, status: null });
       toast.success(`${card.name} voltou para o board`);
@@ -410,7 +432,7 @@ export const ArchivedCards: React.FC = () => {
                 'ml-1 min-w-[22px] px-1.5 py-0.5 rounded-full text-[11px] font-black text-center',
                 active ? 'bg-white/25' : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300'
               )}>
-                {counts[tab.key]}
+                {counts[tab.key] ?? 0}
               </span>
             </button>
           );
@@ -529,6 +551,27 @@ export const ArchivedCards: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Paginação: a aba carrega 60 por vez em vez da tabela inteira. */}
+      {!loading && visible.length > 0 && (
+        <div className="flex flex-col items-center gap-3 pb-10">
+          <p className="text-xs font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest">
+            Mostrando {visible.length} de {total}
+          </p>
+          {hasMore && (
+            <Button
+              onClick={loadMore}
+              disabled={loadingMore}
+              variant="outline"
+              className="rounded-2xl h-11 px-6 font-bold"
+            >
+              {loadingMore
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Carregando...</>
+                : 'Carregar mais'}
+            </Button>
+          )}
         </div>
       )}
 

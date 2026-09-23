@@ -132,21 +132,103 @@ const archivedProcessSelect = {
   observacao: true,
 };
 
-// Retorna todos os cards (usuários + processos) que estão arquivados/pagos/não qualificados.
-export async function getArchivedCards(): Promise<ArchivedCard[]> {
+/**
+ * Página da aba Arquivados. Antes isto devolvia os 874 arquivados INTEIROS
+ * (com obs, endereço, e-mail) e o filtro/busca/contagem eram feitos no
+ * navegador — a aba puxava a tabela toda do Neon a cada abertura só para
+ * mostrar 24 cards. Agora filtro, busca e recorte acontecem no Postgres,
+ * com a mesma semântica da busca do Ctrl+K (search-archived.ts): nome por
+ * `contains` sem acento-sensibilidade e dígitos batendo em CPF, telefone ou
+ * número do card.
+ */
+export interface ArchivedPageParams {
+  /** Aba de divisão; ausente = TODOS. */
+  status?: ArchiveStatus;
+  /** Termo da lupa (mínimo 2 caracteres; abaixo disso é ignorado). */
+  query?: string;
+  /** Quantos já carregados (botão "carregar mais"). */
+  skip?: number;
+  take?: number;
+}
+
+export interface ArchivedPage {
+  cards: ArchivedCard[];
+  /** Total que casa com o filtro atual — base do "mostrando X de Y". */
+  total: number;
+  /** Contagem por divisão, respeitando a busca (números das abas). */
+  counts: Record<string, number>;
+  /** Ainda há página seguinte? */
+  hasMore: boolean;
+}
+
+const ARCHIVED_PAGE_SIZE = 60;
+
+/** Filtro Prisma compartilhado por User e Process. */
+function buildArchivedWhere(params: ArchivedPageParams) {
+  const q = (params.query ?? "").trim();
+  const qDigits = q.replace(/\D/g, "");
+
+  const search = q.length >= 2
+    ? {
+        OR: [
+          { name: { contains: q, mode: "insensitive" as const } },
+          ...(qDigits.length >= 3
+            ? [
+                { cpf: { contains: qDigits } },
+                { telefone: { contains: qDigits } },
+                ...(qDigits.length <= 8 ? [{ cardNumber: parseInt(qDigits, 10) }] : []),
+              ]
+            : []),
+        ],
+      }
+    : {};
+
+  return {
+    archiveStatus: params.status ? params.status : { not: null },
+    ...search,
+  };
+}
+
+export async function getArchivedCards(
+  params: ArchivedPageParams = {},
+): Promise<ArchivedPage> {
   noStore();
   await requirePermission("view_archived");
 
-  const [users, processes] = await Promise.all([
+  const take = params.take ?? ARCHIVED_PAGE_SIZE;
+  const skip = params.skip ?? 0;
+  const where = buildArchivedWhere(params);
+  // Contagem por aba ignora a divisão escolhida (senão as outras abas zeram),
+  // mas respeita a busca — é o que o usuário espera ao digitar.
+  const countWhere = buildArchivedWhere({ ...params, status: undefined });
+
+  // As duas tabelas são ordenadas por archivedAt e intercaladas depois, então
+  // cada uma precisa entregar skip+take candidatos para o corte final ser
+  // correto (não dá para paginar no banco um merge de duas tabelas).
+  const window = skip + take;
+
+  const [users, processes, userCounts, processCounts] = await Promise.all([
     db.user.findMany({
-      where: { archiveStatus: { not: null }, role: { not: "GHOST" } },
+      where: { ...where, role: { not: "GHOST" } },
       orderBy: { archivedAt: "desc" },
       select: archivedUserSelect,
+      take: window,
     }),
     db.process.findMany({
-      where: { archiveStatus: { not: null } },
+      where,
       orderBy: { archivedAt: "desc" },
       select: archivedProcessSelect,
+      take: window,
+    }),
+    db.user.groupBy({
+      by: ["archiveStatus"],
+      where: { ...countWhere, role: { not: "GHOST" } },
+      _count: { _all: true },
+    }),
+    db.process.groupBy({
+      by: ["archiveStatus"],
+      where: countWhere,
+      _count: { _all: true },
     }),
   ]);
 
@@ -190,12 +272,30 @@ export async function getArchivedCards(): Promise<ArchivedCard[]> {
   }));
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
-  return [...mappedUsers, ...mappedProcesses].sort((a, b) => {
+  const merged = [...mappedUsers, ...mappedProcesses].sort((a, b) => {
     const ta = a.archivedAt ? new Date(a.archivedAt).getTime() : 0;
     const tb = b.archivedAt ? new Date(b.archivedAt).getTime() : 0;
     return tb - ta;
   });
+
+  const counts: Record<string, number> = { all: 0 };
+  for (const row of [...userCounts, ...processCounts]) {
+    const key = row.archiveStatus;
+    if (!key) continue;
+    counts[key] = (counts[key] ?? 0) + row._count._all;
+    counts.all += row._count._all;
+  }
+
+  const total = params.status ? (counts[params.status] ?? 0) : counts.all;
+
+  return {
+    cards: merged.slice(skip, skip + take),
+    total,
+    counts,
+    hasMore: skip + take < total,
+  };
 }
+
 
 /**
  * Um card arquivado pelo id — para ABRIR o card fora da aba Arquivados.
