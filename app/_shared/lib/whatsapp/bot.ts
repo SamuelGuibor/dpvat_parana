@@ -1067,7 +1067,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         status: cycle.status,
         sentBy: cycle.deliveredBy === "bot"
           ? "VOCÊ (o link saiu automaticamente nesta conversa)"
-          : `ATENDENTE ${cycle.createdByName ?? "da equipe"} (não foi você — não repita a explicação dele)`,
+          // Sem NOME (23/09/2026): o nome do atendente não vai mais ao cérebro —
+          // a IA passou a citá-lo nas respostas ao cliente.
+          : "um ATENDENTE da equipe (não foi você — não repita a explicação dele)",
         sentAt: cycle.sentAt
           ? cycle.sentAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })
           : null,

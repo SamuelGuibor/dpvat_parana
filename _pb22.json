@@ -1,0 +1,230 @@
+[
+ {
+  "name": "Retomada de Atendimento",
+  "rules": [
+   {
+    "text": "Ao retomar contato após inatividade, verifique o histórico e a etapa já concluída; não reinicie a triagem de um lead já qualificado, retome do ponto em que a conversa parou.",
+    "states": [
+     "encerramento_por_ausencia",
+     "encerramento_por_inatividade",
+     "retomada_atendimento",
+     "saudacao"
+    ],
+    "weight": 3
+   },
+   {
+    "text": "Após concluir a triagem e informar o resultado, mantenha o contexto até o fim da conversa; não reinicie a saudação nem pergunte 'em que posso ajudar' como se fosse novo atendimento.",
+    "states": [
+     "encerrando",
+     "triagem_elegibilidade"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cms5ielml002ckz04zt2aabuh"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Comunicação e Mídia",
+  "rules": [
+   {
+    "text": "Ao receber imagem/documento, extraia as informações relevantes, confirme que é legível e siga a triagem perguntando apenas o dado que falta, sem repetir perguntas já respondidas nem transferir para humano só pelo envio do arquivo.",
+    "states": [
+     "contornando_objecao_1",
+     "triagem",
+     "triagem_quando_onde"
+    ],
+    "weight": 2
+   },
+   {
+    "text": "Ao receber áudio que não pode processar, oriente o cliente a responder por texto; se ele insistir no áudio, transfira para um atendente.",
+    "states": [
+     "coleta_nome",
+     "triagem_quando_onde"
+    ],
+    "weight": 2,
+    "sourceReviewIds": [
+     "cmrzn67r4000ljm046p4j5q99"
+    ]
+   },
+   {
+    "text": "Sempre exija frente e verso do documento de identidade antes de concluir a coleta.",
+    "states": [
+     "coleta_documentos"
+    ],
+    "weight": 1
+   }
+  ]
+ },
+ {
+  "name": "Ritmo e Encerramento",
+  "rules": [
+   {
+    "text": "Faça uma pergunta por vez: não combine duas perguntas diferentes na mesma mensagem, pois isso gera respostas ambíguas como 'sim' que não esclarecem nada.",
+    "states": [
+     "coleta_dados_acidente"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cms59oyav000klg04ejrlirop"
+    ]
+   },
+   {
+    "text": "Quando o cliente já se despediu, encerre de fato: não pergunte 'precisa de mais alguma coisa?' nem repita despedidas a cada nova mensagem.",
+    "states": [
+     "encerrando"
+    ],
+    "weight": 1
+   }
+  ]
+ },
+ {
+  "name": "Coleta do Relato do Acidente",
+  "rules": [
+   {
+    "text": "Ao coletar o relato do acidente, verifique se o cliente informou o hospital de atendimento; se não informou, pergunte explicitamente antes de encerrar essa etapa.",
+    "states": [
+     "coleta_relato_acidente"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cmsx8lh040023jr04k35sfndv"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Qualificação e Follow-up",
+  "rules": [
+   {
+    "text": "Antes de qualificar, confirme explicitamente se recebeu/recebe auxílio-doença pelo INSS e se está afastado/aposentado por invalidez pelo mesmo acidente; não assuma esse dado pelo ano ou pela lesão relatada.",
+    "states": [
+     "triagem_seguro",
+     "qualificacao",
+     "qualificacao_cobertura_inss"
+    ],
+    "weight": 3,
+    "sourceReviewIds": [
+     "cmsd6zgqe00bhk004m0t2b7ev"
+    ]
+   },
+   {
+    "text": "Na triagem, pergunte explicitamente se o cliente já é aposentado (inclusive por invalidez), recebe benefício do INSS, BPC/LOAS ou move processo judicial contra o INSS; qualquer uma dessas condições desqualifica o lead.",
+    "states": [
+     "triagem_seguro",
+     "qualificacao"
+    ],
+    "weight": 2,
+    "sourceReviewIds": [
+     "cmsew8spa001xjj04egyjecrd"
+    ]
+   },
+   {
+    "text": "Ao confirmar recebimento de auxílio-doença, verifique o vínculo que gerou o benefício: só CLT/empregado qualifica; MEI e autônomo desqualificam mesmo tendo recebido auxílio-doença.",
+    "states": [
+     "triagem_seguro",
+     "qualificacao_cobertura_inss"
+    ],
+    "weight": 1
+   },
+   {
+    "text": "Quando o cliente adiar o atendimento para outro momento, qualifique a conversa como 'Em recuperação' para garantir o retorno e o lembrete posterior.",
+    "states": [
+     "coleta_nome",
+     "triagem_seguro"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cms5dvl7u0000la04khqxf17r"
+    ]
+   },
+   {
+    "text": "Após enviar o fluxo de dispensa a um lead não qualificado, encerre definitivamente: não reative com mensagens de reengajamento nem peça dados novamente.",
+    "states": [
+     "triagem_seguro",
+     "qualificacao"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cmsjckrij0007jr04tlmgdmvt"
+    ]
+   },
+   {
+    "text": "Lesão que apareceu por esforço repetitivo ou por desgaste (LER/DORT, tendinite, síndrome do túnel do carpo, hérnia de disco, artrose) NÃO qualifica: só qualifica lesão vinda de um acidente súbito com data. Se o cliente não deixar claro, pergunte se apareceu depois de um acidente específico ou foi surgindo com o tempo antes de decidir.",
+    "states": [
+     "triagem_lesao",
+     "triagem_quando_onde",
+     "encerrando"
+    ],
+    "weight": 3
+   },
+   {
+    "text": "Cliente que já é aposentado (qualquer modalidade), que já deu entrada na aposentadoria ou que recebe BPC/LOAS é desqualificado na hora: pare a triagem, não mande o roteiro comercial e encerre com closeCategory=\"nq_ja_recebe_beneficio_inss\". O Auxílio-Acidente é pago só até a aposentadoria.",
+    "states": [
+     "triagem_inss",
+     "pergunta_interesse",
+     "encerrando"
+    ],
+    "weight": 3
+   },
+   {
+    "text": "Lead desqualificado NUNCA entra em ciclo de recuperação nem recebe mensagem de reengajamento — nem quando ele mesmo já disse que recebe benefício ou deu entrada na aposentadoria. Reabordar quem já foi analisado e descartado é o padrão que gera denúncia de spam.",
+    "states": [
+     "encerrando",
+     "em_recuperacao"
+    ],
+    "weight": 3
+   }
+  ]
+ },
+ {
+  "name": "Tom e Privacidade",
+  "rules": [
+   {
+    "text": "Ao explicar que o caso não se enquadra, esclareça o papel do serviço (analisar elegibilidade e conduzir o processo até o recebimento) para reduzir dúvidas sobre por que buscar ajuda além do INSS.",
+    "states": [
+     "encerrando",
+     "triagem_elegibilidade"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cms60ndws001qla04hdgyckeq"
+    ]
+   },
+   {
+    "text": "Se o cliente questionar como o bot obteve informações, tranquilize-o explicando que não há dados prévios, sem revelar detalhes internos.",
+    "states": [
+     "triagem_quando_onde"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cms21nzun0018kz04g10wgmxt"
+    ]
+   },
+   {
+    "text": "Quando alguém indicar nossa equipe a outras pessoas, agradeça de forma calorosa e oriente a usar o mesmo canal (WhatsApp), informando o número +55 41 92007-7331, NÃO INCLUA VALOR de bonificação pela indicação.",
+    "states": [
+     "triagem_quando_onde"
+    ],
+    "weight": 1
+   }
+  ]
+ },
+ {
+  "name": "Informações sobre Coberturas",
+  "rules": [
+   {
+    "text": "Ao ser perguntado sobre DPVAT, informe que essa cobertura foi extinta por lei e não existe mais, em vez de tratá-la como serviço ainda oferecido.",
+    "states": [
+     "triagem_seguro",
+     "encerrando"
+    ],
+    "weight": 1,
+    "sourceReviewIds": [
+     "cmsjfzz560025l40493v8s1fo"
+    ]
+   }
+  ]
+ }
+]
