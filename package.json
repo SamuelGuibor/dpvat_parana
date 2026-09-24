@@ -9,6 +9,7 @@
     "lint": "next lint",
     "prepare": "prisma generate",
     "test": "vitest run",
+    "docs:check": "node scripts/check-ai-docs.mjs",
     "sign:seed": "vitest run tests/signature-seed.smoke.test.ts",
     "sign:pdf": "vitest run tests/signature-pdf.smoke.test.ts",
     "sign:templates": "vitest run tests/signature-templates.smoke.test.ts",
