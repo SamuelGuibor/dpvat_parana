@@ -927,7 +927,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   try {
     const conversation = await db.whatsAppConversation.findUnique({
       where: { contactId },
-      select: { id: true, status: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true },
+      select: { id: true, status: true, createdAt: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true },
     });
 
     // Durante o debounce um atendente pode ter assumido/encerrado a conversa —
@@ -1080,6 +1080,16 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     }
 
     // ---- Contexto -------------------------------------------------------
+    // Fatos que ANTES eram trava de código no action="resolve" (14/09/2026) e
+    // agora são CONTEXTO: o cérebro é quem decide se um cliente cadastrado ou
+    // uma conversa que recebeu documentos pode ser "resolvida" ou tem que ir
+    // pra equipe (instruções: nesses dois casos, handoff).
+    const docsReceived = conversation
+      ? await db.whatsAppMessage.count({
+          where: { contactId, direction: "in", mediaKey: { not: null }, createdAt: { gte: conversation.createdAt } },
+        })
+      : 0;
+
     const [history, card, flows] = await Promise.all([
       db.whatsAppMessage.findMany({
         where: { contactId, internal: false, id: { notIn: burstIds }, deletedAt: null },
@@ -1130,6 +1140,15 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         qualified: conversation?.qualified ?? null,
         closeCategory: conversation?.closeCategory ?? null,
       },
+      // Sinais da conversa atual que mudam o desfecho correto (ver instruções:
+      // ENCERRAMENTO CONTEXTUAL / CATEGORIAS DE ENCERRAMENTO).
+      conversationFacts: {
+        // Documentos (foto/PDF/áudio com arquivo) que o cliente mandou NESTE
+        // atendimento — se houver, "resolver" deixa o caso sem andamento.
+        docsReceived,
+        // O número está vinculado a um cadastro no Kanban (cliente da casa).
+        registeredClient: !!card,
+      },
       business: businessHours(),
       // Contrato aguardando assinatura → bloco "ASSINATURA EM ANDAMENTO" no
       // cérebro (não recomeçar triagem, não gerar outro link, reenviar ESTE).
@@ -1163,7 +1182,22 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       console.warn(`[WHATSAPP BOT] ${contactId}: IA devolveu resposta vazia — retry único antes do handoff.`);
       try {
         const firstUsage = decision.usage;
-        let second = await callBrain(basePayload, brainUrl);
+        // 23/09/2026: o retry não repete a MESMA pergunta — avisa o cérebro do
+        // que aconteceu e pede que ELE escolha a saída (responder, silent ou
+        // handoff). Antes a 2ª chamada era idêntica à 1ª e, vindo vazia de
+        // novo, quem decidia era o código (fila).
+        const emptyNote =
+          "[NOTA DO SISTEMA: a sua resposta anterior a esta mesma mensagem veio VAZIA e nada foi " +
+          "enviado ao cliente. Escolha AGORA um caminho explícito: (a) escreva a mensagem que falta; " +
+          "(b) se realmente não há nada a dizer (o cliente só confirmou algo já combinado), use " +
+          "silent=true; (c) se o assunto não é seu ou você não tem o contexto, use action=\"handoff\" " +
+          "com handoffReason dizendo o motivo real. NUNCA devolva vazio de novo.]";
+        let second = await callBrain({
+          ...basePayload,
+          message: `${basePayload.message}
+
+${emptyNote}`,
+        }, brainUrl);
         // O retry não repete a consulta intermediária: lookup vira continue.
         if (second.action === "lookup") second = { ...second, action: "continue" };
         decision = { ...second, usage: sumUsage(firstUsage, second.usage) };
@@ -1204,32 +1238,14 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       return;
     }
 
-    // ---- Loop de "não entendi": 2 tentativas → especialista -------------
-    // ATENÇÃO: isto é uma TRAVA DE CÓDIGO que sobrescreve a decisão da IA —
-    // dispara antes de qualquer regra do playbook e por isso é registrada em
-    // Métricas como intervenção de código (kind="code"), não como regra.
+    // ---- Contador de "não entendi" ---------------------------------------
+    // 23/09/2026: ATÉ AQUI isto era uma TRAVA DE CÓDIGO — na 2ª vez seguida com
+    // understood=false o código descartava a decisão da IA e mandava um texto
+    // fixo de transferência (~136 transferências/mês que a IA não escolheu).
+    // Agora o número de tentativas segue viajando no payload (failCount) e QUEM
+    // DECIDE transferir é o cérebro (instruções: 2ª vez sem entender → handoff).
     let failCount = conversation?.botFailCount ?? 0;
-    if (!decision.understood) {
-      failCount += 1;
-      if (failCount >= 2) {
-        decision = {
-          ...decision,
-          action: "handoff",
-          handoffReason: "IA não entendeu o cliente 2x",
-          reply: "Para te atender melhor, vou encaminhar você para um de nossos especialistas, tá bom?",
-          replies: [],
-        };
-        await recordCodeIntervention({
-          contactId,
-          contactName: message.contactName,
-          botState: decision.state || null,
-          action: "handoff",
-          detail: 'Trava de código: "não entendi" 2x seguidas → transferência automática com texto fixo (a IA não escolheu isso).',
-        });
-      }
-    } else {
-      failCount = 0;
-    }
+    failCount = decision.understood ? 0 : failCount + 1;
 
     // ---- Opt-out identificado pela IA (com contexto) ----------------------
     // MUDANÇA 25/07/2026 (caso "nah, acho que me confundi" → optedOut=true →
@@ -1387,29 +1403,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
             "resolve sem texto e sem silent",
           );
         }
-        {
-          // 14/09/2026: "resolvido" NÃO serve pra cliente já cadastrado no
-          // Kanban nem pra quem mandou documento nesta conversa — a IA
-          // agradecia o prontuário, "resolvia" e a conversa caía em
-          // "Perguntas / dúvidas" sem ninguém dar andamento (caso Vicente).
-          // Nesses casos vai pra Fila com o motivo, e a equipe continua.
-          const [linked, conv] = await Promise.all([
-            db.whatsAppContact.findUnique({ where: { id: contactId }, select: { userId: true } }),
-            db.whatsAppConversation.findUnique({ where: { contactId }, select: { createdAt: true } }),
-          ]);
-          const docsReceived = conv
-            ? await db.whatsAppMessage.count({
-                where: { contactId, direction: "in", mediaKey: { not: null }, createdAt: { gte: conv.createdAt } },
-              })
-            : 0;
-          if (linked?.userId || docsReceived > 0) {
-            const reason = docsReceived > 0
-              ? `documentos recebidos (${docsReceived}) — dar andamento`
-              : "cliente cadastrado no Kanban — dar andamento";
-            await handoffToQueue(contactId, contactLabel, reason, "transferido");
-            break;
-          }
-        }
+        // 23/09/2026: a promoção automática de "resolve" para fila (cliente
+        // cadastrado ou documentos recebidos) saiu daqui — os dois sinais vão
+        // no payload (conversationFacts) e o cérebro decide o desfecho.
         await resolveAndClose(contactId, decision.closeCategory ?? "perguntas");
         break;
       default:
