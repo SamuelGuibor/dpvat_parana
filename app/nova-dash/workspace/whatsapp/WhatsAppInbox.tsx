@@ -25,8 +25,13 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
-  useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages, type WhatsAppThreadMessage,
+  useWaNumberOptions, useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages,
+  type WaNumberOption, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
+import {
+  OPEN_CONTACT_STORAGE_KEY, browserSessionStorage, pruneTagFilter, restoreInboxView, saveInboxViewState,
+  type InboxFolderKey, type InboxViewState,
+} from '@/app/_shared/utils/inbox-view-state';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
   searchWhatsAppConversations, getWhatsAppConversationByContact,
@@ -46,7 +51,6 @@ import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread
 import {
   NEAR_BOTTOM_PX, countNewBelow, decideThreadScroll, isOwnThreadMessage, tailAdvanced, threadTail, type ThreadTail,
 } from '@/app/_shared/utils/thread-scroll';
-import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
@@ -76,6 +80,18 @@ import { ptBR } from 'date-fns/locale';
 
 // Janela de resposta da Meta: 24h desde a última mensagem RECEBIDA do cliente.
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
+
+// Dados de apoio (tags, total da agenda) pelo cache global do SWR: a nova-dash
+// desmonta o inbox a cada troca de aba, e voltar ao WhatsApp mostra tudo na
+// hora. Remontar dentro de 60 s não busca de novo (cada busca é uma server
+// action na fila serial, na frente do 1º clique); sem retry automático, como
+// antes (as tags têm "Tentar novamente").
+const INBOX_SUPPORT_SWR = { revalidateOnFocus: false, dedupingInterval: 60_000, shouldRetryOnError: false } as const;
+// Uma gravação da navegação (conversa, pasta, busca, filtros) por pausa de
+// digitação na busca; o desmontar grava na hora o que estiver pendente.
+const INBOX_VIEW_SAVE_DEBOUNCE_MS = 300;
+// Referência estável para "linhas ainda não chegaram" (deps dos useMemo).
+const NO_WA_NUMBERS: WaNumberOption[] = [];
 
 // Ícone/cor de cada categoria no menu manual de "Encerrar".
 const CLOSE_MENU_META: Record<string, { Icon: React.ElementType; color: string }> = {
@@ -226,10 +242,24 @@ export function WhatsAppInbox() {
 
   // Tags livres pra organizar/filtrar conversas. `undefined` = ainda não
   // chegaram (começava em [] e o menu dizia "Nenhuma tag criada ainda" durante
-  // a carga); `tagsFailed` tira o "Carregando tags…" quando a busca falha.
-  const [allTags, setAllTags] = useState<WhatsAppTagDTO[] | undefined>(undefined);
-  const [tagsFailed, setTagsFailed] = useState(false);
+  // a carga); `tagsFailed` tira o "Carregando tags…" quando a busca falha (e
+  // volta a "Carregando…" durante o "Tentar novamente"). Falha com a lista já
+  // carregada (ex.: depois de editar no modal) mantém a lista antiga: o SWR
+  // guarda o último `data`.
+  const {
+    data: allTags, error: tagsError, isValidating: tagsValidating, mutate: mutateTags,
+  } = useSWR<WhatsAppTagDTO[]>('wa-tags', () => listWhatsAppTags(), INBOX_SUPPORT_SWR);
+  const tagsFailed = !!tagsError && !tagsValidating;
+  // Retry do menu e "tags mudaram" do modal: busca de novo, ignorando o dedupe.
+  const reloadTags = useCallback(() => { void mutateTags(); }, [mutateTags]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // Tag apagada (no modal ou em outra aba) sai do filtro, inclusive do filtro
+  // restaurado da troca de aba: senão ficaria "Tags (1)" com a lista vazia.
+  // Depende do filtro também porque, no remount, as tags já vêm do cache e a
+  // restauração chega depois. Sem laço: nada a tirar devolve a mesma lista.
+  useEffect(() => {
+    if (allTags) setTagFilter((prev) => pruneTagFilter(prev, allTags));
+  }, [allTags, tagFilter]);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
   // "Só minhas": em Ativas, esconde o atendimento humano de outros atendentes
@@ -286,21 +316,28 @@ export function WhatsAppInbox() {
 
   // Multi-número (17/08/2026): filtrar por linha da empresa, com a preferência
   // salva por usuário no navegador. Só aparece com 2+ números cadastrados.
-  const [waNumbers, setWaNumbers] = useState<{ id: string; label: string; isDefault: boolean; recoveryMax: number }[]>([]);
+  // As linhas vêm do cache SWR 'wa-number-options' (compartilhado com os
+  // outros seletores de número); falha = sem linhas, como antes.
+  const numberOptions = useWaNumberOptions();
+  const waNumbers = numberOptions ?? NO_WA_NUMBERS;
   const [numberFilter, setNumberFilter] = useState<string | null>(null);
+  // O filtro salvo volta quando as linhas chegam (no remount já estão no
+  // cache) e só se a linha ainda existir. Uma vez por montagem: depois disso
+  // quem manda é o seletor.
+  const numberFilterRestored = useRef(false);
   useEffect(() => {
-    listWaNumberOptions()
-      .then((opts) => {
-        setWaNumbers(opts.map((o) => ({ id: o.id, label: o.label, isDefault: o.isDefault, recoveryMax: o.recoveryMax })));
-        const saved = localStorage.getItem('wa-number-filter');
-        if (saved && opts.some((o) => o.id === saved)) setNumberFilter(saved);
-      })
-      .catch(() => setWaNumbers([]));
-  }, []);
+    if (!numberOptions || numberFilterRestored.current) return;
+    numberFilterRestored.current = true;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('wa-number-filter'); } catch { /* storage bloqueado: sem filtro salvo */ }
+    if (saved && numberOptions.some((o) => o.id === saved)) setNumberFilter(saved);
+  }, [numberOptions]);
   const changeNumberFilter = (id: string | null) => {
     setNumberFilter(id);
-    if (id) localStorage.setItem('wa-number-filter', id);
-    else localStorage.removeItem('wa-number-filter');
+    try {
+      if (id) localStorage.setItem('wa-number-filter', id);
+      else localStorage.removeItem('wa-number-filter');
+    } catch { /* storage bloqueado: o filtro só não sobrevive ao F5 */ }
   };
   const numberBadges = useMemo(() => {
     if (waNumbers.length < 2) return null;
@@ -374,26 +411,20 @@ export function WhatsAppInbox() {
   const { confirm, confirmDialog } = useConfirm();
   const { perms } = usePermissions();
 
-  function reloadTags() {
-    setTagsFailed(false);
-    // Falha com a lista já carregada (ex.: depois de editar no modal) mantém a
-    // lista antiga; o aviso de erro só aparece quando não há nada para mostrar.
-    listWhatsAppTags()
-      .then((tags) => { setAllTags(tags); setTagsFailed(false); })
-      .catch(() => setTagsFailed(true));
-  }
-  useEffect(() => { reloadTags(); }, []);
-
   // Rail de pastas: "Ativas" (fila + atendimento humano juntos, com quem está
   // na fila sempre no topo) abre selecionada por padrão; Bot e Recuperação
   // vêm em seguida; os desfechos (encerradas) ficam cada um com seu próprio
   // ícone, sem nada escondido atrás de um select.
+  // O `satisfies` confere cada pasta contra INBOX_FOLDER_KEYS (as que a
+  // restauração da troca de aba aceita); o setActiveFolder da restauração
+  // confere o outro lado.
+  type RailFolder = { key: InboxFolderKey; label: string; title: string; icon: React.ElementType };
   const ACTIVE_FOLDERS = [
     { key: 'todos', label: 'Todos', title: 'Todas as conversas', icon: InboxIcon },
     { key: 'ativas', label: 'Ativas', title: 'Conversas ativas', icon: MessageCircle },
     { key: 'bot', label: 'Bot', title: 'Bot atendendo', icon: Bot },
     { key: 'standby', label: 'Recup.', title: 'Em recuperação', icon: RotateCcw },
-  ] as const;
+  ] as const satisfies readonly RailFolder[];
   const CLOSED_FOLDERS = [
     { key: 'qualified', label: 'Qualific.', title: 'Qualificadas', icon: BadgeCheck },
     { key: 'unqualified', label: 'Não qual.', title: 'Não qualificadas', icon: XCircle },
@@ -402,7 +433,7 @@ export function WhatsAppInbox() {
     { key: 'novo_acidente', label: 'Novo acid.', title: CLOSE_CATEGORY_LABELS.novo_acidente, icon: AlertTriangle },
     { key: 'transferido', label: 'Transf.', title: CLOSE_CATEGORY_LABELS.transferido, icon: Headset },
     { key: 'descartado', label: 'Descart.', title: CLOSE_CATEGORY_LABELS.descartado, icon: Trash2 },
-  ] as const;
+  ] as const satisfies readonly RailFolder[];
   const ALL_FOLDERS = [...ACTIVE_FOLDERS, ...CLOSED_FOLDERS];
   type FolderKey = (typeof ALL_FOLDERS)[number]['key'];
   const FOLDER_TITLE: Record<FolderKey, string> = Object.fromEntries(
@@ -420,10 +451,12 @@ export function WhatsAppInbox() {
   // Pasta "Contatos" (18/08/2026): a AGENDA da linha — todos os contatos,
   // mesmo sem conversa (importados do BotConversa incluídos).
   const [contactsMode, setContactsMode] = useState(false);
-  const [directoryTotal, setDirectoryTotal] = useState(0);
-  useEffect(() => {
-    listWaContactsDirectory('', null, 0).then((p) => setDirectoryTotal(p.total)).catch(() => {});
-  }, []);
+  // Total do selo do rail (cache SWR: sobrevive à troca de aba). Falha = 0.
+  const { data: directoryTotal = 0 } = useSWR<number>(
+    'wa-directory-total',
+    () => listWaContactsDirectory('', null, 0).then((p) => p.total),
+    INBOX_SUPPORT_SWR,
+  );
 
   // Paginação client-side: cada pasta mostra 200 por vez, com "Carregar mais".
   // Reinicia ao trocar de pasta, buscar ou filtrar por tag.
@@ -451,22 +484,71 @@ export function WhatsAppInbox() {
     setPending([]); setReplyTo(null); setEditTarget(null);
   }, [activeContactId]);
 
+  // Navegação que sobrevive à troca de aba (THR-4/LISTA-9): a nova-dash
+  // desmonta o inbox em toda troca de aba, e voltar do Kanban perdia conversa,
+  // pasta, busca e filtros. Restaura no mount, NUNCA no useState inicial (o
+  // SSR não tem sessionStorage: daria hydration mismatch). Não usar
+  // forceMount na aba: manteria SSE e polls rodando com o inbox escondido.
+  //
   // Notificação de WhatsApp clicada → abre a conversa do contato. O sinal
   // chega por evento (inbox já montado) ou pelo sessionStorage (montou agora).
+  // As duas chaves são lidas juntas por `restoreInboxView`, com o pedido
+  // ('wa-open-contact') por último: ele vence a conversa restaurada.
+  const viewRestoredRef = useRef(false);
+  // contactId que veio da navegação salva (não de um pedido de abertura).
+  const restoredContactIdRef = useRef<string | null>(null);
+  // Só grava depois de restaurar: senão o estado inicial (vazio) apagaria o salvo.
+  const [viewReady, setViewReady] = useState(false);
   useEffect(() => {
-    const stored = sessionStorage.getItem('wa-open-contact');
-    if (stored) {
-      sessionStorage.removeItem('wa-open-contact');
-      setActiveContactId(stored);
+    // Uma vez por montagem (o StrictMode roda o efeito 2x; a 2ª leitura não
+    // acharia mais o pedido já consumido e reabriria a conversa salva).
+    if (!viewRestoredRef.current) {
+      viewRestoredRef.current = true;
+      const restored = restoreInboxView(browserSessionStorage());
+      if (restored) {
+        const { view } = restored;
+        setActiveFolder(view.folder);
+        setSearch(view.search);
+        setTagFilter(view.tagFilter);
+        setDateRange(view.dateRange);
+        setColumnFilter(view.columnFilter);
+        setContactsMode(view.contactsMode);
+        setActiveContactId(view.contactId);
+        restoredContactIdRef.current = restored.fromRequest ? null : view.contactId;
+      }
+      setViewReady(true);
     }
     function openConversation(e: Event) {
       const contactId = (e as CustomEvent<{ contactId?: string }>).detail?.contactId;
       if (!contactId) return;
-      sessionStorage.removeItem('wa-open-contact');
+      try { sessionStorage.removeItem(OPEN_CONTACT_STORAGE_KEY); } catch { /* storage bloqueado */ }
       setActiveContactId(contactId);
     }
     window.addEventListener('open-whatsapp-conversation', openConversation);
     return () => window.removeEventListener('open-whatsapp-conversation', openConversation);
+  }, []);
+
+  // Grava a navegação a cada mudança, com debounce (a busca muda a cada
+  // tecla). Trocar de aba logo depois de clicar desmonta o inbox no meio do
+  // debounce: o efeito de desmontagem abaixo grava o que ficou pendente.
+  const pendingViewRef = useRef<InboxViewState | null>(null);
+  useEffect(() => {
+    if (!viewReady) return;
+    const view: InboxViewState = {
+      contactId: activeContactId, folder: activeFolder, search, tagFilter, dateRange, columnFilter, contactsMode,
+    };
+    pendingViewRef.current = view;
+    const t = setTimeout(() => {
+      pendingViewRef.current = null;
+      saveInboxViewState(browserSessionStorage(), view);
+    }, INBOX_VIEW_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [viewReady, activeContactId, activeFolder, search, tagFilter, dateRange, columnFilter, contactsMode]);
+  useEffect(() => () => {
+    const view = pendingViewRef.current;
+    if (!view) return;
+    pendingViewRef.current = null;
+    saveInboxViewState(browserSessionStorage(), view);
   }, []);
 
   // Conversa aberta: procura na lista, depois nos resultados da busca. Quem
@@ -486,8 +568,19 @@ export function WhatsAppInbox() {
   useEffect(() => {
     if (!activeContactId || hasListActive) return;
     let cancelled = false;
-    getWhatsAppConversationByContact(activeContactId)
-      .then((c) => { if (!cancelled && c) setFetchedActive(c); })
+    const cid = activeContactId;
+    getWhatsAppConversationByContact(cid)
+      .then((c) => {
+        if (cancelled) return;
+        if (c) setFetchedActive(c);
+        // Conversa restaurada da troca de aba que deixou de existir (contato
+        // excluído em outra aba): solta o id. Senão ela voltaria a cada troca
+        // de aba e, no celular, a lista ficaria escondida atrás da thread vazia.
+        else if (restoredContactIdRef.current === cid) {
+          restoredContactIdRef.current = null;
+          setActiveContactId((cur) => (cur === cid ? null : cur));
+        }
+      })
       .catch(() => { /* a thread ainda carrega pelas mensagens */ })
       .finally(() => { if (!cancelled) setActiveLookupDone(activeContactId); });
     // Zera na troca: reabrir depois o mesmo contato fora da lista volta a

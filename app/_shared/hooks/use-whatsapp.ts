@@ -9,6 +9,7 @@ import {
   countWhatsAppConversationsTotal,
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
+import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
 import { mergeThreadWindow, unionThreadMessages, upsertById } from '@/app/_shared/utils/thread-window';
 
@@ -330,6 +331,28 @@ export function useWhatsAppMessages(contactId: string | null) {
   const revalidateThread = useCallback((cid: string) => mutateCache(threadKey(cid)), [mutateCache]);
 
   return { messages, mutate, isLoading, loadOlder, hasMore, loadingOlder, upsertThreadMessage, revalidateThread };
+}
+
+/** Chave SWR das linhas da empresa: a MESMA em todo seletor de número, para dividir o cache. */
+export const WA_NUMBER_OPTIONS_KEY = 'wa-number-options';
+export type WaNumberOption = Awaited<ReturnType<typeof listWaNumberOptions>>[number];
+
+/**
+ * Linhas ativas da empresa (seletor de número, etiqueta da linha na lista e
+ * teto da recuperação por número). Pelo cache global do SWR: a nova-dash
+ * desmonta o inbox a cada troca de aba, e voltar ao WhatsApp mostra as linhas
+ * na hora, sem pôr a action de novo na fila serial na frente do 1º clique.
+ * Remontar dentro de 60 s não busca; depois disso busca em segundo plano.
+ * `undefined` = ainda não chegou (ou falhou): quem restaura um filtro salvo
+ * espera as opções chegarem.
+ */
+export function useWaNumberOptions(): WaNumberOption[] | undefined {
+  const { data } = useSWR<WaNumberOption[]>(
+    WA_NUMBER_OPTIONS_KEY,
+    () => listWaNumberOptions(),
+    { revalidateOnFocus: false, dedupingInterval: 60_000, shouldRetryOnError: false },
+  );
+  return data;
 }
 
 /**
