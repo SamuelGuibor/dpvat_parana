@@ -1,7 +1,9 @@
 import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
-import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
+import { broadcastToRelay, isRelayConfigured } from "@/app/_shared/lib/chat-relay";
+import { runAfterResponse } from "@/app/_shared/lib/background";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { createTtlCache } from "@/app/_shared/utils/ttl-cache";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
@@ -36,13 +38,49 @@ export function whatsappChannelId(contactId: string): string {
   return `whatsapp:${contactId}`;
 }
 
+// A equipe muda raramente, e esta lista era 1 query em TODO evento (mensagem
+// recebida, envio, nota, reação, notificação do bot/cron). 60 s por instância:
+// membro novo fica sem tempo real por até 1 min e o removido ainda recebe o
+// broadcast por até 1 min (o relay continua exigindo o token de sessão dele).
+const RECIPIENTS_TTL_MS = 60_000;
+const recipientsCache = createTtlCache<"team", string[]>({ ttlMs: RECIPIENTS_TTL_MS });
+
 /** Todos os membros da equipe recebem o broadcast (a UI filtra por conversa). */
 export async function whatsappRecipients(): Promise<string[]> {
+  const cached = recipientsCache.get("team");
+  // Cópia: quem chama pode mexer no array (menções, loops de notificação).
+  if (cached) return [...cached];
   const team = await db.user.findMany({
     where: { role: { in: TEAM_ROLES } },
     select: { id: true },
   });
-  return team.map((u) => u.id);
+  const ids = team.map((u) => u.id);
+  recipientsCache.set("team", ids);
+  return [...ids];
+}
+
+/** Evento do canal whatsapp:<contactId> no relay: mensagem nova/nota ou reação. */
+export type WhatsAppRelayEvent =
+  | WhatsAppMessageDTO
+  | {
+      type: "wa_reaction";
+      channelId: string;
+      contactId: string;
+      messageId: string;
+      reaction: string | null;
+    };
+
+/**
+ * Avisa o relay SSE DEPOIS da resposta (runAfterResponse): o atendente não
+ * espera a ida ao Railway (~50-120 ms, até o teto de 1,5 s) nem a lista de
+ * destinatários. Best-effort como sempre — sem relay, o hash/polling cobre.
+ */
+export function broadcastWhatsAppEvent(event: WhatsAppRelayEvent): void {
+  // Sem relay configurado nem vale buscar destinatários ou estender a função.
+  if (!isRelayConfigured()) return;
+  runAfterResponse("relay", async () =>
+    broadcastToRelay({ channelId: event.channelId, recipients: await whatsappRecipients(), message: event }),
+  );
 }
 
 export interface WhatsAppMessageDTO {
@@ -423,8 +461,7 @@ export async function ingestIncomingMessage(
   };
 
   // Best-effort, igual ao chat interno: se o relay estiver fora, o polling cobre.
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 
   // Opt-out por REGEX. Duas situações:
   //   1. COMANDO exato ("SAIR"/"STOP"/"DESCADASTRAR"...): honrado SEMPRE,

@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
-import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { sendText, markMessageRead } from "./client";
 import { runFlowForContact, listFlowsForBot } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
@@ -14,6 +13,7 @@ import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { signUrlFor } from "@/app/_shared/lib/signature/tokens";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import {
+  broadcastWhatsAppEvent,
   whatsappChannelId,
   whatsappRecipients,
   type IngestResult,
@@ -473,27 +473,23 @@ export async function postInternalNote(contactId: string, body: string): Promise
       data: { contactId, direction: "out", body, sentByBot: true, internal: true, status: "sent" },
     });
     const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { name: true, phone: true } });
-    const recipients = await whatsappRecipients();
-    await broadcastToRelay({
+    // Relay depois da resposta (não segura o laço do bot nem o webhook).
+    broadcastWhatsAppEvent({
+      id: message.id,
       channelId: whatsappChannelId(contactId),
-      recipients,
-      message: {
-        id: message.id,
-        channelId: whatsappChannelId(contactId),
-        contactId,
-        direction: "out",
-        body,
-        mediaKey: null,
-        mediaType: null,
-        status: "sent",
-        sentByBot: true,
-        authorId: null,
-        createdAt: message.createdAt.toISOString(),
-        contactName: contact?.name ?? null,
-        contactPhone: contact?.phone ?? "",
-        conversationStatus: "queued",
-      } satisfies WhatsAppMessageDTO,
-    });
+      contactId,
+      direction: "out",
+      body,
+      mediaKey: null,
+      mediaType: null,
+      status: "sent",
+      sentByBot: true,
+      authorId: null,
+      createdAt: message.createdAt.toISOString(),
+      contactName: contact?.name ?? null,
+      contactPhone: contact?.phone ?? "",
+      conversationStatus: "queued",
+    } satisfies WhatsAppMessageDTO);
   } catch (err) {
     console.error("[WHATSAPP BOT] Falha ao registrar nota interna:", err);
   }
@@ -804,8 +800,7 @@ export async function sendBotReply(
     contactPhone: phone,
     conversationStatus: conversation.status,
   };
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 }
 
 // ---------------------------------------------------------------------------

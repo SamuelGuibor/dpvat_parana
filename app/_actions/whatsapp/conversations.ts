@@ -7,6 +7,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
+import { runAfterResponse } from '@/app/_shared/lib/background';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
 import {
@@ -27,13 +28,26 @@ const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 const LIST_PAGE = 1000;
 const SEARCH_PAGE = 300;
 
-/** Busca contactId + nome/telefone para anexar aos logs de auditoria. */
-async function convContact(conversationId: string) {
-  const conv = await db.whatsAppConversation.findUnique({
-    where: { id: conversationId },
-    select: { contactId: true, status: true, contact: { select: { name: true, phone: true } } },
-  });
-  return conv;
+/**
+ * Busca contactId + status + nome/telefone para anexar aos logs de auditoria.
+ * Um JOIN só: o `select` com a relação `contact` virava 2 SQL (o schema não
+ * liga relationJoins), e isto roda em todo assumir, devolver e encerrar.
+ */
+async function convContact(conversationId: string): Promise<{
+  contactId: string;
+  status: string;
+  contact: { name: string | null; phone: string };
+} | null> {
+  const rows = await db.$queryRaw<{ contactId: string; status: string; name: string | null; phone: string }[]>`
+    SELECT c."contactId", c.status, ct.name, ct.phone
+    FROM whatsapp_conversations c
+    JOIN whatsapp_contacts ct ON ct.id = c."contactId"
+    WHERE c.id = ${conversationId}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return { contactId: row.contactId, status: row.status, contact: { name: row.name, phone: row.phone } };
 }
 
 async function requireTeamMember(): Promise<{ id: string; name: string }> {
@@ -546,9 +560,13 @@ export async function assumeConversation(conversationId: string): Promise<Partia
   });
   if (before) {
     // "Assumir" reabre quando estava encerrada; senão é uma atribuição normal.
+    // Log sem IA depois da resposta, com o instante do clique: o painel
+    // Chatbot ordena wa_assign → wa_text → wa_close pelo createdAt.
     const reopened = before.status === 'closed';
-    await logWhatsAppEvent({
-      action: reopened ? 'wa_reopen' : 'wa_assign',
+    const action = reopened ? 'wa_reopen' : 'wa_assign';
+    const at = new Date();
+    runAfterResponse(`log ${action}`, () => logWhatsAppEvent({
+      action,
       message: reopened
         ? `reabriu e assumiu o atendimento de ${before.contact?.name ?? before.contact?.phone}`
         : `assumiu o atendimento de ${before.contact?.name ?? before.contact?.phone}`,
@@ -557,7 +575,8 @@ export async function assumeConversation(conversationId: string): Promise<Partia
       contactId: before.contactId,
       contactName: before.contact?.name,
       contactPhone: before.contact?.phone,
-    });
+      at,
+    }));
   }
   return assumePatch(me);
 }
@@ -576,7 +595,8 @@ export async function returnConversationToBot(conversationId: string): Promise<P
     data: { status: 'bot', assignedToId: null, queuedAt: null, queueAlertAt: null, botNudge30At: null, botNudge24At: null },
   });
   if (before) {
-    await logWhatsAppEvent({
+    const at = new Date();
+    runAfterResponse('log wa_return_bot', () => logWhatsAppEvent({
       action: 'wa_return_bot',
       message: `devolveu ${before.contact?.name ?? before.contact?.phone} para o atendimento automático (bot)`,
       authorId: me.id,
@@ -584,7 +604,8 @@ export async function returnConversationToBot(conversationId: string): Promise<P
       contactId: before.contactId,
       contactName: before.contact?.name,
       contactPhone: before.contact?.phone,
-    });
+      at,
+    }));
   }
   return returnToBotPatch();
 }
@@ -757,13 +778,16 @@ export async function markConversationRead(conversationId: string): Promise<void
   // Pelo número DA CONVERSA: sem numberId o getCreds cai no número default e
   // o recibo saía pela linha errada (inclusive para a 2323 desativada). Linha
   // inativa → getCreds devolve null e o recibo simplesmente não sai.
-  db.whatsAppMessage.findFirst({
-    where: { contactId: conv.contactId, direction: 'in', waMessageId: { not: null } },
-    orderBy: { createdAt: 'desc' },
-    select: { waMessageId: true },
-  }).then((last) => {
-    if (last?.waMessageId) return markMessageRead(last.waMessageId, false, conv.numberId);
-  }).catch(() => {});
+  // Via runAfterResponse: como promise solta ela podia ser congelada quando a
+  // action respondia, e o tique azul não saía.
+  runAfterResponse('tique azul', async () => {
+    const last = await db.whatsAppMessage.findFirst({
+      where: { contactId: conv.contactId, direction: 'in', waMessageId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: { waMessageId: true },
+    });
+    if (last?.waMessageId) await markMessageRead(last.waMessageId, false, conv.numberId);
+  });
 }
 
 /**

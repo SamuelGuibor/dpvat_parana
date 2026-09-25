@@ -5,16 +5,17 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
 import { sendText, sendMedia, sendVoiceNote, sendReaction } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { extractMentions } from '@/app/_shared/utils/mentions';
 import { recordMentions } from '@/app/_shared/lib/mention-inbox';
 import {
+  broadcastWhatsAppEvent,
   whatsappChannelId,
   whatsappRecipients,
   type WhatsAppMessageDTO,
 } from '@/app/_shared/lib/whatsapp/service';
+import { runAfterResponse } from '@/app/_shared/lib/background';
 import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
 import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
 
@@ -83,16 +84,11 @@ async function persistOutbound(params: {
     },
   });
 
-  // Destinatários do broadcast em paralelo com o upsert (são independentes):
-  // uma ida e volta a menos ao banco em todo envio do atendente (~65 ms).
-  const [conversation, recipients] = await Promise.all([
-    db.whatsAppConversation.upsert({
-      where: { contactId: params.contactId },
-      update: { lastMessageAt: new Date(), status: 'human', assignedToId: params.authorId, ...(params.numberId ? { numberId: params.numberId } : {}) },
-      create: { contactId: params.contactId, numberId: params.numberId, status: 'human', assignedToId: params.authorId },
-    }),
-    whatsappRecipients(),
-  ]);
+  const conversation = await db.whatsAppConversation.upsert({
+    where: { contactId: params.contactId },
+    update: { lastMessageAt: new Date(), status: 'human', assignedToId: params.authorId, ...(params.numberId ? { numberId: params.numberId } : {}) },
+    create: { contactId: params.contactId, numberId: params.numberId, status: 'human', assignedToId: params.authorId },
+  });
 
   const dto: WhatsAppMessageDTO = {
     id: message.id,
@@ -114,7 +110,9 @@ async function persistOutbound(params: {
     replyToDirection: message.replyToDirection,
   };
 
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  // Destinatários + ida ao relay depois da resposta: o envio não espera o
+  // Railway (a bolha do próprio atendente vem do DTO devolvido, não do SSE).
+  broadcastWhatsAppEvent(dto);
 
   return dto;
 }
@@ -144,6 +142,7 @@ interface SendInput {
  * 24h tiver expirado, a Graph API rejeita e o erro chega legível ao usuário.
  */
 export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendInput): Promise<WhatsAppMessageDTO> {
+  const startedAt = Date.now();
   const me = await requireTeamMember();
 
   const text = body.trim();
@@ -169,7 +168,12 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
     replyTo,
   });
 
-  await logWhatsAppEvent({
+  // Log de auditoria (sem IA) depois da resposta, com o instante da ação
+  // capturado aqui. serverMs = tempo de servidor do envio até este ponto
+  // (Meta + banco): o create→log da auditoria deixou de medir latência
+  // quando o log saiu do caminho da resposta, e esta é a métrica que o substitui.
+  const at = new Date();
+  runAfterResponse('log wa_text', () => logWhatsAppEvent({
     action: 'wa_text',
     message: `enviou uma mensagem de texto para ${contact.name ?? contact.phone}`,
     authorId: me.id,
@@ -177,8 +181,9 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
     contactId,
     contactName: contact.name,
     contactPhone: contact.phone,
-    metadata: { preview: text.slice(0, 120) },
-  });
+    metadata: { preview: text.slice(0, 120), serverMs: at.getTime() - startedAt },
+    at,
+  }));
 
   return dto;
 }
@@ -219,20 +224,16 @@ export async function reactToWhatsAppMessage({
 
   // Broadcast leve: qualquer evento no canal já força o refetch da thread
   // aberta nos outros atendentes (o inbox só olha o channelId).
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({
+  broadcastWhatsAppEvent({
+    type: 'wa_reaction',
     channelId: whatsappChannelId(msg.contactId),
-    recipients,
-    message: {
-      type: 'wa_reaction',
-      channelId: whatsappChannelId(msg.contactId),
-      contactId: msg.contactId,
-      messageId: msg.id,
-      reaction: next,
-    },
+    contactId: msg.contactId,
+    messageId: msg.id,
+    reaction: next,
   });
 
-  await logWhatsAppEvent({
+  const at = new Date();
+  runAfterResponse('log wa_reaction', () => logWhatsAppEvent({
     action: 'wa_reaction',
     message: next
       ? `reagiu com ${next} a uma mensagem de ${contact.name ?? contact.phone}`
@@ -243,7 +244,8 @@ export async function reactToWhatsAppMessage({
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { messageId: msg.id, emoji: next },
-  });
+    at,
+  }));
 
   return { reaction: next };
 }
@@ -293,14 +295,15 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     contactPhone: contact.phone,
     conversationStatus: 'human',
   };
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 
   // @menções na nota: sino + caixa de menções pro colega citado. Nunca pode
   // derrubar o salvamento da nota — erro é logado e engolido.
   try {
     const mentions = extractMentions(text);
     if (mentions.length > 0) {
+      // @everyone = a equipe inteira (mesma lista do broadcast, em cache).
+      const recipients = mentions.some((m) => m.id === 'everyone') ? await whatsappRecipients() : [];
       const targetIds = new Set<string>();
       const sectorIds = mentions.filter((m) => m.id.startsWith('sector:')).map((m) => m.id.slice(7));
       if (sectorIds.length > 0) {
@@ -343,7 +346,8 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     console.error('[WA NOTE] Falha ao processar menções da nota interna:', err);
   }
 
-  await logWhatsAppEvent({
+  const at = new Date();
+  runAfterResponse('log wa_note', () => logWhatsAppEvent({
     action: 'wa_note',
     message: `registrou uma nota interna na conversa de ${contact.name ?? contact.phone}`,
     authorId: me.id,
@@ -352,7 +356,8 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { preview: text.slice(0, 120) },
-  });
+    at,
+  }));
 }
 
 /**
@@ -437,8 +442,10 @@ export async function sendWhatsAppMedia({
 
   const isFlowMedia = key.startsWith('whatsapp/flows/');
   const label = fileName ?? key.split('/').pop() ?? 'arquivo';
-  await logWhatsAppEvent({
-    action: kind === 'document' ? 'wa_document' : 'wa_media',
+  const logAction = kind === 'document' ? 'wa_document' : 'wa_media';
+  const at = new Date();
+  runAfterResponse(`log ${logAction}`, () => logWhatsAppEvent({
+    action: logAction,
     message: kind === 'document'
       ? `enviou o documento "${label}" para ${contact.name ?? contact.phone}`
       : `enviou ${kind === 'image' ? 'uma imagem' : kind === 'video' ? 'um vídeo' : 'um áudio'} para ${contact.name ?? contact.phone}`,
@@ -448,7 +455,8 @@ export async function sendWhatsAppMedia({
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { fileName: label, mimeType, kind, fromFlow: isFlowMedia },
-  });
+    at,
+  }));
 
   // A bolha que substitui a otimista já nasce com o link, assinado IGUAL à
   // rota da thread (inline + fileNameFromKey, janela estável de 30 min): sem

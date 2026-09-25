@@ -38,11 +38,19 @@ interface BroadcastInput {
   message: unknown;
 }
 
-// Teto do aviso ao relay. O broadcast é aguardado no caminho do envio (sem
-// waitUntil, promise solta pode ser congelada quando a função responde), e
-// sem prazo um relay travado prendia o envio do atendente sem limite
-// (auditoria de 24/09/2026). O relay responde em ~50-120 ms quando está bem.
+// Teto do aviso ao relay. No WhatsApp o broadcast já roda depois da resposta
+// (broadcastWhatsAppEvent → runAfterResponse); no chat interno ainda é
+// aguardado no caminho do envio. Nos dois casos, sem prazo um relay travado
+// prendia a função sem limite (auditoria de 24/09/2026). O relay responde em
+// ~50-120 ms quando está bem.
 const RELAY_TIMEOUT_MS = 1_500;
+
+// "Entregue a 0 conexões" é o sintoma do tempo real que não chega (ninguém
+// conectado, ids do token ≠ User.id, ALLOWED_ORIGIN errado). Acontece em quase
+// todo evento quando está quebrado, então o aviso sai no máximo 1 vez por
+// minuto por instância, para não afogar os logs da Vercel.
+const ZERO_DELIVERY_WARN_EVERY_MS = 60_000;
+let lastZeroDeliveryWarnAt = 0;
 
 /** Notifica o relay sobre uma nova mensagem (não lança em caso de falha). */
 export async function broadcastToRelay(input: BroadcastInput): Promise<void> {
@@ -58,9 +66,22 @@ export async function broadcastToRelay(input: BroadcastInput): Promise<void> {
       cache: 'no-store',
       signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
     });
-    // Sem isto um 401 (segredo divergente) ou 5xx do relay passava calado, e o
-    // "tempo real não entrega" ficava sem pista nos logs da Vercel.
-    if (!res.ok) console.error(`[CHAT RELAY] Relay respondeu ${res.status} ao broadcast.`);
+    // Sem isto um 401/403 (segredo divergente) ou 5xx do relay passava calado,
+    // e o "tempo real não entrega" ficava sem pista nos logs da Vercel. Só o
+    // canal vai para o log — nunca o corpo da mensagem (texto do cliente).
+    if (!res.ok) {
+      console.warn('[CHAT RELAY] /broadcast HTTP', res.status, input.channelId);
+      return;
+    }
+    // O relay responde { ok, delivered } (D:\chat_site\index.js).
+    const data = (await res.json().catch(() => null)) as { delivered?: unknown } | null;
+    if (data?.delivered === 0) {
+      const now = Date.now();
+      if (now - lastZeroDeliveryWarnAt >= ZERO_DELIVERY_WARN_EVERY_MS) {
+        lastZeroDeliveryWarnAt = now;
+        console.warn('[CHAT RELAY] entregue a 0 conexões', input.channelId, input.recipients.length);
+      }
+    }
   } catch (err) {
     console.error('[CHAT RELAY] Falha ao notificar o relay:', err);
   }

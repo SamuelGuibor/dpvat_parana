@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from "./prisma";
+import { createTtlCache } from "@/app/_shared/utils/ttl-cache";
 
 export type LogAction =
   | "update"
@@ -64,26 +65,56 @@ interface CreateLogInput {
   userId?: string | null;
   processId?: string | null;
   metadata?: any;
+  /**
+   * Instante da ação, capturado ANTES da resposta, quando o log é gravado
+   * depois dela (runAfterResponse): o createdAt continua sendo o do clique e a
+   * sequência wa_assign → wa_text → wa_close do painel Chatbot não se inverte
+   * nem distorce o tempo de primeira resposta. Omitido = agora.
+   */
+  at?: Date;
 }
+
+// Autores que não são User (bot, cron, Meta, roteiro...): nunca têm setor, e
+// perguntar ao banco era 1 query jogada fora a cada log — o bot sozinho grava
+// milhares por semana.
+const SYSTEM_AUTHOR_IDS = new Set([
+  "whatsapp-bot", "whatsapp-client", "whatsapp-meta", "system", "roteiro", "kanban-overdue",
+]);
+
+type SectorSnapshot = Record<string, any> | null;
+
+// 5 min por instância: quem troca de setor carimba o antigo por no máximo 5
+// min. O JWT não serve de fonte (ficaria congelado até 30 dias, e o log é o
+// setor NO MOMENTO da ação); sem cache eram 2 SQL por log (User + Sector,
+// sem relationJoins) em todo envio, assumir, devolver etc.
+const SECTOR_TTL_MS = 5 * 60_000;
+const sectorCache = createTtlCache<string, SectorSnapshot>({ ttlMs: SECTOR_TTL_MS });
 
 /**
  * Snapshot do setor do autor NO MOMENTO da ação. Gravado no metadata de todo
  * log para permitir, no futuro, contabilizar/atribuir ações por setor (mesmo
  * que a pessoa troque de setor depois, o histórico preserva onde ela estava).
  */
-async function authorSectorSnapshot(authorId: string): Promise<Record<string, any> | null> {
+async function authorSectorSnapshot(authorId: string): Promise<SectorSnapshot> {
+  if (SYSTEM_AUTHOR_IDS.has(authorId)) return null;
+  const cached = sectorCache.get(authorId);
+  if (cached !== undefined) return cached;
   try {
     const u = await db.user.findUnique({
       where: { id: authorId },
       select: { sectorId: true, sector: { select: { name: true, slug: true } } },
     });
-    if (!u?.sectorId) return null;
-    return {
-      authorSectorId: u.sectorId,
-      authorSectorName: u.sector?.name ?? null,
-      authorSectorSlug: u.sector?.slug ?? null,
-    };
+    const snap: SectorSnapshot = u?.sectorId
+      ? {
+          authorSectorId: u.sectorId,
+          authorSectorName: u.sector?.name ?? null,
+          authorSectorSlug: u.sector?.slug ?? null,
+        }
+      : null;
+    sectorCache.set(authorId, snap);
+    return snap;
   } catch {
+    // Falha de banco não entra no cache: a próxima ação tenta de novo.
     return null;
   }
 }
@@ -106,6 +137,7 @@ export async function createLog(input: CreateLogInput): Promise<void> {
         userId: input.userId ?? null,
         processId: input.processId ?? null,
         metadata: sector || input.metadata ? { ...(sector ?? {}), ...(input.metadata ?? {}) } : undefined,
+        ...(input.at ? { createdAt: input.at } : {}),
       },
     });
   } catch (err) {
@@ -135,6 +167,8 @@ export async function logWhatsAppEvent(input: {
   /** NOSSO número da conversa (multi-tenant) — permite custo/atividade por número. */
   numberId?: string | null;
   metadata?: Record<string, any>;
+  /** Instante da ação quando o log vai depois da resposta (ver CreateLogInput.at). */
+  at?: Date;
 }): Promise<void> {
   try {
     const sector = await authorSectorSnapshot(input.authorId);
@@ -153,6 +187,7 @@ export async function logWhatsAppEvent(input: {
           ...(sector ?? {}),
           ...(input.metadata ?? {}),
         },
+        ...(input.at ? { createdAt: input.at } : {}),
       },
     });
   } catch (err) {

@@ -75,6 +75,7 @@ Hooks ativos (`.claude/settings.json`): bloqueiam `prisma migrate dev/reset`, `d
 
 **Vercel**
 - Nada acima de 4,5MB pelo body de rota/action: upload/download por URL pré-assinada do S3, passando só a `key`. Arquivo lido do disco em runtime precisa estar em `outputFileTracingIncludes` (`next.config.mjs`).
+- Trabalho depois da resposta (relay, log `wa_*` sem IA, tique azul) só via `runAfterResponse` (`app/_shared/lib/background.ts`): promise solta pode congelar quando a função responde. Log de `move`/histórico do card e log de IA continuam com await.
 
 **UI**
 - Modo escuro é o Dark Reader (`darkreader`): classes `dark:` do Tailwind não têm efeito.

@@ -5,15 +5,15 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
 import {
   sendTemplate, fetchMetaTemplates, createMetaTemplate, deleteMetaTemplate, countTemplateVars,
   uploadTemplateHeaderMedia, type TemplateHeaderMedia,
 } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import {
-  whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO,
+  broadcastWhatsAppEvent, whatsappChannelId, type WhatsAppMessageDTO,
 } from '@/app/_shared/lib/whatsapp/service';
+import { runAfterResponse } from '@/app/_shared/lib/background';
 import { renderTemplateThreadText } from '@/app/_shared/lib/whatsapp/template-text';
 
 // Templates aprovados na Meta Business Manager — único jeito de iniciar
@@ -512,7 +512,9 @@ export async function sendWhatsAppTemplateMessage(
     },
   });
 
-  await logWhatsAppEvent({
+  // Auditoria sem IA: grava depois da resposta, com o instante do envio.
+  const at = new Date();
+  runAfterResponse('log wa_template', () => logWhatsAppEvent({
     action: 'wa_template',
     message: `enviou o template "${template.name}" para ${contact.name ?? contact.phone}`,
     authorId: me.id,
@@ -521,7 +523,8 @@ export async function sendWhatsAppTemplateMessage(
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { templateName: template.name, vars },
-  });
+    at,
+  }));
 
   const conversation = await db.whatsAppConversation.upsert({
     where: { contactId },
@@ -546,8 +549,7 @@ export async function sendWhatsAppTemplateMessage(
     conversationStatus: conversation.status,
   };
 
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 
   return dto;
 }

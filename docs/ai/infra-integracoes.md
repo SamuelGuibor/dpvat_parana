@@ -13,7 +13,7 @@
 | Arquivo/pasta | Responsabilidade | Símbolos-chave |
 |---|---|---|
 | `vercel.json` | Região das funções (`cle1`, junto do Neon) e agenda dos crons (UTC) | `regions`, `crons[]` |
-| `next.config.mjs` | Headers de segurança, tracing de arquivos lidos em runtime, pdfjs externo, next-video | `securityHeaders`, `experimental.outputFileTracingIncludes`, `serverComponentsExternalPackages`, `withNextVideo` |
+| `next.config.mjs` | Headers de segurança, tracing de arquivos lidos em runtime, pdfjs e `@vercel/functions` externos, next-video | `securityHeaders`, `experimental.outputFileTracingIncludes`, `serverComponentsExternalPackages`, `withNextVideo` |
 | `middleware.ts` | Gate global de sessão NextAuth e allowlists públicas | `PUBLIC_API_PREFIXES`, `PUBLIC_GET_APIS`, `PUBLIC_GET_API_PREFIXES`, `PUBLIC_PAGE_PREFIXES`, `PUBLIC_ACTION_PAGES`, `config.matcher` |
 | `app/api/whatsapp/cron/auth.ts` | Auth compartilhada dos crons | `isCronAuthorized` |
 | `app/api/whatsapp/cron/{sla,nudge,recovery}/route.ts` | 3 fases do WhatsApp (cron próprio cada) | → `runSlaPhase`, `runNudgePhase`, `runRecoveryPhase` |
@@ -29,7 +29,8 @@
 | `app/api/botconversa/contratado/route.ts` + `app/_shared/lib/webhook-auth.ts` | Webhook do BotConversa (shared secret) | `verifyWebhookSecret` |
 | `app/_shared/lib/prisma.ts` | PrismaClient (singleton global em dev) | `db` |
 | `app/_shared/lib/whatsapp/{client,numbers,crypto}.ts` | Graph API da Meta, multi-número, token cifrado AES-GCM | `sendText`, `sendTemplate`, `downloadMediaToS3`, `getCreds`, `getCredsByPhoneNumberId`, `activeNumberConversationWhere`, `invalidateNumberCache`, `encryptSecret`, `decryptSecret` |
-| `app/_shared/lib/chat-relay.ts` + `app/api/chat/token/route.ts` | Relay SSE (token HMAC de 60s, broadcast best-effort, aguardado com teto de 1,5 s e log de status não-2xx) | `isRelayConfigured`, `signRelayToken`, `broadcastToRelay` |
+| `app/_shared/lib/chat-relay.ts` + `app/api/chat/token/route.ts` | Relay SSE (token HMAC de 60s, broadcast best-effort com teto de 1,5 s; loga HTTP não-2xx e "entregue a 0 conexões" no máximo 1 vez/min por instância, nunca o corpo) | `isRelayConfigured`, `signRelayToken`, `broadcastToRelay` |
+| `app/_shared/lib/background.ts` + `app/_shared/utils/ttl-cache.ts` | Trabalho depois da resposta (`waitUntil` do `@vercel/functions`, no-op fora da Vercel) e cache em memória com prazo, por instância | `runAfterResponse`, `createTtlCache` |
 | `app/_shared/lib/{cost-sync,cost-providers,costs}.ts` | Painel de custos: fetch por provedor e snapshot diário | `runCostSync`, `fetchAllProviders`, `fetchUsdBrl`, `COST_SERVICES`, `COST_PROVIDER_INFO` |
 | `app/_shared/lib/report-error.ts` | Sink único de erro crítico (hoje **só `console.error`**) | `reportCriticalError` |
 | `app/_shared/lib/rate-limit.ts` | Rate limit em memória, **por instância** | `rateLimit` |
@@ -134,13 +135,14 @@
 - **Número inativo ou desconhecido nunca cai no default.** `getCreds(id)` devolve null e o webhook ignora o lote. Motivo: senão a resposta sai pela linha errada. Exceção: se o número desativado for o mesmo de `WHATSAPP_PHONE_NUMBER_ID`, `getCredsByPhoneNumberId` devolve as creds da env (`numberId` null) e o lote entra como legado.
 - **O webhook da Meta faz tudo em linha antes de responder:** ingestão, debounce do bot (`sleep` de 8s + checagem no banco por mensagem mais nova), chamada ao cérebro (timeout 45s) e ficha por IA. Motivo: por isso o `maxDuration` é 120; não empilhe trabalho síncrono novo ali.
 - **Trocar `WHATSAPP_CRED_KEY` (ou `NEXT_AUTH_SECRET` sem ela) invalida os tokens salvos.** A chave precisa ser igual entre local e Vercel. Motivo: token indecifrável faz o sistema cair na env ou ficar sem envio.
+- **Trabalho depois da resposta só via `runAfterResponse`** (`app/_shared/lib/background.ts`), nunca promise solta nem `void promise`. Motivo: na Vercel a função pode congelar ao responder e o pendente some sem erro; o Next 14.2 não tem `after()`. Pode ir depois: broadcast do relay, log `wa_*` sem IA (passe `at` capturado antes, para o `createdAt` ser o do clique) e o tique azul. Não pode: log de `move`/histórico do card nem log de IA com `metadata.usage`. O `@vercel/functions` fica em `serverComponentsExternalPackages`: empacotado, o `import("ws")` do módulo de WebSocket dele quebra o build com "Can't resolve 'ws'".
 - **Body de função ≤ 4,5 MB** em qualquer plano. Motivo: a Vercel rejeita antes do código, e o Pro não muda isso. Use presigned S3.
 - **Arquivo lido do disco com nome dinâmico entra em `outputFileTracingIncludes`.** Motivo: o tracing não enxerga essa leitura e dá ENOENT só em produção (já aconteceu com `templates/*.docx` e `pdf.worker.mjs`).
 - **Nunca rode `prisma migrate dev` nem `migrate reset` contra o Neon.** Motivo: o drift faz o Prisma propor reset do schema `public`. O README sugere `migrate dev`: ignore.
 - **Não valide com `next build` local.** Motivo: ele morre por OOM ou em silêncio. Valide com `tsc`, `lint` e `test`; o build fica para a Vercel.
 - **O middleware só garante que existe sessão, e cliente da área do cliente também tem sessão.** Rota nova de equipe usa `requireTeam()` ou `requirePermission()` (`app/_shared/lib/permissions-server.ts`, que aplica a trava de IP). Elas **lançam** erro: envolva em try/catch e devolva 403. `getSessionPermissions()` sozinho não aplica a trava. Hoje **nenhuma** rota de `app/api` usa `requireTeam`/`requirePermission` (só server actions): ~36 das 74 rotas não checam nada além do middleware e 6 usam `getSessionPermissions` (sem trava de IP).
 - **`verifyWebhookSecret` fica aberto se a env não existir.** Motivo: compatibilidade. Defina a env antes de confiar.
-- **`rateLimit`, o cache de credenciais WhatsApp (60s) e o cache de permissões (30s) vivem em memória por instância.** Motivo: nada é compartilhado entre lambdas; o limite real é maior e `invalidateNumberCache`/troca de permissão só valem na instância que a executou.
+- **`rateLimit`, o cache de credenciais WhatsApp (60s), o de permissões (30s), o de destinatários do relay (60s, `whatsappRecipients`) e o do setor do autor do log (5 min) vivem em memória por instância.** Motivo: nada é compartilhado entre lambdas; o limite real é maior e `invalidateNumberCache`/troca de permissão só valem na instância que a executou.
 - **`reportCriticalError` só faz `console.error`** (o Discord foi removido). Motivo: o log da Vercel é efêmero, não espere alerta.
 - **Toda chamada nova de IA grava `metadata.usage`** (`{model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens}`) no `Log`. Motivo: o custo é somado por `jsonb_exists(metadata,'usage')` e sem isso a chamada some do painel.
 - **`/api/whatsapp/brain-prompt` não pode ter nada volátil em `rendered`.** Motivo: o cache de prompt da Anthropic é por prefixo byte a byte.
@@ -173,6 +175,7 @@
   - `ponto.test.ts`: cálculo do banco de horas.
   - `whatsapp-template-text.test.ts` e `whatsapp-wa-format.test.ts`: texto de template e markup.
   - `signature-{pdf,seed,templates,flow-seed}.smoke.test.ts`: `describe.skipIf`, rodam só via `npm run sign:*` ou env `SIGNATURE_*=1`.
+  - `ttl-cache.test.ts` e `background.test.ts`: prazo/cache negativo do `createTtlCache` e `runAfterResponse` (waitUntil mockado; erro vira `[BG]` e nunca propaga).
   - `inbox-unread-sql.smoke.test.ts`: `describe.skipIf`, roda só via `npm run inbox:sql-smoke` ou `INBOX_SQL_SMOKE=1`; só leitura (transação READ ONLY) no banco do `.env`.
 - **Lacuna:** não há teste de `middleware.ts`, das rotas de cron, do webhook (HMAC) nem dos clientes externos. Valide à mão:
   - Cron: `curl` com Bearer e sem cookie (ver Receitas). Em produção, aba Cron Jobs da Vercel.

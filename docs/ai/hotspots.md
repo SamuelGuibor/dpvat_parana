@@ -10,7 +10,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
-| 5 | `app/_shared/lib/whatsapp/bot.ts` | 1507 | whatsapp-bot |
+| 5 | `app/_shared/lib/whatsapp/bot.ts` | 1502 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
 | 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1253 | whatsapp-bot |
 | 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1228 | whatsapp-bot |
@@ -93,7 +93,7 @@ Painel/editor das automações do Kanban: gatilho, condições (campo/tag/tempo/
 - **L1212-1393** `AutomationCard` (resumo de uma automação na lista).
 - **L1394-1587** `AutomationsPanel` (export): categorias/filtro, `loadAutomations`, `handleSave`, `handleToggle`, `handleDelete`, render L1472.
 
-## 5. `app/_shared/lib/whatsapp/bot.ts` — 1507 linhas
+## 5. `app/_shared/lib/whatsapp/bot.ts` — 1502 linhas
 Ponte CRM ↔ cérebro do bot: monta o payload da conversa, chama o microserviço, sanitiza a decisão e executa (responder, qualificar, fila, encerrar).
 
 - **L1-58** imports, env (`CHATBOT_URL`, staging `CHATBOT_URL_STAGING`, `TEST_NUMBERS`).
@@ -101,10 +101,10 @@ Ponte CRM ↔ cérebro do bot: monta o payload da conversa, chama o microserviç
 - **L227-346** filtros de sanidade: `SCHEMA_TOKENS`, `isJsonSkeleton`, `looksLikeJsonFragment`, `REASONING_PATTERNS`, `looksLikeReasoning`, `SCRIPT_STATES`, `sanitizeDecision`, `sleep`, `humanDelay`.
 - **L347-378** `businessHours`.
 - **L379-460** vínculo com o card: `findLinkedCard`; consultas da IA: `runLookup`.
-- **L461-728** fila, qualificação e encerramento: `postInternalNote`, `handoffToQueue`, `tagAsQualified`, `qualifyToQueue`, `createCardTaskForTeam`, `disqualifyAndClose`, `resolveAndClose`, `sendMutedFallback`, `handoffNotifyOnly`.
-- **L729-810** envio: `sendBotReply`.
-- **L811-878** chamada ao micro: `callBrainOnce`, `callBrain` (retry).
-- **L879-1507 `handleIncomingWhatsApp`** (entrada do webhook), em blocos `// ---- X`: debounce de rajada L898 → lote L940 → mídia L965 → mensagem cruzada L1009 → assinatura eletrônica L1030 → contexto/payload L1082 → IA + lookup L1158 → retry de resposta vazia L1175 → transcrições L1209 → corrida pós-cérebro L1229 → contador "não entendi" L1241 → opt-out L1250 → memória/estado L1298 → responde + `switch (decision.action)` L1308-1428 (`send_flow`, `qualify`, `disqualify`, `handoff`, `resolve`) → auditoria/métricas L1429 → telemetria do playbook L1472 → `catch` (handoff em erro) L1483.
+- **L461-723** fila, qualificação e encerramento: `postInternalNote`, `handoffToQueue`, `tagAsQualified`, `qualifyToQueue`, `createCardTaskForTeam`, `disqualifyAndClose`, `resolveAndClose`, `sendMutedFallback`, `handoffNotifyOnly`.
+- **L724-805** envio: `sendBotReply` (relay por `broadcastWhatsAppEvent`, depois da resposta).
+- **L806-873** chamada ao micro: `callBrainOnce`, `callBrain` (retry).
+- **L874-1502 `handleIncomingWhatsApp`** (entrada do webhook), em blocos `// ---- X`: debounce de rajada L893 → lote L935 → mídia L960 → mensagem cruzada L1004 → assinatura eletrônica L1025 → contexto/payload L1077 → IA + lookup L1153 → retry de resposta vazia L1170 → transcrições L1204 → corrida pós-cérebro L1224 → contador "não entendi" L1236 → opt-out L1245 → memória/estado L1293 → responde + `switch (decision.action)` L1303-1423 (`send_flow`, `qualify`, `disqualify`, `handoff`, `resolve`) → auditoria/métricas L1424 → telemetria do playbook L1467 → `catch` (handoff em erro) L1478.
 
 ## 6. `app/nova-dash/KanbanFlowPanel.tsx` — 1263 linhas
 Dashboard "Fluxo do Kanban": 7 visões (tempo, destino, retrabalho, descarte, ciclo, throughput, hospital) com gráficos SVG próprios, comparação de período, drill-down e export.

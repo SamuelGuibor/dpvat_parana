@@ -1365,7 +1365,9 @@ Escopo neste PR: B5 (sem a parte DUR-3 de closeConversation, que vai para o D8)
 - ajuste: Nas open questions: 'createMany nos loops de Notification' fica como item futuro (fora do escopo), citando BACK-5.
 
 **Em aberto:**
-- Aprovar a nova dependência @vercel/functions (package.json + lock)?
+- Aprovar a nova dependência @vercel/functions (package.json + lock)? **Aprovada em 25/09.** Ela entra em `serverComponentsExternalPackages` (next.config.mjs): empacotada, o `import("ws")` do módulo de WebSocket dela quebra o build do webpack.
+- DUR-3 (encerrar ~1,2 s) saiu deste PR: o `wa_close`, o `syncCloseTag` e o `Promise.all(convContact, closeReason)` ficam no PR30 (D8), que usa o `runAfterResponse` criado aqui. O `void reportLeadStageToMeta(...)` do encerramento também é promise solta e pode ir junto.
+- Futuro, fora do escopo (BACK-5): `createMany` nos loops de Notification (bot.ts handoffToQueue/handoffNotifyOnly, cron-tasks.ts, service.ts, outbound.ts, signature/core.ts). Hoje eles só ganham o cache de destinatários e continuam com 1 create por membro em série.
 
 ### parte CRM do B6: log de res.status/delivered no broadcastToRelay
 
