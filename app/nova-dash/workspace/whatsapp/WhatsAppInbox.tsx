@@ -35,7 +35,10 @@ import {
   sendWhatsAppMessage, sendWhatsAppMedia, getWhatsAppUploadUrl,
   editWhatsAppMessage, deleteWhatsAppMessage, reactToWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
-import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import { listWhatsAppTags, setConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import {
+  patchConversationList, patchConversationRow, sameTags, withTag, type ConversationPatch,
+} from '@/app/_shared/utils/whatsapp-inbox';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
@@ -166,7 +169,9 @@ export function WhatsAppInbox() {
   const { data: session } = useSession();
   const meId = session?.user?.id ?? '';
 
-  const { conversations, refreshConversations, scheduleConversationsRefresh } = useWhatsAppConversations();
+  const {
+    conversations, refreshConversations, scheduleConversationsRefresh, patchConversations,
+  } = useWhatsAppConversations();
   // Total REAL no banco (a lista acima é capada em 1.000 pelo servidor).
   const conversationsTotal = useWhatsAppConversationsTotal();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
@@ -693,13 +698,60 @@ export function WhatsAppInbox() {
     }
   }
 
-  async function handleToggleTag(tagId: string) {
+  // Patch local de UMA conversa em todas as cópias que a tela pode estar
+  // mostrando: a lista (SWR), os resultados da busca no servidor e a conversa
+  // hidratada fora do topo (agenda/busca). Sem as duas últimas, a ação em
+  // cliente antigo não aparecia até recarregar. Patch em função é calculado
+  // sobre a versão ATUAL de cada cópia (nunca sobre o `active` do render).
+  const patchConversation = useCallback(
+    (contactId: string, patch: ConversationPatch) => {
+      void patchConversations((list) => patchConversationList(list, contactId, patch));
+      setRemoteResults((prev) => patchConversationList(prev, contactId, patch));
+      setFetchedActive((prev) => (prev?.contactId === contactId ? patchConversationRow(prev, patch) : prev));
+    },
+    [patchConversations],
+  );
+
+  // Gravações de tag em voo, por `${conversationId}:${tagId}`: chaveado por
+  // conversa para trocar de conversa no meio de uma gravação não travar a
+  // mesma tag na outra. O ref responde na hora (duplo clique antes do
+  // re-render); o estado desenha o spinner.
+  const pendingTagsRef = useRef<Set<string>>(new Set());
+  const [pendingTags, setPendingTags] = useState<ReadonlySet<string>>(() => new Set());
+  const setTagPending = useCallback((key: string, on: boolean) => {
+    const next = new Set(pendingTagsRef.current);
+    if (on) next.add(key); else next.delete(key);
+    pendingTagsRef.current = next;
+    setPendingTags(next);
+  }, []);
+
+  // Tag na hora (auditoria de 24/09/2026): antes o clique esperava a action e
+  // a recarga das 1.000 conversas, e o 2º clique desfazia a tag. Agora o check
+  // e o chip mudam no clique, o servidor recebe o estado DESEJADO (idempotente)
+  // e a lista não é recarregada — outras abas veem pelo hash (a contagem de
+  // whatsapp_conversation_tags entra nele).
+  async function handleSetTag(tag: WhatsAppTagDTO, on: boolean) {
     if (!active) return;
+    const { id: conversationId, contactId } = active;
+    const key = `${conversationId}:${tag.id}`;
+    if (pendingTagsRef.current.has(key)) return;
+    setTagPending(key, true);
+    patchConversation(contactId, (c) => ({ tags: withTag(c.tags, tag, on) }));
     try {
-      await toggleConversationTag(active.id, tagId);
-      await refreshConversations();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao atualizar tag.');
+      const res = await setConversationTag(conversationId, tag.id, on);
+      setTagPending(key, false);
+      // A verdade do banco só entra quando não sobrou outra tag desta conversa
+      // gravando: aplicar antes apagaria o otimista da outra e o chip piscaria.
+      const prefix = `${conversationId}:`;
+      if (![...pendingTagsRef.current].some((k) => k.startsWith(prefix))) {
+        patchConversation(contactId, (c) => (sameTags(c.tags, res.tags) ? {} : { tags: res.tags }));
+      }
+    } catch {
+      setTagPending(key, false);
+      patchConversation(contactId, (c) => ({ tags: withTag(c.tags, tag, !on) }));
+      // Erro de server action chega mascarado em produção — e a aba com o
+      // bundle de antes do deploy também cai aqui: por isso a dica do F5.
+      toast.error('Não foi possível salvar a tag. Recarregue a página (F5) e tente de novo.');
     }
   }
 
@@ -1485,17 +1537,26 @@ export function WhatsAppInbox() {
                   {allTags.length === 0 && (
                     <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
                   )}
-                  {allTags.map((t) => (
-                    <DropdownMenuCheckboxItem
-                      key={t.id}
-                      checked={active.tags.some((at) => at.id === t.id)}
-                      onCheckedChange={() => handleToggleTag(t.id)}
-                      className="text-base"
-                    >
-                      <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: t.color }} />
-                      {t.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
+                  {allTags.map((t) => {
+                    const tagPending = pendingTags.has(`${active.id}:${t.id}`);
+                    return (
+                      // Menu fica aberto (preventDefault no select) para marcar
+                      // várias tags seguidas; o Radix chama onCheckedChange
+                      // mesmo assim. Travado só enquanto ESTA tag grava.
+                      <DropdownMenuCheckboxItem
+                        key={t.id}
+                        checked={active.tags.some((at) => at.id === t.id)}
+                        onSelect={(e) => e.preventDefault()}
+                        onCheckedChange={(v) => handleSetTag(t, v === true)}
+                        disabled={tagPending}
+                        className="text-base"
+                      >
+                        <span className="mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full align-middle" style={{ backgroundColor: t.color }} />
+                        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        {tagPending && <Loader2 className="ml-2 h-3.5 w-3.5 shrink-0 animate-spin opacity-70" />}
+                      </DropdownMenuCheckboxItem>
+                    );
+                  })}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setTagsModalOpen(true)} className="text-base">
                     <Settings2 className="mr-2 h-3.5 w-3.5" /> Gerenciar tags

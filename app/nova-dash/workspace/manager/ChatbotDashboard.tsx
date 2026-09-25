@@ -74,6 +74,8 @@ const ACTION_META: Record<string, { icon: React.ElementType; label: string }> = 
   wa_flow: { icon: Workflow, label: 'Fluxo' },
   wa_template: { icon: FileBadge, label: 'Template' },
   wa_note: { icon: StickyNote, label: 'Nota interna' },
+  wa_tag_add: { icon: TagIcon, label: 'Tag aplicada' },
+  wa_tag_remove: { icon: TagIcon, label: 'Tag removida' },
 };
 
 

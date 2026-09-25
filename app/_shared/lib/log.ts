@@ -40,11 +40,21 @@ export type LogAction =
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
   | "wa_media_fail"  // mídia recebida não foi salva no S3 (falha/timeout no download da Meta); autor = sistema
+  | "wa_tag_add"     // aplicou tag na conversa (trilha do KPI de contratados: não purgável)
+  | "wa_tag_remove"  // tirou tag da conversa
   | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
   | "sheets_export"     // automação registrou o card numa planilha do Google
   | "tag_add"           // automação adicionou uma tag ao card
   | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
   | "ai_audit_feedback"; // feedback humano sobre uma auditoria da IA
+
+/**
+ * Logs que NÃO contam como tarefa/atividade do colaborador (Visão do Gestor e
+ * drill-down por pessoa). São cliques utilitários: na transcrição a IA faz o
+ * trabalho; a tag é classificação de um clique e, contada, inflaria "tarefas"
+ * (~10 por dia). Continuam no banco e no feed do painel Chatbot.
+ */
+export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove"];
 
 interface CreateLogInput {
   action: LogAction;

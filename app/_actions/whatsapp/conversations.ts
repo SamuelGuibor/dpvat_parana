@@ -193,7 +193,13 @@ async function loadConversations(
           clientDraft: true, adPlatform: true,
         },
       },
-      tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
+      // Ordem de aplicação, a mesma de setConversationTag e do patch otimista
+      // (withTag põe a nova no fim): sem ela os chips trocavam de lugar quando
+      // a recarga trazia a lista depois de um clique.
+      tags: {
+        orderBy: { createdAt: 'asc' },
+        select: { tag: { select: { id: true, name: true, color: true } } },
+      },
     },
   });
   if (!conversations.length) return [];

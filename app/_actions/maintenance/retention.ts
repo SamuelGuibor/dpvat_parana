@@ -30,7 +30,9 @@ const LOG_RETENTION_DAYS = 180;
  *    (folder-report.ts), que procura a PRIMEIRA entrada de cada card numa
  *    coluna — um card de julho movido hoje precisa do log de julho;
  *  - `archive`/`status_change`/`create`/`update` e os de documento/comentário
- *    são o histórico do card, que o time consulta na própria ficha.
+ *    são o histórico do card, que o time consulta na própria ficha;
+ *  - `wa_tag_add`/`wa_tag_remove` são a trilha de quem pôs/tirou cada tag —
+ *    auditoria do KPI "Contratados (bot)", que conta tags de qualquer mês.
  */
 const PURGEABLE_LOG_ACTIONS = [
   "wa_bot",

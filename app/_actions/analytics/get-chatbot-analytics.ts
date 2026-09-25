@@ -467,6 +467,10 @@ export async function getChatbotAnalytics(
         });
       }
 
+      // Tag da conversa: fica no feed (quem pôs/tirou), mas não é atendimento —
+      // sem isto quem só classificou conversas aparecia no ranking com zeros.
+      if (l.action === 'wa_tag_add' || l.action === 'wa_tag_remove') continue;
+
       // Estatísticas por atendente.
       const s = attendantOf(l.authorId, l.authorName);
       if (l.action === 'wa_assign' || l.action === 'wa_reopen') {

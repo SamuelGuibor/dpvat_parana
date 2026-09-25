@@ -6,7 +6,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 | # | Arquivo | Linhas | Mapa de domínio |
 |---|---|---|---|
-| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 2717 | whatsapp-bot |
+| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 2778 | whatsapp-bot |
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
@@ -21,26 +21,26 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 ---
 
-## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 2717 linhas
+## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 2778 linhas
 Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com envio otimista/mídia/reações, coluna Copiloto e CardDialog do cliente.
 
-- **L1-66** imports (`fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`).
-- **L67-164** helpers de módulo: `WINDOW_24H_MS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
-- **L165-1770 `WhatsAppInbox()`** (componente principal):
-  - L165-310 estado + filtros: busca no servidor (`searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
-  - L310-410 larguras redimensionáveis (`startResize`), `reloadTags`, pastas do rail (`ACTIVE_FOLDERS`, `CLOSED_FOLDERS`, `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos.
-  - L410-548 conversa aberta: `jumpToMessage`, notificação→abre conversa, `listActive`/`active` (hidratação sob demanda), `cardStub`, SSE `onStream`, `displayMessages`, scroll/prepend + `handleLoadOlder`.
-  - L548-685 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups`, `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `windowExpired`.
-  - L686-888 handlers: `runAction`, `handleToggleTag`, envio otimista (`makePending`, `patchPending`, `removePending`, `handleSendText`, `handleSendMedia`, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
-  - L889-1414 JSX da **lista**: rail (L902), busca + novo contato (L958), pills de leitura (L983), data de entrada (L1023), número (L1076), coluna do Kanban (L1117), tags (L1164), equipe (L1209), área rolável + seções por pasta (L1288-1406), alça de resize.
-  - L1415-1710 JSX da **thread**: cabeçalho (voltar, atalho "Card #N" L1461, tags L1476, Encerrar/Alterar desfecho L1512, toggle Copiloto, mais ações L1560), carregar histórico (L1608), composer / número desativado somente leitura (L1662).
-  - L1711-1770 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
-- **L1771-1834** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
-- **L1835-2004** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
-- **L2005-2177** `ConversationGroup` (item/seção da lista).
-- **L2178-2372** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
-- **L2373-2693** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
-- **L2694-2717** `MsgAction`, `HeaderButton`.
+- **L1-69** imports (`fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList` de `app/_shared/utils/whatsapp-inbox.ts`).
+- **L70-167** helpers de módulo: `WINDOW_24H_MS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
+- **L168-1831 `WhatsAppInbox()`** (componente principal):
+  - L168-315 estado + filtros: busca no servidor (`searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
+  - L315-415 larguras redimensionáveis (`startResize`), `reloadTags`, pastas do rail (`ACTIVE_FOLDERS`, `CLOSED_FOLDERS`, `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos.
+  - L415-553 conversa aberta: `jumpToMessage`, notificação→abre conversa, `listActive`/`active` (hidratação sob demanda), `cardStub`, SSE `onStream`, `displayMessages`, scroll/prepend + `handleLoadOlder`.
+  - L553-690 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups`, `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `windowExpired`.
+  - L691-940 handlers: `runAction`, `patchConversation` (patch local na lista + busca + `fetchedActive`), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `handleSendText`, `handleSendMedia`, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
+  - L941-1466 JSX da **lista**: rail (L954), busca + novo contato (L1010), pills de leitura (L1035), data de entrada (L1075), número (L1128), coluna do Kanban (L1169), tags (L1216), equipe (L1261), área rolável + seções por pasta (L1340-1458), alça de resize.
+  - L1467-1771 JSX da **thread**: cabeçalho (voltar, atalho "Card #N" L1513, menu de tags L1528 com spinner por item, Encerrar/Alterar desfecho L1573, toggle Copiloto, mais ações L1621), carregar histórico (L1669), composer / número desativado somente leitura (L1723).
+  - L1772-1831 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
+- **L1832-1895** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
+- **L1896-2065** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
+- **L2066-2238** `ConversationGroup` (item/seção da lista).
+- **L2239-2444** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
+- **L2445-2754** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
+- **L2755-2778** `MsgAction`, `HeaderButton`.
 
 ## 2. `app/nova-dash/KanbanBoard.tsx` — 2407 linhas
 Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, CRUD de etiquetas, arquivar/mover/excluir.
@@ -178,7 +178,7 @@ PDF da assinatura: gera o PDF a partir do .docx (via docx-converter), acha as â
 ## Backlog de quebra (sugestões, não executadas)
 | Arquivo | Como dividir |
 |---|---|
-| `WhatsAppInbox.tsx` | Extrair `ConversationList` (L902-1427 + filtros/derivações L560-700 como hook `useInboxFilters`), `ThreadPane` (L1428-1723 + envio otimista num hook `useOptimisticSend`) e mover bolhas/diálogos (L1848-2726) para `inbox/bubbles.tsx` e `inbox/dialogs.tsx`. |
+| `WhatsAppInbox.tsx` | Extrair `ConversationList` (L941-1466 + filtros/derivações L553-690 como hook `useInboxFilters`), `ThreadPane` (L1467-1771 + envio otimista num hook `useOptimisticSend`) e mover bolhas/diálogos (L1832-2778) para `inbox/bubbles.tsx` e `inbox/dialogs.tsx`. |
 | `KanbanBoard.tsx` | Mover tipos/`services` para `kanban/types.ts`, `DraggableCard` e `DroppableColumn` para arquivos próprios, e sincronização (`fetchData` + polling + versão) para um hook `useBoardSync`. |
 | `signature/core.ts` | Separar por porta/etapa: `validation.ts` (campos, CPF, CEP, rua), `issue.ts` (gerar documento/link), `client-reply.ts` (coleta + confirmação), `manual.ts` (Porta 2), `post-sign.ts` + `reminders.ts`. |
 | `AutomationsPanel.tsx` | Tirar `ActionRow` para `automations/ActionRow.tsx` com um subcomponente por tipo de ação, e constantes de campos/operadores para `automations/fields.ts`. |

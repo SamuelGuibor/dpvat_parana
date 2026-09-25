@@ -129,6 +129,15 @@ export function useWhatsAppConversations() {
 
   const refreshConversations = flight.trigger;
   const scheduleConversationsRefresh = useCallback(() => coalescerRef.current?.trigger(), []);
+  // Patch local da lista (ação otimista: tag, e as próximas da onda). Sem
+  // revalidar: o SWR 2 descarta uma carga que começou ANTES deste mutate — ela
+  // traria o estado velho por cima do otimista — e o `onDiscarded` acima
+  // reagenda a recarga descartada.
+  const patchConversations = useCallback(
+    (fn: (list?: WhatsAppConversationDTO[]) => WhatsAppConversationDTO[] | undefined) =>
+      mutate(fn, { revalidate: false }),
+    [mutate],
+  );
 
   const { data: version } = useSWR<string>(
     'whatsapp-inbox-version',
@@ -143,7 +152,9 @@ export function useWhatsAppConversations() {
     lastVersion.current = version;
   }, [version, scheduleConversationsRefresh]);
 
-  return { conversations: data ?? [], refreshConversations, scheduleConversationsRefresh, isLoading, error };
+  return {
+    conversations: data ?? [], refreshConversations, scheduleConversationsRefresh, patchConversations, isLoading, error,
+  };
 }
 
 /**

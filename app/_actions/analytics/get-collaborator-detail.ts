@@ -5,13 +5,15 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { getSessionPermissions } from '@/app/_shared/lib/permissions-server';
 import { DEV_COMMIT_ACTION, devCommitFiles, devFilesDelta, devFilesTotal } from '@/app/_shared/lib/dev-activity';
+import { NON_ACTIVITY_LOG_ACTIONS } from '@/app/_shared/lib/log';
 import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDay, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
 
 const ONLINE_WINDOW_MS = 90_000;
 
-// Ações excluídas da contagem de atividade: a transcrição de áudio é um
-// clique utilitário (a IA faz o trabalho) e inflava o feed/contadores.
-const EXCLUDED_ACTIONS = ['wa_transcribe'];
+// Ações excluídas da contagem de atividade: cliques utilitários (transcrição
+// de áudio, tags da conversa) que inflavam o feed/contadores. Lista única em
+// log.ts, a mesma da Visão do Gestor.
+const EXCLUDED_ACTIONS = NON_ACTIVITY_LOG_ACTIONS;
 
 export interface CollaboratorDetail {
   profile: {
