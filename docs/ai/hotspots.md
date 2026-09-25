@@ -16,7 +16,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1228 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
-| 11 | `app/nova-dash/card-dialog/FilesTab.tsx` | 876 | kanban-cards / documentos-ia |
+| 11 | `app/nova-dash/card-dialog/FilesTab.tsx` | 874 | kanban-cards / documentos-ia |
 | 12 | `app/_shared/lib/signature/pdf.ts` | 857 | assinatura |
 
 ---
@@ -155,12 +155,12 @@ Caixa de Menções e Tarefas (aba `mencoes`): menções PENDING/ACK/DONE, filtro
 - **L383-601 `MentionsInbox`** (export): permissão `view_all_mentions`, `load`, visão da equipe sob demanda, `scoped`, `counts`, placar `people`, `sectors`, `visible`, `groups` (por dia), `handleStatus`, `handleBulkAck`, `handleClearDone`, `handleOpen`.
 - **L602-878** JSX: hero L604, placar por pessoa L647, números L692, barra de ferramentas L704, filtro por setor L745, tabela L807.
 
-## 11. `app/nova-dash/card-dialog/FilesTab.tsx` — 876 linhas
+## 11. `app/nova-dash/card-dialog/FilesTab.tsx` — 874 linhas
 Aba Arquivos do CardDialog: pastas por categoria estilo Drive, upload, preview, zip por pasta, reordenação drag-and-drop, checklist previdenciário e lixeira de 30 dias.
 
-- **L1-104** imports, `Props`, `Doc`, `AUTO_CATEGORY`, `getExt`, `IMAGE_EXTS`, `previewKind`, `SortableRow`, `fileToBase64`.
-- **L105-454 `FilesTab`** (export): navegação por pasta, lixeira, preview; `docsByCategory`, `visibleDocs`, `loadTrash`, `loadDocs`, `handleDrop`, `uploadFiles`, `handleDownload`, `openPreview`, `handleDownloadAll` (zip), `saveName`, `sensors` + `handleDragEnd`, `moveDoc`, `confirmDeleteDoc`, `handleRestore`, `confirmPurgeDoc`.
-- **L455-876** JSX: upload + tipo de documento (L464), checklist previdenciário (L497), pastas/zip (L546), lista ordenável (L630), lixeira (L773).
+- **L1-100** imports, `Props`, `Doc`, `AUTO_CATEGORY`, `getExt`, `IMAGE_EXTS`, `previewKind`, `SortableRow`, `UploadError`.
+- **L101-452 `FilesTab`** (export): navegação por pasta, lixeira, preview; `docsByCategory`, `visibleDocs`, `loadTrash`, `loadDocs`, `handleDrop`, `uploadFiles`, `handleDownload`, `openPreview`, `handleDownloadAll` (zip), `saveName`, `sensors` + `handleDragEnd`, `moveDoc`, `confirmDeleteDoc`, `handleRestore`, `confirmPurgeDoc`.
+- **L453-874** JSX: upload + tipo de documento (L462), checklist previdenciário (L495), pastas/zip (L544), lista ordenável (L628), lixeira (L771).
 
 ## 12. `app/_shared/lib/signature/pdf.ts` — 857 linhas
 PDF da assinatura: gera o PDF a partir do .docx (via docx-converter), acha as âncoras, carimba assinatura/rodapé e anexa o manifesto estilo ZapSign.

@@ -42,7 +42,6 @@ import {
   DOCUMENT_CATEGORIES, DEFAULT_DOCUMENT_CATEGORY, categoryLabel,
   isDocumentCategory, type DocumentCategoryId,
 } from '@/app/_shared/lib/document-categories';
-import type { FileWithBase64 } from './types';
 
 interface Props {
   cardId: string;
@@ -94,17 +93,13 @@ function SortableRow({ id, children }: {
   );
 }
 
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+// Erro do upload com texto escrito para a equipe. Qualquer outro (rede,
+// transporte da server action) chega em inglês ou mascarado em produção e é
+// trocado pela mensagem da etapa em que o envio parou.
+class UploadError extends Error {}
 
 export function FilesTab({ cardId, isProcess, ownerId }: Props) {
   const [files, setFiles] = useState<File[]>([]);
-  const [base64Files, setBase64Files] = useState<FileWithBase64[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -179,76 +174,78 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     }
   }
 
-  async function handleDrop(accepted: File[]) {
-    try {
-      const filesB64 = await Promise.all(
-        accepted.map(async (f) => ({ name: f.name, type: f.type, base64: await fileToBase64(f) }))
-      );
-      setFiles((p) => [...p, ...accepted]);
-      setBase64Files((p) => [...p, ...filesB64]);
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao processar arquivos.');
-    }
+  // O File vai direto no corpo do PUT (o navegador lê do disco em stream).
+  // Nada de base64 no navegador: com PDFs grandes a conversão congelava a aba
+  // e multiplicava a memória do arquivo sem ganho nenhum.
+  function handleDrop(accepted: File[]) {
+    setFiles((p) => [...p, ...accepted]);
   }
 
   async function uploadFiles() {
     if (!cardId) return toast.error('ID não fornecido.');
-    if (base64Files.length === 0) return;
+    // Foto do lote: arquivos soltos durante o envio ficam para o próximo.
+    const batch = files;
+    if (batch.length === 0) return;
 
     setUploading(true);
     setError(null);
+    // Mensagens próprias em cada etapa: erro de server action/rota chega
+    // mascarado em produção, e "Failed to fetch" não diz nada à equipe.
+    let stage = 'Não foi possível preparar o envio. Tente de novo.';
     try {
-      const fileInfos = base64Files.map((f) => ({ name: f.name, type: f.type }));
+      const fileInfos = batch.map((f) => ({ name: f.name, type: f.type || 'application/octet-stream' }));
       const response = await getPresignedUrls(fileInfos, cardId, isProcess);
       if (!response.success || !response.presignedUrls) {
-        throw new Error(response.error || 'Erro ao obter URLs pré-assinadas');
+        throw new UploadError(response.error || stage);
       }
+      const presigned = response.presignedUrls;
+      if (presigned.length !== batch.length) throw new UploadError(stage);
 
+      // Pareamento por ÍNDICE (o Promise.all do servidor preserva a ordem de
+      // fileInfos). Por nome, dois "rg.pdf" do mesmo lote subiam o mesmo
+      // conteúdo duas vezes.
+      stage = 'Falha ao enviar os arquivos. Confira a conexão e tente de novo.';
       const uploaded = await Promise.all(
-        response.presignedUrls.map(async ({ fileName, url, key }) => {
-          const file = base64Files.find((f) => f.name === fileName);
-          if (!file) return null;
-          const base64Data = file.base64.split(',')[1];
-          const bytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-          const blob = new Blob([bytes], { type: file.type });
+        batch.map(async (file, i) => {
+          const { url, key } = presigned[i];
           const res = await fetch(url, {
             method: 'PUT',
-            body: blob,
-            headers: {
-              'Content-Type': file.type,
-            },
+            body: file,
+            // Mesmo Content-Type assinado em getPresignedUrls; diferente = 403.
+            headers: { 'Content-Type': fileInfos[i].type },
           });
-          if (!res.ok) throw new Error(`Erro ao enviar ${fileName}`);
-          return { key, name: fileName };
+          if (!res.ok) throw new UploadError(`Falha ao enviar "${file.name}". Tente de novo.`);
+          return { key, name: file.name };
         })
       );
-
-      const valid = uploaded.filter(Boolean) as { key: string; name: string }[];
 
       // Pasta do lote: escolha explícita do seletor vale pra todos; em AUTO o
       // servidor decide arquivo a arquivo pelo nome.
       const chosen = uploadCategory === AUTO_CATEGORY ? undefined : uploadCategory;
 
-      await fetch('/api/documents', {
+      // Só é "Upload concluído" se o card registrou os arquivos: sem o
+      // registro o objeto fica no S3, mas não aparece em lugar nenhum.
+      stage = 'Arquivos enviados, mas não registrados no card. Tente de novo.';
+      const reg = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: ownerId,
           processId: isProcess ? cardId : null,
-          documents: valid.map((v) => ({ ...v, category: chosen })),
+          documents: uploaded.map((v) => ({ ...v, category: chosen })),
         }),
       });
+      if (!reg.ok) throw new UploadError(stage);
 
+      // Tira só o lote enviado (o que foi solto durante o envio continua).
+      setFiles((p) => p.filter((f) => !batch.includes(f)));
       await loadDocs();
-      setFiles([]);
-      setBase64Files([]);
       // Leva pra pasta onde os arquivos acabaram de cair (Drive faz o mesmo).
       if (chosen && isDocumentCategory(chosen)) setOpenFolder(chosen);
       toast.success('Upload concluído.');
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error('Erro ao fazer upload: ' + err.message);
+      toast.error(err instanceof UploadError ? err.message : stage);
     } finally {
       setUploading(false);
     }

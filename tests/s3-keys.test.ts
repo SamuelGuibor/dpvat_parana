@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contactIdFromWhatsAppKey, isSharedLibraryKey } from "@/app/_shared/utils/s3-keys";
+import { cardUploadKey, contactIdFromWhatsAppKey, isSharedLibraryKey } from "@/app/_shared/utils/s3-keys";
 
 // A purga da lixeira preserva o objeto do S3 quando a key é de biblioteca
 // compartilhada (vídeo de fluxo, mídia de template): apagar quebraria o passo
@@ -36,5 +36,28 @@ describe("contactIdFromWhatsAppKey", () => {
     expect(contactIdFromWhatsAppKey("whatsapp/cmabc")).toBeNull();
     expect(contactIdFromWhatsAppKey("whatsapp//1-a.pdf")).toBeNull();
     expect(contactIdFromWhatsAppKey("whatsapp/cmabc/")).toBeNull();
+  });
+});
+
+// Upload da aba Arquivos: antes a key era `<Date.now()>-<nome>` calculada
+// dentro do Promise.all, então dois arquivos de mesmo nome no mesmo lote caíam
+// na mesma key e o 2º PUT sobrescrevia o 1º.
+describe("cardUploadKey", () => {
+  it("mesmo nome no mesmo lote gera keys diferentes", () => {
+    const ts = 1_758_800_000_000;
+    const a = cardUploadKey("cu1", false, ts, 0, "rg.pdf");
+    const b = cardUploadKey("cu1", false, ts, 1, "rg.pdf");
+    expect(a).not.toBe(b);
+    expect(a).toBe(`uploads/user_cu1/${ts}-rg.pdf`);
+    expect(b).toBe(`uploads/user_cu1/${ts + 1}-rg.pdf`);
+  });
+
+  it("mantém o formato <número>-<nome> e o prefixo por tipo de card", () => {
+    const key = cardUploadKey("p9", true, 1_758_800_000_000, 3, "laudo final.pdf");
+    expect(key).toBe("uploads/process_p9/1758800000003-laudo final.pdf");
+    expect(key.split("/").pop()).toMatch(/^\d{10,}-laudo final\.pdf$/);
+    // Não é mídia de contato nem biblioteca compartilhada.
+    expect(isSharedLibraryKey(key)).toBe(false);
+    expect(contactIdFromWhatsAppKey(key)).toBeNull();
   });
 });

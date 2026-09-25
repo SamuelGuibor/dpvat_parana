@@ -1,5 +1,7 @@
 // Regras puras sobre as keys do bucket (mesmo bucket para documentos do card e
-// mídia do WhatsApp). Prefixos de whatsapp/:
+// mídia do WhatsApp). Anexo da aba Arquivos do card:
+//   uploads/{user|process}_<cardId>/<ts>-<nome>
+// Prefixos de whatsapp/:
 //   whatsapp/<contactId>/<ts>-*       mídia recebida do cliente
 //   whatsapp/<contactId>/out-*        mídia enviada pelo atendente
 //   whatsapp/<contactId>/docs/*       rascunho da ficha do cliente
@@ -31,4 +33,22 @@ export function contactIdFromWhatsAppKey(key: string): string | null {
   // Precisa de pelo menos whatsapp/<cid>/<arquivo>.
   if (parts.length < 3 || !parts[1] || !parts[parts.length - 1]) return null;
   return parts[1];
+}
+
+/**
+ * Key do anexo enviado pela aba Arquivos do card. O índice do arquivo no lote
+ * entra SOMADO ao timestamp (em vez de um `-<idx>-` a mais) para manter o
+ * formato `<número>-<nome>` das keys já gravadas. Sem o índice, dois arquivos
+ * de mesmo nome no mesmo lote (ex.: dois "rg.pdf" de pastas diferentes) caíam
+ * na MESMA key: o 2º PUT sobrescrevia o 1º e o card ficava com dois registros
+ * apontando para o mesmo objeto.
+ */
+export function cardUploadKey(
+  itemId: string,
+  isProcess: boolean,
+  batchTs: number,
+  idx: number,
+  fileName: string,
+): string {
+  return `uploads/${isProcess ? "process" : "user"}_${itemId}/${batchTs + idx}-${fileName}`;
 }

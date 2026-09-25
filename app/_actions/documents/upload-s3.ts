@@ -2,6 +2,8 @@
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { requireTeam } from "../../_shared/lib/permissions-server";
+import { cardUploadKey } from "../../_shared/utils/s3-keys";
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -28,21 +30,42 @@ export interface PresignedUrlResponse {
   error?: string;
 }
 
+// A URL assinada dá escrita direta no bucket: só equipe pode pedir (cliente
+// logado por CPF também tem sessão e passaria pelo middleware). O erro volta
+// como valor, não como throw, porque throw de server action chega mascarado
+// em produção e a aba mostraria uma mensagem sem sentido.
+async function teamGuard(): Promise<string | null> {
+  try {
+    await requireTeam();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Acesso restrito à equipe.";
+  }
+}
+
 export async function getPresignedUrls(fileInfos: FileInfo[], itemId: string, isProcess: boolean): Promise<PresignedUrlResponse> {
+  const denied = await teamGuard();
+  if (denied) return { success: false, error: denied };
   try {
     if (!itemId) {
       throw new Error(isProcess ? 'ID do processo não fornecido' : 'ID do usuário não fornecido');
     }
 
+    // Um timestamp por lote + índice do arquivo: dois arquivos de mesmo nome
+    // no mesmo lote precisam de keys diferentes (ver cardUploadKey). A ordem
+    // do retorno é a de fileInfos (Promise.all preserva), e o FilesTab pareia
+    // URL ↔ arquivo pelo índice.
+    const batchTs = Date.now();
     const presignedUrls = await Promise.all(
-      fileInfos.map(async (file) => {
-        const fileName = `${Date.now()}-${file.name}`;
-        const key = `uploads/${isProcess ? 'process' : 'user'}_${itemId}/${fileName}`;
+      fileInfos.map(async (file, idx) => {
+        const key = cardUploadKey(itemId, isProcess, batchTs, idx, file.name);
 
         const command = new PutObjectCommand({
           Bucket: process.env.AWS_S3_BUCKET_NAME,
           Key: key,
-          ContentType: file.type,
+          // O navegador faz o PUT com este MESMO Content-Type (a assinatura o
+          // inclui); tipo vazio vira octet-stream nos dois lados.
+          ContentType: file.type || "application/octet-stream",
           Metadata: { itemId, isProcess: isProcess.toString() },
         });
 
@@ -67,6 +90,8 @@ export async function getPresignedUrls(fileInfos: FileInfo[], itemId: string, is
  * repassa ao converter e os apaga. Não criam registro de Document no banco.
  */
 export async function getRoteiroUploadUrls(fileInfos: FileInfo[], cardId: string): Promise<PresignedUrlResponse> {
+  const denied = await teamGuard();
+  if (denied) return { success: false, error: denied };
   try {
     const batch = Date.now();
     const presignedUrls = await Promise.all(
