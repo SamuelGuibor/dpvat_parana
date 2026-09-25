@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  inboxListState,
   mediaTypeLabel,
   patchConversationList,
   patchConversationRow,
@@ -128,5 +129,40 @@ describe("revertPatch", () => {
     const rollback = revertPatch(original, { status: "human", tags: [URG, VIP] });
     expect(rollback).toEqual({ status: "queued", tags: [URG] });
     expect(Object.keys(rollback).sort()).toEqual(["status", "tags"]);
+  });
+});
+
+describe("inboxListState", () => {
+  const base = { loaded: false, isLoading: false, hasError: false, count: 0 };
+
+  it("1ª carga em voo mostra o esqueleto, nunca 'Nenhuma conversa ainda'", () => {
+    expect(inboxListState({ ...base, isLoading: true })).toBe("loading");
+  });
+
+  it("'vazia' só com a lista carregada e sem nenhuma conversa", () => {
+    expect(inboxListState({ ...base, loaded: true })).toBe("empty");
+    expect(inboxListState({ ...base, loaded: true, count: 3 })).toBe("ready");
+  });
+
+  it("falha sem lista vira erro (o esqueleto não fica girando para sempre)", () => {
+    // shouldRetryOnError:false → data undefined e isLoading false depois da falha
+    expect(inboxListState({ ...base, hasError: true })).toBe("error");
+  });
+
+  it("'Tentar novamente' em voo volta ao esqueleto mesmo com o erro anterior", () => {
+    expect(inboxListState({ ...base, hasError: true, isLoading: true })).toBe("loading");
+  });
+
+  it("falha de recarga com lista antiga na tela não apaga a lista", () => {
+    expect(inboxListState({ ...base, loaded: true, hasError: true, count: 5 })).toBe("ready");
+  });
+
+  it("resultado da busca no servidor aparece mesmo sem a carga principal", () => {
+    expect(inboxListState({ ...base, hasError: true, searchHits: 2 })).toBe("ready");
+    expect(inboxListState({ ...base, isLoading: true, searchHits: 1 })).toBe("ready");
+  });
+
+  it("sem carga, sem erro e sem voo (1ª carga descartada por um patch) conta como carregando", () => {
+    expect(inboxListState(base)).toBe("loading");
   });
 });

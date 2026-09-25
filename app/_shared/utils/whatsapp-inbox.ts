@@ -121,3 +121,39 @@ export function revertPatch<T extends object>(original: T, patch: Partial<T>): P
   for (const key of Object.keys(patch) as (keyof T)[]) out[key] = original[key];
   return out;
 }
+
+/* ---------- estado da lista (carregando / erro / vazia) ---------- */
+
+// Por que existe (auditoria de 24/09/2026, FE-8): na 1ª carga a lista ainda
+// vazia mostrava "Nenhuma conversa ainda", e o chefe lia isso como "o inbox
+// não carrega". E o SWR da lista roda com shouldRetryOnError:false: se a carga
+// falha, `data` fica undefined e `isLoading` volta a false — um esqueleto
+// preso a "sem dados" ficaria girando para sempre. Daí os quatro estados.
+
+export type InboxListState = 'loading' | 'error' | 'empty' | 'ready';
+
+/**
+ * O que a área da lista mostra.
+ * - `loaded` = a lista já chegou alguma vez (`data !== undefined` no SWR);
+ * - `searchHits` = resultados da busca no servidor, que chegam por outro
+ *   caminho: com eles a lista aparece mesmo sem a carga principal.
+ * Regras: "vazia" só com a lista carregada e sem nada; erro só enquanto não há
+ * lista (com lista antiga na tela, a falha de uma recarga não apaga nada); a
+ * tentativa em voo (`isLoading`) ganha do erro anterior, para o "Tentar
+ * novamente" mostrar o esqueleto. Sem carga, sem erro e sem voo (um patch
+ * local descartou a 1ª carga e o `onDiscarded` já reagendou) conta como
+ * carregando.
+ */
+export function inboxListState(s: {
+  loaded: boolean;
+  isLoading: boolean;
+  hasError: boolean;
+  count: number;
+  searchHits?: number;
+}): InboxListState {
+  const hits = s.searchHits ?? 0;
+  if (s.loaded) return s.count > 0 || hits > 0 ? 'ready' : 'empty';
+  if (hits > 0) return 'ready';
+  if (s.isLoading) return 'loading';
+  return s.hasError ? 'error' : 'loading';
+}

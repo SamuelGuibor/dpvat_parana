@@ -6,7 +6,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 | # | Arquivo | Linhas | Mapa de domínio |
 |---|---|---|---|
-| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 2778 | whatsapp-bot |
+| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 2889 | whatsapp-bot |
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
@@ -21,26 +21,27 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 ---
 
-## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 2778 linhas
+## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 2889 linhas
 Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com envio otimista/mídia/reações, coluna Copiloto e CardDialog do cliente.
 
-- **L1-69** imports (`fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList` de `app/_shared/utils/whatsapp-inbox.ts`).
+- **L1-69** imports (`fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`).
 - **L70-167** helpers de módulo: `WINDOW_24H_MS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
-- **L168-1831 `WhatsAppInbox()`** (componente principal):
-  - L168-315 estado + filtros: busca no servidor (`searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
-  - L315-415 larguras redimensionáveis (`startResize`), `reloadTags`, pastas do rail (`ACTIVE_FOLDERS`, `CLOSED_FOLDERS`, `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos.
-  - L415-553 conversa aberta: `jumpToMessage`, notificação→abre conversa, `listActive`/`active` (hidratação sob demanda), `cardStub`, SSE `onStream`, `displayMessages`, scroll/prepend + `handleLoadOlder`.
-  - L553-690 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups`, `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `windowExpired`.
-  - L691-940 handlers: `runAction`, `patchConversation` (patch local na lista + busca + `fetchedActive`), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `handleSendText`, `handleSendMedia`, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
-  - L941-1466 JSX da **lista**: rail (L954), busca + novo contato (L1010), pills de leitura (L1035), data de entrada (L1075), número (L1128), coluna do Kanban (L1169), tags (L1216), equipe (L1261), área rolável + seções por pasta (L1340-1458), alça de resize.
-  - L1467-1771 JSX da **thread**: cabeçalho (voltar, atalho "Card #N" L1513, menu de tags L1528 com spinner por item, Encerrar/Alterar desfecho L1573, toggle Copiloto, mais ações L1621), carregar histórico (L1669), composer / número desativado somente leitura (L1723).
-  - L1772-1831 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
-- **L1832-1895** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
-- **L1896-2065** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
-- **L2066-2238** `ConversationGroup` (item/seção da lista).
-- **L2239-2444** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
-- **L2445-2754** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
-- **L2755-2778** `MsgAction`, `HeaderButton`.
+- **L168-1883 `WhatsAppInbox()`** (componente principal):
+  - L168-322 estado + filtros: `loaded`/`isLoading`/`error` da lista, tags (`allTags` undefined = carregando, `tagsFailed`), busca no servidor (`searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
+  - L322-426 larguras redimensionáveis (`startResize`), `reloadTags`, pastas do rail (`ACTIVE_FOLDERS`, `CLOSED_FOLDERS`, `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos.
+  - L426-571 conversa aberta: `jumpToMessage`, notificação→abre conversa, `listActive`/`active` (hidratação sob demanda; `openingActive` = "Abrindo conversa…"), `cardStub`, SSE `onStream`, `displayMessages`, scroll/prepend + `handleLoadOlder`.
+  - L572-721 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups`, `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `listState` (esqueleto/erro/vazia), `windowExpired`.
+  - L722-971 handlers: `runAction`, `patchConversation` (patch local na lista + busca + `fetchedActive`), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `handleSendText`, `handleSendMedia`, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
+  - L972-1510 JSX da **lista**: rail (L985), busca + novo contato (L1041), pills de leitura (L1066), data de entrada (L1106), número (L1159), coluna do Kanban (L1200), tags (L1247), equipe (L1290), área rolável (L1369: esqueleto / erro com "Tentar novamente" / "Nenhuma conversa ainda" / seções por pasta), alça de resize (L1503).
+  - L1511-1828 JSX da **thread**: "Abrindo conversa…" ou vazio, cabeçalho (L1527: voltar, atalho "Card #N" L1564, menu de tags L1579 com spinner por item, Encerrar/Alterar desfecho L1622, toggle Copiloto, mais ações L1670), carregar histórico + spinner da 1ª carga (L1718), composer / número desativado somente leitura (L1780).
+  - L1829-1883 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
+- **L1885-1952** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
+- **L1953-2126** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
+- **L2127-2176** estados de carga: `ConversationListSkeleton` (8 linhas `animate-pulse`), `TagMenuStatus` (carregando / erro com "Tentar novamente" / nenhuma tag, nos dois menus de tag).
+- **L2177-2349** `ConversationGroup` (item/seção da lista).
+- **L2350-2555** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
+- **L2556-2865** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
+- **L2866-2889** `MsgAction`, `HeaderButton`.
 
 ## 2. `app/nova-dash/KanbanBoard.tsx` — 2407 linhas
 Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, CRUD de etiquetas, arquivar/mover/excluir.
@@ -178,7 +179,7 @@ PDF da assinatura: gera o PDF a partir do .docx (via docx-converter), acha as â
 ## Backlog de quebra (sugestões, não executadas)
 | Arquivo | Como dividir |
 |---|---|
-| `WhatsAppInbox.tsx` | Extrair `ConversationList` (L941-1466 + filtros/derivações L553-690 como hook `useInboxFilters`), `ThreadPane` (L1467-1771 + envio otimista num hook `useOptimisticSend`) e mover bolhas/diálogos (L1832-2778) para `inbox/bubbles.tsx` e `inbox/dialogs.tsx`. |
+| `WhatsAppInbox.tsx` | Extrair `ConversationList` (L972-1510 + filtros/derivações L572-721 como hook `useInboxFilters`), `ThreadPane` (L1511-1828 + envio otimista num hook `useOptimisticSend`) e mover bolhas/diálogos (L1885-2889) para `inbox/bubbles.tsx` e `inbox/dialogs.tsx`. |
 | `KanbanBoard.tsx` | Mover tipos/`services` para `kanban/types.ts`, `DraggableCard` e `DroppableColumn` para arquivos próprios, e sincronização (`fetchData` + polling + versão) para um hook `useBoardSync`. |
 | `signature/core.ts` | Separar por porta/etapa: `validation.ts` (campos, CPF, CEP, rua), `issue.ts` (gerar documento/link), `client-reply.ts` (coleta + confirmação), `manual.ts` (Porta 2), `post-sign.ts` + `reminders.ts`. |
 | `AutomationsPanel.tsx` | Tirar `ActionRow` para `automations/ActionRow.tsx` com um subcomponente por tipo de ação, e constantes de campos/operadores para `automations/fields.ts`. |

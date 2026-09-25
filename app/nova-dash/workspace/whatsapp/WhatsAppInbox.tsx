@@ -37,7 +37,7 @@ import {
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, setConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
 import {
-  patchConversationList, patchConversationRow, sameTags, withTag, type ConversationPatch,
+  inboxListState, patchConversationList, patchConversationRow, sameTags, withTag, type ConversationPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
@@ -171,11 +171,14 @@ export function WhatsAppInbox() {
 
   const {
     conversations, refreshConversations, scheduleConversationsRefresh, patchConversations,
+    loaded: conversationsLoaded, isLoading: conversationsLoading, error: conversationsError,
   } = useWhatsAppConversations();
   // Total REAL no banco (a lista acima é capada em 1.000 pelo servidor).
   const conversationsTotal = useWhatsAppConversationsTotal();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
-  const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
+  const {
+    messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder, isLoading: messagesLoading,
+  } = useWhatsAppMessages(activeContactId);
 
   const [search, setSearch] = useState('');
   // BUSCA NO SERVIDOR (27/08/2026): a lista carregada é só o TOPO (as mais
@@ -209,8 +212,11 @@ export function WhatsAppInbox() {
   // Ficha — incrementar o token é o sinal que o CopilotPanel escuta.
   const [fichaFocusToken, setFichaFocusToken] = useState(0);
 
-  // Tags livres pra organizar/filtrar conversas.
-  const [allTags, setAllTags] = useState<WhatsAppTagDTO[]>([]);
+  // Tags livres pra organizar/filtrar conversas. `undefined` = ainda não
+  // chegaram (começava em [] e o menu dizia "Nenhuma tag criada ainda" durante
+  // a carga); `tagsFailed` tira o "Carregando tags…" quando a busca falha.
+  const [allTags, setAllTags] = useState<WhatsAppTagDTO[] | undefined>(undefined);
+  const [tagsFailed, setTagsFailed] = useState(false);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
@@ -357,7 +363,12 @@ export function WhatsAppInbox() {
   const { perms } = usePermissions();
 
   function reloadTags() {
-    listWhatsAppTags().then(setAllTags).catch(() => { });
+    setTagsFailed(false);
+    // Falha com a lista já carregada (ex.: depois de editar no modal) mantém a
+    // lista antiga; o aviso de erro só aparece quando não há nada para mostrar.
+    listWhatsAppTags()
+      .then((tags) => { setAllTags(tags); setTagsFailed(false); })
+      .catch(() => setTagsFailed(true));
   }
   useEffect(() => { reloadTags(); }, []);
 
@@ -457,17 +468,27 @@ export function WhatsAppInbox() {
     [conversations, remoteResults, activeContactId],
   );
   const [fetchedActive, setFetchedActive] = useState<WhatsAppConversationDTO | null>(null);
+  // contactId cuja busca sob demanda já terminou (achando ou não).
+  const [activeLookupDone, setActiveLookupDone] = useState<string | null>(null);
   const hasListActive = !!listActive;
   useEffect(() => {
     if (!activeContactId || hasListActive) return;
     let cancelled = false;
     getWhatsAppConversationByContact(activeContactId)
       .then((c) => { if (!cancelled && c) setFetchedActive(c); })
-      .catch(() => { /* a thread ainda carrega pelas mensagens */ });
-    return () => { cancelled = true; };
+      .catch(() => { /* a thread ainda carrega pelas mensagens */ })
+      .finally(() => { if (!cancelled) setActiveLookupDone(activeContactId); });
+    // Zera na troca: reabrir depois o mesmo contato fora da lista volta a
+    // mostrar "Abrindo conversa…" até a nova busca responder.
+    return () => { cancelled = true; setActiveLookupDone(null); };
   }, [activeContactId, hasListActive]);
   const active = listActive
     ?? (fetchedActive?.contactId === activeContactId ? fetchedActive : null);
+  // Conversa pedida (notificação, "Abrir conversa" do card) antes de a lista
+  // chegar: a thread mostra "Abrindo conversa…" em vez de "Selecione uma
+  // conversa", que parecia clique perdido. Termina quando a lista ou a busca
+  // sob demanda responde — contato inexistente volta ao estado vazio.
+  const openingActive = !!activeContactId && !active && activeLookupDone !== activeContactId;
 
   // Ficha do cliente da conversa aberta: alimenta o Copiloto (aba Ficha /
   // checklist) e o atalho "Card #N" do cabeçalho.
@@ -680,6 +701,16 @@ export function WhatsAppInbox() {
   // esteja em outra aba.
   const tagFilterActive = tagFilter.length > 0 || search.trim().length > 0;
   const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
+  // Esqueleto / erro com "Tentar novamente" / "Nenhuma conversa ainda" — regra
+  // em inboxListState. Com busca ou tag ativa, o que a busca no servidor achou
+  // aparece mesmo que a carga principal ainda não tenha chegado.
+  const listState = inboxListState({
+    loaded: conversationsLoaded,
+    isLoading: conversationsLoading,
+    hasError: !!conversationsError,
+    count: conversations.length,
+    searchHits: tagFilterActive ? filtered.length : 0,
+  });
 
   useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter, dateRange]);
 
@@ -1236,10 +1267,8 @@ export function WhatsAppInbox() {
                     )}
                   </div>
                   <DropdownMenuSeparator />
-                  {allTags.length === 0 && (
-                    <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
-                  )}
-                  {allTags.map((t) => (
+                  <TagMenuStatus tags={allTags} failed={tagsFailed} onRetry={reloadTags} className="text-sm" />
+                  {(allTags ?? []).map((t) => (
                     <DropdownMenuCheckboxItem
                       key={t.id}
                       checked={tagFilter.includes(t.id)}
@@ -1349,14 +1378,29 @@ export function WhatsAppInbox() {
                   setActiveContactId(contactId);
                 }}
               />
-            ) : (<>
-            {conversations.length === 0 && (
+            ) : listState === 'loading' ? (
+              <ConversationListSkeleton />
+            ) : listState === 'error' ? (
+              // shouldRetryOnError:false no hook: sem este botão a lista só
+              // tentaria de novo no próximo hash que mudar (ou em 10 min).
+              <div role="alert" className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
+                <AlertCircle className="mb-2 h-7 w-7 text-amber-300" />
+                <p className="text-sm">Não foi possível carregar as conversas.</p>
+                <p className="mt-1 text-xs">Confira a conexão e tente de novo.</p>
+                <button
+                  onClick={() => { void refreshConversations(); }}
+                  className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-3 py-1.5 text-[12px] font-bold text-[#6fd6ad] hover:bg-[#356b57]"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Tentar novamente
+                </button>
+              </div>
+            ) : listState === 'empty' ? (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
                 <p className="text-sm">Nenhuma conversa ainda.</p>
                 <p className="mt-1 text-xs">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
               </div>
-            )}
+            ) : (<>
             {conversations.length > 0 && visibleItems.length === 0 && (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 {searchingServer ? (
@@ -1467,10 +1511,17 @@ export function WhatsAppInbox() {
       {/* ---------- Thread ---------- */}
       <section className={`${activeContactId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col bg-[#dce8e1] dark:bg-zinc-950/20`}>
         {!active ? (
-          <div className="flex h-full flex-col items-center justify-center text-gray-400">
-            <MessageCircle className="mb-2 h-10 w-10 opacity-30" />
-            <p className="text-base">Selecione uma conversa para atender.</p>
-          </div>
+          openingActive ? (
+            <div role="status" className="flex h-full flex-col items-center justify-center text-gray-400">
+              <Loader2 className="mb-2 h-8 w-8 animate-spin opacity-60" />
+              <p className="text-base">Abrindo conversa…</p>
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center text-gray-400">
+              <MessageCircle className="mb-2 h-10 w-10 opacity-30" />
+              <p className="text-base">Selecione uma conversa para atender.</p>
+            </div>
+          )
         ) : (
           <>
             <header className="flex items-center gap-2.5 border-b border-gray-100 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900 md:px-4">
@@ -1534,10 +1585,8 @@ export function WhatsAppInbox() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="text-sm">Tags desta conversa</DropdownMenuLabel>
-                  {allTags.length === 0 && (
-                    <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
-                  )}
-                  {allTags.map((t) => {
+                  <TagMenuStatus tags={allTags} failed={tagsFailed} onRetry={reloadTags} className="text-sm" />
+                  {(allTags ?? []).map((t) => {
                     const tagPending = pendingTags.has(`${active.id}:${t.id}`);
                     return (
                       // Menu fica aberto (preventDefault no select) para marcar
@@ -1678,6 +1727,14 @@ export function WhatsAppInbox() {
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...</>
                       : <><Clock className="h-3.5 w-3.5" /> Carregar mensagens anteriores</>}
                   </button>
+                </div>
+              )}
+              {/* 1ª carga de uma conversa não visitada: sem isto a thread
+                  aparecia vazia, como se o cliente nunca tivesse escrito. */}
+              {messagesLoading && displayMessages.length === 0 && (
+                <div role="status" className="flex h-full flex-col items-center justify-center text-gray-400">
+                  <Loader2 className="mb-2 h-7 w-7 animate-spin opacity-60" />
+                  <p className="text-sm">Carregando mensagens…</p>
                 </div>
               )}
               {displayMessages.map((msg, i) => {
@@ -2061,6 +2118,60 @@ function RailButton({
       )}
     </button>
   );
+}
+
+// Esqueleto da 1ª carga da lista (auditoria de 24/09/2026, FE-8: a lista
+// vazia dizia "Nenhuma conversa ainda" e o chefe lia como "não carrega").
+// 8 linhas no formato da linha real (avatar + nome/hora + prévia), com as
+// cores fixas da lista — sem dark:, o modo escuro é o Dark Reader.
+function ConversationListSkeleton() {
+  return (
+    <div role="status" aria-label="Carregando conversas" className="px-1.5 pt-1">
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="mb-0.5 flex animate-pulse items-center gap-2.5 rounded-lg px-2 py-2">
+          <span className="h-9 w-9 shrink-0 rounded-full bg-[#2e5749]" />
+          <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className="flex items-center gap-2">
+              <span className="h-3 rounded bg-[#2e5749]" style={{ width: `${45 + ((i * 17) % 35)}%` }} />
+              <span className="ml-auto h-2.5 w-8 shrink-0 rounded bg-[#294e41]" />
+            </span>
+            <span className="h-2.5 rounded bg-[#294e41]" style={{ width: `${60 + ((i * 23) % 30)}%` }} />
+          </span>
+        </div>
+      ))}
+      <span className="sr-only">Carregando conversas…</span>
+    </div>
+  );
+}
+
+// Linha de estado dos dois menus de tag (filtro da lista e cabeçalho da
+// thread): carregando / falhou / nenhuma criada. Com tags carregadas não
+// desenha nada. "Tentar novamente" mantém o menu aberto (preventDefault) para
+// o atendente ver o "Carregando tags…" e depois a lista.
+function TagMenuStatus({ tags, failed, onRetry, className = '' }: {
+  tags: WhatsAppTagDTO[] | undefined; failed: boolean; onRetry: () => void; className?: string;
+}) {
+  if (tags === undefined && failed) {
+    return (
+      <>
+        <DropdownMenuItem disabled className={`${className} text-gray-400`}>Não foi possível carregar as tags.</DropdownMenuItem>
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); onRetry(); }} className={className}>
+          <RotateCcw className="mr-2 h-3.5 w-3.5" /> Tentar novamente
+        </DropdownMenuItem>
+      </>
+    );
+  }
+  if (tags === undefined) {
+    return (
+      <DropdownMenuItem disabled className={`${className} text-gray-400`}>
+        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Carregando tags…
+      </DropdownMenuItem>
+    );
+  }
+  if (tags.length === 0) {
+    return <DropdownMenuItem disabled className={`${className} text-gray-400`}>Nenhuma tag criada ainda.</DropdownMenuItem>;
+  }
+  return null;
 }
 
 function ConversationGroup({

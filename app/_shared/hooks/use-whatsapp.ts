@@ -152,8 +152,13 @@ export function useWhatsAppConversations() {
     lastVersion.current = version;
   }, [version, scheduleConversationsRefresh]);
 
+  // `loaded` separa "a lista chegou e está vazia" de "ainda não chegou" — o
+  // `conversations` abaixo é [] nos dois casos. A tela decide entre esqueleto,
+  // erro com "Tentar novamente" e "Nenhuma conversa ainda" por
+  // `inboxListState` (app/_shared/utils/whatsapp-inbox.ts).
   return {
-    conversations: data ?? [], refreshConversations, scheduleConversationsRefresh, patchConversations, isLoading, error,
+    conversations: data ?? [], loaded: data !== undefined,
+    refreshConversations, scheduleConversationsRefresh, patchConversations, isLoading, error,
   };
 }
 
@@ -186,6 +191,8 @@ const OLDER_PAGE_SIZE = 30;
  * lista pesada recarrega quando ele muda (ver useWhatsAppConversations).
  */
 export function useWhatsAppMessages(contactId: string | null) {
+  // `isLoading` (1ª carga desta conversa, sem nada em cache) vira o spinner da
+  // thread — sem ele, abrir uma conversa não visitada mostrava a tela vazia.
   const { data, mutate, isLoading } = useSWR<{ messages: WhatsAppThreadMessage[]; hasMore?: boolean }>(
     contactId ? `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}&limit=50` : null,
     fetcher,
