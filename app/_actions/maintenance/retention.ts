@@ -44,6 +44,8 @@ const PURGEABLE_LOG_ACTIONS = [
   "wa_suggest",
   "wa_media",
   "wa_note",
+  // Telemetria de anexo perdido no webhook: só é contada por período.
+  "wa_media_fail",
 ];
 
 export interface RetentionResult {

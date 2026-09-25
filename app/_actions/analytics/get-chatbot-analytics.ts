@@ -396,6 +396,11 @@ export async function getChatbotAnalytics(
       continue;
     }
 
+    // Anexo recebido que não foi salvo (download da Meta falhou): o autor é o
+    // sistema, não um atendente. Fora do feed e das estatísticas da equipe,
+    // senão "Sistema (webhook WhatsApp)" aparece como atendente no ranking.
+    if (l.action === 'wa_media_fail') continue;
+
     if (l.action === 'wa_bot') {
       const outcome: string = meta.outcome ?? 'continue';
       if (outcome === 'error') {

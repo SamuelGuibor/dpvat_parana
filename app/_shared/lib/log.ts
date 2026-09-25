@@ -39,6 +39,7 @@ export type LogAction =
   | "wa_signature"   // ciclo de assinatura eletrônica (geração, envio, assinatura, validação)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
+  | "wa_media_fail"  // mídia recebida não foi salva no S3 (falha/timeout no download da Meta); autor = sistema
   | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
   | "sheets_export"     // automação registrou o card numa planilha do Google
   | "tag_add"           // automação adicionou uma tag ao card

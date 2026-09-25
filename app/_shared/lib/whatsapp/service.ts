@@ -1,6 +1,7 @@
 import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
+import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
@@ -347,6 +348,27 @@ export async function ingestIncomingMessage(
     if (stored) {
       mediaKey = stored.key;
       mediaType = stored.mimeType;
+    } else {
+      // Mídia perdida fica registrada no banco: o reportCriticalError é só
+      // console (efêmero na Vercel) e, sem este log, não dá para contar quantos
+      // anexos se perdem por dia nem medir o efeito do timeout do download.
+      // Retry da Meta não duplica: o dedup por waMessageId sai antes daqui.
+      await logWhatsAppEvent({
+        action: "wa_media_fail",
+        message: `mídia recebida (${msg.type}) não foi salva: falha ou timeout no download da Meta`,
+        authorId: "system",
+        authorName: "Sistema (webhook WhatsApp)",
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        numberId: contact.numberId, // vai para metadata.numberId (visão por linha)
+        metadata: {
+          mediaId: media.id,
+          waMessageId: msg.id,
+          mediaKind: msg.type,
+          ...(media.filename ? { filename: media.filename } : {}),
+        },
+      });
     }
   }
 

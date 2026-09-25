@@ -30,6 +30,6 @@ Mapa completo: docs/ai/whatsapp-bot.md
 
 ## Validação
 - `npx tsc --noEmit` · `npm run lint` · `npm test` (o `next build` local morre por OOM; o build fica com a Vercel).
-- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
+- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
 - Bot ponta a ponta: número em `WHATSAPP_TEST_NUMBERS` → cérebro de `CHATBOT_URL_STAGING`; confira o log `wa_bot` (`outcome`, `leaked`, `usage`).
 - Cron manual: `GET /api/whatsapp/cron` com `CRON_SECRET` (`whatsapp-cron.cmd`); veja `[WHATSAPP CRON]` nos logs.
