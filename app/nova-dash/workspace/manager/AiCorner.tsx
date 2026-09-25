@@ -3,8 +3,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, BadgeCheck, Bot, Brain, FileText, Headset, HelpCircle, IdCard,
-  Loader2, MessageSquare, ScrollText, ShieldCheck, Sparkles, Timer,
+  Loader2, MessageSquare, RotateCcw, ScrollText, ShieldCheck, Sparkles, Timer,
 } from 'lucide-react';
+import { Button } from '@/app/_shared/ui/button';
 import { getAiCorner, type AiCorner as AiCornerData, type AiOperation } from '@/app/_actions/analytics/get-ai-corner';
 
 /** Qualidade do bot no período do dashboard — vem do ChatbotDashboard. */
@@ -116,17 +117,25 @@ function OperationRow({ op, share, color }: { op: AiOperation; share: number; co
 export function AiCorner({ quality }: { quality?: AiQuality }) {
   const [data, setData] = useState<AiCornerData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   const [scope, setScope] = useState<'month' | 'last30'>('month');
+  // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     getAiCorner()
-      .then((d) => { if (alive) setData(d); })
-      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'Falha ao carregar o Canto da IA.'); })
+      .then((d) => { if (alive) { setData(d); setError(false); } })
+      .catch((e) => {
+        // Em produção o erro de server action chega mascarado: o texto real
+        // fica só no console e a tela mostra uma mensagem própria.
+        console.error('[CANTO DA IA] Falha ao carregar:', e);
+        if (alive) setError(true);
+      })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [reloadKey]);
 
   const win = data ? (scope === 'month' ? data.month : data.last30) : null;
 
@@ -142,10 +151,20 @@ export function AiCorner({ quality }: { quality?: AiQuality }) {
       </section>
     );
   }
-  if (error || !data || !win) {
+  if (error) {
     return (
-      <section className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">
-        {error ?? 'Sem dados de consumo.'}
+      <section className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+        <p>Não foi possível carregar o Canto da IA.</p>
+        <Button size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
+          <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+        </Button>
+      </section>
+    );
+  }
+  if (!data || !win) {
+    return (
+      <section className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+        Sem dados de consumo.
       </section>
     );
   }

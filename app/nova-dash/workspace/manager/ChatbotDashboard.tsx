@@ -7,7 +7,7 @@ import {
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
   UserRound, Undo2, StickyNote, ShieldAlert, ShieldCheck,
   Info, Facebook, Instagram, Megaphone, Globe, Send, CheckCircle2, BellRing,
-  Tag as TagIcon, Users,
+  Tag as TagIcon, Users, RotateCcw,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
@@ -120,19 +120,26 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
 } = {}) {
   // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
-  const [data, setData] = useState<ChatbotAnalytics | null>(initialData);
-  const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState<string | null>(null);
+  // O initialData da carga única (get-strategic-dashboard) é SEMPRE de "Todos
+  // os números" no período do calendário. Só vale se a aba abrir exatamente
+  // nessa visão: com um número já escolhido no topo, ele mostrava as métricas
+  // somadas de todos os números até o gestor mexer em outro filtro.
+  const initialMatches = Boolean(initialData) && numberId === null && period === 'range';
+  const [data, setData] = useState<ChatbotAnalytics | null>(initialMatches ? initialData : null);
+  const [loading, setLoading] = useState(!initialMatches);
+  const [error, setError] = useState(false);
+  // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const useRange = period === 'range' && !!range;
   const periodDays = period === 'range' ? 30 : period;
   const rangeFrom = useRange ? range!.from : undefined;
   const rangeTo = useRange ? range!.to : undefined;
 
-  // Com initialData (carga única do dashboard), o primeiro fetch é pulado —
+  // Com initialData que bate com a visão inicial, o primeiro fetch é pulado —
   // ele só volta a rodar quando o usuário troca o período, o número ou o
   // calendário.
-  const skipFirstFetch = useRef(Boolean(initialData));
+  const skipFirstFetch = useRef(initialMatches);
   useEffect(() => {
     if (skipFirstFetch.current) {
       skipFirstFetch.current = false;
@@ -141,11 +148,16 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
     let alive = true;
     setLoading(true);
     getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
-      .then((d) => { if (alive) { setData(d); setError(null); } })
-      .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
+      .then((d) => { if (alive) { setData(d); setError(false); } })
+      .catch((e) => {
+        // Em produção o erro de server action chega mascarado: o texto real
+        // fica só no console e a tela mostra uma mensagem própria.
+        console.error('[CHATBOT] Falha ao carregar métricas:', e);
+        if (alive) setError(true);
+      })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [periodDays, numberId, rangeFrom, rangeTo]);
+  }, [periodDays, numberId, rangeFrom, rangeTo, reloadKey]);
 
   return (
     <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
@@ -163,7 +175,12 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">{error}</div>
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+          <p>Não foi possível carregar as métricas do chatbot.</p>
+          <Button size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
+            <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+          </Button>
+        </div>
       ) : loading || !data ? (
         <div className="flex items-center justify-center py-20 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Loader2, Facebook, Instagram, Megaphone, Globe, CheckCircle2, XCircle, Timer,
+  Loader2, Facebook, Instagram, Megaphone, Globe, CheckCircle2, XCircle, Timer, RotateCcw,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
@@ -55,7 +55,9 @@ export function LeadOriginSection({
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
   const [data, setData] = useState<ChatbotAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const useRange = period === 'range' && !!range;
   const periodDays = period === 'range' ? 30 : period;
@@ -80,11 +82,16 @@ export function LeadOriginSection({
     let alive = true;
     setLoading(true);
     getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
-      .then((d) => { if (alive) { setData(d); setError(null); } })
-      .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
+      .then((d) => { if (alive) { setData(d); setError(false); } })
+      .catch((e) => {
+        // Em produção o erro de server action chega mascarado: o texto real
+        // fica só no console e a tela mostra uma mensagem própria.
+        console.error('[ORIGEM DOS LEADS] Falha ao carregar:', e);
+        if (alive) setError(true);
+      })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [periodDays, numberId, rangeFrom, rangeTo]);
+  }, [periodDays, numberId, rangeFrom, rangeTo, reloadKey]);
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -147,7 +154,12 @@ export function LeadOriginSection({
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">{error}</div>
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+          <p>Não foi possível carregar a origem dos leads.</p>
+          <Button size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
+            <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+          </Button>
+        </div>
       ) : loading || !data ? (
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
