@@ -18,7 +18,11 @@
 //   • para mais alguém sem mexer em código → env AI_REVIEW_EMAILS com os
 //     e-mails separados por vírgula (soma-se ao hardcoded).
 
-const HARDCODED_AI_REVIEW_EMAILS = ['mucaguibor@gmail.com', 'nikolas.paranaseguros@gmail.com'];
+const HARDCODED_AI_REVIEW_EMAILS = [
+  'mucaguibor@gmail.com',
+  'nikolas.paranaseguros@gmail.com',
+  'daniel.paranaseguros@gmail.com',
+];
 
 function normalize(email?: string | null): string {
   return (email ?? '').trim().toLowerCase();
