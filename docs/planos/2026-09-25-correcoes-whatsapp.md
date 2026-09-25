@@ -1418,7 +1418,8 @@ Onda C_documentos · esforço P · depende de — · migration: não · micro: n
 - ajuste: Manter o vínculo atômico por updateMany({ userId: null }). Com count 0, seguir como registered sem novo resumo.
 
 **Em aberto:**
-- Aceita adicionar @vercel/functions (waitUntil) ou seguimos o padrão atual 'sem await + .catch' das automações?
+- Aceita adicionar @vercel/functions (waitUntil) ou seguimos o padrão atual 'sem await + .catch' das automações? **Resolvido:** a dependência foi aprovada no PR22 e o resumo de vínculo usa o `runAfterResponse` (waitUntil) nos 3 pontos (getClientInfo e os 2 ramos do addClientFromConversation). O `void reportLeadStageToMeta(...)` do "Adicionar cliente" continua promise solta (fora do escopo).
+- Além do plano: o getClientInfo devolve `justLinked` (vínculo feito nesta chamada) junto do `migratedDrafts`. A aba Arquivos do Copiloto pode carregar antes do vínculo (ainda como rascunho) e ficava sem os documentos do card até recarregar; os dois campos disparam 'wa-docs-changed'.
 
 ### C7 — Migrar rascunhos de documentos também no vínculo automático por telefone
 Onda C_documentos · esforço P · depende de C6 · migration: não · micro: não · refs: DOC-10
@@ -1456,6 +1457,7 @@ Onda C_documentos · esforço P · depende de C6 · migration: não · micro: n�
 - problema: A justificativa do dedupe ('a purga conta com uma linha por key') está imprecisa. hardDelete preserva o S3 quando existe outra linha. O motivo real é não duplicar o arquivo no card.
 - ajuste: Em migrateDraftDocuments, primeiro 'reivindicar' os drafts com `db.$transaction`: ler draftDocuments, limpar e fazer createMany das keys novas numa só transação. Ou fazer `updateMany({ where: { id, NOT: { draftDocuments: { equals: Prisma.DbNull } } }, data: { draftDocuments: Prisma.DbNull } })` e só criar se count === 1, com o array lido antes.
 - ajuste: Corrigir o comentário do porquê do dedupe.
+- Feito assim: `migrateDraftDocuments(contactId, userId)` roda numa `$transaction` que lê o rascunho com `SELECT ... FOR UPDATE` (a 2ª aba espera e lê vazio), aplica `planDraftMigration` (app/_shared/utils/draft-documents.ts, testado), cria só as keys novas, restaura a key que estava só na lixeira (como o attachConversationMediaToCard) e limpa o rascunho. Falha vira console.error e desfaz tudo (a próxima abertura tenta de novo). Conferido em 25/09 (só leitura): 3 contatos vinculados com 4 rascunhos presos, 1 deles já existe no card (o dedupe evita a duplicata).
 
 ## PR24 Script: reparo das mídias renomeadas (--apply)
 **Por que agora:** Só depois da revisão do CSV do PR09 e com o fallback onError do PR14 no ar, para o resíduo não reparável aparecer como 'Arquivo indisponível'.

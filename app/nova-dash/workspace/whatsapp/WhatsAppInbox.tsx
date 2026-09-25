@@ -603,6 +603,15 @@ export function WhatsAppInbox() {
     { revalidateOnFocus: false },
   );
 
+  // Vínculo pelo telefone feito agora ou rascunho de documento que virou
+  // arquivo do card: a aba Arquivos do Copiloto pode ter carregado antes
+  // (ainda como rascunho) e ficaria sem os documentos do card até recarregar.
+  useEffect(() => {
+    if (clientInfo?.justLinked || clientInfo?.migratedDrafts) {
+      window.dispatchEvent(new Event('wa-docs-changed'));
+    }
+  }, [clientInfo]);
+
   useEffect(() => { setCardDialogOpen(false); }, [activeContactId]);
 
   // Reações aplicadas nesta sessão (messageId → emoji|null): feedback imediato

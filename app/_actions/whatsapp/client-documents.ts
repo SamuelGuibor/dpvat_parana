@@ -13,8 +13,9 @@ import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
 // WhatsApp). Se o contato já tem User vinculado, viram Document de verdade
 // (mesma tabela usada pelo restante do sistema, sem processId — documento
 // pessoal, não de um processo específico). Sem vínculo ainda, ficam como
-// rascunho em whatsapp_contacts.draftDocuments e migram pro User quando
-// "Adicionar cliente" for usado.
+// rascunho em whatsapp_contacts.draftDocuments e migram pro User quando o
+// contato for vinculado a um card (pelo telefone ao abrir a conversa ou pelo
+// "Adicionar cliente" — migrateDraftDocuments em client-info.ts).
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 

@@ -22,7 +22,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - Não use `distinct` do Prisma com `orderBy` em `whatsapp_messages`; use SQL `LATERAL`/`DISTINCT ON`.
 - Cortes de dia/mês/hora vêm de `app/_shared/utils/date-br.ts` (servidor em UTC), inclusive o horário comercial dos crons (7h–21h BRT: `isBrBusinessHour`/`nextBrBusinessSlot`). Mensagem proativa nova de cron respeita essa janela.
 - Toda chamada de IA nova grava `metadata.usage` no log.
-- Evento novo no canal `whatsapp:<contactId>` sai por `broadcastWhatsAppEvent` (relay depois da resposta), não por `await broadcastToRelay`. Log `wa_*` sem IA pode ir por `runAfterResponse` com `at`; log de IA fica com await.
+- Evento novo no canal `whatsapp:<contactId>` sai por `broadcastWhatsAppEvent` (relay depois da resposta), não por `await broadcastToRelay`. Log `wa_*` sem IA pode ir por `runAfterResponse` com `at`; log de IA fica com await (só vai para depois da resposta junto com a chamada de IA inteira, como o resumo de vínculo).
 - Mudou teto/cadência da recuperação → `recovery-caps.ts` (o inbox lê o mesmo mapa). Não afrouxe cooldown, tetos nem marcapasso sem pedido: as duas WABAs já levaram aviso de spam da Meta.
 - Schema Prisma: nunca `prisma migrate dev`; use `migrate diff` + `db execute` + `migrate resolve`.
 - Campo novo na ficha: `AI_FIELDS`/`FIELD_LABELS` (ficha-ai.ts), `CLIENT_FIELDS` (`app/_actions/whatsapp/client-info.ts`) e `FichaTab` (CopilotPanel) mudam juntos. A ficha grava no `User` com o mesmo nome de coluna: coluna `String?` (nunca data/número; `currentFields` faz `.trim()`) e migration ANTES do deploy. Receita no mapa.

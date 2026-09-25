@@ -641,7 +641,8 @@ model WhatsAppContact {
   // ainda não tem User vinculado. Vira User no "Adicionar cliente".
   clientDraft       Json?
   // Documentos pessoais anexados na ficha antes do contato virar cliente:
-  // [{ key, name, uploadedAt }]. Migram para Document real no "Adicionar cliente".
+  // [{ key, name, uploadedAt }]. Migram para Document real quando o contato é
+  // vinculado a um card (telefone ao abrir a conversa ou "Adicionar cliente").
   draftDocuments    Json?
   // Atribuição de origem (Click-to-WhatsApp ads): preenchido na PRIMEIRA
   // mensagem que chega com objeto `referral` da Meta e nunca sobrescrito

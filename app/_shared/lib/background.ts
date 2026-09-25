@@ -16,6 +16,11 @@ import { waitUntil } from "@vercel/functions";
 // NUNCA use para o que precisa estar gravado quando a tela recebe a resposta:
 // log de `move` e histórico do card (createLog do kanban) e log de IA com
 // metadata.usage continuam com await no caminho da ação.
+//
+// Exceção: a chamada de IA INTEIRA pode vir para cá quando a tela não espera o
+// resultado (resumo de vínculo no card, summarizeConversationToCard). O log
+// com usage continua com await DENTRO da task, logo depois da própria
+// chamada — é o waitUntil que garante que ele seja gravado.
 
 /**
  * Dispara `task` na hora (sem await) e pede à Vercel para esperar por ela.

@@ -9,13 +9,17 @@ import { createLog } from '@/app/_shared/lib/log';
 import { summarizeConversationToCard } from '@/app/_shared/lib/whatsapp/assist';
 import { hashPassword } from '@/app/_shared/lib/password';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
+import { runAfterResponse } from '@/app/_shared/lib/background';
+import { parseDraftDocuments, planDraftMigration } from '@/app/_shared/utils/draft-documents';
 
 // Ficha do cliente dentro do atendimento de WhatsApp.
 //
 // O vínculo contato ↔ cliente é pelo telefone: se já existe um User com o
 // mesmo número, a ficha lê/edita direto o cadastro. Se não existe, os campos
 // ficam salvos como rascunho na conversa (whatsapp_contacts.clientDraft) até
-// alguém clicar em "Adicionar cliente", que cria o User de verdade.
+// alguém clicar em "Adicionar cliente", que cria o User de verdade. Os
+// documentos do rascunho (draftDocuments) viram Document do card em qualquer
+// vínculo: pelo telefone (getClientInfo) ou pelo "Adicionar cliente".
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -63,6 +67,14 @@ export interface ClientInfoResult {
   aiFields: string[];
   /** Hospital citado pelo cliente — a IA nunca preenche o select. */
   hospitalHint: string | null;
+  /**
+   * A conversa acabou de ser vinculada ao card pelo telefone nesta chamada.
+   * A aba Arquivos pode ter carregado antes (ainda como rascunho): o inbox
+   * dispara 'wa-docs-changed' para ela recarregar com os documentos do card.
+   */
+  justLinked?: boolean;
+  /** Rascunhos de documento que viraram Document do card nesta chamada. */
+  migratedDrafts?: number;
 }
 
 /**
@@ -133,22 +145,43 @@ export async function findWhatsAppContactForCard(userId: string): Promise<string
 
 /** Carrega a ficha: do User vinculado (cadastrado) ou do rascunho da conversa. */
 export async function getClientInfo(contactId: string): Promise<ClientInfoResult> {
-  await requireTeamMember();
+  const me = await requireTeamMember();
 
   const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
   if (!contact) throw new Error('Contato não encontrado.');
 
   // Resolve o vínculo: userId já salvo ou match por telefone (e memoriza).
   let userId = contact.userId;
+  let justLinked = false;
   if (!userId) {
     const found = await findUserByPhone(contact.phone);
     if (found) {
-      userId = found.id;
-      await db.whatsAppContact.update({ where: { id: contactId }, data: { userId } });
-      // Acabou de VINCULAR a conversa a um card → resumo automático do
-      // histórico vira comentário no card (best-effort, nunca quebra a ficha).
-      const me = await requireTeamMember();
-      await summarizeConversationToCard(contactId, { userId }, me);
+      // Vínculo atômico: duas abas abrindo a mesma conversa juntas só vinculam
+      // (e resumem) uma vez. Quem perde a corrida segue como cadastrado, sem
+      // resumo novo, com o vínculo que ficou gravado.
+      const link = await db.whatsAppContact.updateMany({
+        where: { id: contactId, userId: null },
+        data: { userId: found.id },
+      });
+      if (link.count === 1) {
+        userId = found.id;
+        justLinked = true;
+        // Acabou de VINCULAR a conversa a um card → resumo automático do
+        // histórico vira comentário no card. Sai do caminho da resposta: o
+        // Next 14 serializa as server actions da aba, então a ficha, os links
+        // das mídias e o envio esperavam os 2-4 s da IA. runAfterResponse usa
+        // o waitUntil: a Vercel não congela a função antes de o resumo gravar
+        // o comentário e o log wa_summary com metadata.usage (a IA já foi paga
+        // no micro; sem o log o gasto sumia do Canto da IA).
+        runAfterResponse('resumo de vínculo', () =>
+          summarizeConversationToCard(contactId, { userId: found.id }, me));
+      } else {
+        const fresh = await db.whatsAppContact.findUnique({
+          where: { id: contactId },
+          select: { userId: true },
+        });
+        userId = fresh?.userId ?? null;
+      }
     }
   }
 
@@ -158,6 +191,13 @@ export async function getClientInfo(contactId: string): Promise<ClientInfoResult
       select: Object.fromEntries([...CLIENT_FIELDS, 'cardNumber'].map((f) => [f, true])) as Record<string, true>,
     });
     if (user) {
+      // Documento anexado na ficha antes de o card existir: vira arquivo do
+      // card no vínculo de agora e, para contato vinculado com rascunho preso
+      // (vínculo por telefone antigo não migrava), na próxima abertura. O
+      // parse evita abrir transação em toda abertura sem rascunho.
+      const migratedDrafts = parseDraftDocuments(contact.draftDocuments).length
+        ? await migrateDraftDocuments(contactId, userId)
+        : 0;
       const u = user as unknown as Record<string, string | null> & { cardNumber?: number | null };
       const fields: ClientInfoFields = {};
       for (const key of CLIENT_FIELDS) fields[key] = u[key] ?? null;
@@ -177,6 +217,8 @@ export async function getClientInfo(contactId: string): Promise<ClientInfoResult
         fields,
         aiFields: aiFieldList(contact.aiFilledFields),
         hospitalHint: contact.hospitalHint ?? null,
+        ...(justLinked ? { justLinked } : {}),
+        ...(migratedDrafts ? { migratedDrafts } : {}),
       };
     }
     // User apontado não existe mais → limpa o vínculo e cai pro rascunho.
@@ -280,13 +322,19 @@ export async function addClientFromConversation(contactId: string, input: Client
   // Evita duplicar: se apareceu um cadastro com esse telefone, só vincula.
   const existing = await findUserByPhone(contact.phone);
   if (existing) {
-    await migrateDraftDocuments(contact, existing.id);
-    await db.whatsAppContact.update({
-      where: { id: contactId },
+    // Mesmo vínculo atômico do getClientInfo: se outra aba vinculou pelo
+    // telefone no meio, ela já migrou os rascunhos e pediu o resumo.
+    const link = await db.whatsAppContact.updateMany({
+      where: { id: contactId, userId: null },
       data: { userId: existing.id, clientDraft: Prisma.DbNull },
     });
-    // Vinculou ao cadastro existente → resumo da conversa no card.
-    await summarizeConversationToCard(contactId, { userId: existing.id }, me);
+    if (link.count === 1) {
+      await migrateDraftDocuments(contactId, existing.id);
+      // Vinculou ao cadastro existente → resumo da conversa no card, depois
+      // da resposta (mesmo motivo do getClientInfo: a IA segurava a fila).
+      runAfterResponse('resumo de vínculo', () =>
+        summarizeConversationToCard(contactId, { userId: existing.id }, me));
+    }
     // Vincular a um card também conta como lead qualificado pra Meta.
     void reportLeadStageToMeta(contactId, 'qualificado');
     return saveClientInfo(contactId, input);
@@ -322,7 +370,7 @@ export async function addClientFromConversation(contactId: string, input: Client
     },
   });
 
-  await migrateDraftDocuments(contact, user.id);
+  await migrateDraftDocuments(contactId, user.id);
 
   // Criação de card pela ficha do WhatsApp também conta em "Criações".
   await createLog({
@@ -339,8 +387,10 @@ export async function addClientFromConversation(contactId: string, input: Client
   });
 
   // Card recém-criado a partir da conversa → resumo automático do histórico
-  // como primeiro comentário (best-effort).
-  await summarizeConversationToCard(contactId, { userId: user.id }, me);
+  // como primeiro comentário (best-effort, depois da resposta: o card e a
+  // ficha aparecem sem esperar a IA).
+  runAfterResponse('resumo de vínculo', () =>
+    summarizeConversationToCard(contactId, { userId: user.id }, me));
 
   // Entrou no kanban = lead qualificado de fato → devolve pra Meta (API de
   // Conversões). O dedupe evita duplicar se a IA/atendente já reportou.
@@ -349,15 +399,53 @@ export async function addClientFromConversation(contactId: string, input: Client
   return getClientInfo(contactId);
 }
 
-/** Move os documentos anexados como rascunho na conversa pro cadastro real do cliente. */
-async function migrateDraftDocuments(
-  contact: { id: string; draftDocuments: unknown },
-  userId: string,
-): Promise<void> {
-  const drafts = (contact.draftDocuments as { key: string; name: string }[]) ?? [];
-  if (!drafts.length) return;
-  await db.document.createMany({
-    data: drafts.map((d) => ({ userId, key: d.key, name: d.name, category: inferCategory(d.name) })),
-  });
-  await db.whatsAppContact.update({ where: { id: contact.id }, data: { draftDocuments: Prisma.DbNull } });
+/**
+ * Move os documentos anexados como rascunho na conversa pro cadastro real do
+ * cliente. Devolve quantos rascunhos saíram do contato (0 = nada a migrar,
+ * outra chamada já migrou, ou falhou).
+ *
+ * Reivindica o rascunho numa transação com a linha do contato travada (FOR
+ * UPDATE): duas abas abrindo a mesma conversa, ou a ficha e o "Adicionar
+ * cliente" juntos, esperam uma pela outra, e a segunda já lê o rascunho vazio.
+ * Ler o JSON fora da trava deixava as duas criarem os mesmos documentos.
+ *
+ * Best-effort: se falhar, a transação desfaz tudo (o rascunho continua lá) e a
+ * próxima abertura da conversa tenta de novo; a ficha nunca quebra por isso.
+ */
+async function migrateDraftDocuments(contactId: string, userId: string): Promise<number> {
+  try {
+    return await db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ draftDocuments: unknown }[]>(Prisma.sql`
+        SELECT "draftDocuments" FROM whatsapp_contacts WHERE id = ${contactId} FOR UPDATE
+      `);
+      const drafts = parseDraftDocuments(rows[0]?.draftDocuments);
+      if (!drafts.length) return 0;
+
+      // Sem filtro de deletedAt de propósito: key na lixeira do card também
+      // conta (é restaurada em vez de ganhar uma 2ª linha). Uma linha por key
+      // para o mesmo arquivo não aparecer duas vezes na aba Arquivos do card.
+      const existing = await tx.document.findMany({
+        where: { userId, key: { in: drafts.map((d) => d.key) } },
+        select: { id: true, key: true, deletedAt: true },
+      });
+      const plan = planDraftMigration(drafts, existing);
+
+      if (plan.create.length) {
+        await tx.document.createMany({
+          data: plan.create.map((d) => ({ userId, key: d.key, name: d.name, category: inferCategory(d.name) })),
+        });
+      }
+      if (plan.restoreIds.length) {
+        await tx.document.updateMany({
+          where: { id: { in: plan.restoreIds } },
+          data: { deletedAt: null, deletedBy: null },
+        });
+      }
+      await tx.whatsAppContact.update({ where: { id: contactId }, data: { draftDocuments: Prisma.DbNull } });
+      return drafts.length;
+    });
+  } catch (err) {
+    console.error('[WHATSAPP FICHA] Falha ao migrar rascunhos de documentos para o card:', contactId, err);
+    return 0;
+  }
 }
