@@ -37,7 +37,8 @@ import {
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, setConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
 import {
-  inboxListState, patchConversationList, patchConversationRow, sameTags, withTag, type ConversationPatch,
+  inboxListState, manualUnreadPatch, patchConversationList, patchConversationRow, readPatch, revertPatch, sameTags,
+  withTag, type ConversationPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
@@ -534,12 +535,6 @@ export function WhatsAppInbox() {
   }, [activeContactId, mutateMessages, scheduleConversationsRefresh]);
   useChatStream(onStream);
 
-  // Abrir conversa zera o badge de não-lida.
-  useEffect(() => {
-    if (!active?.unread || !active.id) return;
-    markConversationRead(active.id).then(() => refreshConversations()).catch(() => { });
-  }, [active?.id, active?.unread, messages.length, refreshConversations]);
-
   const displayMessages = useMemo(
     () => [...messages, ...pending.filter((p) => p.contactId === activeContactId)],
     [messages, pending, activeContactId],
@@ -719,12 +714,32 @@ export function WhatsAppInbox() {
     !active.lastInboundAt || Date.now() - new Date(active.lastInboundAt).getTime() > WINDOW_24H_MS
   );
 
-  async function runAction(fn: () => Promise<void>, okMsg: string) {
+  // Com `opts` (ação otimista): o patch entra no clique, o toast sai quando o
+  // servidor confirma e a lista NÃO é recarregada — as outras abas veem pelo
+  // hash. `base` é a conversa capturada ANTES do clique (antes até de fechar a
+  // thread, como no "Marcar como não lida"), para o rollback não depender do
+  // `active` do render. Erro de action chega mascarado em produção: por isso
+  // a mensagem própria. Sem `opts`, segue o caminho antigo (espera a recarga).
+  async function runAction(
+    fn: () => Promise<void>,
+    okMsg: string,
+    opts?: {
+      base: WhatsAppConversationDTO;
+      optimistic: Partial<WhatsAppConversationDTO>;
+      errorMsg: string;
+    },
+  ) {
+    if (opts) patchConversation(opts.base.contactId, opts.optimistic);
     try {
       await fn();
-      await refreshConversations();
+      if (!opts) await refreshConversations();
       toast.success(okMsg);
     } catch (e) {
+      if (opts) {
+        patchConversation(opts.base.contactId, revertPatch(opts.base, opts.optimistic));
+        toast.error(opts.errorMsg);
+        return;
+      }
       toast.error(e instanceof Error ? e.message : 'Falha na operação.');
     }
   }
@@ -742,6 +757,28 @@ export function WhatsAppInbox() {
     },
     [patchConversations],
   );
+
+  // Abrir conversa zera o badge de não-lida — só quando há o que ler.
+  // Auditoria de 24/09/2026: o effect antigo dependia de messages.length e
+  // recarregava a lista inteira depois de cada markRead; como "não lida" contava
+  // mensagem de SAÍDA, todo envio do atendente virava markRead do próprio autor
+  // + recarga (~19% das cargas da lista). Agora "não lida" é só por mensagem
+  // recebida (computeUnread), o badge some por patch local e a lista não
+  // recarrega. A chave (conversa + última recebida + marcador manual) garante UM
+  // markRead por inbound novo: a lista percebe o inbound pelo hash (≤15 s) e a
+  // chave muda. Falhou → a chave zera e o próximo reload tenta de novo.
+  const readKeyRef = useRef<string | null>(null);
+  useEffect(() => { readKeyRef.current = null; }, [activeContactId]);
+  const readKey = active?.unread ? `${active.id}|${active.lastInboundAt ?? ''}|${active.manualUnread}` : null;
+  const readConversationId = active?.id;
+  const readContactId = active?.contactId;
+  useEffect(() => {
+    if (!readKey || !readConversationId || !readContactId) return;
+    if (readKeyRef.current === readKey) return;
+    readKeyRef.current = readKey;
+    patchConversation(readContactId, readPatch(new Date().toISOString()));
+    markConversationRead(readConversationId).catch(() => { readKeyRef.current = null; });
+  }, [readKey, readConversationId, readContactId, patchConversation]);
 
   // Gravações de tag em voo, por `${conversationId}:${tagId}`: chaveado por
   // conversa para trocar de conversa no meio de uma gravação não travar a
@@ -1679,19 +1716,31 @@ export function WhatsAppInbox() {
                   <DropdownMenuLabel className="text-xs text-gray-400">Conversa</DropdownMenuLabel>
                   {/* Abriu sem querer a conversa de outro atendente? Marcar como
                       não lida devolve o badge e FECHA a thread (senão o
-                      auto-read remarcaria como lida na hora). */}
+                      auto-read remarcaria como lida na hora). Os dois itens
+                      mudam a lista no clique (patch local), sem recarregá-la. */}
                   <DropdownMenuItem
                     onClick={() => {
-                      const id = active.id;
+                      const base = active;
                       setActiveContactId(null);
-                      runAction(() => markConversationUnread(id), 'Conversa marcada como não lida.');
+                      void runAction(() => markConversationUnread(base.id), 'Conversa marcada como não lida.', {
+                        base,
+                        optimistic: manualUnreadPatch(),
+                        errorMsg: 'Não foi possível marcar como não lida. Recarregue a página (F5) e tente de novo.',
+                      });
                     }}
                     className="text-base"
                   >
                     <MessageCircle className="mr-2 h-3.5 w-3.5 text-emerald-600" /> Marcar como não lida
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => runAction(() => markConversationRead(active.id), 'Conversa marcada como lida.')}
+                    onClick={() => {
+                      const base = active;
+                      void runAction(() => markConversationRead(base.id), 'Conversa marcada como lida.', {
+                        base,
+                        optimistic: readPatch(new Date().toISOString()),
+                        errorMsg: 'Não foi possível marcar como lida. Recarregue a página (F5) e tente de novo.',
+                      });
+                    }}
                     className="text-base"
                   >
                     <CheckCheck className="mr-2 h-3.5 w-3.5 text-sky-500" /> Marcar como lida

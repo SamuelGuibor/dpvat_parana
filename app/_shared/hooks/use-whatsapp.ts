@@ -250,12 +250,16 @@ export function useWhatsAppMessages(contactId: string | null) {
  * Total de conversas não lidas (badge das abas). Usa a action de CONTAGEM
  * leve em vez de hidratar as 200 conversas — o badge montava a query mais
  * pesada do app a cada 15s mesmo com o inbox fechado.
+ *
+ * Sem recarga no foco (auditoria de 24/09/2026): server actions saem numa
+ * fila serial por aba, e voltar à janela enfileirava esta contagem na frente
+ * do primeiro clique. O poll de 30 s basta para o badge.
  */
 export function useWhatsAppUnread() {
   const { data } = useSWR<number>(
     'whatsapp-unread-count',
     () => countWhatsAppUnread(),
-    { refreshInterval: 30_000, revalidateOnFocus: true, shouldRetryOnError: false },
+    { refreshInterval: 30_000, revalidateOnFocus: false, shouldRetryOnError: false },
   );
   return data ?? 0;
 }

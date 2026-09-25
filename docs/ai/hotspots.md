@@ -6,7 +6,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 | # | Arquivo | Linhas | Mapa de domínio |
 |---|---|---|---|
-| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 2889 | whatsapp-bot |
+| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 2938 | whatsapp-bot |
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
@@ -21,27 +21,27 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 ---
 
-## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 2889 linhas
+## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 2938 linhas
 Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com envio otimista/mídia/reações, coluna Copiloto e CardDialog do cliente.
 
-- **L1-69** imports (`fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`).
-- **L70-167** helpers de módulo: `WINDOW_24H_MS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
-- **L168-1883 `WhatsAppInbox()`** (componente principal):
-  - L168-322 estado + filtros: `loaded`/`isLoading`/`error` da lista, tags (`allTags` undefined = carregando, `tagsFailed`), busca no servidor (`searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
-  - L322-426 larguras redimensionáveis (`startResize`), `reloadTags`, pastas do rail (`ACTIVE_FOLDERS`, `CLOSED_FOLDERS`, `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos.
-  - L426-571 conversa aberta: `jumpToMessage`, notificação→abre conversa, `listActive`/`active` (hidratação sob demanda; `openingActive` = "Abrindo conversa…"), `cardStub`, SSE `onStream`, `displayMessages`, scroll/prepend + `handleLoadOlder`.
-  - L572-721 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups`, `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `listState` (esqueleto/erro/vazia), `windowExpired`.
-  - L722-971 handlers: `runAction`, `patchConversation` (patch local na lista + busca + `fetchedActive`), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `handleSendText`, `handleSendMedia`, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
-  - L972-1510 JSX da **lista**: rail (L985), busca + novo contato (L1041), pills de leitura (L1066), data de entrada (L1106), número (L1159), coluna do Kanban (L1200), tags (L1247), equipe (L1290), área rolável (L1369: esqueleto / erro com "Tentar novamente" / "Nenhuma conversa ainda" / seções por pasta), alça de resize (L1503).
-  - L1511-1828 JSX da **thread**: "Abrindo conversa…" ou vazio, cabeçalho (L1527: voltar, atalho "Card #N" L1564, menu de tags L1579 com spinner por item, Encerrar/Alterar desfecho L1622, toggle Copiloto, mais ações L1670), carregar histórico + spinner da 1ª carga (L1718), composer / número desativado somente leitura (L1780).
-  - L1829-1883 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
-- **L1885-1952** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
-- **L1953-2126** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
-- **L2127-2176** estados de carga: `ConversationListSkeleton` (8 linhas `animate-pulse`), `TagMenuStatus` (carregando / erro com "Tentar novamente" / nenhuma tag, nos dois menus de tag).
-- **L2177-2349** `ConversationGroup` (item/seção da lista).
-- **L2350-2555** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
-- **L2556-2865** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
-- **L2866-2889** `MsgAction`, `HeaderButton`.
+- **L1-70** imports (`fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`readPatch`/`manualUnreadPatch`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`).
+- **L71-168** helpers de módulo: `WINDOW_24H_MS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
+- **L169-1935 `WhatsAppInbox()`** (componente principal):
+  - L169-323 estado + filtros: `loaded`/`isLoading`/`error` da lista, tags (`allTags` undefined = carregando, `tagsFailed`), busca no servidor (`searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
+  - L323-427 larguras redimensionáveis (`startResize`), `reloadTags`, pastas do rail (`ACTIVE_FOLDERS`, `CLOSED_FOLDERS`, `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos.
+  - L427-566 conversa aberta: `jumpToMessage`, notificação→abre conversa, `listActive`/`active` (hidratação sob demanda; `openingActive` = "Abrindo conversa…"), `cardStub`, SSE `onStream`, `displayMessages`, scroll/prepend + `handleLoadOlder`.
+  - L567-722 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups`, `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `listState` (esqueleto/erro/vazia), `windowExpired`.
+  - L723-1008 handlers: `runAction` (com `opts` = patch otimista + rollback, sem recarga), `patchConversation` (patch local na lista + busca + `fetchedActive`), leitura ao abrir (`readKeyRef` + `readPatch`, um `markConversationRead` por inbound novo, sem recarga), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `handleSendText`, `handleSendMedia`, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
+  - L1009-1547 JSX da **lista**: rail (L1022), busca + novo contato (L1078), pills de leitura (L1103), data de entrada (L1143), número (L1196), coluna do Kanban (L1237), tags (L1284), equipe (L1327), área rolável (L1406: esqueleto / erro com "Tentar novamente" / "Nenhuma conversa ainda" / seções por pasta), alça de resize (L1540).
+  - L1548-1877 JSX da **thread**: "Abrindo conversa…" ou vazio, cabeçalho (L1564: voltar, atalho "Card #N" L1601, menu de tags L1616 com spinner por item, Encerrar/Alterar desfecho L1659, toggle Copiloto, mais ações L1707 com lida/não lida otimistas), carregar histórico + spinner da 1ª carga (L1767), composer / número desativado somente leitura (L1829).
+  - L1878-1935 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
+- **L1937-2001** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
+- **L2002-2175** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
+- **L2176-2225** estados de carga: `ConversationListSkeleton` (8 linhas `animate-pulse`), `TagMenuStatus` (carregando / erro com "Tentar novamente" / nenhuma tag, nos dois menus de tag).
+- **L2226-2398** `ConversationGroup` (item/seção da lista).
+- **L2399-2604** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
+- **L2605-2914** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
+- **L2915-2938** `MsgAction`, `HeaderButton`.
 
 ## 2. `app/nova-dash/KanbanBoard.tsx` — 2407 linhas
 Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, CRUD de etiquetas, arquivar/mover/excluir.

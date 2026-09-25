@@ -3,7 +3,7 @@
 // para a prévia montada no navegador bater com a que vem do banco.
 //
 // Sem "use server" e sem banco: só tipos do DTO, para os testes rodarem puros
-// (tests/whatsapp-inbox.test.ts).
+// (tests/whatsapp-inbox.test.ts e tests/whatsapp-unread.test.ts).
 
 import type { WhatsAppConversationDTO } from '@/app/_actions/whatsapp/conversations';
 
@@ -120,6 +120,50 @@ export function revertPatch<T extends object>(original: T, patch: Partial<T>): P
   const out: Partial<T> = {};
   for (const key of Object.keys(patch) as (keyof T)[]) out[key] = original[key];
   return out;
+}
+
+/* ---------- não lida = o cliente mandou algo que ninguém viu ---------- */
+
+// Por que existe (auditoria de 24/09/2026): `unread` era "lastMessageAt depois
+// da leitura", e lastMessageAt também anda com mensagem de SAÍDA (envio do
+// atendente e do bot). A conversa em que o atendente acabou de responder
+// voltava a ficar não lida: 86% dos envios humanos disparavam o markRead do
+// próprio autor e, com ele, uma recarga da lista inteira. Agora "não lida" usa
+// a MESMA contagem do badge verde (recebidas, sem nota interna, depois da
+// leitura efetiva) — o badge do topo (countWhatsAppUnread) segue a mesma regra
+// em SQL. A regra só muda o que é "não lida"; quais conversas cada contador
+// soma continua igual.
+
+/** Campos da conversa que dizem se ela está não lida (servidor e patch local). */
+type UnreadFields = Pick<WhatsAppConversationDTO, 'unread' | 'unreadCount' | 'manualUnread' | 'lastReadAt'>;
+
+/**
+ * Não lida a partir da leitura efetiva e da contagem de recebidas depois dela.
+ * `readAt` = época (1970) é a sentinela de "Marcar como não lida"
+ * (markConversationUnread): vale como não lida mesmo sem mensagem nova, e a
+ * lista mostra o marcador próprio em vez da contagem. Conversa nunca lida e
+ * sem nenhuma recebida (só template/bot de saída) NÃO é não lida.
+ */
+export function computeUnread(s: { readAt: Date | null; unreadCount: number }): {
+  unread: boolean;
+  manualUnread: boolean;
+} {
+  const manualUnread = s.readAt?.getTime() === 0;
+  return { manualUnread, unread: manualUnread || s.unreadCount > 0 };
+}
+
+/**
+ * Patch local de "lida" (abrir a conversa ou "Marcar como lida"): zera o badge
+ * na hora, sem esperar a action nem recarregar a lista. `nowIso` vem de quem
+ * chama, para o teste ser determinístico.
+ */
+export function readPatch(nowIso: string): UnreadFields {
+  return { unread: false, unreadCount: 0, manualUnread: false, lastReadAt: nowIso };
+}
+
+/** Patch local de "Marcar como não lida": o mesmo que o servidor grava (época). */
+export function manualUnreadPatch(): Pick<UnreadFields, 'unread' | 'manualUnread' | 'lastReadAt'> {
+  return { unread: true, manualUnread: true, lastReadAt: new Date(0).toISOString() };
 }
 
 /* ---------- estado da lista (carregando / erro / vazia) ---------- */

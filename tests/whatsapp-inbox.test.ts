@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   inboxListState,
+  manualUnreadPatch,
   mediaTypeLabel,
   patchConversationList,
   patchConversationRow,
+  readPatch,
   revertPatch,
   sameTags,
   withTag,
@@ -129,6 +131,46 @@ describe("revertPatch", () => {
     const rollback = revertPatch(original, { status: "human", tags: [URG, VIP] });
     expect(rollback).toEqual({ status: "queued", tags: [URG] });
     expect(Object.keys(rollback).sort()).toEqual(["status", "tags"]);
+  });
+});
+
+// Leitura sem recarregar a lista (auditoria de 24/09/2026): abrir a conversa
+// zera o badge por patch local e o markRead não dispara mais a recarga.
+describe("readPatch / manualUnreadPatch", () => {
+  type ReadRow = {
+    contactId: string; lastMessageAt: string; unread: boolean; unreadCount: number;
+    manualUnread: boolean; lastReadAt: string | null; status: string;
+  };
+  const naoLida: ReadRow = {
+    contactId: "a", lastMessageAt: "2026-09-25T12:00:00.000Z", unread: true, unreadCount: 4,
+    manualUnread: false, lastReadAt: null, status: "queued",
+  };
+
+  it("readPatch zera unreadCount/manualUnread e grava lastReadAt", () => {
+    const p = readPatch("2026-09-25T12:30:00.000Z");
+    expect(p).toEqual({ unread: false, unreadCount: 0, manualUnread: false, lastReadAt: "2026-09-25T12:30:00.000Z" });
+    const out = patchConversationRow(naoLida, p);
+    expect(out).toEqual({ ...naoLida, ...p });
+    // Não mexe na posição da conversa nem no resto da linha.
+    expect(out.lastMessageAt).toBe(naoLida.lastMessageAt);
+    expect(out.status).toBe("queued");
+  });
+
+  it("readPatch tira o marcador de 'Marcar como não lida'", () => {
+    const manual = patchConversationRow(naoLida, manualUnreadPatch());
+    expect(manual.manualUnread).toBe(true);
+    expect(patchConversationRow(manual, readPatch("2026-09-25T13:00:00.000Z")).manualUnread).toBe(false);
+  });
+
+  it("manualUnreadPatch grava a sentinela da época, como o servidor", () => {
+    expect(manualUnreadPatch()).toEqual({ unread: true, manualUnread: true, lastReadAt: "1970-01-01T00:00:00.000Z" });
+  });
+
+  it("rollback do 'Marcar como não lida' volta exatamente à linha original", () => {
+    const optimistic = manualUnreadPatch();
+    const lida = patchConversationRow(naoLida, readPatch("2026-09-25T12:30:00.000Z"));
+    const apos = patchConversationRow(lida, optimistic);
+    expect(patchConversationRow(apos, revertPatch(lida, optimistic))).toEqual(lida);
   });
 });
 

@@ -9,7 +9,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
-import { LIST_PREVIEW_MAX_CHARS, mediaTypeLabel } from '@/app/_shared/utils/whatsapp-inbox';
+import { LIST_PREVIEW_MAX_CHARS, computeUnread, mediaTypeLabel } from '@/app/_shared/utils/whatsapp-inbox';
 import { CLOSE_CATEGORY_LABELS, CLOSE_CATEGORY_OPTIONS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
@@ -48,25 +48,42 @@ async function requireTeamMember(): Promise<{ id: string; name: string }> {
  * Contagem leve de conversas não lidas para o badge das abas. Não hidrata
  * contato/tags/preview — o poll do badge rodava a query mais pesada do app
  * (200 conversas + 3 includes) a cada 15s só para exibir um número.
+ *
+ * Mesma regra de `computeUnread` na lista (auditoria de 24/09/2026): não lida
+ * = "Marcar como não lida" (lastReadAt na época) OU mensagem RECEBIDA (sem
+ * nota interna) depois da leitura efetiva de qualquer atendente. Antes era
+ * lastMessageAt > leitura, que contava o envio do próprio atendente e do bot,
+ * num findMany de 500 sem orderBy (conversas abertas fora do corte sumiam do
+ * número). Conta só as NÃO encerradas — o badge do topo = linhas com bolinha
+ * verde nas pastas abertas. Roda a cada 30 s em toda aba da /nova-dash:
+ * EXPLAIN de 25/09/2026 com ~380 abertas = ~5 ms, EXISTS pelo índice
+ * (contactId, createdAt), sem seq scan em whatsapp_messages.
+ *
+ * `TIMESTAMP 'epoch'` (e não to_timestamp(0)): as colunas são timestamp SEM
+ * fuso, e a igualdade da sentinela não pode depender do TimeZone da sessão.
  */
 export async function countWhatsAppUnread(): Promise<number> {
   await requireTeamMember();
-  const rows = await db.whatsAppConversation.findMany({
-    where: { status: { not: 'closed' } },
-    select: {
-      lastMessageAt: true,
-      lastReadAt: true,
-      reads: { orderBy: { lastReadAt: 'desc' }, take: 1, select: { lastReadAt: true } },
-    },
-    take: 500,
-  });
-  return rows.filter((c) => {
-    const anyReadAt = c.reads[0]?.lastReadAt ?? null;
-    const effectiveReadAt = anyReadAt && c.lastReadAt
-      ? (anyReadAt > c.lastReadAt ? anyReadAt : c.lastReadAt)
-      : anyReadAt ?? c.lastReadAt;
-    return !effectiveReadAt || c.lastMessageAt > effectiveReadAt;
-  }).length;
+  const rows = await db.$queryRaw<{ n: number }[]>`
+    SELECT count(*)::int AS n
+    FROM whatsapp_conversations c
+    CROSS JOIN LATERAL (
+      SELECT GREATEST(c."lastReadAt", MAX(r."lastReadAt")) AS read_at
+      FROM whatsapp_conversation_reads r
+      WHERE r."conversationId" = c.id
+    ) rr
+    WHERE c.status <> 'closed'
+      AND (
+        rr.read_at = TIMESTAMP 'epoch'
+        OR EXISTS (
+          SELECT 1
+          FROM whatsapp_messages m
+          WHERE m."contactId" = c."contactId" AND m.direction = 'in' AND m.internal = false
+            AND m."createdAt" > COALESCE(rr.read_at, TIMESTAMP 'epoch')
+        )
+      )
+  `;
+  return Number(rows[0]?.n ?? 0);
 }
 
 /**
@@ -129,6 +146,9 @@ export interface WhatsAppConversationDTO {
   // Provocações do ciclo de recuperação já enviadas (0-5) — exibido quando
   // status="standby" como "1ª de 5".
   recoveryAttempts: number;
+  // Não lida = o cliente mandou algo que ninguém da equipe viu (unreadCount >
+  // 0) ou alguém usou "Marcar como não lida". Mensagem de SAÍDA não conta
+  // (regra em computeUnread, app/_shared/utils/whatsapp-inbox.ts).
   unread: boolean;
   // Quantas mensagens RECEBIDAS desde a última leitura de qualquer atendente —
   // o badge verde de contagem (estilo WhatsApp) na lista.
@@ -343,6 +363,11 @@ async function loadConversations(
     // Leitura efetiva: a mais recente de QUALQUER atendente, com o lastReadAt
     // global (legado) como fallback — já resolvida no SQL.
     const effectiveReadAt = readAtByContact.get(c.contactId) ?? null;
+    const unreadCount = unreadCountByContact.get(c.contactId) ?? 0;
+    // Não lida só por mensagem RECEBIDA (a mesma contagem do badge verde) ou
+    // pela sentinela de "Marcar como não lida". Era lastMessageAt > leitura,
+    // e o envio do próprio atendente/bot reacendia a conversa (ver computeUnread).
+    const { unread, manualUnread } = computeUnread({ readAt: effectiveReadAt, unreadCount });
     // Ficha do caso: do User quando o contato já virou cliente, senão do
     // rascunho coletado no atendimento (clientDraft).
     const ficha: DraftFichaShape | null = c.contact.userId
@@ -381,11 +406,11 @@ async function loadConversations(
       caseDataAcidente: ficha?.data_acidente?.trim() || null,
       hasCpf: !!ficha?.cpf?.trim(),
       recoveryAttempts: c.recoveryAttempts,
-      unread: !effectiveReadAt || c.lastMessageAt > effectiveReadAt,
-      unreadCount: unreadCountByContact.get(c.contactId) ?? 0,
+      unread,
+      unreadCount,
       // Sentinela da época (epoch) = "Marcar como não lida" — a UI mostra um
       // marcador próprio em vez da contagem do histórico inteiro.
-      manualUnread: (effectiveReadAt?.getTime() ?? -1) === 0,
+      manualUnread,
       kanbanColumn: c.contact.userId ? columnByUserId.get(c.contact.userId) ?? null : null,
       optedOut: c.contact.optedOut,
       numberId: c.numberId,
@@ -668,45 +693,47 @@ async function syncCloseTag(conversationId: string, closeCategory: string, label
  * chat, o não-lido e as notificações do sino somem para os demais conectados.
  * De quebra, marca a última mensagem recebida como lida na Meta — o cliente
  * vê o tique azul quando alguém da equipe realmente abriu a conversa.
+ *
+ * Duas ondas em vez de 4 idas em série ao banco (auditoria de 24/09/2026): o
+ * update da conversa já devolve contactId/numberId, então o findUnique de
+ * antes saiu. Id inexistente lança (P2025) — o id vem sempre da lista.
  */
 export async function markConversationRead(conversationId: string): Promise<void> {
   const me = await requireTeamMember();
   const now = new Date();
-  const conv = await db.whatsAppConversation.findUnique({
-    where: { id: conversationId },
-    select: { contactId: true },
-  });
-  await db.whatsAppConversationRead.upsert({
-    where: { conversationId_userId: { conversationId, userId: me.id } },
-    update: { lastReadAt: now },
-    create: { conversationId, userId: me.id, lastReadAt: now },
-  });
-  // Leitura global (legado lastReadAt): garante que o badge some pra todo
-  // mundo mesmo que a linha por-atendente acima seja só a minha.
-  await db.whatsAppConversation.update({
-    where: { id: conversationId },
-    data: { lastReadAt: now },
-  });
+  const [, conv] = await Promise.all([
+    db.whatsAppConversationRead.upsert({
+      where: { conversationId_userId: { conversationId, userId: me.id } },
+      update: { lastReadAt: now },
+      create: { conversationId, userId: me.id, lastReadAt: now },
+    }),
+    // Leitura global (legado lastReadAt): garante que o badge some pra todo
+    // mundo mesmo que a linha por-atendente acima seja só a minha.
+    db.whatsAppConversation.update({
+      where: { id: conversationId },
+      data: { lastReadAt: now },
+      select: { contactId: true, numberId: true },
+    }),
+  ]);
 
   // Sino: alguém já viu o chat → apaga o alerta pendente desse contato para
   // TODOS os destinatários (não só quem abriu).
-  if (conv) {
-    await db.notification.updateMany({
-      where: { contactId: conv.contactId, read: false },
-      data: { read: true },
-    });
-  }
+  await db.notification.updateMany({
+    where: { contactId: conv.contactId, read: false },
+    data: { read: true },
+  });
 
   // Tique azul no celular do cliente (best-effort; não bloqueia a leitura).
-  if (conv) {
-    db.whatsAppMessage.findFirst({
-      where: { contactId: conv.contactId, direction: 'in', waMessageId: { not: null } },
-      orderBy: { createdAt: 'desc' },
-      select: { waMessageId: true },
-    }).then((last) => {
-      if (last?.waMessageId) return markMessageRead(last.waMessageId);
-    }).catch(() => {});
-  }
+  // Pelo número DA CONVERSA: sem numberId o getCreds cai no número default e
+  // o recibo saía pela linha errada (inclusive para a 2323 desativada). Linha
+  // inativa → getCreds devolve null e o recibo simplesmente não sai.
+  db.whatsAppMessage.findFirst({
+    where: { contactId: conv.contactId, direction: 'in', waMessageId: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    select: { waMessageId: true },
+  }).then((last) => {
+    if (last?.waMessageId) return markMessageRead(last.waMessageId, false, conv.numberId);
+  }).catch(() => {});
 }
 
 /**
