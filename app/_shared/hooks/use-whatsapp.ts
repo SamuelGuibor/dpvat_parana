@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import useSWR from 'swr';
+import useSWR, { type KeyedMutator } from 'swr';
 import {
   listWhatsAppConversations,
   getWhatsAppInboxVersion,
@@ -9,6 +9,7 @@ import {
   countWhatsAppConversationsTotal,
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
+import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
 
 // Hooks do atendimento de WhatsApp — mesmo desenho do use-chat.ts:
 // SWR com polling como rede de segurança e o SSE (useChatStream, reaproveitado
@@ -43,46 +44,113 @@ export interface WhatsAppThreadMessage {
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((r) => r.json());
 
+// Atraso do coalescer da lista: junta numa carga só os pedidos que chegam em
+// rajada (hash que mudou, eventos SSE, onDiscarded) e deixa o clique do
+// atendente entrar na fila de server actions antes da recarga pesada.
+const LIST_REFRESH_COALESCE_MS = 2_000;
+
+const isDocumentHidden = () => typeof document !== 'undefined' && document.hidden;
+
 /**
  * Lista de conversas (fila, minhas, bot, encerradas).
  *
- * 14/09/2026: a lista NÃO faz mais polling direto. O que roda a cada 15s é
- * `getWhatsAppInboxVersion` (um hash de umas 4 agregações); a lista completa
- * só é rebuscada quando o hash muda. Antes, cada aba baixava 1.000 conversas
- * hidratadas a cada 15s mesmo sem nada ter mudado. O SSE e as ações continuam
- * chamando `refreshConversations` (mutate) direto.
+ * O que roda a cada 15s é `getWhatsAppInboxVersion` (um hash de umas 4
+ * agregações); a lista completa (até 1.000 conversas hidratadas) só é
+ * rebuscada quando o hash muda, depois de uma ação, por evento SSE ou pela
+ * rede de segurança de 10 min.
+ *
+ * Auditoria de 24/09/2026 — por que o foco NÃO recarrega a lista: ~17% das
+ * cargas completas vinham só de voltar à janela (alt-tab do WhatsApp Web), na
+ * frente do primeiro clique. No foco só o hash (barato) é consultado, e ele
+ * decide. Limitação conhecida: voltar de aba OCULTA ainda recarrega a lista
+ * inteira se o hash mudou nesse meio tempo (o SWR não faz poll com a aba
+ * oculta) — resolve na sincronização por delta.
+ *
+ * Toda recarga passa pelos portões de `refresh-gate.ts`, porque o mutate() do
+ * SWR não deduplica (cada chamada descarta a busca em voo e começa outra):
+ * - `refreshConversations` (single-flight): para quem faz `await` depois de
+ *   uma mutação; nunca devolve uma carga que começou antes do pedido.
+ * - `scheduleConversationsRefresh` (coalescer de 2s sobre o single-flight):
+ *   para gatilhos automáticos (hash, SSE, onDiscarded). Com a aba oculta só
+ *   marca e recarrega uma vez quando ela volta a ficar visível.
  */
 export function useWhatsAppConversations() {
+  const mutateRef = useRef<KeyedMutator<WhatsAppConversationDTO[]> | null>(null);
+  // Criado UMA vez por montagem: se o single-flight fosse recriado a cada
+  // render, a proteção sumiria.
+  const [flight] = useState(() =>
+    createSingleFlight(() => (mutateRef.current ? mutateRef.current() : Promise.resolve(undefined))),
+  );
+  const coalescerRef = useRef<Coalescer | null>(null);
+
   const { data, mutate, isLoading, error } = useSWR<WhatsAppConversationDTO[]>(
     'whatsapp-conversations',
     () => listWhatsAppConversations(),
-    // Rede de segurança a cada 2 min caso o hash não capture alguma mudança
-    // (ex.: nome do card editado).
-    { refreshInterval: 120_000, revalidateOnFocus: true, shouldRetryOnError: false },
+    {
+      // Rede de segurança para mudança que o hash não captura (ex.: nome do
+      // card editado no Kanban). Era 2 min + foco; no expediente o hash muda
+      // em ~55% das janelas de 15s, então na prática a lista anda em segundos.
+      refreshInterval: 600_000,
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+      // Um patch local (mutate com revalidate:false) no meio de uma carga faz
+      // o SWR descartar o resultado dela — e o hash já avançou, então a
+      // mudança de OUTRA conversa só voltaria em até 10 min. Reagenda uma
+      // carga (coalescida, para não entrar em laço com cliques em sequência).
+      onDiscarded: () => coalescerRef.current?.trigger(),
+    },
   );
+  mutateRef.current = mutate;
+
+  // O coalescer tem timer e listener: nasce e morre no effect (seguro no
+  // StrictMode, que monta/desmonta/monta de novo em dev).
+  useEffect(() => {
+    const coalescer = createCoalescer({
+      delayMs: LIST_REFRESH_COALESCE_MS,
+      isHidden: isDocumentHidden,
+      run: () => flight.trigger(),
+    });
+    coalescerRef.current = coalescer;
+    const onVisibility = () => {
+      if (!document.hidden) coalescer.flushIfDirty();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      coalescer.dispose();
+      if (coalescerRef.current === coalescer) coalescerRef.current = null;
+    };
+  }, [flight]);
+
+  const refreshConversations = flight.trigger;
+  const scheduleConversationsRefresh = useCallback(() => coalescerRef.current?.trigger(), []);
+
   const { data: version } = useSWR<string>(
     'whatsapp-inbox-version',
     () => getWhatsAppInboxVersion(),
-    { refreshInterval: 15_000, revalidateOnFocus: false, shouldRetryOnError: false },
+    // Foco revalida SÓ o hash: se nada mudou, a lista fica como está.
+    { refreshInterval: 15_000, revalidateOnFocus: true, shouldRetryOnError: false },
   );
   const lastVersion = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!version) return;
-    if (lastVersion.current !== undefined && lastVersion.current !== version) mutate();
+    if (lastVersion.current !== undefined && lastVersion.current !== version) scheduleConversationsRefresh();
     lastVersion.current = version;
-  }, [version, mutate]);
-  return { conversations: data ?? [], refreshConversations: mutate, isLoading, error };
+  }, [version, scheduleConversationsRefresh]);
+
+  return { conversations: data ?? [], refreshConversations, scheduleConversationsRefresh, isLoading, error };
 }
 
 /**
  * Total REAL de conversas (badge do topo da lista do inbox). A lista é capada
- * em 200 pelo servidor — contar conversations.length "estagnava" no 200.
+ * em 1.000 (`LIST_PAGE`) pelo servidor — contar conversations.length
+ * "estagnaria" no teto. Count barato: sem recarga no foco, 5 min basta.
  */
 export function useWhatsAppConversationsTotal() {
   const { data } = useSWR<number>(
     'whatsapp-conversations-total',
     () => countWhatsAppConversationsTotal(),
-    { refreshInterval: 60_000, revalidateOnFocus: true, shouldRetryOnError: false },
+    { refreshInterval: 300_000, revalidateOnFocus: false, shouldRetryOnError: false },
   );
   return data ?? 0;
 }
@@ -91,15 +159,15 @@ export function useWhatsAppConversationsTotal() {
 const OLDER_PAGE_SIZE = 30;
 
 /**
- * Mensagens de uma conversa. As MAIS RECENTES vêm por SWR (polling 5s + SSE
+ * Mensagens de uma conversa. As MAIS RECENTES vêm por SWR (polling 8s + SSE
  * chama mutate ao chegar algo). As ANTIGAS são carregadas sob demanda em blocos
  * (loadOlder) e acumuladas no client — economiza busca no banco e mantém a
  * thread leve, sem puxar toda a conversa de uma vez.
  *
- * Polling de 5s SÓ aqui (thread ABERTA — uma por vez, rota leve por contactId):
- * é a rede de segurança quando o SSE do relay cai; 15s deixava a conversa
- * visivelmente atrasada. A LISTA de conversas continua em 15s — é a query
- * pesada, e o SSE já a atualiza via refreshConversations no evento.
+ * Polling de 8s SÓ aqui (thread ABERTA — uma por vez, rota leve por contactId):
+ * é a rede de segurança quando o SSE do relay cai (hoje ele não entrega em
+ * produção). A LISTA de conversas não faz poll próprio: só o hash de 15s, e a
+ * lista pesada recarrega quando ele muda (ver useWhatsAppConversations).
  */
 export function useWhatsAppMessages(contactId: string | null) {
   const { data, mutate, isLoading } = useSWR<{ messages: WhatsAppThreadMessage[]; hasMore?: boolean }>(

@@ -186,8 +186,8 @@ export function WhatsAppInbox() {
   const { data: session } = useSession();
   const meId = session?.user?.id ?? '';
 
-  const { conversations, refreshConversations } = useWhatsAppConversations();
-  // Total REAL no banco (a lista acima é capada em 200 pelo servidor).
+  const { conversations, refreshConversations, scheduleConversationsRefresh } = useWhatsAppConversations();
+  // Total REAL no banco (a lista acima é capada em 1.000 pelo servidor).
   const conversationsTotal = useWhatsAppConversationsTotal();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
@@ -513,12 +513,19 @@ export function WhatsAppInbox() {
   }, [clientInfo, active?.contactName]);
 
   // SSE do relay existente: eventos de WhatsApp chegam como canal "whatsapp:*".
+  // Guarda da auditoria de 24/09/2026: o relay hoje NÃO entrega em produção,
+  // mas quando voltar cada evento de QUALQUER contato recarregaria a lista
+  // inteira (1.000 conversas) em todas as abas abertas, inclusive as ocultas.
+  // Não tire esta guarda ao consertar o relay. A thread só recarrega com a aba
+  // visível (o foco já revalida a thread na volta) e a lista vai pelo
+  // coalescer (rajada = 1 carga; aba oculta só marca e carrega uma vez quando
+  // volta a ficar visível).
   const onStream = useCallback((e: ChatStreamEvent) => {
     const channelId = (e as { channelId?: string }).channelId;
     if (!channelId?.startsWith('whatsapp:')) return;
-    if (channelId === `whatsapp:${activeContactId}`) mutateMessages();
-    refreshConversations();
-  }, [activeContactId, mutateMessages, refreshConversations]);
+    if (channelId === `whatsapp:${activeContactId}` && !document.hidden) mutateMessages();
+    scheduleConversationsRefresh();
+  }, [activeContactId, mutateMessages, scheduleConversationsRefresh]);
   useChatStream(onStream);
 
   // Abrir conversa zera o badge de não-lida.
