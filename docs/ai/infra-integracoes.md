@@ -4,6 +4,7 @@
 ## TL;DR
 - Next 14.2 (App Router) na **Vercel Pro**. Banco Postgres no **Neon** via Prisma 6. Três serviços satélites no **Railway**, cada um com deploy próprio: o cérebro do bot (`CHATBOT_URL`, repo `D:\Chatbot_whatsapp`), o `docx-converter` (`DOCX_CONVERTER_URL`, `D:\docx-converter`) e o relay SSE do chat (`CHAT_RELAY_URL`, `D:\chat_site`).
 - 8 crons no `vercel.json` (horário **UTC**). Todos são GET e se autenticam por `CRON_SECRET`, via `Authorization: Bearer` ou `?secret=`.
+- As funções rodam fixas em `cle1` (Cleveland, AWS us-east-2), a mesma região do Neon, pelo `regions` do `vercel.json`. O bucket S3 fica em us-east-1.
 - **Quebra nº 1 (ativa):** o `middleware.ts` só deixa passar sem sessão as rotas em `PUBLIC_API_PREFIXES`. `/api/automations/cron/time-check`, `/api/costs/sync` e `/api/maintenance/retention` **não estão na lista**. O Vercel Cron recebe 401 ("Não autenticado") antes de a rota rodar. Isso bate com a memória "cost sync parado desde 14/09".
 - **Quebra nº 2:** o body de uma função da Vercel tem limite de **4,5 MB** em qualquer plano. Arquivo vai por URL pré-assinada do S3, nunca pelo body.
 - **Quebra nº 3:** o banco Neon tem drift de migrations, e `prisma migrate dev` propõe **resetar produção**. Use o fluxo diff → execute → resolve (ver Receitas).
@@ -11,7 +12,7 @@
 ## Onde fica
 | Arquivo/pasta | Responsabilidade | Símbolos-chave |
 |---|---|---|
-| `vercel.json` | Agenda dos crons (UTC) | `crons[]` |
+| `vercel.json` | Região das funções (`cle1`, junto do Neon) e agenda dos crons (UTC) | `regions`, `crons[]` |
 | `next.config.mjs` | Headers de segurança, tracing de arquivos lidos em runtime, pdfjs externo, next-video | `securityHeaders`, `experimental.outputFileTracingIncludes`, `serverComponentsExternalPackages`, `withNextVideo` |
 | `middleware.ts` | Gate global de sessão NextAuth e allowlists públicas | `PUBLIC_API_PREFIXES`, `PUBLIC_GET_APIS`, `PUBLIC_GET_API_PREFIXES`, `PUBLIC_PAGE_PREFIXES`, `PUBLIC_ACTION_PAGES`, `config.matcher` |
 | `app/api/whatsapp/cron/auth.ts` | Auth compartilhada dos crons | `isCronAuthorized` |
@@ -36,14 +37,14 @@
 | `.github/workflows/ci.yml` | CI em push na `main` e em PR: `npm ci`, prisma generate, tsc, lint, vitest (Node 20) | — |
 | `vitest.config.mts` | `tests/**/*.test.ts`, env `node`, alias `@` → raiz | — |
 | `railway/chat-relay.md` | Contrato e implementação de referência do relay (`/events`, `/broadcast`, `/health`) | — |
-| `vercel/pro-checklist.md` | Pendências de painel (Fluid Compute, Skew Protection, Spend, WAF, Log Drains) | — |
+| `vercel/pro-checklist.md` | Pendências de painel: região e linha de base de latência, Fluid Compute (decidido no painel), preview de branch, `DATABASE_URL` sem `pgbouncer=true`, Skew Protection, Spend, WAF, Log Drains | — |
 | `whatsapp-cron.cmd` | Dispara a rota agregadora em localhost (lê `CRON_SECRET` do ambiente) | — |
 | `knip.json` / `.eslintrc.json` / `tsconfig.json` | Dead code (`npx knip`, sem script npm), lint (`no-unused-vars` base desligada em TS) e TS strict com alias `@/*` | — |
 
 **Serviços externos → onde está o cliente**
 | Serviço | Cliente no código | Envs |
 |---|---|---|
-| Neon (Postgres) | `app/_shared/lib/prisma.ts` · consumo em `cost-providers.ts` `neonCosts` | `DATABASE_URL` (pooled), `DIRECT_URL` (CLI), `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_PRICE_*` |
+| Neon (Postgres, us-east-2) | `app/_shared/lib/prisma.ts` · consumo em `cost-providers.ts` `neonCosts` | `DATABASE_URL` (host `-pooler` com `pgbouncer=true`), `DIRECT_URL` (CLI), `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_PRICE_*` |
 | Vercel | hosting e crons · custo manual em `vercelCosts` | `CRON_SECRET` |
 | Railway: cérebro do bot | `whatsapp/bot.ts` `callBrainOnce` (`/reply`), `whatsapp/assist.ts`, `whatsapp/distill.ts`, `whatsapp/cron-tasks.ts`, `signature/core.ts` | `CHATBOT_URL`, `CHATBOT_URL_STAGING`, `CHATBOT_SECRET` |
 | Railway: docx-converter | `app/api/roteiro/route.ts`, `app/api/roteiro/download-docx/route.ts`, `app/api/procuracao/route.ts`, `app/api/doc-ia/convert/route.ts`, `signature/pdf.ts` | `DOCX_CONVERTER_URL`, `CONVERTER_API_KEY` (header `x-api-key`) |
@@ -124,6 +125,8 @@
 - **Nunca hardcode `CRON_SECRET`.** Sem a env, todo cron responde 401. Motivo: um valor antigo já vazou no git via `whatsapp-cron.cmd`.
 - **Cron é UTC e o Node da Vercel também.** Corte por dia, mês ou hora só via `app/_shared/utils/date-br.ts`. Motivo: das 21h em diante em Brasília, o UTC já está no dia seguinte.
 - **Fase de cron que manda mensagem ao cliente roda uma conversa por vez** com `createPacer` (intervalo `WA_SEND_GAP_MIN_S`/`WA_SEND_GAP_MAX_S`, padrão 7–15s) e orçamento `RUN_BUDGET_MS` = 240s. Motivo: rajada paralela é lida como spam pela Meta e estoura os 300s.
+- **As funções ficam na região do Neon (`cle1`).** Não tire `regions` do `vercel.json` nem exporte preferredRegion em rota. Motivo: fora da região cada query paga ~60-70 ms de ida e volta, e as ações fazem de 5 a 17 queries em série. O Fluid Compute é decidido no painel, não no `vercel.json` (ver `vercel/pro-checklist.md`).
+- **`pgbouncer=true` no `DATABASE_URL` custa caro:** o Prisma cerca cada operação de `BEGIN`/`DEALLOCATE ALL`/`COMMIT` (cerca de 70% das chamadas no banco). Tirar é troca de env no painel, primeiro no Preview e depois em Production com rollback se aparecer `prepared statement` no log (roteiro no `vercel/pro-checklist.md`).
 - **Não recoloque `/api/whatsapp/cron` (agregadora) no `vercel.json`.** Motivo: as fases rodariam em dobro. README e `vercel/pro-checklist.md` ainda citam essa rota e estão desatualizados.
 - **No webhook da Meta:** leia o corpo cru antes do JSON (HMAC), responda 500 só em falha de ingestão e não coloque rate limit de WAF nessa rota. Motivo: a Meta reenvia em rajada, e a assinatura já protege.
 - **O HMAC do webhook usa só o `WHATSAPP_APP_SECRET` global.** Motivo: `appSecretEnc` não é lido, então todo número novo precisa ser do mesmo App da Meta.
