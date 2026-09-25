@@ -1,5 +1,5 @@
 # Dashboards, métricas e custos — mapa para IA
-> Verificado em 2026-09-23 · Escopo: `app/_actions/analytics/**`, `app/_actions/costs/**`, `app/_actions/maintenance/**`, `app/nova-dash/StrategicDashboard.tsx`, `app/nova-dash/DateFilter.tsx`, `app/nova-dash/{KanbanFlowPanel,form-leads,FolderReport}.tsx`, `app/nova-dash/workspace/manager/**`, `app/nova-dash/workspace/costs/**`, `app/_shared/lib/{costs,cost-providers,cost-sync,ai-pricing,meta-conversions,google-sheets}.ts`, `app/_shared/utils/date-br.ts`, `app/api/{costs,logs,maintenance}`, `tests/{costs,date-br}.test.ts`
+> Verificado em 2026-09-25 · Escopo: `app/_actions/analytics/**`, `app/_actions/costs/**`, `app/_actions/maintenance/**`, `app/nova-dash/StrategicDashboard.tsx`, `app/nova-dash/DateFilter.tsx`, `app/nova-dash/{KanbanFlowPanel,form-leads,FolderReport}.tsx`, `app/nova-dash/workspace/manager/**`, `app/nova-dash/workspace/costs/**`, `app/_shared/lib/{costs,cost-providers,cost-sync,ai-pricing,meta-conversions,google-sheets}.ts`, `app/_shared/utils/date-br.ts`, `app/api/{costs,logs,maintenance}`, `tests/{costs,date-br}.test.ts`
 
 ## TL;DR
 - Três telas do Espaço de Trabalho da nova-dash (`app/nova-dash/workspace/Workspace.tsx`): **Dashboard / Gestão Estratégica** (`StrategicDashboard`: funil do bot, Fluxo de Eventos Rápidos, Origem dos leads, Fluxo do Kanban, aba Chatbot com Canto da IA; também montado direto em `app/nova-dash/page.tsx`), **Visão do Gestor** (`ManagerDashboard`: ranking/heatmap da equipe + aba de Setores) e **Custos** (`CostsPanel`: consumo por serviço, projeção do mês, crédito pré-pago e faturas manuais).
@@ -28,7 +28,7 @@
 | `app/_shared/lib/ai-pricing.ts` | Preço por modelo e custo por chamada (fonte única) | `MODEL_PRICING`, `priceFor`, `usageCostUSD`, `usageTokens`, `modelLabel` |
 | `app/_shared/lib/meta-conversions.ts` | CAPI da Meta: estágio do lead (qualificado/não) | `reportLeadStageToMeta`, `sendMetaCrmEvent`, `META_LEAD_STAGES` |
 | `app/_shared/lib/google-sheets.ts` | Append de linha em planilha (service account JWT) | `appendSheetRow`, `sheetsConfigured`, `extractSpreadsheetId` |
-| `app/_shared/utils/date-br.ts` | Fuso de Brasília — única fonte de "que dia é hoje" | `BR_TZ`, `brDayKey`, `brStartOfDay`, `brStartOfDaysAgo`, `brDayKeySeries`, `brStartOfMonth`, `brMonthIndex`, `brDaysInMonth`, `brDayOfMonth`, `brLabelFromKey`, `brLocalToDate`, `brDateTimeParts` |
+| `app/_shared/utils/date-br.ts` | Fuso de Brasília — única fonte de "que dia é hoje" | `BR_TZ`, `brDayKey`, `brStartOfDay`, `brStartOfDaysAgo`, `brDayKeySeries`, `brStartOfMonth`, `brMonthIndex`, `brDaysInMonth`, `brDayOfMonth`, `brLabelFromKey`, `brLocalToDate`, `brDateTimeParts`; horário comercial dos crons do WhatsApp (7h–21h): `isBrBusinessHour`, `nextBrBusinessSlot`, `brBusinessMinutesBetween` |
 | `app/nova-dash/StrategicDashboard.tsx` | Tela do dashboard; seletor global de número + `DateFilter` | `StrategicDashboard` |
 | `app/nova-dash/DateFilter.tsx` | Presets/calendário (roda no navegador) | `DateFilter`, `getDefaultDateRange`, `DateRange` |
 | `app/nova-dash/KanbanFlowPanel.tsx` | UI do Fluxo do Kanban; exporta CSV (`;` + BOM) e JPEG do gráfico com helpers LOCAIS | `downloadBlob`, `exportCsv`, `exportJpeg` |
@@ -120,7 +120,7 @@
 - **Ação de log nova que pode ser purgada** → só entra em `PURGEABLE_LOG_ACTIONS` se nenhuma tela lê sem limite de data.
 
 ## Testes e validação
-- `tests/date-br.test.ts`: dia/mês em BRT com instantes UTC fixos (22:39 BRT, meia-noite = 03:00Z, dia 31 às 22h). Passa em qualquer TZ da máquina; para simular produção: `TZ=UTC npx vitest run tests/date-br.test.ts`.
+- `tests/date-br.test.ts`: dia/mês em BRT com instantes UTC fixos (22:39 BRT, meia-noite = 03:00Z, dia 31 às 22h) e o horário comercial dos crons (bordas 06:59/07:00/20:59/21:00, virada de mês, equivalência com a régua antiga de offset fixo). Passa em qualquer TZ da máquina; para simular produção: `TZ=UTC npx vitest run tests/date-br.test.ts`.
 - `tests/costs.test.ts`: `parseMoneyToCents` (vírgula/ponto, arredondamento), `formatMoney`, `formatMonthLabel`, `costServiceLabel`/`costServiceColor`.
 - Sem teste para bot-funnel, analytics, cost-providers, overview e retention — valide manualmente.
 - Comandos (os mesmos do CI em `.github/workflows/ci.yml`): `npx tsc --noEmit`, `npm run lint`, `npm test`.

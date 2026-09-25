@@ -20,7 +20,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - Template só sai por `sendTemplate` (onde vale `templatesPaused`). Exija `status === "APPROVED"`.
 - Opt-out só por regex (`opt-out.ts`). A IA nunca marca `optedOut`. Mantenha o "de" obrigatório em "para de ...".
 - Não use `distinct` do Prisma com `orderBy` em `whatsapp_messages`; use SQL `LATERAL`/`DISTINCT ON`.
-- Cortes de dia/mês vêm de `app/_shared/utils/date-br.ts` (servidor em UTC).
+- Cortes de dia/mês/hora vêm de `app/_shared/utils/date-br.ts` (servidor em UTC), inclusive o horário comercial dos crons (7h–21h BRT: `isBrBusinessHour`/`nextBrBusinessSlot`). Mensagem proativa nova de cron respeita essa janela.
 - Toda chamada de IA nova grava `metadata.usage` no log.
 - Mudou teto/cadência da recuperação → `recovery-caps.ts` (o inbox lê o mesmo mapa). Não afrouxe cooldown, tetos nem marcapasso sem pedido: as duas WABAs já levaram aviso de spam da Meta.
 - Schema Prisma: nunca `prisma migrate dev`; use `migrate diff` + `db execute` + `migrate resolve`.

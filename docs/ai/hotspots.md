@@ -13,7 +13,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | 5 | `app/_shared/lib/whatsapp/bot.ts` | 1507 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
 | 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1260 | whatsapp-bot |
-| 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1244 | whatsapp-bot |
+| 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1228 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
 | 11 | `app/nova-dash/card-dialog/FilesTab.tsx` | 876 | kanban-cards / documentos-ia |
@@ -128,16 +128,16 @@ Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (
 - **L988-1131** `DocRow`, `AudioDocRow`.
 - **L1132-1260** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
 
-## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1244 linhas
+## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1228 linhas
 Crons do WhatsApp em 3 fases: nudge/encerramento por silêncio, recuperação standby e SLA (fila, humano, entrega travada, cards estourados, assinatura).
 
-- **L1-24** imports.
-- **L25-213** constantes e infraestrutura: nudge/close, alertas por degrau (`dueAlertStep`), `STUCK_SENT_*`, `OVERDUE_*`, recuperação (`recoveryMaxAttempts`, `RECOVERY_*`, `RECOVERY_DAILY_CAP`, `NON_RECOVERABLE_CATEGORIES`), marcapasso (`createPacer`, `SEND_GAP_*`, `RUN_BUDGET_MS`), `inSequence`, `timed`, `CronResults`, `emptyResults`.
-- **L214-596** helpers de decisão: `standbyBlockReason`, horário comercial (`isBusinessHours`, `nextBusinessSlot`, `businessMinutesBetween`), `isClosingAck`, `pendingFromState`, `buildFarewell`, `looksLikeFarewell`, `decideFollowup`, `finalizeClose`, `silentCloseCategory`, `enterStandby`, `buildRecoveryMessage`.
-- **L597-734** `runNudgePhase`: 1. silêncio de 30min (L608), 2. encerramento por inatividade (L679).
-- **L735-934** `runRecoveryPhase`: teto diário, seleção `dueRecovery` (L754), loop de provocações (L764).
-- **L935-1237** `runSlaPhase`: 3. SLA da fila (L945), 3b. SLA humano (L996), 4. entrega travada (L1070), 5. cards estourados (L1114), 7. assinatura (L1216, `runSignatureReminders`).
-- **L1238-1244** `mergeResults`.
+- **L1-25** imports.
+- **L26-215** constantes e infraestrutura: nudge/close, alertas por degrau (`dueAlertStep`), `STUCK_SENT_*`, `OVERDUE_*`, recuperação (`recoveryMaxAttempts`, `RECOVERY_*`, `RECOVERY_DAILY_CAP`, `NON_RECOVERABLE_CATEGORIES`), marcapasso (`createPacer`, `SEND_GAP_*`, `RUN_BUDGET_MS`), `inSequence`, `timed`, `CronResults`, `emptyResults`.
+- **L216-565** helpers de decisão: `standbyBlockReason`, `isClosingAck`, `pendingFromState`, `buildFarewell`, `looksLikeFarewell`, `decideFollowup`, `finalizeClose`, `silentCloseCategory`, `enterStandby`, `buildRecoveryMessage`. O horário comercial (7h–21h BRT) vem de `date-br.ts`: `isBrBusinessHour`, `nextBrBusinessSlot`, `brBusinessMinutesBetween`.
+- **L566-718** `runNudgePhase`: sai fora do horário comercial (L579), 1. silêncio de 30min (L587), 2. encerramento por inatividade (L661).
+- **L719-918** `runRecoveryPhase`: teto diário, seleção `dueRecovery` (L738), loop de provocações (L748).
+- **L919-1221** `runSlaPhase`: 3. SLA da fila (L929), 3b. SLA humano (L980), 4. entrega travada (L1054), 5. cards estourados (L1098), 7. assinatura (L1200, `runSignatureReminders`).
+- **L1222-1228** `mergeResults`.
 
 ## 9. `app/nova-dash/card-dialog/ScriptTab.tsx` — 893 linhas
 Aba "Roteiros" do CardDialog (componente `RoteirosTab`): chat com IA que gera roteiros a partir de anexos (upload direto ao S3), biblioteca de prompts e download em .docx.
@@ -185,7 +185,7 @@ PDF da assinatura: gera o PDF a partir do .docx (via docx-converter), acha as â
 | `whatsapp/bot.ts` | Extrair filtros de sanidade para `bot-sanitize.ts`, fila/qualificação/encerramento para `bot-outcomes.ts`, e partir `handleIncomingWhatsApp` em etapas nomeadas (`collectBurst`, `buildPayload`, `executeDecision`). |
 | `KanbanFlowPanel.tsx` | Mover os gráficos SVG para `flow/charts.tsx` e `buildView` para `flow/build-view.ts` (uma função por visão). |
 | `CopilotPanel.tsx` | Um arquivo por aba: `FichaTab.tsx`, `ArquivosTab.tsx` (+ `DocRow`/`AudioDocRow`), com os campos `F*` em `copilot/fields.tsx`. |
-| `whatsapp/cron-tasks.ts` | Um arquivo por fase (`cron-nudge.ts`, `cron-recovery.ts`, `cron-sla.ts`) com o marcapasso e o horário comercial em `cron-shared.ts`. |
+| `whatsapp/cron-tasks.ts` | Um arquivo por fase (`cron-nudge.ts`, `cron-recovery.ts`, `cron-sla.ts`) com o marcapasso em `cron-shared.ts` (o horário comercial já está em `date-br.ts`). |
 | `ScriptTab.tsx` | Extrair a biblioteca de prompts (`PromptLibrary.tsx` + hook) e a lógica de envio/upload S3 para um hook `useRoteiroChat`; renomear o arquivo para bater com `RoteirosTab`. |
 | `MentionsInbox.tsx` | Mover `MentionRow`/`RowActions`/badges para `mentions/MentionRow.tsx` e a derivação (filtros, placar, grupos por dia) para `useMentionsView`. |
 | `FilesTab.tsx` | Separar `TrashPanel.tsx` (lixeira) e `FolderGrid.tsx`, e mover upload/zip/reordenação para um hook `useCardFiles`. |

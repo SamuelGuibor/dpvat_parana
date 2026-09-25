@@ -7,7 +7,9 @@ import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/what
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
 import { activeNumberConversationWhere } from '@/app/_shared/lib/whatsapp/numbers';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT, recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
-import { brStartOfDay } from '@/app/_shared/utils/date-br';
+import {
+  brBusinessMinutesBetween, brStartOfDay, isBrBusinessHour, nextBrBusinessSlot,
+} from '@/app/_shared/utils/date-br';
 import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
 
 // FASES do cron de WhatsApp (07/08/2026) — o antigo /api/whatsapp/cron fazia
@@ -267,42 +269,9 @@ async function standbyBlockReason(conv: {
   return null;
 }
 
-// Horário comercial (7h–21h, Brasília).
-const BRT_OFFSET_MS = -3 * 60 * 60_000;
-const BUSINESS_START_H = 7;
-const BUSINESS_END_H = 21;
-
-function isBusinessHours(ts: number): boolean {
-  const h = new Date(ts + BRT_OFFSET_MS).getUTCHours();
-  return h >= BUSINESS_START_H && h < BUSINESS_END_H;
-}
-
-function nextBusinessSlot(ts: number): Date {
-  if (isBusinessHours(ts)) return new Date(ts);
-  const wall = new Date(ts + BRT_OFFSET_MS);
-  const dayStart = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
-  const addDays = wall.getUTCHours() < BUSINESS_START_H ? 0 : 1;
-  return new Date(dayStart + addDays * 24 * 60 * 60_000 + BUSINESS_START_H * 60 * 60_000 - BRT_OFFSET_MS);
-}
-
-/** Minutos DE EXPEDIENTE entre dois instantes — a madrugada não conta. */
-function businessMinutesBetween(from: number, to: number): number {
-  if (to <= from) return 0;
-  const DAY_MS = 24 * 60 * 60_000;
-  let total = 0;
-  let cursor = from;
-  while (cursor < to) {
-    const wall = new Date(cursor + BRT_OFFSET_MS);
-    const dayStart = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate()) - BRT_OFFSET_MS;
-    const open = dayStart + BUSINESS_START_H * 60 * 60_000;
-    const close = dayStart + BUSINESS_END_H * 60 * 60_000;
-    const segStart = Math.max(cursor, open);
-    const segEnd = Math.min(to, close);
-    if (segEnd > segStart) total += segEnd - segStart;
-    cursor = dayStart + DAY_MS;
-  }
-  return Math.round(total / 60_000);
-}
+// Horário comercial (7h–21h de Brasília, todos os dias): isBrBusinessHour,
+// nextBrBusinessSlot e brBusinessMinutesBetween vivem em date-br.ts — todo
+// corte por hora passa por lá (a Vercel roda em UTC).
 
 // Palavras de FECHO: a última mensagem do cliente ser dessas não é pergunta
 // pendente, é o "tá bom, obrigada" que encerra o assunto.
@@ -515,7 +484,7 @@ async function enterStandby(conv: { id: string; contactId: string }): Promise<vo
       botNudge24At: null,
       queuedAt: null,
       queueAlertAt: null,
-      recoveryNextAt: nextBusinessSlot(Math.max(base, Date.now() + 60_000)),
+      recoveryNextAt: nextBrBusinessSlot(Math.max(base, Date.now() + 60_000)),
       recoveryOutcome: null,
     },
   });
@@ -597,15 +566,27 @@ async function buildRecoveryMessage(
 // ---------------------------------------------------------------------------
 // FASE NUDGE (a cada 15min): silêncio de 30min + encerramento por inatividade.
 // Tem chamadas de IA (followup-decision/farewell) → roda em lotes de 4.
+// Só das 7h às 21h de Brasília (ver o começo da função).
 // ---------------------------------------------------------------------------
 export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   const now = Date.now();
   const results = emptyResults();
+  // Fora do horário comercial a fase inteira espera (cutucada, decisão da IA,
+  // despedida e encerramentos silenciosos): 41% das despedidas "vou encerrar
+  // seu atendimento" saíam à noite, e mensagem proativa de madrugada pesa na
+  // qualidade da conta na Meta. Nada se perde — a conversa segue em 'bot' e a
+  // primeira rodada a partir das 7h processa o acúmulo (ordenado abaixo).
+  if (!isBrBusinessHour(now)) {
+    console.log(`[WHATSAPP CRON] nudge adiado até ${nextBrBusinessSlot(now).toISOString()} (fora do horário)`);
+    return results;
+  }
   const pacer = createPacer(budgetMs);
   // Número desativado (somente leitura no inbox) fica fora de todos os crons.
   const onlyActive = await activeNumberConversationWhere();
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
+  // Mais antigas primeiro: às 7h o acúmulo da noite sai na ordem em que as
+  // conversas ficaram caladas, no ritmo do marcapasso (take/gaps inalterados).
   const silent30 = await db.whatsAppConversation.findMany({
     where: {
       ...onlyActive,
@@ -614,6 +595,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       lastMessageAt: { lte: new Date(now - NUDGE_AFTER_MS) },
     },
     include: { contact: true },
+    orderBy: { lastMessageAt: 'asc' },
     take: 25,
   });
 
@@ -677,6 +659,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   }));
 
   // ---- 2. Encerramento por inatividade -------------------------------------
+  // Mesma ordem: quem foi cutucado primeiro se despede primeiro.
   const silentAfterNudge = await db.whatsAppConversation.findMany({
     where: {
       ...onlyActive,
@@ -684,6 +667,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       botNudge30At: { not: null, lte: new Date(now - CLOSE_AFTER_MS) },
     },
     include: { contact: true },
+    orderBy: { botNudge30At: 'asc' },
     take: 25,
   });
 
@@ -811,7 +795,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         return;
       }
       // Fora do horário comercial → adia.
-      const slot = nextBusinessSlot(now);
+      const slot = nextBrBusinessSlot(now);
       if (slot.getTime() > now) {
         await db.whatsAppConversation.update({ where: { id: conv.id }, data: { recoveryNextAt: slot } });
         return;
@@ -887,7 +871,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
           where: { id: conv.id },
           data: {
             recoveryAttempts: attemptsAfter,
-            recoveryNextAt: nextBusinessSlot(now + gapMs),
+            recoveryNextAt: nextBrBusinessSlot(now + gapMs),
           },
         });
         results.recoverySent++;
@@ -918,7 +902,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         // Cooldown, template não sincronizado, Meta rejeitou… → re-tenta em 6h.
         await db.whatsAppConversation.update({
           where: { id: conv.id },
-          data: { recoveryNextAt: nextBusinessSlot(now + RECOVERY_RETRY_MS) },
+          data: { recoveryNextAt: nextBrBusinessSlot(now + RECOVERY_RETRY_MS) },
         });
       }
     } catch (err) {
@@ -995,7 +979,7 @@ export async function runSlaPhase(): Promise<CronResults> {
 
   // ---- 3b. SLA de atendimento HUMANO ----------------------------------------
   await timed('sla-humano', async () => {
-    const stalledCandidates = isBusinessHours(now)
+    const stalledCandidates = isBrBusinessHour(now)
       ? await db.whatsAppConversation.findMany({
           where: {
             ...onlyActive,
@@ -1024,7 +1008,7 @@ export async function runSlaPhase(): Promise<CronResults> {
 
         const label = conv.contact.name ?? `+${conv.contact.phone}`;
         const waitingMin = conv.lastMessageAt
-          ? businessMinutesBetween(conv.lastMessageAt.getTime(), now)
+          ? brBusinessMinutesBetween(conv.lastMessageAt.getTime(), now)
           : 0;
         if (waitingMin < HUMAN_SLA_MS / 60_000) continue;
 
