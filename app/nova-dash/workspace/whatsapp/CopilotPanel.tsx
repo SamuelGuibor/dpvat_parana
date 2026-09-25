@@ -26,6 +26,8 @@ import {
 } from '@/app/_actions/whatsapp/client-documents';
 import { sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
+import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
+import { getMediaUrl, seedMediaUrl, useMediaUrl } from './media-url-cache';
 import { maskCpf, isValidCpf, maskCep, formatPhone } from '@/app/_shared/utils/format';
 import { HospitalCombobox } from '@/app/nova-dash/card-dialog/HospitalCombobox';
 import { ESTADOS, ESTADO_CIVIL } from '@/app/nova-dash/card-dialog/constants';
@@ -38,24 +40,6 @@ import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 // do card do kanban + Notas internas + Arquivos da conversa.
 
 type CopilotTab = 'copiloto' | 'ficha' | 'notas' | 'arquivos';
-
-// Cache local de URLs pré-assinadas (mesmo padrão do WhatsAppInbox).
-const mediaUrlCache = new Map<string, { url: string; expiresAt: number }>();
-async function getMediaUrl(key: string): Promise<string | null> {
-  const cached = mediaUrlCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-  const fileName = key.split('/').pop() ?? 'anexo';
-  const res = await downloadFileFromS3(key, fileName, true);
-  if (!res.success || !res.presignedUrl) return null;
-  mediaUrlCache.set(key, { url: res.presignedUrl, expiresAt: Date.now() + 55 * 60_000 });
-  return res.presignedUrl;
-}
-
-function fileNameFromKey(key: string): string {
-  const raw = key.split('/').pop() ?? 'arquivo';
-  const noTimestamp = raw.replace(/^\d{10,}-/, '');
-  try { return decodeURIComponent(noTimestamp); } catch { return noTimestamp; }
-}
 
 function mediaIcon(mediaType: string | null): React.ElementType {
   if (mediaType?.startsWith('image/')) return ImageIcon;
@@ -867,7 +851,10 @@ function ArquivosTab({
   async function handlePreview(doc: ClientDocumentDTO) {
     const kind = previewKind(doc.name);
     if (kind !== 'image' && kind !== 'pdf') return;
-    const url = await getMediaUrl(doc.key);
+    // URL que veio assinada com a lista (nome do documento); action só se não
+    // houver uma válida.
+    const opts = { fileName: doc.name };
+    const url = seedMediaUrl(doc.key, doc.url, doc.urlExpiresAt, opts) ?? await getMediaUrl(doc.key, opts);
     if (!url) { toast.error('Não foi possível abrir o arquivo.'); return; }
     setPreview({ doc, url, kind });
   }
@@ -998,18 +985,16 @@ function DocRow({
   onDelete: (doc: ClientDocumentDTO) => void;
 }) {
   const kind = previewKind(doc.name);
-  const [thumb, setThumb] = useState<string | null>(null);
+  // Miniatura com a URL que veio assinada na lista (sem action por linha).
+  const { url: thumb, failed: thumbFailed, onError: onThumbError } = useMediaUrl(
+    kind === 'image' ? doc.key : null, doc.url, doc.urlExpiresAt, { fileName: doc.name },
+  );
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(doc.name);
 
   useEffect(() => {
     setName(doc.name);
-    if (kind !== 'image') return;
-    let cancelled = false;
-    getMediaUrl(doc.key).then((url) => { if (!cancelled) setThumb(url); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc.key, doc.name]);
+  }, [doc.name]);
 
   function commitRename() {
     setRenaming(false);
@@ -1028,7 +1013,9 @@ function DocRow({
         title={previewable ? 'Pré-visualizar' : undefined}
         className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-emerald-50 text-emerald-700"
       >
-        {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : <Icon className="h-4 w-4" />}
+        {thumb
+          ? <img src={thumb} alt="" loading="lazy" decoding="async" onError={onThumbError} className="h-full w-full object-cover" />
+          : <Icon className="h-4 w-4" />}
       </button>
       <span className="min-w-0 flex-1">
         {renaming ? (
@@ -1043,7 +1030,10 @@ function DocRow({
         ) : (
           <span className="block truncate text-xs font-semibold text-gray-700">{doc.name}</span>
         )}
-        <span className="block text-[10px] text-gray-400">{timeStamp(doc.uploadedAt)}</span>
+        <span className="block text-[10px] text-gray-400">
+          {timeStamp(doc.uploadedAt)}
+          {thumbFailed && <span className="font-semibold text-red-500"> · Arquivo indisponível</span>}
+        </span>
       </span>
       <button onClick={() => setRenaming(true)} title="Renomear" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
         <Pencil className="h-3.5 w-3.5" />
@@ -1073,16 +1063,14 @@ function AudioDocRow({
   onRename: (doc: ClientDocumentDTO, newName: string) => void;
   onDelete: (doc: ClientDocumentDTO) => void;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
+  // URL assinada junto com a lista: o player nasce pronto, sem action no mount.
+  const { url, failed, onError } = useMediaUrl(doc.key, doc.url, doc.urlExpiresAt, { fileName: doc.name });
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(doc.name);
 
   useEffect(() => {
     setName(doc.name);
-    let cancelled = false;
-    getMediaUrl(doc.key).then((u) => { if (!cancelled) setUrl(u); });
-    return () => { cancelled = true; };
-  }, [doc.key, doc.name]);
+  }, [doc.name]);
 
   function commitRename() {
     setRenaming(false);
@@ -1121,8 +1109,10 @@ function AudioDocRow({
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
-      {url ? (
-        <audio controls src={url} className="h-8 w-full" />
+      {failed ? (
+        <span className="text-[10px] font-semibold text-red-500">Arquivo indisponível</span>
+      ) : url ? (
+        <audio controls preload="metadata" src={url} onError={onError} className="h-8 w-full" />
       ) : (
         <span className="flex items-center gap-1.5 text-[10px] text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> carregando áudio…</span>
       )}

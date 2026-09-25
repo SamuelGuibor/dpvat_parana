@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { authOptions } from '@/app/_shared/lib/auth';
+import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
+import { fileNameFromKey, isAllowedKeyPrefix } from '@/app/_shared/utils/s3-keys';
 
 // Histórico de uma conversa de WhatsApp (também é o polling de fallback do SWR,
 // espelho de /api/chat/messages).
 // GET /api/whatsapp/messages?contactId=<id>&after=<ISO>&before=<ISO>&limit=50
 //   - after:  mensagens MAIS NOVAS que o ISO (polling incremental)
 //   - before: mensagens MAIS ANTIGAS que o ISO (paginação "carregar anteriores")
+// Cada mídia já vem com `mediaUrl` assinada (janela estável de 30 min, ver
+// s3-presign.ts): a bolha nasce com o link, sem uma server action por anexo.
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -56,15 +60,28 @@ export async function GET(req: NextRequest) {
     : [];
   const nameById = new Map(authors.map((a) => [a.id, a.name ?? 'Atendente']));
 
-  const messages = rows
-    .reverse()
-    .map((m) => ({
-      ...m,
-      createdAt: m.createdAt.toISOString(),
-      editedAt: m.editedAt?.toISOString() ?? null,
-      deletedAt: m.deletedAt?.toISOString() ?? null,
-      authorName: m.authorId ? nameById.get(m.authorId) ?? null : m.sentByBot ? 'Bot' : null,
-    }));
+  // Assinatura é HMAC local (sem ida à rede): assina tudo em paralelo. O nome
+  // do Content-Disposition é o mesmo que a bolha usa no fallback
+  // (fileNameFromKey), para as duas URLs caírem na mesma entrada do cache do
+  // navegador (media-url-cache.ts). Mensagem apagada não mostra a mídia.
+  const ordered = rows.reverse();
+  const signed = await Promise.all(
+    ordered.map((m) =>
+      m.mediaKey && !m.deletedAt && isAllowedKeyPrefix(m.mediaKey)
+        ? trySignGetUrl(m.mediaKey, { inline: true, fileName: fileNameFromKey(m.mediaKey) })
+        : null,
+    ),
+  );
+
+  const messages = ordered.map((m, i) => ({
+    ...m,
+    createdAt: m.createdAt.toISOString(),
+    editedAt: m.editedAt?.toISOString() ?? null,
+    deletedAt: m.deletedAt?.toISOString() ?? null,
+    authorName: m.authorId ? nameById.get(m.authorId) ?? null : m.sentByBot ? 'Bot' : null,
+    mediaUrl: signed[i]?.url ?? null,
+    mediaUrlExpiresAt: signed[i]?.expiresAt ?? null,
+  }));
 
   // hasMore: veio o bloco cheio → provavelmente há mais mensagens antigas.
   return NextResponse.json({ messages, hasMore: rows.length === limit });

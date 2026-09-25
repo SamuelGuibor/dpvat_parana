@@ -7,6 +7,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { inferCategory } from '@/app/_shared/lib/document-categories';
 import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
+import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
 
 // Documentos pessoais anexados na ficha do cliente (dentro do atendimento de
 // WhatsApp). Se o contato já tem User vinculado, viram Document de verdade
@@ -37,9 +38,23 @@ export interface ClientDocumentDTO {
   key: string;
   name: string;
   uploadedAt: string;
+  // URL de leitura (inline, com o NOME do documento) assinada em lote aqui no
+  // servidor: a aba Arquivos mostra miniatura e áudio sem uma action por
+  // linha. null = key fora da allowlist (documento antigo): a linha cai no
+  // fallback do media-url-cache (downloadFileFromS3 consulta a tabela).
+  url?: string | null;
+  urlExpiresAt?: string | null;
 }
 
 interface DraftDoc { key: string; name: string; uploadedAt: string }
+
+type UnsignedDoc = Omit<ClientDocumentDTO, 'url' | 'urlExpiresAt'>;
+
+/** Assina todos de uma vez (HMAC local, sem ida à rede): 1 action no lugar de N. */
+async function withSignedUrls(docs: UnsignedDoc[]): Promise<ClientDocumentDTO[]> {
+  const signed = await Promise.all(docs.map((d) => trySignGetUrl(d.key, { inline: true, fileName: d.name })));
+  return docs.map((d, i) => ({ ...d, url: signed[i]?.url ?? null, urlExpiresAt: signed[i]?.expiresAt ?? null }));
+}
 
 export async function listClientDocuments(contactId: string): Promise<ClientDocumentDTO[]> {
   await requireTeamMember();
@@ -51,11 +66,13 @@ export async function listClientDocuments(contactId: string): Promise<ClientDocu
       where: { userId: contact.userId, processId: null, deletedAt: null },
       orderBy: { createdAt: 'asc' },
     });
-    return docs.map((d) => ({ id: d.id, key: d.key, name: d.name, uploadedAt: d.uploadedAt.toISOString() }));
+    return withSignedUrls(
+      docs.map((d) => ({ id: d.id, key: d.key, name: d.name, uploadedAt: d.uploadedAt.toISOString() })),
+    );
   }
 
   const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];
-  return drafts.map((d) => ({ id: d.key, key: d.key, name: d.name, uploadedAt: d.uploadedAt }));
+  return withSignedUrls(drafts.map((d) => ({ id: d.key, key: d.key, name: d.name, uploadedAt: d.uploadedAt })));
 }
 
 /** Presigned PUT pro navegador subir o documento direto ao S3. */

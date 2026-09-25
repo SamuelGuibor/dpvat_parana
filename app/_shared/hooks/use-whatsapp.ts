@@ -40,6 +40,11 @@ export interface WhatsAppThreadMessage {
   // Reação da equipe aplicada a esta mensagem (1 emoji, estilo WhatsApp).
   reaction?: string | null;
   reactionAuthorId?: string | null;
+  // URL de leitura da mídia já assinada pela rota da thread (janela estável de
+  // 30 min: a mesma URL entre polls). Ausente em mensagem otimista e em key
+  // fora da allowlist: a bolha cai no fallback do media-url-cache.
+  mediaUrl?: string | null;
+  mediaUrlExpiresAt?: string | null;
 }
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((r) => r.json());

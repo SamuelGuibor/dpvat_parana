@@ -59,30 +59,10 @@ import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
 import { brDayKey } from '@/app/_shared/utils/date-br';
+import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
+import { getMediaUrl, useMediaUrl } from './media-url-cache';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-// Nome amigável do arquivo a partir da chave S3. As chaves de mídia recebida
-// têm o formato ".../{timestamp}-{nome}", então tiramos o prefixo numérico e
-// decodificamos. Ex.: "whatsapp/abc/1720000000000-contrato.pdf" → "contrato.pdf".
-function fileNameFromKey(key: string): string {
-  const raw = key.split('/').pop() ?? 'arquivo';
-  const noTimestamp = raw.replace(/^\d{10,}-/, '');
-  try { return decodeURIComponent(noTimestamp); } catch { return noTimestamp; }
-}
-
-// Cache de URLs pré-assinadas em memória (por chave S3) — evita gerar uma nova
-// a cada re-render da thread (polling/SSE). Expira 5 min antes do real (1h).
-const mediaUrlCache = new Map<string, { url: string; expiresAt: number }>();
-async function getMediaUrl(key: string): Promise<string | null> {
-  const cached = mediaUrlCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-  const fileName = key.split('/').pop() ?? 'anexo';
-  const res = await downloadFileFromS3(key, fileName, true);
-  if (!res.success || !res.presignedUrl) return null;
-  mediaUrlCache.set(key, { url: res.presignedUrl, expiresAt: Date.now() + 55 * 60_000 });
-  return res.presignedUrl;
-}
 
 // Janela de resposta da Meta: 24h desde a última mensagem RECEBIDA do cliente.
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
@@ -2397,34 +2377,24 @@ function ThreadMessageRow({
  *   - áudio: player próprio (play/pausa + barra + tempo) e botão "Transcrever"
  *     (IA; o texto fica salvo na mensagem — o próximo clique é grátis)
  *   - documento: cartão com ícone, extensão em selo e ação "abrir"
- * A URL pré-assinada é buscada uma vez (cache em memória via getMediaUrl).
+ * A URL pré-assinada já vem na mensagem (rota da thread, `mediaUrl`) e passa
+ * pelo cache único do media-url-cache: sem server action por bolha. A action
+ * só entra como fallback (sem URL, URL vencida) e no "Baixar".
  */
 function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessage; mine: boolean; onAttachToCard?: () => void }) {
   const mediaKey = msg.mediaKey as string;
   const mediaType = msg.mediaType;
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const docName = fileNameFromKey(mediaKey);
+  // Mesmo nome que a rota usa ao assinar (fileNameFromKey): a URL do servidor
+  // e a do fallback caem na mesma entrada do cache.
+  const { url, failed, onError, retry } = useMediaUrl(mediaKey, msg.mediaUrl, msg.mediaUrlExpiresAt, { fileName: docName });
   const isTemp = msg.id.startsWith('temp-');
 
-  useEffect(() => {
-    let cancelled = false;
-    setUrl(null);
-    setFailed(false);
-    getMediaUrl(mediaKey).then((u) => {
-      if (cancelled) return;
-      if (u) setUrl(u);
-      else setFailed(true);
-    });
-    return () => { cancelled = true; };
-  }, [mediaKey]);
-
   async function openInNewTab() {
-    const u = url ?? await getMediaUrl(mediaKey);
+    const u = url ?? await getMediaUrl(mediaKey, { fileName: docName });
     if (u) window.open(u, '_blank');
     else toast.error('Não foi possível abrir o anexo.');
   }
-
-  const docName = fileNameFromKey(mediaKey);
 
   // "Baixar" de verdade: URL com Content-Disposition attachment.
   async function downloadAsFile() {
@@ -2453,10 +2423,12 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
     </DropdownMenuContent>
   );
 
+  // Sem URL (action falhou) ou o navegador recusou a URL duas vezes: objeto
+  // renomeado/purgado no S3. Clique tenta de novo (falha passageira de rede).
   if (failed) {
     return (
-      <button onClick={openInNewTab} title={docName} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
-        <Paperclip className="h-4 w-4 shrink-0" /> <span className="truncate">{docName}</span>
+      <button onClick={retry} title={`${docName} — clique para tentar de novo`} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
+        <Paperclip className="h-4 w-4 shrink-0" /> <span className="truncate">Arquivo indisponível</span>
       </button>
     );
   }
@@ -2470,7 +2442,14 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
             className="group/img relative mb-1 block overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt="Imagem enviada" className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]" />
+            <img
+              src={url}
+              alt="Imagem enviada"
+              loading="lazy"
+              decoding="async"
+              onError={onError}
+              className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]"
+            />
             <span className="pointer-events-none absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/25 via-transparent to-transparent p-2 opacity-0 transition-opacity group-hover/img:opacity-100">
               <span className="rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
                 Opções
@@ -2491,7 +2470,7 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
     return url ? (
       <div className="mb-1">
         <div className="overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10">
-          <video src={url} controls className="max-h-72 max-w-full" />
+          <video src={url} controls preload="metadata" onError={onError} className="max-h-72 max-w-full" />
         </div>
         {onAttachToCard && !isTemp && (
           <button
@@ -2511,7 +2490,7 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
   }
 
   if (mediaType?.startsWith('audio/')) {
-    return <WaAudioBubble msg={msg} mine={mine} url={url} />;
+    return <WaAudioBubble msg={msg} mine={mine} url={url} onMediaError={onError} />;
   }
 
   const ext = (docName.split('.').pop() ?? '').toUpperCase().slice(0, 5);
@@ -2557,7 +2536,9 @@ function fmtAudioTime(sec: number): string {
  * inbox) + botão "Transcrever": chama a IA uma vez, o texto fica salvo na
  * mensagem e aparece pra equipe inteira nas próximas aberturas.
  */
-function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: boolean; url: string | null }) {
+function WaAudioBubble({ msg, mine, url, onMediaError }: {
+  msg: WhatsAppThreadMessage; mine: boolean; url: string | null; onMediaError?: () => void;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -2624,6 +2605,9 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => { setPlaying(false); setCurrent(0); }}
+          // URL recusada (vencida ou objeto apagado): o media-url-cache busca
+          // outra e, se falhar de novo, a bolha vira "Arquivo indisponível".
+          onError={onMediaError}
           className="hidden"
         />
       )}
