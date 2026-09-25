@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import useSWR, { type KeyedMutator } from 'swr';
+import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
 import {
   listWhatsAppConversations,
   getWhatsAppInboxVersion,
@@ -10,6 +10,7 @@ import {
   type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
 import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
+import { mergeThreadWindow, unionThreadMessages, upsertById } from '@/app/_shared/utils/thread-window';
 
 // Hooks do atendimento de WhatsApp — mesmo desenho do use-chat.ts:
 // SWR com polling como rede de segurança e o SSE (useChatStream, reaproveitado
@@ -178,6 +179,40 @@ export function useWhatsAppConversationsTotal() {
 
 // Tamanho de cada bloco ao "carregar mensagens anteriores".
 const OLDER_PAGE_SIZE = 30;
+// Janela das recentes (o SWR abaixo pede limit=50).
+const RECENT_LIMIT = 50;
+// Referência estável para "sem mensagens" (a janela compara por referência).
+const EMPTY_THREAD: WhatsAppThreadMessage[] = [];
+
+/** Estado da janela da thread de UMA conversa (ver thread-window.ts). */
+interface ThreadWindowState {
+  contactId: string | null;
+  /** Mensagens anteriores ao recent: blocos de "Carregar anteriores" + as que deslizaram para fora da janela. */
+  older: WhatsAppThreadMessage[];
+  /** Último recent já conciliado com o older (mesma referência do SWR). */
+  prevRecent: WhatsAppThreadMessage[];
+  /** true a partir do 1º "Carregar anteriores" desta conversa. */
+  historyOpen: boolean;
+  /** Com o histórico aberto, quem diz se ainda há mais é a resposta do before=. */
+  olderHasMore: boolean;
+  /**
+   * Busca de "Carregar anteriores" em voo (null = nenhuma). A resposta só vale
+   * se o token ainda for o mesmo: sair e voltar à conversa zera a janela, e o
+   * bloco pedido antes não pode cair no estado novo.
+   */
+  loadToken: object | null;
+}
+
+function emptyThreadWindow(contactId: string | null): ThreadWindowState {
+  return { contactId, older: EMPTY_THREAD, prevRecent: EMPTY_THREAD, historyOpen: false, olderHasMore: false, loadToken: null };
+}
+
+type ThreadData = { messages: WhatsAppThreadMessage[]; hasMore?: boolean };
+
+/** Key do SWR das recentes de uma conversa (o upsert do envio mira a mesma entrada). */
+function threadKey(contactId: string): string {
+  return `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}&limit=${RECENT_LIMIT}`;
+}
 
 /**
  * Mensagens de uma conversa. As MAIS RECENTES vêm por SWR (polling 8s + SSE
@@ -189,61 +224,112 @@ const OLDER_PAGE_SIZE = 30;
  * é a rede de segurança quando o SSE do relay cai (hoje ele não entrega em
  * produção). A LISTA de conversas não faz poll próprio: só o hash de 15s, e a
  * lista pesada recarrega quando ele muda (ver useWhatsAppConversations).
+ *
+ * Janela deslizante (auditoria de 24/09/2026, THR-5): cada mensagem nova tira
+ * a mais antiga das 50 recentes. Com o histórico aberto, ela ia para um buraco
+ * entre o older e o recent e sumia da tela; agora vai para o older
+ * (`mergeThreadWindow`). E o botão "Carregar anteriores", que o poll religava
+ * a cada 8 s mesmo depois do início da conversa, passa a obedecer só à
+ * resposta do before= depois do 1º clique.
  */
 export function useWhatsAppMessages(contactId: string | null) {
   // `isLoading` (1ª carga desta conversa, sem nada em cache) vira o spinner da
   // thread — sem ele, abrir uma conversa não visitada mostrava a tela vazia.
-  const { data, mutate, isLoading } = useSWR<{ messages: WhatsAppThreadMessage[]; hasMore?: boolean }>(
-    contactId ? `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}&limit=50` : null,
+  const { data, mutate, isLoading } = useSWR<ThreadData>(
+    contactId ? threadKey(contactId) : null,
     fetcher,
     // 8s (era 5s): o SSE do relay já entrega a mensagem na hora; este poll é
     // só a rede de segurança e o refresh dos ticks de status/reações.
     { refreshInterval: 8_000, revalidateOnFocus: true },
   );
 
-  const recent = useMemo(() => data?.messages ?? [], [data]);
+  // O fetcher não olha o status: um 401/403/500 chega como `{ error }`, sem
+  // `messages`. Vira lista vazia em vez de quebrar a thread.
+  const recent = useMemo(
+    () => (Array.isArray(data?.messages) ? data.messages : EMPTY_THREAD),
+    [data],
+  );
 
-  const [older, setOlder] = useState<WhatsAppThreadMessage[]>([]);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  // Só há blocos anteriores se o 1º carregamento já veio "cheio" (50 msgs).
-  const [hasMore, setHasMore] = useState(false);
+  const [win, setWin] = useState<ThreadWindowState>(() => emptyThreadWindow(contactId));
 
-  // Troca de conversa → zera os blocos antigos acumulados.
-  useEffect(() => {
-    setOlder([]);
-    setLoadingOlder(false);
-  }, [contactId]);
+  // Conciliação NO RENDER (padrão do React "guardar informação do render
+  // anterior"), não num useEffect: o efeito rodaria depois do commit, e a
+  // mensagem que saiu da janela ficaria 1 frame fora da tela antes de voltar
+  // pelo older. O setWin aqui refaz o render na hora, antes de pintar.
+  // Troca de conversa zera tudo (older, recent anterior, histórico aberto e
+  // carga em voo da conversa anterior).
+  let view = win.contactId === contactId ? win : emptyThreadWindow(contactId);
+  if (view.prevRecent !== recent) {
+    view = {
+      ...view,
+      older: mergeThreadWindow(view.older, view.prevRecent, recent, { historyOpen: view.historyOpen }),
+      prevRecent: recent,
+    };
+  }
+  if (view !== win) setWin(view);
 
-  // Alinha o hasMore com a resposta do SWR das recentes (menos de 50 = sem mais).
-  useEffect(() => {
-    if (data) setHasMore(data.messages.length >= 50);
-  }, [data]);
-
-  const messages = useMemo(() => [...older, ...recent], [older, recent]);
+  const messages = useMemo(() => unionThreadMessages(view.older, recent), [view.older, recent]);
+  // Antes do 1º "Carregar anteriores": há mais se o recent veio cheio (50;
+  // 51 logo depois de um envio). Depois dele: só a resposta do before= manda —
+  // o poll não religa o botão quando o início da conversa já chegou.
+  const hasMore = view.historyOpen ? view.olderHasMore : recent.length >= RECENT_LIMIT;
+  const loadingOlder = view.loadToken !== null;
 
   const loadOlder = useCallback(async () => {
     if (!contactId || loadingOlder || !hasMore) return;
     const oldest = messages[0];
     if (!oldest) return;
-    setLoadingOlder(true);
+    const cid = contactId;
+    const token = {};
+    // historyOpen já no clique: o que deslizar enquanto o bloco não chega
+    // também vai para o older. olderHasMore começa true: se a busca falhar, o
+    // botão continua lá e um clique a mais tenta de novo.
+    setWin((prev) => (prev.contactId === cid
+      ? { ...prev, loadToken: token, historyOpen: true, olderHasMore: true }
+      : prev));
     try {
       const res = await fetch(
-        `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}`
+        `/api/whatsapp/messages?contactId=${encodeURIComponent(cid)}`
           + `&before=${encodeURIComponent(oldest.createdAt)}&limit=${OLDER_PAGE_SIZE}`,
         { cache: 'no-store' },
       );
-      const json = (await res.json()) as { messages: WhatsAppThreadMessage[]; hasMore?: boolean };
-      const batch = json.messages ?? [];
-      setOlder((prev) => [...batch, ...prev]);
-      setHasMore(!!json.hasMore && batch.length > 0);
+      const json = (await res.json()) as { messages?: WhatsAppThreadMessage[]; hasMore?: boolean };
+      if (!res.ok || !Array.isArray(json.messages)) throw new Error('falha ao carregar anteriores');
+      const batch = json.messages;
+      // Resposta de uma janela que já foi zerada (troca de conversa) é descartada.
+      setWin((prev) => (prev.loadToken === token
+        ? {
+          ...prev,
+          older: unionThreadMessages(prev.older, batch),
+          olderHasMore: !!json.hasMore && batch.length > 0,
+          loadToken: null,
+        }
+        : prev));
     } catch {
-      // silencioso: um clique a mais no botão tenta de novo
-    } finally {
-      setLoadingOlder(false);
+      // silencioso: o botão continua e um clique a mais tenta de novo
+      setWin((prev) => (prev.loadToken === token ? { ...prev, loadToken: null } : prev));
     }
   }, [contactId, loadingOlder, hasMore, messages]);
 
-  return { messages, mutate, isLoading, loadOlder, hasMore, loadingOlder };
+  // Mensagem recém-enviada direto no cache da thread, sem refetch (THR-10: a
+  // bolha otimista sai no mesmo render em que a real entra). Por key
+  // EXPLÍCITA, não pelo `mutate` do useSWR acima: aquele mira a key ATUAL (o
+  // SWR guarda a key num ref) — se o atendente trocou de conversa durante o
+  // envio, a mensagem entraria na thread de outro cliente.
+  const { mutate: mutateCache } = useSWRConfig();
+  const upsertThreadMessage = useCallback((cid: string, msg: WhatsAppThreadMessage) => {
+    void mutateCache<ThreadData>(
+      threadKey(cid),
+      (cur) => (cur && Array.isArray(cur.messages) ? { ...cur, messages: upsertById(cur.messages, msg) } : cur),
+      { revalidate: false },
+    );
+  }, [mutateCache]);
+  // Revalidação de fundo da conversa do envio (completa transcrição, reação e
+  // ticks que o DTO não traz). Conversa que já não está aberta só atualiza
+  // quando for reaberta.
+  const revalidateThread = useCallback((cid: string) => mutateCache(threadKey(cid)), [mutateCache]);
+
+  return { messages, mutate, isLoading, loadOlder, hasMore, loadingOlder, upsertThreadMessage, revalidateThread };
 }
 
 /**

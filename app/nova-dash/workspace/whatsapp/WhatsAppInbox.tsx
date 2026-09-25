@@ -2,6 +2,7 @@
 'use client';
 
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import useSWR from 'swr';
 import {
@@ -40,6 +41,7 @@ import {
   inboxListState, manualUnreadPatch, patchConversationList, patchConversationRow, readPatch, revertPatch, sameTags,
   withTag, type ConversationPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
+import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread-window';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
@@ -179,6 +181,7 @@ export function WhatsAppInbox() {
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const {
     messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder, isLoading: messagesLoading,
+    upsertThreadMessage, revalidateThread,
   } = useWhatsAppMessages(activeContactId);
 
   const [search, setSearch] = useState('');
@@ -849,6 +852,30 @@ export function WhatsAppInbox() {
     setPending((prev) => prev.filter((p) => p.id !== id));
   }
 
+  /**
+   * Troca a bolha otimista pela mensagem real SEM piscar (THR-10, auditoria de
+   * 24/09/2026). Antes: tirava o pending e esperava o refetch da thread — a
+   * bolha sumia por um instante e a rolagem pulava. Agora a mensagem que a
+   * action devolveu entra direto no cache da thread (sem refetch) e só então o
+   * pending sai; a revalidação vem depois, em segundo plano, e completa o que
+   * o DTO não traz (transcrição, reação, ticks).
+   *
+   * flushSync: o cache do SWR avisa a tela por useSyncExternalStore (render
+   * síncrono), e o setPending fora de evento teria prioridade normal — sairiam
+   * em dois renders, com 1 frame de bolha DUPLICADA. Dentro do flushSync os
+   * dois entram no mesmo render.
+   *
+   * `contactId` é o da conversa em que o envio começou (o atendente pode ter
+   * trocado de conversa no meio): o upsert mira a thread certa.
+   */
+  function commitSent(contactId: string, tempId: string, dto: SentMessageDTO, authorName: string | null) {
+    const real = toThreadMessage(dto, authorName);
+    flushSync(() => {
+      upsertThreadMessage(contactId, real);
+      removePending(tempId);
+    });
+  }
+
   function handleSendText(text: string) {
     if (!active) return;
     const rt = replyTo;
@@ -861,10 +888,12 @@ export function WhatsAppInbox() {
     });
     setPending((prev) => [...prev, temp]);
 
-    sendWhatsAppMessage({ contactId: active.contactId, body: text, replyToId: rt?.id ?? null })
-      .then(async () => {
-        removePending(temp.id);
-        await Promise.all([mutateMessages(), refreshConversations()]);
+    const contactId = active.contactId;
+    sendWhatsAppMessage({ contactId, body: text, replyToId: rt?.id ?? null })
+      .then((dto) => {
+        commitSent(contactId, temp.id, dto, temp.authorName);
+        void revalidateThread(contactId);
+        void refreshConversations();
       })
       .catch((e) => {
         patchPending(temp.id, { status: 'failed' });
@@ -896,18 +925,21 @@ export function WhatsAppInbox() {
           const { url, key } = await getWhatsAppUploadUrl(contactId, file.name, mime);
           const put = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } });
           if (!put.ok) throw new Error(`Falha ao subir "${file.name}".`);
-          await sendWhatsAppMedia({
+          const dto = await sendWhatsAppMedia({
             contactId, key, mimeType: mime, fileName: file.name,
             caption: i === 0 ? caption || undefined : undefined,
             replyToId: i === 0 ? rt?.id ?? null : null,
           });
-          removePending(temp.id);
+          commitSent(contactId, temp.id, dto, temp.authorName);
         } catch (e) {
           patchPending(temp.id, { status: 'failed' });
           toast.error(e instanceof Error ? e.message : `Falha ao enviar "${file.name}".`);
         }
       }
-      await Promise.all([mutateMessages(), refreshConversations()]);
+      // Revalidação de fundo (uma para o lote): completa os campos que o DTO
+      // não traz; a bolha já está no lugar.
+      void revalidateThread(contactId);
+      void refreshConversations();
     })();
   }
 
