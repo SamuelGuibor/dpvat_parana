@@ -426,6 +426,12 @@ export async function listWhatsAppConversations(): Promise<WhatsAppConversationD
  * conversas hidratadas) desce apenas quando o hash mudou — mesmo desenho do
  * /api/board-state no Kanban. Cobre: qualquer conversa alterada (status,
  * atribuição, desfecho, lastMessageAt), leituras, etiquetas e o total.
+ *
+ * O termo de whatsapp_messages continua porque nota interna
+ * (sendWhatsAppInternalNote, postInternalNote do bot) cria mensagem sem mexer
+ * em whatsapp_conversations, e a prévia da lista mostra a nota. O custo vem
+ * do índice whatsapp_messages_createdAt_idx: max("createdAt") vira Index Only
+ * Scan Backward (~1 ms) em vez de seq scan da tabela toda a cada 15 s por aba.
  */
 export async function getWhatsAppInboxVersion(): Promise<string> {
   await requireTeamMember();
