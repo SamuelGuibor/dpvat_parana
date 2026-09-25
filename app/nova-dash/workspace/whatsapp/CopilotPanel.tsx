@@ -873,9 +873,12 @@ function ArquivosTab({
   }
 
   async function handleDownload(doc: ClientDocumentDTO) {
-    const url = await getMediaUrl(doc.key);
-    if (url) window.open(url, '_blank');
-    else toast.error('Não foi possível abrir o arquivo.');
+    // Baixa com o NOME do documento, não o da key: o rename troca só o nome
+    // (a key pode ser a mesma da mensagem da conversa). Nova aba em vez de
+    // location.href para um erro do S3 não tirar o atendente do inbox.
+    const res = await downloadFileFromS3(doc.key, doc.name, false).catch(() => null);
+    if (res?.success && res.presignedUrl) window.open(res.presignedUrl, '_blank');
+    else toast.error('Não foi possível baixar o arquivo.');
   }
 
   async function handleRename(doc: ClientDocumentDTO, newName: string) {

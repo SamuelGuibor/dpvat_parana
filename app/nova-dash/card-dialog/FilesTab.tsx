@@ -329,7 +329,8 @@ export function FilesTab({ cardId, isProcess, ownerId }: Props) {
     try {
       setSavingId(id);
       const updated = await updateDocumentName({ id, newName: editedName });
-      // Atualiza key e name para refletir o rename no S3
+      // Rename troca só o nome (a key do S3 é mantida: pode ser compartilhada
+      // com a mensagem do WhatsApp); a key volta igual e é copiada por segurança.
       setDocs((p) => p.map((d) => (d.id === id ? { ...d, name: updated.name, key: updated.key } : d)));
       toast.success('Arquivo renomeado.');
     } catch (err) {

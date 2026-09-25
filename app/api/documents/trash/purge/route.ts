@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { purgeExpiredTrash } from "@/app/_actions/documents/trash";
+import { purgeExpiredTrash } from "@/app/_shared/lib/trash-purge";
+import { isCronAuthorized } from "@/app/api/whatsapp/cron/auth";
 
 export const dynamic = "force-dynamic";
 // Purga pode varrer muitos objetos no S3 num dia de faxina grande.
 export const maxDuration = 300;
 
-function isCronAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = req.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  return req.nextUrl.searchParams.get("secret") === secret;
-}
-
 /**
- * Cron diário (vercel.json): apaga de vez (S3 + banco) o que está há mais de
- * 30 dias na lixeira da aba Arquivos. Idempotente — item que falhar no S3
- * fica pra próxima rodada.
+ * Cron diário (vercel.json): apaga de vez o que está há mais de 30 dias na
+ * lixeira da aba Arquivos. O objeto do S3 só sai se nada mais usa a key
+ * (`kept` conta os preservados). Idempotente — item que falhar no S3 fica pra
+ * próxima rodada.
  */
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req)) {

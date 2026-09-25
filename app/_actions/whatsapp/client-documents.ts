@@ -153,9 +153,10 @@ export async function attachConversationMediaToCard(messageId: string): Promise<
 
 /**
  * Renomeia um documento do cliente. Registrado (com User vinculado) reaproveita
- * o rename "de verdade" do resto do sistema (copia a chave no S3, preserva a
- * extensão). Rascunho (ainda sem User) só troca o nome de exibição no JSON —
- * não precisa mexer no S3 porque a chave nunca é exposta pro cliente.
+ * o rename do resto do sistema (`updateDocumentName`: troca só o nome de
+ * exibição e preserva a extensão; a key do S3 fica igual porque pode ser a
+ * mesma da mensagem da conversa). Rascunho (ainda sem User) só troca o nome no
+ * JSON — também sem mexer no S3.
  */
 export async function renameClientDocument(contactId: string, docId: string, newName: string): Promise<ClientDocumentDTO[]> {
   await requireTeamMember();

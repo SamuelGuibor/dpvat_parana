@@ -1,5 +1,5 @@
 # Modelo de dados (Prisma/Neon) — mapa para IA
-> Verificado em 2026-09-23 · Escopo: `prisma/schema.prisma`, `prisma/migrations/**`, `app/_shared/lib/prisma.ts`, `app/_shared/lib/db/*`
+> Verificado em 2026-09-25 · Escopo: `prisma/schema.prisma`, `prisma/migrations/**`, `app/_shared/lib/prisma.ts`, `app/_shared/lib/db/*`
 
 ## TL;DR
 - Postgres no **Neon** via Prisma 6, schema único (56 models, conferido com `grep -c "^model "`; sem enums Prisma: tudo é `String` com valores mágicos). Cliente único `db` em `app/_shared/lib/prisma.ts`. O `.env` local aponta para o **Neon de produção** — não existe banco de dev/staging.
@@ -18,7 +18,7 @@
 | `app/_shared/lib/db/automations.ts` · `botconversa.ts` | CRUD de automações; contagens da tabela `Botconversa` | `fetchAutomations`, `fetchTimeConditionAutomations`, `fetchEventsCount` |
 | `app/api/board-state/route.ts` | Estado do board numa chamada + hash de versão calculado no Postgres | `computeBoardVersion` (interna) |
 | `app/_actions/maintenance/retention.ts` | Retenção de `Notification` e `logs` (cron `/api/maintenance/retention`) | `runRetention`, `purgeOldLogs`, `PURGEABLE_LOG_ACTIONS` |
-| `app/_actions/documents/trash.ts` | Lixeira de `Document` (30 dias; cron `/api/documents/trash/purge`) | `restoreDoc`, `purgeDoc`, `purgeExpiredTrash` |
+| `app/_actions/documents/trash.ts` · `app/_shared/lib/trash-purge.ts` | Lixeira de `Document` (30 dias) · purga (cron `/api/documents/trash/purge`) | `restoreDoc`, `purgeDoc` · `purgeExpiredTrash`, `hardDelete` |
 | `app/_shared/lib/whatsapp/numbers.ts` · `crypto.ts` | Resolução de credenciais por número; token cifrado AES-256-GCM | `getCreds`, `activeNumberConversationWhere`, `ensureDefaultNumber`, `encryptSecret` |
 | `app/_shared/lib/whatsapp/close-categories.ts` | Fonte dos valores de `closeCategory` e do mapa para `qualified` | `CLOSE_CATEGORY_LABELS`, `QUALIFIED_BY_CATEGORY`, `NON_QUALIFIED_CATEGORIES` |
 | `app/_shared/lib/document-categories.ts` | Ids válidos de `Document.category` e inferência pelo nome | `DOCUMENT_CATEGORIES`, `inferCategory` |
@@ -99,7 +99,7 @@ Strings mágicas (fonte da verdade no código, não no schema):
 - **`closedAt`/`closeCategory`/`qualified` só valem com `status = "closed"`**: reabrir a conversa não limpa. Todo novo ponto de encerramento precisa setar `closedAt: new Date()`; KPI de funil nasce da coorte (`loadCohort` em `app/_actions/analytics/bot-funnel.ts`).
 - **Multi-número**: sem `upsert` por `phone`/`name` — find-or-create manual (`findOrCreateContactByPhone` em `app/_shared/lib/whatsapp/outbound.ts`); filtros de linha ativa usam `OR [{numberId: null}, {numberId: {notIn}}]` (`notIn` sozinho derruba legado); `getCreds` de número inativo devolve `null` de propósito.
 - **Token de número só via `encryptSecret`/`decryptSecret`**; trocar `WHATSAPP_CRED_KEY` (fallback `NEXT_AUTH_SECRET`) invalida os tokens salvos.
-- **Soft delete**: toda listagem de `Document` filtra `deletedAt: null`; `purgeDoc`/`purgeExpiredTrash` só apagam o objeto S3 se nenhuma **outra** linha (ativa ou ainda na lixeira) usar a mesma `key`. `WhatsAppMessage.deletedAt`/`ChatMessage.deletedAt` são exclusão só local.
+- **Soft delete**: toda listagem de `Document` filtra `deletedAt: null`; `purgeDoc`/`purgeExpiredTrash` (via `hardDelete`) só apagam o objeto S3 se nada mais usar a `key`: nenhuma **outra** linha de `Document` (ativa ou na lixeira), nenhuma `WhatsAppMessage.mediaKey` e não for biblioteca compartilhada (`whatsapp/flows/`, `whatsapp/templates/`). Renomear troca só `name`, nunca a `key`. `WhatsAppMessage.deletedAt`/`ChatMessage.deletedAt` são exclusão só local.
 - **Cascades de `User`**: apagar um card leva `Document` (linhas; objeto S3 fica), `Comment` do card, `Log` do card, `Process` do dono; apagar alguém da equipe leva `ChatMessage`, `Mention`/`Notification` recebidas. Referências soltas (`WhatsAppContact.userId`, `Mention.userId`, `Event.userId`, `AdminChecklistItem`, `Log.authorId`) ficam órfãs → trate `findUnique` nulo.
 - **Logs de ciclo de vida são eternos**: `move`, `archive`, `status_change`, `create`, `update` (o relatório de pastas `buildFolderReport` lê `move` sem limite de data). Só as ações em `PURGEABLE_LOG_ACTIONS` somem após 180 dias.
 - **Toda chamada de IA grava `metadata.usage`** no `Log` (`{model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens}`) — o Canto da IA filtra por `jsonb_exists(metadata,'usage')`.
@@ -135,5 +135,5 @@ Strings mágicas (fonte da verdade no código, não no schema):
 - **assinatura**: `app/_shared/lib/signature/core.ts` (`SignatureRequest`, cria card com `card_number_seq`), `app/_shared/lib/doc-templates.ts` (`DocTemplate`).
 - **analytics-custos**: `app/_actions/analytics/bot-funnel.ts` (coorte, `closedAt`), `app/_actions/analytics/get-ai-corner.ts` (`Log.metadata.usage`), `app/_shared/lib/cost-sync.ts` (`CostSnapshot`, `AppSetting`).
 - **workspace-equipe**: `app/_shared/lib/mention-inbox.ts` (`recordMentions`), `app/_shared/lib/sector-tasks.ts` (`recordSectorTask`), `app/api/work-session/route.ts` (`WorkSession`).
-- **documentos-ia**: `app/_shared/lib/document-categories.ts`, `app/_actions/documents/trash.ts`, `app/_shared/lib/admin-checklist.ts` (`markPersonalDocChecklistItem`).
+- **documentos-ia**: `app/_shared/lib/document-categories.ts`, `app/_actions/documents/trash.ts`, `app/_shared/lib/trash-purge.ts`, `app/_shared/lib/admin-checklist.ts` (`markPersonalDocChecklistItem`).
 - **infra**: `vercel.json` (crons de retenção/purga), `app/api/maintenance/retention/route.ts`, `app/api/documents/trash/purge/route.ts`.

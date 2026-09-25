@@ -1,5 +1,5 @@
 # Infra, deploy, crons, CI e integrações externas — mapa para IA
-> Verificado em 2026-09-23 · Escopo: `package.json`, `next.config.mjs`, `vercel.json`, `vercel/pro-checklist.md`, `railway/chat-relay.md`, `.github/workflows/ci.yml`, `vitest.config.mts`, `tests/**`, `scripts/**`, `knip.json`, `.eslintrc.json`, `tsconfig.json`, `.env.example`, `whatsapp-cron.cmd`, `middleware.ts` (allowlists de API), `app/api/**` (convenções), clientes externos em `app/_shared/lib/**`
+> Verificado em 2026-09-25 · Escopo: `package.json`, `next.config.mjs`, `vercel.json`, `vercel/pro-checklist.md`, `railway/chat-relay.md`, `.github/workflows/ci.yml`, `vitest.config.mts`, `tests/**`, `scripts/**`, `knip.json`, `.eslintrc.json`, `tsconfig.json`, `.env.example`, `whatsapp-cron.cmd`, `middleware.ts` (allowlists de API), `app/api/**` (convenções), clientes externos em `app/_shared/lib/**`
 
 ## TL;DR
 - Next 14.2 (App Router) na **Vercel Pro**. Banco Postgres no **Neon** via Prisma 6. Três serviços satélites no **Railway**, cada um com deploy próprio: o cérebro do bot (`CHATBOT_URL`, repo `D:\Chatbot_whatsapp`), o `docx-converter` (`DOCX_CONVERTER_URL`, `D:\docx-converter`) e o relay SSE do chat (`CHAT_RELAY_URL`, `D:\chat_site`).
@@ -20,7 +20,7 @@
 | `app/_shared/lib/whatsapp/cron-tasks.ts` | Lógica das fases, marcapasso de envio | `createPacer`, `RUN_BUDGET_MS`, `SIGNATURE_CRON_ENABLED`, `CronResults` |
 | `app/api/afastamentos/check/route.ts` | Notifica afastamentos vencidos (GET cron, POST sessão) | `runCheck` |
 | `app/api/automations/cron/time-check/route.ts` | Automações por tempo | → `runTimeBasedAutomations` (`app/_shared/lib/automation-executor.ts`) |
-| `app/api/documents/trash/purge/route.ts` | Purga a lixeira de documentos (30 dias) | → `purgeExpiredTrash` (`app/_actions/documents/trash.ts`) |
+| `app/api/documents/trash/purge/route.ts` | Purga a lixeira de documentos (30 dias) | → `purgeExpiredTrash` (`app/_shared/lib/trash-purge.ts`) |
 | `app/api/costs/sync/route.ts` | Sincroniza custos (`?days=` de 1 a 62, padrão 3) | → `runCostSync` (`app/_shared/lib/cost-sync.ts`) |
 | `app/api/maintenance/retention/route.ts` | Retenção de `Notification` e logs `wa_*` | → `runRetention` (`app/_actions/maintenance/retention.ts`) |
 | `app/api/whatsapp/webhook/route.ts` | Webhook da Meta (GET handshake, POST com HMAC), `maxDuration` 120 | `GET`, `POST`, `verifySignature` |
@@ -85,7 +85,7 @@
 | `/api/whatsapp/cron/recovery` | `*/15 * * * *` | — | 300 | sim | ciclo de recuperação do standby |
 | `/api/afastamentos/check` | `*/30 * * * *` | — | padrão | sim | `Notification` para admins |
 | `/api/automations/cron/time-check` | `*/30 * * * *` | — | 120 | **NÃO** | automações por tempo e prazo |
-| `/api/documents/trash/purge` | `0 6 * * *` | 03:00 | 300 | sim | apaga no S3 e no banco o que tem mais de 30 dias |
+| `/api/documents/trash/purge` | `0 6 * * *` | 03:00 | 300 | sim | apaga no banco o que tem mais de 30 dias; no S3 só o objeto que nada mais usa |
 | `/api/costs/sync` | `30 3 * * *` | 00:30 | 120 | **NÃO** | grava `cost_snapshots` |
 | `/api/maintenance/retention` | `0 5 * * *` | 02:00 | 300 | **NÃO** | purga `Notification` e logs `wa_*` |
 
@@ -179,6 +179,6 @@
 - **Analytics e custos** (`docs/ai/analytics-custos.md`): `runCostSync` → `CostSnapshot`; `app/_actions/costs/overview.ts` (`getCostOverview`, `syncCostsNow`); `app/_actions/analytics/get-ai-corner.ts` lê `metadata.usage`.
 - **WhatsApp e bot** (`docs/ai/whatsapp-bot.md`): as fases em `app/_shared/lib/whatsapp/cron-tasks.ts`; o webhook chama `service.ts` (`ingestIncomingMessage`, `applyStatusUpdate`), `bot.ts` (`handleIncomingWhatsApp`), `ficha-ai.ts` (`autoFillClientInfo`) e `account-events.ts` (`handleAccountEvent`). Os tetos de recuperação ficam em `recovery-caps.ts` (`recoveryCapForPhoneNumberId`).
 - **Kanban e automações** (`docs/ai/kanban-cards.md`): `runTimeBasedAutomations` (`app/_shared/lib/automation-executor.ts`), cron `time-check`.
-- **Documentos** (`docs/ai/documentos-ia.md`): `purgeExpiredTrash` (`app/_actions/documents/trash.ts`), presign em `app/_actions/documents/upload-s3.ts`.
+- **Documentos** (`docs/ai/documentos-ia.md`): `purgeExpiredTrash` (`app/_shared/lib/trash-purge.ts`), presign em `app/_actions/documents/upload-s3.ts`.
 - **Assinatura eletrônica** (`docs/ai/assinatura.md`): `runSignatureReminders` (`app/_shared/lib/signature/core.ts`, desligado por `SIGNATURE_CRON_ENABLED = false` em `cron-tasks.ts`). O PDF passa pelo docx-converter (`signature/pdf.ts`).
 - **Chat da equipe** (`docs/ai/workspace-equipe.md`): `broadcastToRelay` / `signRelayToken` (`app/_shared/lib/chat-relay.ts`) e o relay externo em `D:\chat_site`.

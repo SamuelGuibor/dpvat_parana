@@ -3,25 +3,17 @@
 import { db } from "../../_shared/lib/prisma";
 import { createLog } from "../../_shared/lib/log";
 import { requireTeam } from "../../_shared/lib/permissions-server";
-import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { TRASH_RETENTION_DAYS, hardDelete } from "../../_shared/lib/trash-purge";
 
 /**
  * Lixeira da aba Arquivos (estilo galeria do celular): documento excluído fica
  * aqui por 30 dias podendo ser restaurado; depois disso o cron
- * /api/documents/trash/purge apaga de vez (S3 + banco). Excluir de vez também
- * pode ser manual, pelo botão na própria lixeira.
- *
- * (Não exportada: arquivo "use server" só pode exportar funções async.)
+ * /api/documents/trash/purge apaga de vez (`purgeExpiredTrash`, em
+ * app/_shared/lib/trash-purge.ts — fora deste arquivo "use server" para não
+ * virar action sem guard). Excluir de vez também pode ser manual, pelo botão
+ * na própria lixeira. Nos dois casos o objeto do S3 só é apagado se nada mais
+ * usa a key (mensagem do WhatsApp, fluxo, template ou outro Document).
  */
-const TRASH_RETENTION_DAYS = 30;
-
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
 
 export interface TrashedDocDTO {
   id: string;
@@ -93,7 +85,7 @@ export async function purgeDoc(docId: string): Promise<void> {
   });
   if (!doc) throw new Error("Documento não está na lixeira.");
 
-  await hardDelete(doc.key, docId);
+  const { s3Kept } = await hardDelete(doc.key, docId);
 
   await createLog({
     action: "document_purge",
@@ -102,50 +94,8 @@ export async function purgeDoc(docId: string): Promise<void> {
     authorName: ctx.name ?? "Usuário",
     userId: doc.processId ? null : doc.userId,
     processId: doc.processId ?? null,
-    metadata: { name: doc.name, key: doc.key },
+    // s3Kept: a linha saiu, mas o arquivo continua no S3 porque a conversa do
+    // WhatsApp (ou um fluxo/template) ainda usa o mesmo objeto.
+    metadata: { name: doc.name, key: doc.key, s3Kept },
   });
-}
-
-/**
- * Purga tudo que passou dos 30 dias. Chamada pelo cron (a rota valida o
- * CRON_SECRET). Item a item de propósito: se um DeleteObject falhar no S3, o
- * registro fica pra próxima rodada em vez de virar órfão no bucket.
- */
-export async function purgeExpiredTrash(): Promise<{ purged: number; failed: number }> {
-  const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 86_400_000);
-  const expired = await db.document.findMany({
-    where: { deletedAt: { lt: cutoff } },
-    select: { id: true, key: true, name: true },
-  });
-
-  let purged = 0;
-  let failed = 0;
-  for (const doc of expired) {
-    try {
-      await hardDelete(doc.key, doc.id);
-      purged += 1;
-    } catch (err) {
-      failed += 1;
-      console.error(`[TRASH PURGE] Falha ao purgar "${doc.name}" (${doc.id}):`, err);
-    }
-  }
-  return { purged, failed };
-}
-
-/**
- * Apaga do S3 e depois do banco. Se OUTRO registro ativo apontar pra mesma key
- * (re-upload do mesmo anexo pela ficha do WhatsApp, por exemplo), o objeto no
- * S3 é preservado e só a linha da lixeira some.
- */
-async function hardDelete(key: string, docId: string): Promise<void> {
-  const sharedKey = await db.document.findFirst({
-    where: { key, id: { not: docId } },
-    select: { id: true },
-  });
-  if (!sharedKey) {
-    await s3Client.send(
-      new DeleteObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: key }),
-    );
-  }
-  await db.document.delete({ where: { id: docId } });
 }
