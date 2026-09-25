@@ -38,11 +38,17 @@ interface BroadcastInput {
   message: unknown;
 }
 
+// Teto do aviso ao relay. O broadcast é aguardado no caminho do envio (sem
+// waitUntil, promise solta pode ser congelada quando a função responde), e
+// sem prazo um relay travado prendia o envio do atendente sem limite
+// (auditoria de 24/09/2026). O relay responde em ~50-120 ms quando está bem.
+const RELAY_TIMEOUT_MS = 1_500;
+
 /** Notifica o relay sobre uma nova mensagem (não lança em caso de falha). */
 export async function broadcastToRelay(input: BroadcastInput): Promise<void> {
   if (!isRelayConfigured()) return;
   try {
-    await fetch(`${RELAY_URL}/broadcast`, {
+    const res = await fetch(`${RELAY_URL}/broadcast`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -50,7 +56,11 @@ export async function broadcastToRelay(input: BroadcastInput): Promise<void> {
       },
       body: JSON.stringify(input),
       cache: 'no-store',
+      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
     });
+    // Sem isto um 401 (segredo divergente) ou 5xx do relay passava calado, e o
+    // "tempo real não entrega" ficava sem pista nos logs da Vercel.
+    if (!res.ok) console.error(`[CHAT RELAY] Relay respondeu ${res.status} ao broadcast.`);
   } catch (err) {
     console.error('[CHAT RELAY] Falha ao notificar o relay:', err);
   }

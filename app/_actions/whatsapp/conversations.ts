@@ -9,7 +9,10 @@ import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
-import { LIST_PREVIEW_MAX_CHARS, computeUnread, mediaTypeLabel } from '@/app/_shared/utils/whatsapp-inbox';
+import {
+  LIST_PREVIEW_MAX_CHARS, assumePatch, closePatch, computeUnread, listPreview, mergeCloseTag,
+  qualifiedForCategory, returnToBotPatch,
+} from '@/app/_shared/utils/whatsapp-inbox';
 import { CLOSE_CATEGORY_LABELS, CLOSE_CATEGORY_OPTIONS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
@@ -356,9 +359,6 @@ async function loadConversations(
 
   return conversations.map((c) => {
     const last = previewByContact.get(c.contactId);
-    const preview = last
-      ? last.body ?? (last.mediaType ? mediaTypeLabel(last.mediaType) : null)
-      : null;
     const inboundAt = inboundByContact.get(c.contactId) ?? null;
     // Leitura efetiva: a mais recente de QUALQUER atendente, com o lastReadAt
     // global (legado) como fallback — já resolvida no SQL.
@@ -388,7 +388,9 @@ async function loadConversations(
       lastMessageAt: c.lastMessageAt.toISOString(),
       lastReadAt: effectiveReadAt?.toISOString() ?? null,
       lastInboundAt: inboundAt?.toISOString() ?? null,
-      lastMessagePreview: last?.direction === 'out' && preview ? `Você: ${preview}` : preview,
+      // Mesma regra do patch local do envio (sentMessagePatch): a linha não
+      // "pula" quando o hash recarrega a lista depois de um envio.
+      lastMessagePreview: last ? listPreview(last) : null,
       // authorUserId nulo = autor apagado ou mensagem sem autor humano.
       lastMessageAuthorName:
         last?.direction === 'out' && !last.sentByBot && last.authorUserId
@@ -519,8 +521,15 @@ export async function listWhatsAppAttendants(): Promise<AttendantDTO[]> {
   return users.map((u) => ({ id: u.id, name: u.name ?? 'Atendente' }));
 }
 
+// Assumir, devolver e encerrar DEVOLVEM o patch da conversa (auditoria de
+// 24/09/2026): a tela aplica na hora, sem recarregar as 1.000 conversas da
+// lista. O patch sai do que a action já tem em mãos (sem hidratar a conversa
+// de novo) e é o mesmo do otimista do clique (assumePatch/returnToBotPatch/
+// closePatch em app/_shared/utils/whatsapp-inbox.ts). Aba com o bundle antigo
+// ignora o retorno e segue recarregando a lista, como antes.
+
 /** Atendente assume a conversa (sai da fila / tira do bot / reabre se estava encerrada). */
-export async function assumeConversation(conversationId: string): Promise<void> {
+export async function assumeConversation(conversationId: string): Promise<Partial<WhatsAppConversationDTO>> {
   const me = await requireTeamMember();
   const before = await convContact(conversationId);
   await db.whatsAppConversation.update({
@@ -550,10 +559,11 @@ export async function assumeConversation(conversationId: string): Promise<void> 
       contactPhone: before.contact?.phone,
     });
   }
+  return assumePatch(me);
 }
 
 /** Devolve a conversa pro bot responder. */
-export async function returnConversationToBot(conversationId: string): Promise<void> {
+export async function returnConversationToBot(conversationId: string): Promise<Partial<WhatsAppConversationDTO>> {
   const me = await requireTeamMember();
   const before = await convContact(conversationId);
   await db.whatsAppConversation.update({
@@ -576,6 +586,7 @@ export async function returnConversationToBot(conversationId: string): Promise<v
       contactPhone: before.contact?.phone,
     });
   }
+  return returnToBotPatch();
 }
 
 /**
@@ -588,7 +599,7 @@ export async function returnConversationToBot(conversationId: string): Promise<v
 export async function closeConversation(
   conversationId: string,
   category: string | boolean = 'nao_qualificado',
-): Promise<void> {
+): Promise<Partial<WhatsAppConversationDTO>> {
   const me = await requireTeamMember();
   const before = await convContact(conversationId);
 
@@ -596,7 +607,7 @@ export async function closeConversation(
   // Motivos dinâmicos criados pela equipe têm prefixo "nq_" — todos contam
   // como não qualificado; o resto precisa estar no mapa estático.
   const closeCategory = cat in QUALIFIED_BY_CATEGORY || cat.startsWith('nq_') ? cat : 'nao_qualificado';
-  const qualified = QUALIFIED_BY_CATEGORY[closeCategory] ?? (closeCategory.startsWith('nq_') ? false : null);
+  const qualified = qualifiedForCategory(closeCategory);
   const reasonRow = closeCategory.startsWith('nq_')
     ? await db.whatsAppCloseReason.findUnique({ where: { key: closeCategory } })
     : null;
@@ -616,7 +627,9 @@ export async function closeConversation(
   // Tag automática = o próprio desfecho ("Não qualificada — sem cobertura
   // INSS"), pra tag e desfecho andarem SEMPRE juntos. Ao mudar o desfecho,
   // as tags de desfecho anteriores saem — as tags manuais ficam intactas.
-  await syncCloseTag(conversationId, closeCategory, label);
+  // As tags finais voltam no patch; null = a tag falhou (o encerramento
+  // vale assim mesmo) e a tela corrige na próxima recarga pelo hash.
+  const tags = await syncCloseTag(conversationId, closeCategory, label);
   if (before) {
     await logWhatsAppEvent({
       action: 'wa_close',
@@ -632,6 +645,7 @@ export async function closeConversation(
     // não qualificado). Fire-and-forget; outras categorias são ignoradas.
     void reportLeadStageToMeta(before.contactId, closeCategory);
   }
+  return { ...closePatch(closeCategory, label), ...(tags ? { tags } : {}) };
 }
 
 // Cor da tag automática de desfecho, por família de categoria.
@@ -650,8 +664,15 @@ const CLOSE_TAG_COLORS: Record<string, string> = {
  * desfecho anteriores (identificadas pelo conjunto de rótulos conhecidos —
  * estáticos + motivos da tabela) e aplica a tag com o rótulo completo atual.
  * Best-effort: falha de tag nunca impede o encerramento.
+ *
+ * Devolve as tags finais da conversa (para o patch da tela), montadas em
+ * memória a partir do que já foi lido — sem query extra. null = falhou.
  */
-async function syncCloseTag(conversationId: string, closeCategory: string, label: string): Promise<void> {
+async function syncCloseTag(
+  conversationId: string,
+  closeCategory: string,
+  label: string,
+): Promise<{ id: string; name: string; color: string }[] | null> {
   try {
     // Todos os rótulos que já foram (ou podem ter sido) tag de desfecho.
     const reasonLabels = (await db.whatsAppCloseReason.findMany({ select: { label: true } })).map((r) => r.label);
@@ -662,9 +683,12 @@ async function syncCloseTag(conversationId: string, closeCategory: string, label
     ]);
     knownLabels.delete(label); // a atual fica
 
+    // Ordem de aplicação e cor: é a lista que volta para a tela, na mesma
+    // ordem de loadConversations.
     const current = await db.whatsAppConversationTag.findMany({
       where: { conversationId },
-      include: { tag: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+      include: { tag: { select: { id: true, name: true, color: true } } },
     });
     const toRemove = current.filter((ct) => knownLabels.has(ct.tag.name)).map((ct) => ct.tagId);
     if (toRemove.length) {
@@ -683,8 +707,14 @@ async function syncCloseTag(conversationId: string, closeCategory: string, label
       update: {},
       create: { conversationId, tagId: tag.id },
     });
+    return mergeCloseTag(
+      current.map((ct) => ct.tag),
+      new Set(toRemove),
+      { id: tag.id, name: tag.name, color: tag.color },
+    );
   } catch (err) {
     console.error('[WA] Falha ao sincronizar a tag de desfecho:', err);
+    return null;
   }
 }
 

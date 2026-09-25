@@ -2,10 +2,13 @@
 // (loadConversations em app/_actions/whatsapp/conversations.ts) e o cliente,
 // para a prévia montada no navegador bater com a que vem do banco.
 //
-// Sem "use server" e sem banco: só tipos do DTO, para os testes rodarem puros
+// Sem "use server" e sem banco: só tipos dos DTOs e o mapa neutro de
+// close-categories.ts, para os testes rodarem puros
 // (tests/whatsapp-inbox.test.ts e tests/whatsapp-unread.test.ts).
 
 import type { WhatsAppConversationDTO } from '@/app/_actions/whatsapp/conversations';
+import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
+import { QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 
 /**
  * Tamanho máximo da prévia da última mensagem na lista. O corte é feito no SQL
@@ -23,6 +26,36 @@ export function mediaTypeLabel(mediaType: string): string {
   if (mediaType.startsWith('video/')) return 'Vídeo';
   if (mediaType.startsWith('audio/')) return 'Áudio';
   return 'Documento';
+}
+
+/**
+ * Corta a prévia em `max` CARACTERES, como o `left()` do Postgres. O
+ * `String.slice` conta unidades UTF-16 e partiria um emoji ao meio — a prévia
+ * montada no navegador ficaria diferente da que vem do banco e a linha
+ * "pularia" quando o hash recarregasse a lista.
+ */
+export function truncatePreview(text: string, max: number = LIST_PREVIEW_MAX_CHARS): string {
+  // Atalho: se nem as unidades UTF-16 passam do teto, os caracteres também não.
+  if (text.length <= max) return text;
+  return Array.from(text).slice(0, max).join('');
+}
+
+/**
+ * Prévia da última mensagem na linha da lista. É a MESMA regra no servidor
+ * (loadConversations, com o corpo já cortado no SQL) e no patch local do envio
+ * (sentMessagePatch): o texto, ou o nome do tipo quando é mídia sem legenda,
+ * com "Você: " na frente quando a mensagem é nossa. Sem corpo e sem mídia →
+ * null (antes o cliente chamaria mediaTypeLabel(null) e quebraria).
+ */
+export function listPreview(m: {
+  body: string | null;
+  mediaType: string | null;
+  direction: string | null;
+}): string | null {
+  const text = m.body ?? (m.mediaType ? mediaTypeLabel(m.mediaType) : null);
+  if (text === null) return null;
+  const cut = truncatePreview(text);
+  return m.direction === 'out' && cut ? `Você: ${cut}` : cut;
 }
 
 /* ---------- patch local da lista (ações otimistas) ---------- */
@@ -120,6 +153,95 @@ export function revertPatch<T extends object>(original: T, patch: Partial<T>): P
   const out: Partial<T> = {};
   for (const key of Object.keys(patch) as (keyof T)[]) out[key] = original[key];
   return out;
+}
+
+/* ---------- ações da conversa: o mesmo patch no clique e na resposta ---------- */
+
+// Por que existe (auditoria de 24/09/2026): Assumir, Devolver, Encerrar e
+// Enviar esperavam a action E a recarga das 1.000 conversas antes de mudar a
+// tela e soltar o toast — ~670 recargas completas por dia vinham direto de
+// clique, e cada passo de fluxo manual custava ~4 s além do delay. Agora o
+// clique aplica o patch otimista, a action devolve o patch real (montado com o
+// que o servidor já tem, sem hidratar a conversa) e a lista não recarrega. As
+// funções abaixo são usadas nos DOIS lados para o otimista bater com a resposta.
+
+type ConversationChanges = Partial<WhatsAppConversationDTO>;
+type Attendant = { id: string; name: string };
+
+/** `qualified` que o encerramento grava: nq_* (motivos da equipe) conta como não qualificado. */
+export function qualifiedForCategory(category: string): boolean | null {
+  return QUALIFIED_BY_CATEGORY[category] ?? (category.startsWith('nq_') ? false : null);
+}
+
+/**
+ * Assumir (ou Reabrir, que é o mesmo assumeConversation numa encerrada). O
+ * desfecho (`closeCategory`/`qualified`) é preservado, como no servidor; só o
+ * rótulo some porque ele só aparece em conversa encerrada.
+ */
+export function assumePatch(me: Attendant): ConversationChanges {
+  return { status: 'human', assignedToId: me.id, assignedToName: me.name, closeCategoryLabel: null };
+}
+
+/** Devolver ao bot: sai do atendente. */
+export function returnToBotPatch(): ConversationChanges {
+  return { status: 'bot', assignedToId: null, assignedToName: null, closeCategoryLabel: null };
+}
+
+/**
+ * Encerrar com um desfecho. `label` é o rótulo que a lista mostra
+ * (CLOSE_CATEGORY_LABELS ou o motivo da tabela whatsapp_close_reasons). As
+ * tags de desfecho só chegam na resposta (syncCloseTag), porque o id da tag
+ * pode nem existir antes.
+ */
+export function closePatch(category: string, label: string): ConversationChanges {
+  return {
+    status: 'closed',
+    closeCategory: category,
+    closeCategoryLabel: label,
+    qualified: qualifiedForCategory(category),
+    assignedToId: null,
+    assignedToName: null,
+  };
+}
+
+/**
+ * Tags da conversa depois do syncCloseTag, calculadas em memória (sem reler o
+ * banco): as tags de desfecho anteriores saem; a do desfecho atual fica no
+ * lugar se já estava (o upsert com `update: {}` não mexe no createdAt da
+ * ligação) ou entra no fim. `current` vem na ordem de aplicação (createdAt
+ * asc), a mesma da lista.
+ */
+export function mergeCloseTag<T extends { id: string }>(current: T[], removeIds: ReadonlySet<string>, tag: T): T[] {
+  const kept = current.filter((t) => !removeIds.has(t.id));
+  return kept.some((t) => t.id === tag.id) ? kept : [...kept, tag];
+}
+
+/**
+ * Patch local da conversa depois de um envio do atendente (texto, mídia,
+ * passo de fluxo, template), a partir do DTO que a action devolve. Espelha o
+ * persistOutbound (conversa vira `human` e passa a ser de quem enviou) e a
+ * prévia de loadConversations. A conversa sobe para o topo porque
+ * `lastMessageAt` muda (patchConversationList reposiciona).
+ */
+export function sentMessagePatch(
+  dto: Pick<WhatsAppMessageDTO, 'body' | 'mediaType' | 'status' | 'createdAt' | 'conversationStatus'>,
+  me: Attendant,
+): ConversationChanges {
+  return {
+    lastMessageAt: dto.createdAt,
+    status: dto.conversationStatus,
+    assignedToId: me.id,
+    assignedToName: me.name,
+    lastMessagePreview: listPreview({ body: dto.body, mediaType: dto.mediaType, direction: 'out' }),
+    lastMessageAuthorName: me.name,
+    lastMessageFromBot: false,
+    lastMessageFromClient: false,
+    lastMessageStatus: dto.status,
+    lastMessageMediaType: dto.mediaType,
+    // O rótulo do desfecho só existe em conversa encerrada (o envio sempre
+    // devolve `human`, mas não custa respeitar a regra da lista).
+    ...(dto.conversationStatus === 'closed' ? {} : { closeCategoryLabel: null }),
+  };
 }
 
 /* ---------- não lida = o cliente mandou algo que ninguém viu ---------- */

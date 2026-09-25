@@ -38,9 +38,10 @@ import {
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, setConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
 import {
-  inboxListState, manualUnreadPatch, patchConversationList, patchConversationRow, readPatch, revertPatch, sameTags,
-  withTag, type ConversationPatch,
+  assumePatch, closePatch, inboxListState, manualUnreadPatch, patchConversationList, patchConversationRow, readPatch,
+  returnToBotPatch, revertPatch, sameTags, sentMessagePatch, withTag, type ConversationPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
+import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread-window';
 import {
   NEAR_BOTTOM_PX, countNewBelow, decideThreadScroll, isOwnThreadMessage, tailAdvanced, threadTail, type ThreadTail,
@@ -174,6 +175,10 @@ function attendantBadgeColor(name: string) {
 export function WhatsAppInbox() {
   const { data: session } = useSession();
   const meId = session?.user?.id ?? '';
+  // Quem sou eu nos patches locais (assumir, enviar): mesmo fallback do
+  // servidor ('Atendente') para a linha não trocar de nome na recarga.
+  const meName = session?.user?.name ?? 'Atendente';
+  const me = useMemo(() => ({ id: meId, name: meName }), [meId, meName]);
 
   const {
     conversations, refreshConversations, scheduleConversationsRefresh, patchConversations,
@@ -839,34 +844,58 @@ export function WhatsAppInbox() {
     !active.lastInboundAt || Date.now() - new Date(active.lastInboundAt).getTime() > WINDOW_24H_MS
   );
 
-  // Com `opts` (ação otimista): o patch entra no clique, o toast sai quando o
-  // servidor confirma e a lista NÃO é recarregada — as outras abas veem pelo
-  // hash. `base` é a conversa capturada ANTES do clique (antes até de fechar a
-  // thread, como no "Marcar como não lida"), para o rollback não depender do
-  // `active` do render. Erro de action chega mascarado em produção: por isso
-  // a mensagem própria. Sem `opts`, segue o caminho antigo (espera a recarga).
+  // Ação sobre uma conversa sem esperar a recarga da lista (auditoria de
+  // 24/09/2026): server actions saem numa fila serial por aba (Next 14.2.35),
+  // e o clique esperava a action E a recarga das 1.000 conversas — 2-4 s até
+  // o toast, ~670 recargas completas por dia vindas direto de clique.
+  // - `optimistic` entra no clique; a resposta da action, quando é um patch
+  //   (assumir/devolver/encerrar), entra por cima e o toast sai logo em seguida;
+  // - resposta vazia com otimista (lida/não lida): o otimista já é o estado
+  //   final e nada recarrega — as outras abas veem pelo hash;
+  // - resposta vazia sem otimista (bloquear/desbloquear): recarga em segundo
+  //   plano (single-flight), sem segurar o toast;
+  // - erro: rollback e mensagem própria (erro de action chega mascarado em
+  //   produção, e a aba com o bundle de antes do deploy também cai aqui).
+  // `base` é a conversa capturada ANTES do clique (antes até de fechar a
+  // thread, como no "Marcar como não lida"), para o patch e o rollback não
+  // dependerem do `active` do render.
   async function runAction(
-    fn: () => Promise<void>,
+    fn: () => Promise<Partial<WhatsAppConversationDTO> | void>,
     okMsg: string,
-    opts?: {
-      base: WhatsAppConversationDTO;
-      optimistic: Partial<WhatsAppConversationDTO>;
+    opts: {
       errorMsg: string;
+      base?: WhatsAppConversationDTO;
+      optimistic?: Partial<WhatsAppConversationDTO>;
     },
   ) {
-    if (opts) patchConversation(opts.base.contactId, opts.optimistic);
+    const { base, optimistic, errorMsg } = opts;
+    if (base && optimistic) patchConversation(base.contactId, optimistic);
     try {
-      await fn();
-      if (!opts) await refreshConversations();
+      const res = await fn();
+      if (base && res) patchConversation(base.contactId, confirmedPatch(base.id, res));
+      else if (!optimistic) void refreshConversations();
       toast.success(okMsg);
-    } catch (e) {
-      if (opts) {
-        patchConversation(opts.base.contactId, revertPatch(opts.base, opts.optimistic));
-        toast.error(opts.errorMsg);
-        return;
-      }
-      toast.error(e instanceof Error ? e.message : 'Falha na operação.');
+    } catch {
+      if (base && optimistic) patchConversation(base.contactId, revertPatch(base, optimistic));
+      toast.error(errorMsg);
     }
+  }
+
+  // Patch devolvido pela action, aplicado sobre a versão ATUAL da conversa.
+  // As tags do encerramento (syncCloseTag) só entram se não houver tag desta
+  // conversa gravando — a lista do servidor ainda não teria a tag em voo e o
+  // chip piscaria; a gravação da tag traz a lista certa quando termina.
+  function confirmedPatch(
+    conversationId: string,
+    res: Partial<WhatsAppConversationDTO>,
+  ): ConversationPatch {
+    const { tags, ...rest } = res;
+    if (!tags) return rest;
+    return (c) => {
+      const prefix = `${conversationId}:`;
+      const tagBusy = [...pendingTagsRef.current].some((k) => k.startsWith(prefix));
+      return tagBusy || sameTags(c.tags, tags) ? rest : { ...rest, tags };
+    };
   }
 
   // Patch local de UMA conversa em todas as cópias que a tela pode estar
@@ -1014,8 +1043,10 @@ export function WhatsAppInbox() {
     sendWhatsAppMessage({ contactId, body: text, replyToId: rt?.id ?? null })
       .then((dto) => {
         commitSent(contactId, temp.id, dto, temp.authorName);
+        // A conversa sobe para o topo com a prévia nova por patch local; a
+        // lista NÃO recarrega por envio (as outras abas veem pelo hash).
+        patchConversation(contactId, sentMessagePatch(dto, me));
         void revalidateThread(contactId);
-        void refreshConversations();
       })
       .catch((e) => {
         patchPending(temp.id, { status: 'failed' });
@@ -1053,16 +1084,27 @@ export function WhatsAppInbox() {
             replyToId: i === 0 ? rt?.id ?? null : null,
           });
           commitSent(contactId, temp.id, dto, temp.authorName);
+          // Patch por arquivo: a prévia da lista acompanha o último enviado.
+          patchConversation(contactId, sentMessagePatch(dto, me));
         } catch (e) {
           patchPending(temp.id, { status: 'failed' });
           toast.error(e instanceof Error ? e.message : `Falha ao enviar "${file.name}".`);
         }
       }
       // Revalidação de fundo (uma para o lote): completa os campos que o DTO
-      // não traz; a bolha já está no lugar.
+      // não traz; a bolha já está no lugar. A lista não recarrega.
       void revalidateThread(contactId);
-      void refreshConversations();
     })();
+  }
+
+  // Envio que não passa pela bolha otimista (passo de fluxo, template): a
+  // mensagem entra direto no cache da thread (o mesmo upsert do commitSent,
+  // sem esperar o refetch) e a conversa recebe o patch local na lista. Quem
+  // chama revalida a thread em segundo plano. Pelo contactId do DTO: o
+  // atendente pode ter trocado de conversa no meio do fluxo.
+  function handleSentOutside(dto: WhatsAppMessageDTO) {
+    upsertThreadMessage(dto.contactId, toThreadMessage(dto, session?.user?.name ?? 'Você'));
+    patchConversation(dto.contactId, sentMessagePatch(dto, me));
   }
 
   function retryPending(msg: WhatsAppThreadMessage) {
@@ -1132,7 +1174,11 @@ export function WhatsAppInbox() {
         description: 'O contato volta a ser atendido normalmente (bot e mensagens da equipe).',
         confirmLabel: 'Desbloquear',
       }))) return;
-      await runAction(() => unblockWhatsAppContact(conv.contactId), 'Contato desbloqueado.');
+      // Sem patch: o desbloqueio mexe no contato, e a lista revalida em
+      // segundo plano sem segurar o toast.
+      await runAction(() => unblockWhatsAppContact(conv.contactId), 'Contato desbloqueado.', {
+        errorMsg: 'Não foi possível desbloquear o contato. Recarregue a página (F5) e tente de novo.',
+      });
       return;
     }
     if (!(await confirm({
@@ -1140,7 +1186,9 @@ export function WhatsAppInbox() {
       description: 'O bot e as mensagens automáticas param na hora e a conversa é encerrada como "Descartada". O histórico fica guardado e dá pra desbloquear depois.',
       confirmLabel: 'Bloquear',
     }))) return;
-    await runAction(() => blockWhatsAppContact(conv.contactId), 'Contato bloqueado.');
+    await runAction(() => blockWhatsAppContact(conv.contactId), 'Contato bloqueado.', {
+      errorMsg: 'Não foi possível bloquear o contato. Recarregue a página (F5) e tente de novo.',
+    });
   }
 
   async function handleDeleteContact(conv: WhatsAppConversationDTO) {
@@ -1564,9 +1612,14 @@ export function WhatsAppInbox() {
                 search={search}
                 numberFilter={numberFilter}
                 numberLabelOf={numberBadges ? (nid) => (nid ? numberBadges.get(nid) ?? null : null) : null}
-                onOpen={async (contactId) => {
-                  await refreshConversations();
+                // Abre na hora: quem está fora da lista é hidratado pelo
+                // fetchedActive. A lista (que pode ganhar a conversa recém-
+                // criada pelo openContactConversation) recarrega pelo
+                // coalescer, DEPOIS da hidratação entrar na fila de actions —
+                // antes o clique esperava as 1.000 conversas.
+                onOpen={(contactId) => {
                   setActiveContactId(contactId);
+                  scheduleConversationsRefresh();
                 }}
               />
             ) : listState === 'loading' ? (
@@ -1805,10 +1858,32 @@ export function WhatsAppInbox() {
               </DropdownMenu>
 
               {(active.status === 'queued' || active.status === 'bot' || active.status === 'standby' || (active.status === 'human' && active.assignedToId !== meId)) && (
-                <HeaderButton icon={Headset} label="Assumir" onClick={() => runAction(() => assumeConversation(active.id), 'Conversa assumida.')} />
+                <HeaderButton
+                  icon={Headset}
+                  label="Assumir"
+                  onClick={() => {
+                    const base = active;
+                    void runAction(() => assumeConversation(base.id), 'Conversa assumida.', {
+                      base,
+                      optimistic: assumePatch(me),
+                      errorMsg: 'Não foi possível assumir a conversa. Recarregue a página (F5) e tente de novo.',
+                    });
+                  }}
+                />
               )}
               {active.status === 'human' && (
-                <HeaderButton icon={Undo2} label="Devolver pro bot" onClick={() => runAction(() => returnConversationToBot(active.id), 'Conversa devolvida pro bot.')} />
+                <HeaderButton
+                  icon={Undo2}
+                  label="Devolver pro bot"
+                  onClick={() => {
+                    const base = active;
+                    void runAction(() => returnConversationToBot(base.id), 'Conversa devolvida pro bot.', {
+                      base,
+                      optimistic: returnToBotPatch(),
+                      errorMsg: 'Não foi possível devolver ao bot. Recarregue a página (F5) e tente de novo.',
+                    });
+                  }}
+                />
               )}
               {/* Encerrar (aberta) / Alterar desfecho (encerrada — a IA às
                   vezes desqualifica errado, e aqui a equipe corrige na mão). */}
@@ -1828,7 +1903,17 @@ export function WhatsAppInbox() {
                     return (
                       <DropdownMenuItem
                         key={category}
-                        onClick={() => runAction(() => closeConversation(active.id, category), `Encerrado: ${label}.`)}
+                        onClick={() => {
+                          const base = active;
+                          // Rótulo como a lista mostra (CLOSE_CATEGORY_LABELS; o
+                          // motivo da tabela já vem com o rótulo dele), não o
+                          // do menu — senão o chip trocaria na resposta.
+                          void runAction(() => closeConversation(base.id, category), `Encerrado: ${label}.`, {
+                            base,
+                            optimistic: closePatch(category, CLOSE_CATEGORY_LABELS[category] ?? label),
+                            errorMsg: 'Não foi possível encerrar. Recarregue a página (F5) e tente de novo.',
+                          });
+                        }}
                         className="text-base"
                       >
                         <Icon className={`mr-2 h-3.5 w-3.5 ${color}`} /> {label}
@@ -1843,7 +1928,18 @@ export function WhatsAppInbox() {
                 </DropdownMenuContent>
               </DropdownMenu>
               {active.status === 'closed' && (
-                <HeaderButton icon={Headset} label="Reabrir" onClick={() => runAction(() => assumeConversation(active.id), 'Atendimento reaberto.')} />
+                <HeaderButton
+                  icon={Headset}
+                  label="Reabrir"
+                  onClick={() => {
+                    const base = active;
+                    void runAction(() => assumeConversation(base.id), 'Atendimento reaberto.', {
+                      base,
+                      optimistic: assumePatch(me),
+                      errorMsg: 'Não foi possível reabrir o atendimento. Recarregue a página (F5) e tente de novo.',
+                    });
+                  }}
+                />
               )}
 
               {/* Mostrar/ocultar a coluna Copiloto (só existe no desktop lg+). */}
@@ -2037,7 +2133,8 @@ export function WhatsAppInbox() {
                 onSendText={handleSendText}
                 onSendMedia={handleSendMedia}
                 onEditSubmit={handleEditSubmit}
-                onRefresh={async () => { await Promise.all([mutateMessages(), refreshConversations()]); }}
+                onRefreshThread={() => revalidateThread(active.contactId)}
+                onSent={handleSentOutside}
               />
             </div>
             </>)}
@@ -2046,7 +2143,7 @@ export function WhatsAppInbox() {
               open={sendTemplateOpen}
               onOpenChange={setSendTemplateOpen}
               contactId={active.contactId}
-              onSent={async () => { await Promise.all([mutateMessages(), refreshConversations()]); }}
+              onSent={(dto) => { handleSentOutside(dto); void revalidateThread(dto.contactId); }}
             />
           </>
         )}
@@ -2097,9 +2194,11 @@ export function WhatsAppInbox() {
       <AddContactDialog
         open={addContactOpen}
         onOpenChange={setAddContactOpen}
-        onCreated={async (contactId) => {
-          await refreshConversations();
+        // Mesmo desenho do "Abrir" da agenda: abre na hora (fetchedActive) e a
+        // lista pega a conversa nova numa recarga coalescida.
+        onCreated={(contactId) => {
           setActiveContactId(contactId);
+          scheduleConversationsRefresh();
         }}
       />
     </div>
@@ -2260,7 +2359,7 @@ function AddContactDialog({
   open, onOpenChange, onCreated,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void;
-  onCreated: (contactId: string) => Promise<void>;
+  onCreated: (contactId: string) => void;
 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -2271,7 +2370,7 @@ function AddContactDialog({
     setBusy(true);
     try {
       const { contactId } = await createWhatsAppContact(phone, name);
-      await onCreated(contactId);
+      onCreated(contactId);
       onOpenChange(false);
       setName(''); setPhone('');
       toast.success('Contato criado — a conversa já está aberta com você.');

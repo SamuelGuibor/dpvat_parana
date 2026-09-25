@@ -29,7 +29,7 @@
 | `app/api/botconversa/contratado/route.ts` + `app/_shared/lib/webhook-auth.ts` | Webhook do BotConversa (shared secret) | `verifyWebhookSecret` |
 | `app/_shared/lib/prisma.ts` | PrismaClient (singleton global em dev) | `db` |
 | `app/_shared/lib/whatsapp/{client,numbers,crypto}.ts` | Graph API da Meta, multi-número, token cifrado AES-GCM | `sendText`, `sendTemplate`, `downloadMediaToS3`, `getCreds`, `getCredsByPhoneNumberId`, `activeNumberConversationWhere`, `invalidateNumberCache`, `encryptSecret`, `decryptSecret` |
-| `app/_shared/lib/chat-relay.ts` + `app/api/chat/token/route.ts` | Relay SSE (token HMAC de 60s, broadcast best-effort) | `isRelayConfigured`, `signRelayToken`, `broadcastToRelay` |
+| `app/_shared/lib/chat-relay.ts` + `app/api/chat/token/route.ts` | Relay SSE (token HMAC de 60s, broadcast best-effort, aguardado com teto de 1,5 s e log de status não-2xx) | `isRelayConfigured`, `signRelayToken`, `broadcastToRelay` |
 | `app/_shared/lib/{cost-sync,cost-providers,costs}.ts` | Painel de custos: fetch por provedor e snapshot diário | `runCostSync`, `fetchAllProviders`, `fetchUsdBrl`, `COST_SERVICES`, `COST_PROVIDER_INFO` |
 | `app/_shared/lib/report-error.ts` | Sink único de erro crítico (hoje **só `console.error`**) | `reportCriticalError` |
 | `app/_shared/lib/rate-limit.ts` | Rate limit em memória, **por instância** | `rateLimit` |

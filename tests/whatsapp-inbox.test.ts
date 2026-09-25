@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
+import type { WhatsAppConversationDTO } from "@/app/_actions/whatsapp/conversations";
 import {
+  LIST_PREVIEW_MAX_CHARS,
+  assumePatch,
+  closePatch,
   inboxListState,
+  listPreview,
   manualUnreadPatch,
   mediaTypeLabel,
+  mergeCloseTag,
   patchConversationList,
   patchConversationRow,
+  qualifiedForCategory,
   readPatch,
+  returnToBotPatch,
   revertPatch,
   sameTags,
+  sentMessagePatch,
+  truncatePreview,
   withTag,
 } from "@/app/_shared/utils/whatsapp-inbox";
 
@@ -206,5 +216,172 @@ describe("inboxListState", () => {
 
   it("sem carga, sem erro e sem voo (1ª carga descartada por um patch) conta como carregando", () => {
     expect(inboxListState(base)).toBe("loading");
+  });
+});
+
+/* ---------- ações sem recarga da lista (auditoria de 24/09/2026) ---------- */
+// Assumir, Devolver, Encerrar e Enviar esperavam a recarga das 1.000
+// conversas. Agora o clique aplica o patch e a action devolve o mesmo formato.
+
+const ME = { id: "u1", name: "Ana" };
+
+// Conversa completa, para o rollback provar que volta EXATAMENTE ao original.
+const conv = (extra: Partial<WhatsAppConversationDTO> = {}): WhatsAppConversationDTO => ({
+  id: "c1", contactId: "k1", contactName: "Cliente", contactPhone: "5541999999999",
+  status: "queued", qualified: null, closeCategory: null, closeCategoryLabel: null,
+  assignedToId: null, assignedToName: null,
+  lastMessageAt: "2026-09-25T10:00:00.000Z", lastReadAt: null, lastInboundAt: "2026-09-25T10:00:00.000Z",
+  lastMessagePreview: "oi, tudo bem?", lastMessageAuthorName: null, lastMessageFromBot: false,
+  lastMessageFromClient: true, lastMessageStatus: null, lastMessageMediaType: null,
+  handoffReason: "quer falar com atendente", adPlatform: null, createdAt: "2026-09-20T10:00:00.000Z",
+  caseLesoes: null, caseCidade: null, caseDataAcidente: null, hasCpf: false, recoveryAttempts: 0,
+  unread: true, unreadCount: 2, manualUnread: false, kanbanColumn: null, optedOut: false,
+  numberId: "n1", readOnly: false, tags: [VIP],
+  ...extra,
+});
+
+type SentShape = { body: string | null; mediaType: string | null; status: string; createdAt: string; conversationStatus: string };
+const sent = (extra: Partial<SentShape> = {}): SentShape => ({
+  body: "oi",
+  mediaType: null,
+  status: "sent",
+  createdAt: "2026-09-25T12:30:00.000Z",
+  conversationStatus: "human",
+  ...extra,
+});
+
+describe("truncatePreview / listPreview", () => {
+  it("corta em 160 caracteres, como o left() do SQL", () => {
+    expect(truncatePreview("a".repeat(200))).toHaveLength(LIST_PREVIEW_MAX_CHARS);
+    expect(truncatePreview("curto")).toBe("curto");
+  });
+
+  it("não parte emoji ao meio (conta caracteres, não unidades UTF-16)", () => {
+    const cut = truncatePreview("😀".repeat(170));
+    expect(Array.from(cut)).toHaveLength(LIST_PREVIEW_MAX_CHARS);
+    expect(cut).toBe("😀".repeat(LIST_PREVIEW_MAX_CHARS));
+  });
+
+  it("é idempotente (o servidor aplica sobre o corpo já cortado no SQL)", () => {
+    const once = truncatePreview("x".repeat(300));
+    expect(truncatePreview(once)).toBe(once);
+  });
+
+  it("prévia nossa ganha 'Você: '; a do cliente não", () => {
+    expect(listPreview({ body: "oi", mediaType: null, direction: "out" })).toBe("Você: oi");
+    expect(listPreview({ body: "oi", mediaType: null, direction: "in" })).toBe("oi");
+  });
+
+  it("mídia sem legenda usa o nome do tipo; sem corpo e sem mídia dá null", () => {
+    expect(listPreview({ body: null, mediaType: "image/jpeg", direction: "out" })).toBe("Você: Foto");
+    expect(listPreview({ body: null, mediaType: "application/pdf", direction: "in" })).toBe("Documento");
+    expect(listPreview({ body: null, mediaType: null, direction: "out" })).toBeNull();
+  });
+});
+
+describe("sentMessagePatch", () => {
+  it("texto: prévia 'Você: oi', conversa humana e minha", () => {
+    expect(sentMessagePatch(sent(), ME)).toEqual({
+      lastMessageAt: "2026-09-25T12:30:00.000Z",
+      status: "human",
+      assignedToId: "u1",
+      assignedToName: "Ana",
+      lastMessagePreview: "Você: oi",
+      lastMessageAuthorName: "Ana",
+      lastMessageFromBot: false,
+      lastMessageFromClient: false,
+      lastMessageStatus: "sent",
+      lastMessageMediaType: null,
+      closeCategoryLabel: null,
+    });
+  });
+
+  it("mídia sem legenda usa o rótulo do tipo", () => {
+    expect(sentMessagePatch(sent({ body: null, mediaType: "image/png" }), ME).lastMessagePreview).toBe("Você: Foto");
+    expect(sentMessagePatch(sent({ body: null, mediaType: "application/pdf" }), ME).lastMessagePreview).toBe("Você: Documento");
+    expect(sentMessagePatch(sent({ body: null, mediaType: "image/png" }), ME).lastMessageMediaType).toBe("image/png");
+  });
+
+  it("sem corpo e sem mídia não quebra (prévia null)", () => {
+    expect(sentMessagePatch(sent({ body: null, mediaType: null }), ME).lastMessagePreview).toBeNull();
+  });
+
+  it("texto longo sai cortado igual ao servidor", () => {
+    const p = sentMessagePatch(sent({ body: "b".repeat(500) }), ME);
+    expect(p.lastMessagePreview).toBe("Você: " + "b".repeat(LIST_PREVIEW_MAX_CHARS));
+  });
+
+  it("a conversa do envio sobe para o topo e as outras mantêm a ordem", () => {
+    const list = [
+      conv({ id: "c1", contactId: "a", lastMessageAt: "2026-09-25T12:00:00.000Z" }),
+      conv({ id: "c2", contactId: "b", lastMessageAt: "2026-09-25T11:00:00.000Z" }),
+      conv({ id: "c3", contactId: "c", lastMessageAt: "2026-09-25T10:00:00.000Z" }),
+      conv({ id: "c4", contactId: "d", lastMessageAt: "2026-09-25T09:00:00.000Z" }),
+    ];
+    const out = patchConversationList(list, "c", sentMessagePatch(sent(), ME));
+    expect(out.map((c) => c.contactId)).toEqual(["c", "a", "b", "d"]);
+    expect(out[0].lastMessagePreview).toBe("Você: oi");
+    expect(out[1]).toBe(list[0]);
+  });
+});
+
+describe("patches de assumir / devolver / encerrar", () => {
+  it("assumir: humano, meu, sem rótulo de desfecho — desfecho preservado", () => {
+    const encerrada = conv({ status: "closed", closeCategory: "perguntas", closeCategoryLabel: "Perguntas / dúvidas" });
+    const out = patchConversationRow(encerrada, assumePatch(ME));
+    expect(out).toMatchObject({ status: "human", assignedToId: "u1", assignedToName: "Ana", closeCategoryLabel: null });
+    expect(out.closeCategory).toBe("perguntas");
+  });
+
+  it("devolver ao bot: sai do atendente", () => {
+    const minha = conv({ status: "human", assignedToId: "u1", assignedToName: "Ana" });
+    expect(patchConversationRow(minha, returnToBotPatch())).toMatchObject({
+      status: "bot", assignedToId: null, assignedToName: null, closeCategoryLabel: null,
+    });
+  });
+
+  it("encerrar: qualified segue a categoria (nq_* = não qualificado)", () => {
+    expect(qualifiedForCategory("qualificado")).toBe(true);
+    expect(qualifiedForCategory("nao_qualificado")).toBe(false);
+    expect(qualifiedForCategory("nq_motivo_da_equipe")).toBe(false);
+    expect(qualifiedForCategory("perguntas")).toBeNull();
+    expect(closePatch("qualificado", "Qualificada")).toEqual({
+      status: "closed", closeCategory: "qualificado", closeCategoryLabel: "Qualificada",
+      qualified: true, assignedToId: null, assignedToName: null,
+    });
+  });
+
+  it("rollback do encerramento volta exatamente à conversa original", () => {
+    const original = conv({ status: "human", assignedToId: "u1", assignedToName: "Ana" });
+    const optimistic = closePatch("nq_sem_cobertura", "Não qualif. — sem cobertura INSS");
+    const encerrada = patchConversationRow(original, optimistic);
+    expect(encerrada.status).toBe("closed");
+    expect(patchConversationRow(encerrada, revertPatch(original, optimistic))).toEqual(original);
+  });
+
+  it("rollback do assumir também volta ao original", () => {
+    const original = conv();
+    const optimistic = assumePatch(ME);
+    const apos = patchConversationRow(original, optimistic);
+    expect(patchConversationRow(apos, revertPatch(original, optimistic))).toEqual(original);
+  });
+});
+
+describe("mergeCloseTag", () => {
+  const Q = { id: "q", name: "Qualificada", color: "#10b981" };
+  const P = { id: "p", name: "Perguntas / dúvidas", color: "#3b82f6" };
+
+  it("troca a tag de desfecho antiga pela nova, no fim, mantendo as manuais", () => {
+    expect(mergeCloseTag([URG, P, VIP], new Set(["p"]), Q)).toEqual([URG, VIP, Q]);
+  });
+
+  it("tag do desfecho atual que já estava fica no mesmo lugar (sem duplicar)", () => {
+    expect(mergeCloseTag([Q, URG], new Set<string>(), { ...Q })).toEqual([Q, URG]);
+  });
+
+  it("não muta a lista de entrada", () => {
+    const current = [URG, P];
+    mergeCloseTag(current, new Set(["p"]), Q);
+    expect(current).toEqual([URG, P]);
   });
 });

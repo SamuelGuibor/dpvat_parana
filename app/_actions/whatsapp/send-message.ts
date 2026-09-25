@@ -83,11 +83,16 @@ async function persistOutbound(params: {
     },
   });
 
-  const conversation = await db.whatsAppConversation.upsert({
-    where: { contactId: params.contactId },
-    update: { lastMessageAt: new Date(), status: 'human', assignedToId: params.authorId, ...(params.numberId ? { numberId: params.numberId } : {}) },
-    create: { contactId: params.contactId, numberId: params.numberId, status: 'human', assignedToId: params.authorId },
-  });
+  // Destinatários do broadcast em paralelo com o upsert (são independentes):
+  // uma ida e volta a menos ao banco em todo envio do atendente (~65 ms).
+  const [conversation, recipients] = await Promise.all([
+    db.whatsAppConversation.upsert({
+      where: { contactId: params.contactId },
+      update: { lastMessageAt: new Date(), status: 'human', assignedToId: params.authorId, ...(params.numberId ? { numberId: params.numberId } : {}) },
+      create: { contactId: params.contactId, numberId: params.numberId, status: 'human', assignedToId: params.authorId },
+    }),
+    whatsappRecipients(),
+  ]);
 
   const dto: WhatsAppMessageDTO = {
     id: message.id,
@@ -109,7 +114,6 @@ async function persistOutbound(params: {
     replyToDirection: message.replyToDirection,
   };
 
-  const recipients = await whatsappRecipients();
   await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
 
   return dto;
