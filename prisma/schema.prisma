@@ -1355,10 +1355,44 @@ model ProjectCost {
   createdById    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @default(now()) @updatedAt
+  // Quando o lançamento é o "marcar pago" do calendário de pagamentos: de qual
+  // conta recorrente e de qual mês ("YYYY-MM"). Um pagamento por conta/mês.
+  scheduleId     String?
+  periodKey      String?
+  schedule       PaymentSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
 
+  @@unique([scheduleId, periodKey])
   @@index([chargedAt])
   @@index([service])
   @@map("project_costs")
+}
+
+// Calendário de pagamentos (24/09/2026): contas que se repetem ("Vercel, dia
+// 10 a 12, R$ 100–120"). O pagamento em si vira uma ProjectCost vinculada,
+// então já soma nos totais do painel de Custos sem contar duas vezes.
+model PaymentSchedule {
+  id          String   @id @default(cuid())
+  service     String // chave de COST_SERVICES
+  description String?
+  dayFrom     Int // 1..31 — dia em que a janela de vencimento abre
+  dayTo       Int // 1..31 — fecha; menor que dayFrom = vira o mês ("28 a 3")
+  minCents    Int
+  maxCents    Int
+  currency    String   @default("BRL") // BRL | USD
+  recurrence  String   @default("MONTHLY") // MONTHLY | YEARLY | ONCE
+  // YEARLY/ONCE: mês (1..12) do vencimento; ONCE usa também startMonth como ano.
+  month       Int?
+  // "YYYY-MM": a partir de quando a conta existe (ONCE = o único mês).
+  startMonth  String
+  active      Boolean  @default(true)
+  notes       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  payments    ProjectCost[]
+
+  @@index([active])
+  @@map("payment_schedules")
 }
 
 // Agenda de EVENTOS da equipe (27/08/2026) — o "Eventos" do Discord aplicado
