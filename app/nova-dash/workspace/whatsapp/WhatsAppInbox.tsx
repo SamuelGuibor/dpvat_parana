@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import useSWR from 'swr';
@@ -13,7 +13,7 @@ import {
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
   UserCheck, Columns3, Users, Phone, BookUser, Smile,
-  Lock,
+  Lock, ArrowDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -42,6 +42,9 @@ import {
   withTag, type ConversationPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
 import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread-window';
+import {
+  NEAR_BOTTOM_PX, countNewBelow, decideThreadScroll, isOwnThreadMessage, tailAdvanced, threadTail, type ThreadTail,
+} from '@/app/_shared/utils/thread-scroll';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
@@ -543,27 +546,146 @@ export function WhatsAppInbox() {
     [messages, pending, activeContactId],
   );
 
-  const endRef = useRef<HTMLDivElement>(null);
+  /* ---------- rolagem da thread ---------- */
+  // Quem decide é o id da ÚLTIMA mensagem, não o total (auditoria de
+  // 24/09/2026): com a janela das 50 recentes cheia, a mensagem nova tira a
+  // mais antiga, o total não muda e a tela não descia. Regras em
+  // `decideThreadScroll` (app/_shared/utils/thread-scroll.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Ao carregar mensagens ANTIGAS (prepend), preservamos a posição de leitura em
-  // vez de pular pro fim. Guardamos a altura antes do prepend e ajustamos depois.
-  const prependAnchorRef = useRef<number | null>(null);
+  // Tudo em ref: o onScroll dispara dezenas de vezes por segundo e não pode
+  // virar setState. Só o chip "Nova mensagem ↓" é estado (muda pouco).
+  const scrollSessionRef = useRef<{ contactId: string | null; el: HTMLDivElement | null; positioned: boolean }>(
+    { contactId: null, el: null, positioned: false },
+  );
+  // Distância do fim no último evento de scroll = onde o atendente estava ANTES
+  // de a mensagem nova entrar (medir depois somaria a altura dela).
+  const distanceRef = useRef(0);
+  // Rolagem automática para o fim em andamento: os eventos de scroll do meio
+  // da animação não contam como "saiu do fim". Para ao chegar ou quando o
+  // atendente mexe (roda do mouse, toque, tecla, clique na barra).
+  const followRef = useRef(false);
+  const tailRef = useRef<ThreadTail | null>(null);
+  // "Carregar anteriores": distância do fim no clique + 1ª mensagem daquele
+  // momento. Só vira 'restore' quando o topo muda de verdade — bloco vazio ou
+  // erro não deixam âncora velha para a próxima mensagem nova.
+  const prependRef = useRef<{ anchor: number; firstId: string | null } | null>(null);
+  // Contador do chip por conversa (a troca de conversa zera).
+  const [newBelow, setNewBelow] = useState<{ contactId: string | null; count: number }>({ contactId: null, count: 0 });
+  const newBelowCount = newBelow.contactId === activeContactId ? newBelow.count : 0;
+  const hasActive = !!active;
 
-  useEffect(() => {
-    // Prepend de bloco antigo: mantém o ponto onde o usuário estava lendo.
-    if (prependAnchorRef.current != null && scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
-      prependAnchorRef.current = null;
-      return;
+  // Layout effect: roda antes de pintar — abrir a conversa não mostra 1 frame
+  // do topo, e o prepend não dá o pulo antes de voltar ao ponto de leitura.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !hasActive) return; // thread ainda não montou ("Abrindo conversa…")
+    const session = scrollSessionRef.current;
+    // Troca de conversa ou thread remontada (fechou e reabriu): nada do scroll
+    // anterior vale aqui.
+    if (session.contactId !== activeContactId || session.el !== el) {
+      scrollSessionRef.current = { contactId: activeContactId, el, positioned: false };
+      tailRef.current = null;
+      prependRef.current = null;
+      followRef.current = false;
+      distanceRef.current = 0;
+      setNewBelow((prev) => (prev.count === 0 ? prev : { contactId: null, count: 0 }));
     }
-    // Fluxo normal (mensagem nova / troca de conversa): desce pro fim.
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [displayMessages.length]);
+    if (displayMessages.length === 0) return; // 1ª carga ainda não chegou
+    const tail = threadTail(displayMessages);
+    const prevTail = tailRef.current;
+    tailRef.current = tail;
+    const advanced = tailAdvanced(prevTail, tail);
+    const lastIsMine = isOwnThreadMessage(displayMessages[displayMessages.length - 1], meId);
+    const prepend = prependRef.current;
+    const action = decideThreadScroll({
+      contactChanged: !scrollSessionRef.current.positioned,
+      prependPending: !!prepend && displayMessages[0].id !== prepend.firstId,
+      lastIdChanged: advanced,
+      distanceFromBottom: followRef.current ? 0 : distanceRef.current,
+      lastIsMine,
+    });
+    const bumpChip = () => {
+      const n = countNewBelow(displayMessages, prevTail?.id ?? null);
+      setNewBelow((prev) => ({
+        contactId: activeContactId,
+        count: (prev.contactId === activeContactId ? prev.count : 0) + n,
+      }));
+    };
+    switch (action) {
+      case 'jump':
+        scrollSessionRef.current.positioned = true;
+        el.scrollTop = el.scrollHeight;
+        distanceRef.current = 0;
+        break;
+      case 'restore':
+        prependRef.current = null;
+        if (prepend) el.scrollTop = el.scrollHeight - prepend.anchor;
+        // Mensagem nova no mesmo render do bloco antigo: quem está lendo o
+        // topo não é puxado, mas fica sabendo pelo chip.
+        if (advanced && !lastIsMine) bumpChip();
+        break;
+      case 'smooth':
+        followRef.current = true;
+        distanceRef.current = 0;
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        // Vai mostrar tudo o que chegou: o chip (se havia) já não tem o que avisar.
+        setNewBelow((prev) => (prev.count === 0 ? prev : { contactId: activeContactId, count: 0 }));
+        break;
+      case 'chip':
+        bumpChip();
+        break;
+      case 'none':
+        break;
+    }
+  }, [activeContactId, hasActive, displayMessages, meId]);
+
+  // Foto/vídeo que termina de carregar cresce a thread DEPOIS da rolagem para o
+  // fim (THR-11): quem estava no fim continua no fim. 'load' não borbulha, por
+  // isso a escuta é na fase de captura, no container.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !hasActive) return;
+    const onMediaLoad = () => {
+      if (followRef.current || distanceRef.current < NEAR_BOTTOM_PX) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener('load', onMediaLoad, true);
+    el.addEventListener('loadedmetadata', onMediaLoad, true);
+    return () => {
+      el.removeEventListener('load', onMediaLoad, true);
+      el.removeEventListener('loadedmetadata', onMediaLoad, true);
+    };
+  }, [hasActive]);
+
+  function handleThreadScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (followRef.current) {
+      if (distance > 2) return; // animação ainda descendo: continua "no fim"
+      followRef.current = false;
+    }
+    distanceRef.current = distance;
+    // Chegou ao fim: o chip some. setState só quando ele está aparecendo.
+    if (distance < NEAR_BOTTOM_PX && newBelowCount > 0) setNewBelow({ contactId: activeContactId, count: 0 });
+  }
+  // O atendente mexeu na rolagem: a rolagem automática deixa de valer.
+  function stopFollowingThread() {
+    followRef.current = false;
+  }
+
+  function scrollThreadToEnd() {
+    const el = scrollRef.current;
+    if (!el) return;
+    followRef.current = true;
+    distanceRef.current = 0;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    setNewBelow({ contactId: activeContactId, count: 0 });
+  }
 
   async function handleLoadOlder() {
-    // Âncora = distância do fim; após o prepend, o effect recompõe o scrollTop.
-    if (scrollRef.current) prependAnchorRef.current = scrollRef.current.scrollHeight - scrollRef.current.scrollTop;
+    // Âncora = distância do fim; depois do prepend, o layout effect recompõe o scrollTop.
+    const el = scrollRef.current;
+    if (el) prependRef.current = { anchor: el.scrollHeight - el.scrollTop, firstId: displayMessages[0]?.id ?? null };
     await loadOlder();
   }
 
@@ -1795,7 +1917,17 @@ export function WhatsAppInbox() {
               </DropdownMenu>
             </header>
 
-            <div ref={scrollRef} className="wa-scroll flex-1 overflow-y-auto px-5 py-5 md:px-7">
+            {/* Invólucro relativo só para o chip "Nova mensagem ↓" flutuar sobre o rodapé da thread. */}
+            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              onScroll={handleThreadScroll}
+              onWheel={stopFollowingThread}
+              onTouchMove={stopFollowingThread}
+              onPointerDown={stopFollowingThread}
+              onKeyDown={stopFollowingThread}
+              className="wa-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-7"
+            >
               {/* Carregar histórico anterior em blocos (evita puxar tudo de uma vez) */}
               {hasMore && (
                 <div className="mb-2 flex justify-center">
@@ -1855,7 +1987,20 @@ export function WhatsAppInbox() {
                   </Fragment>
                 );
               })}
-              <div ref={endRef} />
+            </div>
+            {/* Mensagem nova chegou enquanto o atendente lia mais acima: não
+                puxa a tela, avisa. Some ao chegar no fim. */}
+            {newBelowCount > 0 && (
+              <button
+                type="button"
+                onClick={scrollThreadToEnd}
+                title="Ir para a última mensagem"
+                className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-[#1d9e75] px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg ring-1 ring-black/5 transition-colors hover:bg-[#178a66]"
+              >
+                {newBelowCount === 1 ? 'Nova mensagem' : `${newBelowCount} novas mensagens`}
+                <ArrowDown className="h-3.5 w-3.5" />
+              </button>
+            )}
             </div>
 
             {/* Número desativado (tela Números): histórico só para consulta. */}
