@@ -124,7 +124,7 @@ Strings mágicas (fonte da verdade no código, não no schema):
 
 ## Testes e validação
 - Não há teste unitário do schema. `tests/*.test.ts` (vitest, `vitest.config.mts`) cobrem utilitários puros — relevante aqui: `tests/date-br.test.ts` (chaves de dia Brasília usadas em campos String) e `tests/costs.test.ts` (centavos).
-- `tests/signature-seed.smoke.test.ts`, `tests/signature-flow-seed.smoke.test.ts`, `tests/signature-templates.smoke.test.ts` importam `db` e **tocam o banco real**; só rodam via `npm run sign:seed|sign:flow|sign:templates`.
+- `tests/signature-seed.smoke.test.ts`, `tests/signature-flow-seed.smoke.test.ts`, `tests/signature-templates.smoke.test.ts` importam `db` e **tocam o banco real**; só rodam via `npm run sign:seed|sign:flow|sign:templates`. `tests/inbox-unread-sql.smoke.test.ts` também lê o banco real (só SELECT, transação READ ONLY) e só roda via `npm run inbox:sql-smoke`.
 - Checklist ao mexer no schema: `npx prisma validate` → `npx prisma format` → `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script` (esperado após aplicar: só a linha da `discord`) → `npx prisma migrate status` ("Database schema is up to date") → `npx prisma generate` → `npx tsc --noEmit` → `npm test`.
 - Deploy: `package.json` tem `"prepare": "prisma generate"` — a Vercel gera o client no install; o schema do banco já precisa estar aplicado **antes** do deploy do código que usa a coluna.
 

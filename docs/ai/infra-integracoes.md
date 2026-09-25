@@ -172,6 +172,7 @@
   - `ponto.test.ts`: cálculo do banco de horas.
   - `whatsapp-template-text.test.ts` e `whatsapp-wa-format.test.ts`: texto de template e markup.
   - `signature-{pdf,seed,templates,flow-seed}.smoke.test.ts`: `describe.skipIf`, rodam só via `npm run sign:*` ou env `SIGNATURE_*=1`.
+  - `inbox-unread-sql.smoke.test.ts`: `describe.skipIf`, roda só via `npm run inbox:sql-smoke` ou `INBOX_SQL_SMOKE=1`; só leitura (transação READ ONLY) no banco do `.env`.
 - **Lacuna:** não há teste de `middleware.ts`, das rotas de cron, do webhook (HMAC) nem dos clientes externos. Valide à mão:
   - Cron: `curl` com Bearer e sem cookie (ver Receitas). Em produção, aba Cron Jobs da Vercel.
   - Webhook: `GET /api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123` tem que devolver `123`. POST sem assinatura válida tem que dar 401.
