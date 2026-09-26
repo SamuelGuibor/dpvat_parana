@@ -1,5 +1,6 @@
-// Regras puras do laço de envio do bot (whatsapp/bot.ts): quando parar de
-// mandar os blocos de uma resposta e se a ação decidida pelo cérebro ainda roda.
+// Regras puras do tempo do bot (whatsapp/bot.ts): debounce de rajada, prazo do
+// turno e das chamadas ao cérebro, e o laço de envio (quando parar de mandar
+// os blocos de uma resposta e se a ação decidida pelo cérebro ainda roda).
 //
 // O cérebro leva ~20 s e cada bloco sai depois do atraso humanizado. Nesse meio
 // tempo o cliente pode escrever de novo ou um atendente pode assumir a conversa.
@@ -17,6 +18,100 @@ import type { Prisma } from "@prisma/client";
 // fora do modo bot espera o mesmo tempo no webhook, pelo mesmo motivo (uma
 // chamada ao Haiku por rajada, não por balão). O atraso é proposital.
 export const BURST_DEBOUNCE_MS = 8_000;
+
+// ---- Prazo do turno e das chamadas ao cérebro (26/09/2026) ----------------
+// O bot roda dentro do webhook (maxDuration 120). Antes o pior caso era 8 s de
+// debounce + 3 × 45 s de timeout do cérebro ≈ 146 s: a função podia morrer
+// antes do handoff para a Fila, e a conversa ficava órfã no bot.
+
+/**
+ * Prazo total do turno do bot, contado do início do handleIncomingWhatsApp
+ * (antes do debounce). Toda chamada ao cérebro cabe nele: sem tempo para uma
+ * nova tentativa, o erro sobe e o handoff sai antes do maxDuration, mesmo com
+ * o micro fora do ar (3 × 45 s de AbortError).
+ */
+export const BOT_TURN_BUDGET_MS = 100_000;
+
+/** Menos que isto no prazo do turno não vale uma chamada ao cérebro (p50 ~15-20 s). */
+export const BRAIN_MIN_ATTEMPT_MS = 10_000;
+
+/**
+ * Folga entre o orçamento mandado ao micro (header x-bot-budget-ms) e o abort
+ * do CRM: o micro responde 504 com o motivo ANTES de o CRM cortar a conexão, e
+ * para de gastar tokens com uma resposta que ninguém vai ler.
+ */
+export const BRAIN_BUDGET_MARGIN_MS = 3_000;
+
+/**
+ * Espera máxima pela transcrição antecipada do áudio depois do debounce. A
+ * transcrição começa junto com os 8 s de espera; se não terminar em mais 6 s,
+ * o micro transcreve na decisão, como antes.
+ */
+export const EARLY_TRANSCRIBE_WAIT_MS = 6_000;
+
+/** Orçamento, em ms, que o micro pode gastar numa tentativa de `attemptTimeoutMs`. */
+export function microBudgetMs(attemptTimeoutMs: number): number {
+  return Math.max(1_000, Math.round(attemptTimeoutMs - BRAIN_BUDGET_MARGIN_MS));
+}
+
+/**
+ * Timeout da próxima tentativa ao cérebro: o menor entre o timeout por
+ * tentativa e o que sobra do prazo do turno. `null` = não cabe outra tentativa
+ * (sobra menos que `minAttemptMs`). Sem prazo (`deadline` null), vale o
+ * timeout por tentativa.
+ */
+export function brainAttemptTimeoutMs(input: {
+  perAttemptMs: number;
+  deadline: number | null;
+  now: number;
+  minAttemptMs: number;
+}): number | null {
+  if (input.deadline == null) return input.perAttemptMs;
+  const left = input.deadline - input.now;
+  if (left < input.minAttemptMs) return null;
+  return Math.min(input.perAttemptMs, left);
+}
+
+/**
+ * Erro de timeout do cérebro que não vem do AbortController do CRM: o 504 do
+ * micro ("prazo do CRM esgotado") e o prazo do turno sem tempo para outra
+ * tentativa. A flag mantém a política de retry de timeout e o
+ * metadata.timeout do log; sem ela o 504 contava como erro comum (1 retry em
+ * vez de 3) e a série de timeouts sumia do painel.
+ */
+export function brainTimeoutError(message: string): Error & { isTimeout: true } {
+  const err = new Error(message) as Error & { isTimeout: true };
+  err.name = "BrainTimeoutError";
+  err.isTimeout = true;
+  return err;
+}
+
+/**
+ * O cérebro demorou demais: abort do CRM (AbortError do callBrainOnce), 504 do
+ * micro ou prazo do turno (flag isTimeout). "TimeoutError" (AbortSignal.timeout)
+ * fica de fora de propósito: é o que outras chamadas do turno usam (assinatura,
+ * mídia da Meta), e o erro delas não é demora do cérebro.
+ */
+export function isBrainTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "AbortError") return true;
+  return (err as { isTimeout?: unknown }).isTimeout === true;
+}
+
+/**
+ * Espera `promise` por no máximo `ms`. `true` = terminou (resolveu ou
+ * rejeitou) no prazo; `false` = o prazo venceu antes. Nunca rejeita: quem
+ * chama decide o que fazer com o que ficou pela metade.
+ */
+export function settleWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), Math.max(0, ms));
+    promise.then(
+      () => { clearTimeout(timer); resolve(true); },
+      () => { clearTimeout(timer); resolve(true); },
+    );
+  });
+}
 
 /**
  * Filtro de "chegou mensagem do cliente MAIS NOVA que esta". Desempate

@@ -1,8 +1,7 @@
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { findLinkedCard } from "./bot";
+import { transcribeStoredAudio } from "./transcribe";
 
 // Agent-assist: chamadas de IA que AJUDAM o atendente humano (não respondem
 // sozinhas ao cliente). Todas usam o mesmo microserviço do bot (CHATBOT_URL):
@@ -15,14 +14,6 @@ import { findLinkedCard } from "./bot";
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, "") ?? "";
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? "";
 const ASSIST_TIMEOUT_MS = 30_000;
-
-const s3 = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
 
 function assistConfigured(): boolean {
   return !!CHATBOT_URL && !!CHATBOT_SECRET;
@@ -239,55 +230,12 @@ export async function summarizeConversationToCard(
 // ---------------------------------------------------------------------------
 // Transcrição de áudio sob demanda (botão "transcrever" do inbox). O resultado
 // é PERSISTIDO na mensagem — o segundo clique (de qualquer atendente) é grátis.
+// A chamada é a mesma da transcrição antecipada do bot (transcribe.ts); o log
+// wa_transcribe sai no nome do atendente, com o usage do micro novo.
 // ---------------------------------------------------------------------------
 export async function transcribeMessageAudio(
   messageId: string,
   agent: { id: string; name: string },
 ): Promise<string> {
-  const message = await db.whatsAppMessage.findUnique({
-    where: { id: messageId },
-    select: { id: true, contactId: true, mediaKey: true, mediaType: true, transcript: true },
-  });
-  if (!message) throw new Error("Mensagem não encontrada.");
-  if (message.transcript) return message.transcript; // já transcrito
-  if (!message.mediaKey || !message.mediaType?.startsWith("audio/")) {
-    throw new Error("Esta mensagem não tem áudio para transcrever.");
-  }
-
-  const url = await getSignedUrl(
-    s3,
-    new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: message.mediaKey }),
-    { expiresIn: 600 },
-  );
-
-  // `usage` (Gemini, modelo com sufixo "-audio") só vem do micro novo; o
-  // antigo manda só o texto e o log fica sem custo, como antes.
-  const out = await callAssist<{ transcript: string; usage?: object | null }>("/transcribe", {
-    url,
-    mimeType: message.mediaType,
-  });
-  const transcript = out.transcript?.trim();
-  if (!transcript) throw new Error("A IA não conseguiu transcrever este áudio.");
-
-  await db.whatsAppMessage.update({
-    where: { id: messageId },
-    data: { transcript },
-  });
-
-  const contact = await db.whatsAppContact.findUnique({
-    where: { id: message.contactId },
-    select: { name: true, phone: true },
-  });
-  await logWhatsAppEvent({
-    action: "wa_transcribe",
-    message: "transcreveu um áudio da conversa",
-    authorId: agent.id,
-    authorName: agent.name,
-    contactId: message.contactId,
-    contactName: contact?.name,
-    contactPhone: contact?.phone,
-    metadata: { usage: out.usage ?? undefined },
-  });
-
-  return transcript;
+  return transcribeStoredAudio(messageId, { author: agent });
 }
