@@ -28,6 +28,15 @@ export const CLOSE_CATEGORY_LABELS: Record<string, string> = {
   descartado: 'Descartados',
 };
 
+/**
+ * Marca do aviso de lead qualificado pela IA no sino (Notification.message).
+ * O sino (box.tsx) destaca e sobe as notificações que contêm este texto, e a
+ * rota /api/notification busca as das últimas 24 h além das 50 mais novas:
+ * mudar a frase aqui muda nos três lugares. As notificações antigas continuam
+ * com o texto antigo (não há coluna de tipo em Notification).
+ */
+export const WA_QUALIFIED_MARK = 'LEAD QUALIFICADO ✅';
+
 // Opções do menu manual de "Encerrar" (rótulo no singular, na ordem de exibição).
 export const CLOSE_CATEGORY_OPTIONS: { category: string; label: string }[] = [
   { category: 'qualificado', label: 'Qualificada' },

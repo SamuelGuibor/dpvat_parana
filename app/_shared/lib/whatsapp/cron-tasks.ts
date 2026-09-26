@@ -4,6 +4,7 @@ import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
+import { waAlertRecipients } from '@/app/_shared/lib/whatsapp/alert-recipients';
 import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
 import { activeNumberConversationWhere } from '@/app/_shared/lib/whatsapp/numbers';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT, recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
@@ -14,6 +15,7 @@ import {
   classifyLastMessage, isBotDecisionLog, isClosingAck, isEnvSwitchOn, orphanReason,
 } from '@/app/_shared/utils/wa-silence';
 import { holdDaysLabel, humanLastVerdict } from '@/app/_shared/utils/ownership';
+import { QUEUE_ALERT_STEPS_MS, queueAlertAudience, queueWaitLabel } from '@/app/_shared/utils/alert-policy';
 import { HUMAN_HOLD_MS } from '@/app/_shared/lib/whatsapp/ownership';
 import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
 
@@ -42,8 +44,9 @@ const QUEUE_SLA_MS = 10 * 60_000;   // 10min na fila sem atendente → 1º alert
 // HORA para a equipe inteira enquanto ninguém assumisse — foram 24.612
 // notificações em 7 dias (a MARILENE sozinha gerou 1.224) e o sino virou
 // ruído branco que ninguém lê. Agora cada conversa dispara UM alerta por
-// degrau ultrapassado e para: 4 avisos no máximo por estadia na fila.
-const QUEUE_ALERT_STEPS_MS = [10 * 60_000, 60 * 60_000, 4 * 60 * 60_000, 24 * 60 * 60_000];
+// degrau ultrapassado e para. Os degraus (10 min/1 h/4 h/24 h/48 h) e quem
+// recebe cada um ficam em app/_shared/utils/alert-policy.ts
+// (QUEUE_ALERT_STEPS_MS, queueAlertAudience).
 const HUMAN_SLA_MS = 30 * 60_000;   // 30min sem resposta do atendente → cobra o dono
 const HUMAN_ALERT_STEPS_MS = [30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000];
 
@@ -1159,14 +1162,13 @@ export async function runSlaPhase(): Promise<CronResults> {
       include: { contact: true },
       take: 50,
     });
-    // Um alerta por degrau (10min/1h/4h/24h) por estadia na fila — quem já foi
-    // alertado no degrau atual fica em silêncio até cruzar o próximo.
+    // Um alerta por degrau (10min/1h/4h/24h/48h) por estadia na fila — quem já
+    // foi alertado no degrau atual fica em silêncio até cruzar o próximo.
     const waitingTooLong = candidates
       .filter((conv) => dueAlertStep(QUEUE_ALERT_STEPS_MS, conv.queuedAt!.getTime(), now, conv.queueAlertAt) != null)
       .slice(0, 25);
 
     if (!waitingTooLong.length) return;
-    const recipients = await whatsappRecipients().catch(() => [] as string[]);
 
     for (const conv of waitingTooLong) {
       try {
@@ -1174,6 +1176,21 @@ export async function runSlaPhase(): Promise<CronResults> {
         const waitingMin = conv.queuedAt ? Math.round((now - conv.queuedAt.getTime()) / 60_000) : 0;
         const stepIdx = QUEUE_ALERT_STEPS_MS.filter((s) => conv.queuedAt!.getTime() + s <= now).length;
         const stepSuffix = ` (aviso ${stepIdx}/${QUEUE_ALERT_STEPS_MS.length}${stepIdx >= QUEUE_ALERT_STEPS_MS.length ? ' — último' : ''})`;
+        // Por conversa (era a equipe toda em todos os degraus): 10 min vai ao
+        // dono ou ao setor da Fila, 1 h ao dono + setor (sem dono, já a equipe),
+        // 4 h e 24 h à equipe e 48 h aos gestores (antes o cron parava em 24 h).
+        const audience = queueAlertAudience(stepIdx, !!conv.assignedToId);
+        const recipients = await waAlertRecipients({
+          contactId: conv.contactId,
+          assignedToId: conv.assignedToId,
+          // Sem atribuído = sem dono: a fila já gravou o dono pegajoso ao
+          // entrar. Com atribuído, confere se ainda é da equipe.
+          ownerId: conv.assignedToId ? undefined : null,
+          audience,
+        });
+        const message = audience === 'managers'
+          ? `⚠️ WhatsApp: ${label} está há ${queueWaitLabel(waitingMin)} na fila sem atendimento — aviso à gestão.${stepSuffix}`
+          : `WhatsApp: ${label} está há ${queueWaitLabel(waitingMin)} na fila sem atendimento!${stepSuffix}`;
 
         for (const id of recipients) {
           await db.notification.create({
@@ -1182,7 +1199,7 @@ export async function runSlaPhase(): Promise<CronResults> {
               authorId: 'whatsapp-bot',
               authorName: '🤖 Bot WhatsApp',
               targetName: label,
-              message: `WhatsApp: ${label} está há ${waitingMin} min na fila sem atendimento!${stepSuffix}`,
+              message,
               contactId: conv.contactId,
             },
           });

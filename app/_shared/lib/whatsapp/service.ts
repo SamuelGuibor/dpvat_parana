@@ -3,21 +3,23 @@ import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay, isRelayConfigured } from "@/app/_shared/lib/chat-relay";
 import { runAfterResponse } from "@/app/_shared/lib/background";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
-import { createTtlCache } from "@/app/_shared/utils/ttl-cache";
+import { sameBrDay } from "@/app/_shared/utils/alert-policy";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
 import { recordRecoveryEvent } from "./rule-events";
 import { resolveConversationOwner } from "./ownership";
+import { waAlertRecipients, whatsappRecipients } from "./alert-recipients";
+
+// A lista da equipe (cache de 60 s) mora em alert-recipients.ts; o reexport
+// mantém os imports antigos de service.ts funcionando.
+export { whatsappRecipients };
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
 // Cada conversa de WhatsApp vira um "canal" no relay SSE já existente
 // (channelId = "whatsapp:<contactId>"), então os funcionários com a tela
 // aberta recebem em tempo real sem nenhuma mudança no relay do Railway.
-
-// Mesma convenção de equipe do chat interno (chat-access.ts / api/presence).
-const TEAM_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
 
 // Validade da ficha do bot entre conversas: reabertura dentro desta janela
 // mantém botMemory/botState (a IA lembra do contato); além dela, conversa
@@ -37,27 +39,6 @@ export function isSilencedCloseCategory(category: string | null | undefined): bo
 
 export function whatsappChannelId(contactId: string): string {
   return `whatsapp:${contactId}`;
-}
-
-// A equipe muda raramente, e esta lista era 1 query em TODO evento (mensagem
-// recebida, envio, nota, reação, notificação do bot/cron). 60 s por instância:
-// membro novo fica sem tempo real por até 1 min e o removido ainda recebe o
-// broadcast por até 1 min (o relay continua exigindo o token de sessão dele).
-const RECIPIENTS_TTL_MS = 60_000;
-const recipientsCache = createTtlCache<"team", string[]>({ ttlMs: RECIPIENTS_TTL_MS });
-
-/** Todos os membros da equipe recebem o broadcast (a UI filtra por conversa). */
-export async function whatsappRecipients(): Promise<string[]> {
-  const cached = recipientsCache.get("team");
-  // Cópia: quem chama pode mexer no array (menções, loops de notificação).
-  if (cached) return [...cached];
-  const team = await db.user.findMany({
-    where: { role: { in: TEAM_ROLES } },
-    select: { id: true },
-  });
-  const ids = team.map((u) => u.id);
-  recipientsCache.set("team", ids);
-  return [...ids];
 }
 
 /** Evento do canal whatsapp:<contactId> no relay: mensagem nova/nota ou reação. */
@@ -612,10 +593,6 @@ export interface IncomingWaStatus {
   errors?: { code?: number; title?: string; message?: string }[];
 }
 
-// Debounce do alerta de falha de entrega: no máximo 1 aviso por conversa a
-// cada 6h, mesmo que várias mensagens falhem em sequência.
-const DELIVERY_ALERT_DEBOUNCE_MS = 6 * 60 * 60_000;
-
 // Erro 131050: o PRÓPRIO cliente pediu à Meta para não receber mensagens de
 // marketing desta empresa. É um opt-out formal — ignorá-lo é o que derruba a
 // conta por spam, então aqui (e só aqui) marcamos optedOut automaticamente.
@@ -674,9 +651,15 @@ export async function applyStatusUpdate(st: IncomingWaStatus): Promise<void> {
  * Falha de entrega (status "failed" ou mensagem parada em "sent" — provável
  * bloqueio ou número errado). Política escolhida: NÃO bloqueia envios futuros
  * (a janela de 24h continua sendo validada em todo envio); em vez disso a
- * conversa vai para a FILA e a equipe recebe notificação pedindo verificação:
- * número correto? cliente bloqueou? janela de 24h expirada?
- * Debounce por conversa via deliveryAlertAt.
+ * conversa vai para a FILA e o dono (ou o setor da Fila) recebe notificação
+ * pedindo verificação: número correto? cliente bloqueou? janela de 24h expirada?
+ *
+ * No máximo 1 aviso por contato por DIA de Brasília (deliveryAlertAt). O
+ * debounce antigo, de 6 h, repetia o mesmo "não foi entregue" até 10x por
+ * contato enquanto a mensagem seguia travada em "sent" (o cron olha 72 h para
+ * trás), sempre para a equipe inteira: ~3.600 avisos por semana em 09/2026.
+ * Uma 2ª falha diferente no mesmo dia não avisa de novo (a conversa já foi
+ * para a Fila no 1º aviso).
  */
 export async function alertDeliveryFailure(contactId: string, cause: string): Promise<void> {
   const conversation = await db.whatsAppConversation.upsert({
@@ -685,10 +668,7 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
     create: { contactId },
     include: { contact: true },
   });
-  const alertedRecently =
-    conversation.deliveryAlertAt &&
-    conversation.deliveryAlertAt.getTime() > Date.now() - DELIVERY_ALERT_DEBOUNCE_MS;
-  if (alertedRecently) return;
+  if (sameBrDay(conversation.deliveryAlertAt, new Date())) return;
 
   // Manda pra fila de atendimento (se ninguém já estiver cuidando): alguém
   // precisa conferir o número/bloqueio antes do próximo envio automático.
@@ -716,11 +696,13 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
     `Verifique se o número está correto, se o cliente bloqueou nosso contato ou se a janela de 24h expirou.`;
 
   // Dono do ticket (atendimento humano ou fila que voltou para ele) é avisado
-  // sozinho; sem dono, a equipe toda (é a fila).
-  const recipients =
-    (status === "human" || status === "queued") && owner
-      ? [owner]
-      : await whatsappRecipients();
+  // sozinho; sem dono (ou conversa encerrada/em recuperação), o setor da Fila.
+  // A equipe inteira só entra pelos degraus do SLA da fila (cron-tasks.ts).
+  const recipients = await waAlertRecipients({
+    contactId,
+    ownerId: status === "human" || status === "queued" ? owner : null,
+    audience: "owner_or_sector",
+  });
   for (const recipientId of recipients) {
     await db.notification.create({
       data: {

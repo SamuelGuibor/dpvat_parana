@@ -10,10 +10,10 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
-| 5 | `app/_shared/lib/whatsapp/bot.ts` | 1704 | whatsapp-bot |
+| 5 | `app/_shared/lib/whatsapp/bot.ts` | 1713 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
 | 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1253 | whatsapp-bot |
-| 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1450 | whatsapp-bot |
+| 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1467 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
 | 11 | `app/nova-dash/card-dialog/FilesTab.tsx` | 874 | kanban-cards / documentos-ia |
@@ -93,18 +93,18 @@ Painel/editor das automações do Kanban: gatilho, condições (campo/tag/tempo/
 - **L1212-1393** `AutomationCard` (resumo de uma automação na lista).
 - **L1394-1587** `AutomationsPanel` (export): categorias/filtro, `loadAutomations`, `handleSave`, `handleToggle`, `handleDelete`, render L1472.
 
-## 5. `app/_shared/lib/whatsapp/bot.ts` — 1704 linhas
+## 5. `app/_shared/lib/whatsapp/bot.ts` — 1713 linhas
 Ponte CRM ↔ cérebro do bot: monta o payload da conversa, chama o microserviço, sanitiza a decisão e executa (responder, qualificar, fila, encerrar).
 
-- **L1-61** imports (`shouldAbortSend`/`isTerminalBotAction` de `bot-timing.ts`, `reportCriticalError`, `findConversationOwner` de `ownership.ts`), env (`CHATBOT_URL`, staging `CHATBOT_URL_STAGING`, `TEST_NUMBERS`).
-- **L62-229** histórico e tipos: `historyText`, `historyRole`, `SYSTEM_SOURCE_LABELS`, `brainUrlFor`, constantes (`BURST_DEBOUNCE_MS`, `BOT_TIMEOUT_MS`, `BOT_MAX_ATTEMPTS`), S3, `ProcessInfo`, `LinkedCard`, `BotUsage`, `BotDecision`, `sumUsage`, `isBotConfigured`.
-- **L230-349** filtros de sanidade: `SCHEMA_TOKENS`, `isJsonSkeleton`, `looksLikeJsonFragment`, `REASONING_PATTERNS`, `looksLikeReasoning`, `SCRIPT_STATES`, `sanitizeDecision`, `sleep`, `humanDelay`.
-- **L350-381** `businessHours`.
-- **L382-467** vínculo com o card: `findLinkedCard`; consultas da IA: `runLookup`.
-- **L468-814** fila, qualificação e encerramento: `postInternalNote`, `QueueOpts`, `handoffToQueue` e `qualifyToQueue` (exportadas, `updateMany` condicional com `onlyIfStatus`, devolvem se moveram, gravam o dono pegajoso e notificam só ele), `queueOwner`, `ownerSuffix` ("— volta para <nome>" na nota), `tagAsQualified`, `createCardTaskForTeam`, `disqualifyAndClose`, `resolveAndClose`, `sendMutedFallback`, `handoffNotifyOnly` (`onlyTo` = dono).
-- **L815-892** envio: `sendBotReply` (relay por `broadcastWhatsAppEvent`, depois da resposta).
-- **L893-960** chamada ao micro: `callBrainOnce`, `callBrain` (retry).
-- **L961-1704 `handleIncomingWhatsApp`** (entrada do webhook): `ONLY_IF_BOT`, `findNewerInbound` e `isStillBot` declarados antes do `try`; em blocos `// ---- X`: debounce de rajada L1008 (checagem dentro do `try`) → lote L1034 → mídia L1059 → mensagem cruzada L1103 → assinatura eletrônica L1124 → contexto/payload L1176 (`docsReceived` por `docsReceivedSince` + `clientDocumentMediaWhere`) → IA + lookup L1264 → retry de resposta vazia L1281 → transcrições L1315 → corrida pós-cérebro + releitura de status L1335 → contador "não entendi" L1354 → opt-out L1363 → memória/estado (`persistMemory`, só no 1º envio) L1412 → laço de blocos com `shouldAbortSend` + releitura antes da ação L1431 → `switch (decision.action)` L1484-1590 (`send_flow`, `qualify`, `disqualify`, `handoff`, `resolve`; `queueSkipped`) → auditoria/métricas L1592 (`wa_bot` com `facts`, `blocksSkipped`, `handoffSkipped`) → telemetria do playbook L1645 → `catch` L1656 (inbound mais nova = só loga; senão handoff condicional; falha do handoff = `reportCriticalError`).
+- **L1-63** imports (`shouldAbortSend`/`isTerminalBotAction` de `bot-timing.ts`, `reportCriticalError`, `findConversationOwner` de `ownership.ts`, `waAlertRecipients` de `alert-recipients.ts`, `WA_QUALIFIED_MARK` de `close-categories.ts`), env (`CHATBOT_URL`, staging `CHATBOT_URL_STAGING`, `TEST_NUMBERS`).
+- **L64-231** histórico e tipos: `historyText`, `historyRole`, `SYSTEM_SOURCE_LABELS`, `brainUrlFor`, constantes (`BURST_DEBOUNCE_MS`, `BOT_TIMEOUT_MS`, `BOT_MAX_ATTEMPTS`), S3, `ProcessInfo`, `LinkedCard`, `BotUsage`, `BotDecision`, `sumUsage`, `isBotConfigured`.
+- **L232-351** filtros de sanidade: `SCHEMA_TOKENS`, `isJsonSkeleton`, `looksLikeJsonFragment`, `REASONING_PATTERNS`, `looksLikeReasoning`, `SCRIPT_STATES`, `sanitizeDecision`, `sleep`, `humanDelay`.
+- **L352-383** `businessHours`.
+- **L384-469** vínculo com o card: `findLinkedCard`; consultas da IA: `runLookup`.
+- **L470-823** fila, qualificação e encerramento: `postInternalNote`, `QueueOpts`, `handoffToQueue` e `qualifyToQueue` (exportadas, `updateMany` condicional com `onlyIfStatus`, devolvem se moveram, gravam o dono pegajoso; aviso por `waAlertRecipients`: transferência = dono ou setor da Fila, lead qualificado = dono + setor com `WA_QUALIFIED_MARK`), `queueOwner`, `ownerSuffix` ("— volta para <nome>" na nota), `tagAsQualified`, `createCardTaskForTeam`, `disqualifyAndClose`, `resolveAndClose`, `sendMutedFallback`, `handoffNotifyOnly` (`onlyTo` = destinatários já resolvidos).
+- **L824-901** envio: `sendBotReply` (relay por `broadcastWhatsAppEvent`, depois da resposta).
+- **L902-969** chamada ao micro: `callBrainOnce`, `callBrain` (retry).
+- **L970-1713 `handleIncomingWhatsApp`** (entrada do webhook): `ONLY_IF_BOT`, `findNewerInbound` e `isStillBot` declarados antes do `try`; em blocos `// ---- X`: debounce de rajada L1017 (checagem dentro do `try`) → lote L1043 → mídia L1068 → mensagem cruzada L1112 → assinatura eletrônica L1133 → contexto/payload L1185 (`docsReceived` por `docsReceivedSince` + `clientDocumentMediaWhere`) → IA + lookup L1273 → retry de resposta vazia L1290 → transcrições L1324 → corrida pós-cérebro + releitura de status L1344 → contador "não entendi" L1363 → opt-out L1372 → memória/estado (`persistMemory`, só no 1º envio) L1421 → laço de blocos com `shouldAbortSend` + releitura antes da ação L1440 → `switch (decision.action)` L1493-1599 (`send_flow`, `qualify`, `disqualify`, `handoff`, `resolve`; `queueSkipped`) → auditoria/métricas L1601 (`wa_bot` com `facts`, `blocksSkipped`, `handoffSkipped`) → telemetria do playbook L1654 → `catch` L1665 (inbound mais nova = só loga; senão handoff condicional; falha do handoff = `reportCriticalError`).
 
 ## 6. `app/nova-dash/KanbanFlowPanel.tsx` — 1263 linhas
 Dashboard "Fluxo do Kanban": 7 visões (tempo, destino, retrabalho, descarte, ciclo, throughput, hospital) com gráficos SVG próprios, comparação de período, drill-down e export.
@@ -130,18 +130,18 @@ Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (
 - **L978-1122** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
 - **L1123-1253** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
 
-## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1450 linhas
+## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1467 linhas
 Crons do WhatsApp em 3 fases: nudge/encerramento por silêncio, recuperação standby e SLA (fila, humano, entrega travada, cards estourados, assinatura).
 
-- **L1-30** imports (`classifyLastMessage`, `isClosingAck`, `isBotDecisionLog`, `orphanReason`, `isEnvSwitchOn` de `wa-silence.ts`; `humanLastVerdict`/`holdDaysLabel` de `app/_shared/utils/ownership.ts`; `HUMAN_HOLD_MS` de `app/_shared/lib/whatsapp/ownership.ts`).
-- **L31-220** constantes e infraestrutura: nudge/close, alertas por degrau (`dueAlertStep`), `STUCK_SENT_*`, `OVERDUE_*`, recuperação (`recoveryMaxAttempts`, `RECOVERY_*`, `RECOVERY_DAILY_CAP`, `NON_RECOVERABLE_CATEGORIES`), marcapasso (`createPacer`, `SEND_GAP_*`, `RUN_BUDGET_MS`), `inSequence`, `timed`, `CronResults` (com `orphans`), `emptyResults`.
-- **L221-285** `standbyBlockReason`.
-- **L286-358** órfã e corrida da fase nudge: `ORPHAN_TO_QUEUE` (env `WA_ORPHAN_TO_QUEUE`), `inboundSince`, `botDecidedSince` (log `wa_bot` depois da mensagem), `sendOrphanToQueue`, `markSilenceSeen`.
-- **L359-718** helpers de decisão: `pendingFromState`, `buildFarewell`, `looksLikeFarewell`, `decideFollowup`, `CloseGuard`/`guardWhere` (L495), `finalizeClose` (L514), `silentCloseCategory`, `enterStandby` (L563), última fala humana `settleHumanLast` (L590-648: segura com `botNudge30At` no futuro ou encerra sem standby), `buildRecoveryMessage`. O horário comercial (7h–21h BRT) vem de `date-br.ts`: `isBrBusinessHour`, `nextBrBusinessSlot`, `brBusinessMinutesBetween`.
-- **L719-944** `runNudgePhase`: sai fora do horário comercial (L732), 1. silêncio de 30min (L740), 2. encerramento por inatividade (L842; `human_last` → `settleHumanLast` antes da despedida), log-resumo `[WHATSAPP CRON] nudge:` no fim (com `parada(s) com o atendente`).
-- **L945-1140** `runRecoveryPhase`: teto diário, seleção `dueRecovery` (L964), loop de provocações (L974).
-- **L1141-1443** `runSlaPhase`: 3. SLA da fila (L1151), 3b. SLA humano (L1202), 4. entrega travada (L1276), 5. cards estourados (L1320), 7. assinatura (L1422, `runSignatureReminders`).
-- **L1444-1450** `mergeResults`.
+- **L1-32** imports (`classifyLastMessage`, `isClosingAck`, `isBotDecisionLog`, `orphanReason`, `isEnvSwitchOn` de `wa-silence.ts`; `humanLastVerdict`/`holdDaysLabel` de `app/_shared/utils/ownership.ts`; `HUMAN_HOLD_MS` de `app/_shared/lib/whatsapp/ownership.ts`; `QUEUE_ALERT_STEPS_MS`/`queueAlertAudience`/`queueWaitLabel` de `alert-policy.ts`; `waAlertRecipients`).
+- **L33-223** constantes e infraestrutura: nudge/close, alertas por degrau (`dueAlertStep`; os degraus da fila vêm de `alert-policy.ts`), `STUCK_SENT_*`, `OVERDUE_*`, recuperação (`recoveryMaxAttempts`, `RECOVERY_*`, `RECOVERY_DAILY_CAP`, `NON_RECOVERABLE_CATEGORIES`), marcapasso (`createPacer`, `SEND_GAP_*`, `RUN_BUDGET_MS`), `inSequence`, `timed`, `CronResults` (com `orphans`), `emptyResults`.
+- **L224-288** `standbyBlockReason`.
+- **L289-361** órfã e corrida da fase nudge: `ORPHAN_TO_QUEUE` (env `WA_ORPHAN_TO_QUEUE`), `inboundSince`, `botDecidedSince` (log `wa_bot` depois da mensagem), `sendOrphanToQueue`, `markSilenceSeen`.
+- **L362-721** helpers de decisão: `pendingFromState`, `buildFarewell`, `looksLikeFarewell`, `decideFollowup`, `CloseGuard`/`guardWhere` (L498), `finalizeClose` (L517), `silentCloseCategory`, `enterStandby` (L566), última fala humana `settleHumanLast` (L593-651: segura com `botNudge30At` no futuro ou encerra sem standby), `buildRecoveryMessage`. O horário comercial (7h–21h BRT) vem de `date-br.ts`: `isBrBusinessHour`, `nextBrBusinessSlot`, `brBusinessMinutesBetween`.
+- **L722-947** `runNudgePhase`: sai fora do horário comercial (L735), 1. silêncio de 30min (L743), 2. encerramento por inatividade (L845; `human_last` → `settleHumanLast` antes da despedida), log-resumo `[WHATSAPP CRON] nudge:` no fim (com `parada(s) com o atendente`).
+- **L948-1143** `runRecoveryPhase`: teto diário, seleção `dueRecovery` (L967), loop de provocações (L977).
+- **L1144-1460** `runSlaPhase`: 3. SLA da fila (L1154; audiência por degrau em `queueAlertAudience`, destinatários por conversa em `waAlertRecipients`), 3b. SLA humano (L1219), 4. entrega travada (L1293), 5. cards estourados (L1337), 7. assinatura (L1439, `runSignatureReminders`).
+- **L1461-1467** `mergeResults`.
 
 ## 9. `app/nova-dash/card-dialog/ScriptTab.tsx` — 893 linhas
 Aba "Roteiros" do CardDialog (componente `RoteirosTab`): chat com IA que gera roteiros a partir de anexos (upload direto ao S3), biblioteca de prompts e download em .docx.

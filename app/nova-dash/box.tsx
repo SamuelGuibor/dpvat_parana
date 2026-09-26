@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/app/_shared/ui/badge';
 import { useNotifications } from '@/app/_shared/hooks/use-notifications';
+import { isQualifiedLeadAlert, orderBellNotifications } from '@/app/_shared/utils/alert-policy';
 import { Bell, Clock } from 'lucide-react';
 
 function escapeRegExp(s: string) {
@@ -36,6 +37,13 @@ export function NotificationDropdown() {
   const { notifications, unreadCount, markAllRead, clearAll } = useNotifications();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // LEAD QUALIFICADO das últimas 24 h no topo e destacado, pela marca e não por
+  // "não lida": abrir o sino já marca tudo como lido (handleToggle), e o
+  // destaque sumia logo depois de aparecer. O "agora" anda a cada poll.
+  const ordered = useMemo(
+    () => orderBellNotifications(notifications, Date.now()),
+    [notifications],
+  );
 
   function handleToggle() {
     const next = !open;
@@ -100,65 +108,74 @@ export function NotificationDropdown() {
                 Nenhuma notificação
               </p>
             ) : (
-              notifications.map((n) => (
-                <div
-                  key={n.id}
-                  onClick={() => {
-                    // Notificação de WhatsApp → abre a conversa direto no inbox.
-                    if (n.contactId) {
+              ordered.map((n) => {
+                const qualified = isQualifiedLeadAlert(n.message);
+                return (
+                  <div
+                    key={n.id}
+                    onClick={() => {
+                      // Notificação de WhatsApp → abre a conversa direto no inbox.
+                      if (n.contactId) {
+                        setOpen(false);
+                        // sessionStorage cobre o caso do inbox ainda não estar
+                        // montado quando o evento dispara (troca de aba).
+                        sessionStorage.setItem('wa-open-contact', n.contactId);
+                        window.dispatchEvent(
+                          new CustomEvent('open-whatsapp-conversation', {
+                            detail: { contactId: n.contactId },
+                          }),
+                        );
+                        return;
+                      }
+                      const cardId = n.processId ?? n.userId;
+                      if (!cardId) return;
                       setOpen(false);
-                      // sessionStorage cobre o caso do inbox ainda não estar
-                      // montado quando o evento dispara (troca de aba).
-                      sessionStorage.setItem('wa-open-contact', n.contactId);
+                      // Se o sino foi clicado fora da aba do Kanban, o board não
+                      // está montado e o evento se perderia — o sessionStorage
+                      // segura o pedido até ele montar (igual à busca global).
+                      const payload = { id: cardId, isProcess: !!n.processId };
+                      try {
+                        sessionStorage.setItem('kanban-open-card', JSON.stringify(payload));
+                      } catch { /* noop */ }
                       window.dispatchEvent(
-                        new CustomEvent('open-whatsapp-conversation', {
-                          detail: { contactId: n.contactId },
-                        }),
+                        new CustomEvent('open-kanban-card', { detail: payload }),
                       );
-                      return;
-                    }
-                    const cardId = n.processId ?? n.userId;
-                    if (!cardId) return;
-                    setOpen(false);
-                    // Se o sino foi clicado fora da aba do Kanban, o board não
-                    // está montado e o evento se perderia — o sessionStorage
-                    // segura o pedido até ele montar (igual à busca global).
-                    const payload = { id: cardId, isProcess: !!n.processId };
-                    try {
-                      sessionStorage.setItem('kanban-open-card', JSON.stringify(payload));
-                    } catch { /* noop */ }
-                    window.dispatchEvent(
-                      new CustomEvent('open-kanban-card', { detail: payload }),
-                    );
-                  }}
-                  className={`flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-zinc-800 transition border-b last:border-b-0 cursor-pointer ${
-                    !n.read ? 'bg-blue-50/50' : ''
-                  }`}
-                >
-                  <div className="mt-0.5">
-                    <Badge
-                      variant="secondary"
-                      className={`${!n.read ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 dark:bg-zinc-800'}`}
-                    >
-                      <Bell className="w-3 h-3" />
-                    </Badge>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm leading-snug">
-                      <HighlightedMessage message={n.message} names={[n.authorName, n.targetName]} />
-                    </p>
-                    <div className="flex items-center gap-1 mt-1 text-gray-400 dark:text-zinc-500">
-                      <Clock className="w-3 h-3" />
-                      <span className="text-[11px]">
-                        {new Date(n.createdAt).toLocaleString('pt-BR')}
-                      </span>
+                    }}
+                    className={`flex gap-3 px-4 py-3 transition border-b last:border-b-0 cursor-pointer ${
+                      qualified
+                        ? 'border-l-4 border-l-emerald-500 bg-emerald-50 hover:bg-emerald-100'
+                        : `hover:bg-gray-50 ${!n.read ? 'bg-blue-50/50' : ''}`
+                    }`}
+                  >
+                    <div className="mt-0.5">
+                      <Badge
+                        variant="secondary"
+                        className={
+                          qualified
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : !n.read ? 'bg-blue-100 text-blue-700' : 'bg-gray-100'
+                        }
+                      >
+                        <Bell className="w-3 h-3" />
+                      </Badge>
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm leading-snug ${qualified ? 'font-medium text-emerald-900' : ''}`}>
+                        <HighlightedMessage message={n.message} names={[n.authorName, n.targetName]} />
+                      </p>
+                      <div className="flex items-center gap-1 mt-1 text-gray-400">
+                        <Clock className="w-3 h-3" />
+                        <span className="text-[11px]">
+                          {new Date(n.createdAt).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                    </div>
+                    {!n.read && (
+                      <div className="w-2 h-2 rounded-full bg-blue-600 mt-2 shrink-0" />
+                    )}
                   </div>
-                  {!n.read && (
-                    <div className="w-2 h-2 rounded-full bg-blue-600 mt-2 shrink-0" />
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

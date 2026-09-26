@@ -25,6 +25,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - Cortes de dia/mês/hora vêm de `app/_shared/utils/date-br.ts` (servidor em UTC), inclusive o horário comercial dos crons (7h–21h BRT: `isBrBusinessHour`/`nextBrBusinessSlot`). Mensagem proativa nova de cron respeita essa janela.
 - Toda chamada de IA nova grava `metadata.usage` no log.
 - Evento novo no canal `whatsapp:<contactId>` sai por `broadcastWhatsAppEvent` (relay depois da resposta), não por `await broadcastToRelay`. Log `wa_*` sem IA pode ir por `runAfterResponse` com `at`; log de IA fica com await (só vai para depois da resposta junto com a chamada de IA inteira, como o resumo de vínculo).
+- Aviso novo no sino (Notification do `whatsapp-bot`) vai para `waAlertRecipients` com audiência (dono → setor da Fila → equipe → gestores; política em `alert-policy.ts`), nunca `whatsappRecipients()` direto: a equipe toda em todo aviso eram ~1.890/dia e afogavam o LEAD QUALIFICADO (`WA_QUALIFIED_MARK`).
 - Mudou teto/cadência da recuperação → `recovery-caps.ts` (o inbox lê o mesmo mapa). Não afrouxe cooldown, tetos nem marcapasso sem pedido: as duas WABAs já levaram aviso de spam da Meta.
 - Schema Prisma: nunca `prisma migrate dev`; use `migrate diff` + `db execute` + `migrate resolve`.
 - Campo novo na ficha: `AI_FIELDS`/`FIELD_LABELS` (ficha-ai.ts), `CLIENT_FIELDS` (`app/_actions/whatsapp/client-info.ts`) e `FichaTab` (CopilotPanel) mudam juntos. A ficha grava no `User` com o mesmo nome de coluna: coluna `String?` (nunca data/número; `currentFields` faz `.trim()`) e migration ANTES do deploy. Receita no mapa.
@@ -33,6 +34,6 @@ Mapa completo: docs/ai/whatsapp-bot.md
 
 ## Validação
 - `npx tsc --noEmit` · `npm run lint` · `npm test` (o `next build` local morre por OOM; o build fica com a Vercel).
-- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`, `tests/bot-timing.test.ts`, `tests/critical-error.test.ts`, `tests/wa-silence.test.ts`, `tests/ownership.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
+- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`, `tests/bot-timing.test.ts`, `tests/critical-error.test.ts`, `tests/wa-silence.test.ts`, `tests/ownership.test.ts`, `tests/alert-policy.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
 - Bot ponta a ponta: número em `WHATSAPP_TEST_NUMBERS` → cérebro de `CHATBOT_URL_STAGING`; confira o log `wa_bot` (`outcome`, `leaked`, `usage`).
 - Cron manual: de preferência a fase isolada (`GET /api/whatsapp/cron/nudge` etc.) com `CRON_SECRET`, logo depois de uma rodada agendada concluída (roda para todos os clientes); veja `[WHATSAPP CRON]` nos logs.

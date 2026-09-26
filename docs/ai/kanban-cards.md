@@ -24,7 +24,7 @@
 | `app/nova-dash/KanbanFlowPanel.tsx` | Aba "Fluxo do Kanban" da Gestão Estratégica. Recebe `data` pronto; a comparação chama a action sob demanda | `KanbanFlowPanel` (usa `getKanbanFlowAnalytics`) |
 | `app/nova-dash/minikanban.tsx` | Kanban de **leads do bot** (BotConversa + WhatsApp), **não** é o board | `MiniKanban` |
 | `app/nova-dash/CalendarTab.tsx` | Calendário que só vive no localStorage (`dpvat_calendar_events`) | `CalendarTab` |
-| `app/nova-dash/box.tsx` | Sino; abre card/conversa via sessionStorage + evento | `NotificationDropdown` |
+| `app/nova-dash/box.tsx` | Sino; abre card/conversa via sessionStorage + evento; LEAD QUALIFICADO das últimas 24 h no topo e em destaque (`orderBellNotifications`) | `NotificationDropdown` |
 | `app/nova-dash/contratos/ContractsPanel.tsx` | Aba Contratos (assinatura), **desligada** | `ContractsPanel` |
 | `app/_actions/cards/` | Mover, reordenar, arquivar, buscar arquivados, excluir, planilhas (`view_pagos_caique`/`view_pagos_uni`) | `updateKanbanStatus`, `reorderCards`, `setArchiveStatus`, `getArchivedCards`, `getArchivedCardById`, `ArchiveStatus`, `searchArchivedCards`, `deleteCard`, `getCaiqueFolders`, `getUniFolders` |
 | `app/_actions/users/` | CRUD do card-User (e de membro da equipe) | `createUser`, `updateUser`, `getUsers`, `findDuplicateClient`, `deleteAdmin`, `getClientAccessPassword`, `setClientAccessPassword` |

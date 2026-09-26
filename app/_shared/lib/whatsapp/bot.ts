@@ -16,6 +16,8 @@ import { clientDocumentMediaWhere, docsReceivedSince } from "@/app/_shared/utils
 import { isTerminalBotAction, shouldAbortSend, type SendGuardVerdict } from "@/app/_shared/utils/bot-timing";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
 import { findConversationOwner, type ConversationOwner } from "./ownership";
+import { waAlertRecipients } from "./alert-recipients";
+import { WA_QUALIFIED_MARK } from "./close-categories";
 import {
   broadcastWhatsAppEvent,
   whatsappChannelId,
@@ -521,8 +523,11 @@ export interface QueueOpts {
  *
  * DONO PEGAJOSO (EF-1): a fila guarda o último atendente (o atribuído, se ainda
  * é da equipe, ou o autor da última mensagem humana dos 7 dias) e só ele é
- * notificado; sem dono, a equipe toda, como antes. Continua 'queued' (queuedAt,
- * SLA e métricas de fila iguais): é roteamento, a decisão segue do cérebro.
+ * notificado; sem dono, o setor da Fila (alert-recipients.ts). A equipe inteira
+ * só entra pelos degraus do SLA da fila no cron: avisar as 17 pessoas a cada
+ * transferência somava ~450 notificações por dia em 09/2026. Continua 'queued'
+ * (queuedAt, SLA e métricas de fila iguais): é roteamento, a decisão segue do
+ * cérebro.
  */
 export async function handoffToQueue(
   contactId: string,
@@ -547,7 +552,7 @@ export async function handoffToQueue(
   await postInternalNote(contactId, `🤖 Transferido para atendimento humano — ${reason}${ownerSuffix(owner)}`);
 
   try {
-    const recipients = owner ? [owner.id] : await whatsappRecipients();
+    const recipients = await waAlertRecipients({ contactId, ownerId: owner?.id ?? null, audience: "owner_or_sector" });
     for (const id of recipients) {
       await db.notification.create({
         data: {
@@ -614,8 +619,10 @@ async function tagAsQualified(conversationId: string): Promise<void> {
  * Fila, o mesmo bug do handoff. A assinatura (signature/core.ts) chama sem
  * opts, com o comportamento de sempre.
  *
- * Dono pegajoso igual ao handoffToQueue: a fila guarda o último atendente e
- * só ele recebe o aviso de lead qualificado; sem dono, a equipe toda.
+ * Dono pegajoso igual ao handoffToQueue: a fila guarda o último atendente. O
+ * aviso de lead qualificado vai para o dono E o setor da Fila (quem cria o card
+ * e manda o contrato), com a marca WA_QUALIFIED_MARK que o sino destaca e fixa
+ * no topo: no meio de ~1.890 avisos por dia ele passava despercebido (EF-10).
  */
 export async function qualifyToQueue(
   contactId: string,
@@ -650,7 +657,8 @@ export async function qualifyToQueue(
   }
 
   await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}${ownerSuffix(owner)}`);
-  await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId, owner ? [owner.id] : undefined);
+  const recipients = await waAlertRecipients({ contactId, ownerId: owner?.id ?? null, audience: "owner_and_sector" });
+  await handoffNotifyOnly(contactLabel, `${WA_QUALIFIED_MARK} — ${reason}`, contactId, recipients);
   // Lead qualificado SEM card ainda: cria a tarefa na caixa de Menções e
   // Tarefas da equipe — criar o card e enviar o contrato pra assinatura não
   // pode depender de alguém lembrar do aviso volátil do sino.
@@ -782,7 +790,8 @@ async function sendMutedFallback(
 
 /**
  * Só as notificações do handoff (sem mexer no status — já foi atualizado).
- * `onlyTo` = o dono da fila (dono pegajoso); omitido = a equipe toda.
+ * `onlyTo` = destinatários já resolvidos (waAlertRecipients); omitido ou vazio
+ * = a equipe toda.
  */
 async function handoffNotifyOnly(
   contactLabel: string,
