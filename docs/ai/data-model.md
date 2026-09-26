@@ -1,5 +1,5 @@
 # Modelo de dados (Prisma/Neon) — mapa para IA
-> Verificado em 2026-09-25 · Escopo: `prisma/schema.prisma`, `prisma/migrations/**`, `app/_shared/lib/prisma.ts`, `app/_shared/lib/db/*`
+> Verificado em 2026-09-26 · Escopo: `prisma/schema.prisma`, `prisma/migrations/**`, `app/_shared/lib/prisma.ts`, `app/_shared/lib/db/*`
 
 ## TL;DR
 - Postgres no **Neon** via Prisma 6, schema único (56 models, conferido com `grep -c "^model "`; sem enums Prisma: tudo é `String` com valores mágicos). Cliente único `db` em `app/_shared/lib/prisma.ts`. O `.env` local aponta para o **Neon de produção** — não existe banco de dev/staging.
@@ -61,7 +61,7 @@ Tabela real entre parênteses quando há `@@map`; sem `@@map` a tabela é o nome
 | Cards | `StatusMessageConfig` (`status_message_configs`) · `Event` (`events`) | Texto da msg de progresso por (`serviceKey`,`status`); agenda da equipe (`userId`/`processId` soltos) |
 | Equipe | `Sector` (`sectors`) · `Mention` (`mentions`) · `Notification` | Setor ≠ role. `Mention` PENDING/ACK/DONE, `groupId` compartilha estado da tarefa de setor. `Notification` = sino volátil (retenção 30/90 d); índices `[recipientId, createdAt]` (sino) e `[contactId, read]` (`markConversationRead` apaga o sino por contato) |
 | Equipe | `WorkSession` · `PontoAdjustment` (`ponto_adjustments`) | Ponto. `discordId` é legado e **guarda o userId do app**; `date` "AAAA-MM-DD" Brasília; `breaks` Json é a verdade (pausedAt/resumedAt = espelho) |
-| Equipe | `Goal` (`goals`) · `DevTicket` (`dev_tickets`) · `DevAlert` (`dev_alerts`) · `AppSetting` (`app_settings`) | `Goal.month` "AAAA-MM". `AppSetting` = chave→valor string (ex.: chaves `DASHBOARD_ALLOWED_IPS_KEY`, `SIGNATURE_AUTO_PAUSE_KEY`, `cost_*`) |
+| Equipe | `Goal` (`goals`) · `DevTicket` (`dev_tickets`) · `DevAlert` (`dev_alerts`) · `AppSetting` (`app_settings`) | `Goal.month` "AAAA-MM" (meta legada, sem uso no app: a meta viva é o `AppSetting` `monthly_hired_goal`). `AppSetting` = chave→valor string (ex.: chaves `DASHBOARD_ALLOWED_IPS_KEY`, `SIGNATURE_AUTO_PAUSE_KEY`, `cost_*`) |
 | Auth | `Account` · `Session` · `VerificationToken` · `PasswordResetCode` (`password_reset_codes`) | Tabelas do PrismaAdapter (sessão é JWT); código de reset com hash e expiração |
 | Chat interno | `ChatMessage` · `ChatReaction` · `ChatRead` · `ChatChannel` · `ChatChannelMember` (`chat_*`) | Canais `general`/`dm:*` **não têm linha** em `chat_channels`; `deletedAt` = "mensagem apagada" |
 | WhatsApp | `WhatsAppNumber` (`whatsapp_numbers`) | Um por linha da empresa. `accessTokenEnc` cifrado; `active=false` = somente leitura; `templatesPaused`; `isDefault` |

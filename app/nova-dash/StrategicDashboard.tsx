@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/app/_shared/ui/button';
 import { Loader2, RotateCcw, Phone } from 'lucide-react';
@@ -22,11 +22,6 @@ import { KanbanFlowPanel } from './KanbanFlowPanel';
 import { ChatbotPanel } from './workspace/chatbot/ChatbotPanel';
 import { BotFunnelSection } from './workspace/manager/BotFunnelSection';
 import { LeadOriginSection } from './workspace/manager/LeadOriginSection';
-
-function currentMonthKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
 
 const NO_NUMBERS: WaNumberOption[] = [];
 const NO_LEADS: BotKanbanLead[] = [];
@@ -117,7 +112,6 @@ export const StrategicDashboard: React.FC = () => {
       const payload = await getStrategicDashboardData(
         range.from.toISOString(),
         range.to.toISOString(),
-        currentMonthKey(),
       );
       if (seq === loadSeq.current) setData(payload);
     } catch (err) {
@@ -137,16 +131,6 @@ export const StrategicDashboard: React.FC = () => {
   const handleDateChange = useCallback((range: DateRange) => {
     setDateRange(range);
   }, []);
-
-  // Legado BotConversa (14/09/2026): só os CONTRATADOS entram no Fluxo — são
-  // a parcela que a Meta e o card "Contratados" somam. As outras etapas
-  // legadas (em conversa, não qualificado...) não existem no Funil e só
-  // inflavam as colunas. Memorizado: o MiniKanban recopia a lista a cada
-  // `data` novo, e um filter no render fazia isso a cada renderização.
-  const legacyHired = useMemo(
-    () => (data ? data.kanban.filter((k) => k.evento === 'contratado') : []),
-    [data],
-  );
 
   const header = (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -221,7 +205,11 @@ export const StrategicDashboard: React.FC = () => {
         </TabsList>
 
         <TabsContent value="analytics" className="space-y-4">
-          <MiniKanban data={legacyHired} systemItems={systemLeads} />
+          {/* Legado BotConversa: o servidor já manda só os contratados do
+              período (a parcela que a meta e o card "Contratados" somam). A
+              referência só muda com `data` novo, e o MiniKanban recopia a
+              lista a cada troca dela. */}
+          <MiniKanban data={data.kanban} systemItems={systemLeads} />
           {/* Origem dos leads usa getLeadOrigins (allowlist do painel do
               chatbot). Fora da allowlist a seção nem monta, em vez de mostrar
               a caixa de erro na aba padrão. A UI só esconde: o guard continua

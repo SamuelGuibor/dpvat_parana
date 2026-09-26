@@ -13,33 +13,18 @@
 // a abre; daqui sai só a permissão (canViewChatbot). O funil e os leads do
 // Fluxo de Eventos Rápidos vêm de getBotFunnelAndLeads (bot-funnel.ts, uma
 // coorte só) e as linhas da empresa, do cache SWR 'wa-number-options'.
+//
+// Sem ramos mortos (auditoria de 25/09/2026): a carga ainda buscava contagens
+// e série mensal do BotConversa, contagem da tag Contratados, meta legada
+// (Goal) e o funil antigo por logs `move` — nada disso era lido pela tela. E o
+// legado inteiro do período ia ao navegador (~1,3 MB em "Tudo") só para o
+// cliente filtrar os contratados. Sobram o Fluxo do Kanban, os contratados do
+// legado (filtrados aqui) e a permissão da aba Chatbot.
 
+import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
-import { fetchEventsCount, fetchEventsByMonth, fetchBotconversaAll } from '@/app/_shared/lib/db/botconversa';
-import { getContratadosTagCount } from '@/app/_actions/whatsapp/tags';
-import {
-  getFunnelAnalytics, getKanbanFlowAnalytics, getMonthGoal,
-  type FunnelAnalytics, type KanbanFlowAnalytics, type MonthGoal,
-} from './get-funnel-analytics';
-
-export interface StrategicCounts {
-  contratado?: number;
-  iniciado?: number;
-  em_honorario?: number;
-  em_conversa?: number;
-  aguardando?: number;
-  nao_contratado?: number;
-  nao_qualificado?: number;
-  enviou_documentos?: number;
-}
-
-export interface MonthlyRow {
-  month: string;
-  aprovados: number;
-  indeferidos: number;
-  emAndamento: number;
-}
+import { getKanbanFlowAnalytics, type KanbanFlowAnalytics } from './get-funnel-analytics';
 
 export interface DashboardKanbanItem {
   id: string;
@@ -51,13 +36,12 @@ export interface DashboardKanbanItem {
 }
 
 export interface StrategicDashboardData {
-  counts: StrategicCounts;
-  monthly: MonthlyRow[];
+  /**
+   * Legado BotConversa: só os CONTRATADOS do período (14/09/2026) — são a
+   * parcela que a meta e o card "Contratados" somam. As outras etapas legadas
+   * não existem no Funil e só inflavam as colunas do Fluxo de Eventos Rápidos.
+   */
   kanban: DashboardKanbanItem[];
-  /** Contratos fechados pelo bot (tag "Contratados" no WhatsApp). */
-  contratadosBot: number;
-  monthGoal: MonthGoal;
-  funnel: FunnelAnalytics;
   kanbanFlow: KanbanFlowAnalytics;
   /**
    * Allowlist do painel do chatbot (canViewChatbotDashboard): mostra a aba
@@ -69,29 +53,27 @@ export interface StrategicDashboardData {
 export async function getStrategicDashboardData(
   fromISO: string,
   toISO: string,
-  monthKey: string,
 ): Promise<StrategicDashboardData> {
   const ctx = await requireTeam();
 
-  const range = { from: new Date(fromISO), to: new Date(toISO) };
+  const from = new Date(fromISO);
+  const to = new Date(toISO);
   // E-mail do banco (requireTeam), não do JWT: mesma régua das actions do painel.
   const canViewChatbot = canViewChatbotDashboard(ctx.email);
 
-  const [counts, monthly, kanbanRows, contratadosBot, monthGoal, funnel, kanbanFlow] =
-    await Promise.all([
-      fetchEventsCount(range),
-      fetchEventsByMonth(range.from.getFullYear(), range),
-      fetchBotconversaAll(range),
-      getContratadosTagCount(fromISO, toISO),
-      getMonthGoal(monthKey),
-      getFunnelAnalytics(fromISO, toISO),
-      getKanbanFlowAnalytics(fromISO, toISO),
-    ]);
+  const [legacyHired, kanbanFlow] = await Promise.all([
+    // Só as colunas que o MiniKanban mostra; mesma ordem do fetchBotconversaAll
+    // (mais recente primeiro), que continua servindo /api/botconversa/get-kanban.
+    db.botconversa.findMany({
+      where: { evento: 'contratado', createdAt: { gte: from, lte: to } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, nome: true, telefone: true, evento: true, createdAt: true, updatedAt: true },
+    }),
+    getKanbanFlowAnalytics(fromISO, toISO),
+  ]);
 
   return {
-    counts: counts as StrategicCounts,
-    monthly,
-    kanban: kanbanRows.map((r) => ({
+    kanban: legacyHired.map((r) => ({
       id: r.id,
       nome: r.nome,
       telefone: r.telefone,
@@ -99,9 +81,6 @@ export async function getStrategicDashboardData(
       createdAt: r.createdAt?.toISOString() ?? null,
       updatedAt: r.updatedAt?.toISOString() ?? null,
     })),
-    contratadosBot,
-    monthGoal,
-    funnel,
     kanbanFlow,
     canViewChatbot,
   };

@@ -1,6 +1,5 @@
 'use server';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
@@ -436,138 +435,9 @@ export async function getLeadOrigins(
   return { periodDays: seriesDays, adOrigins };
 }
 
-// ─── Funil de leads por período: tags aplicadas + desfechos do bot ──────────
-
-export type LeadFunnelRange = 'today' | 'yesterday' | '7d' | '15d' | '30d' | '90d';
-
-export interface LeadFunnelData {
-  range: LeadFunnelRange;
-  newLeads: number; // contatos novos que escreveram no período
-  bot: { qualified: number; disqualified: number }; // decisões da IA no período
-  // TODAS as tags cadastradas, com quantas conversas receberam cada uma NO
-  // período (pela data de aplicação da tag) — inclui as zeradas.
-  tags: { id: string; name: string; color: string; count: number }[];
-  // Funil por etapa no estilo Botconversa (11/08/2026) — cada número é de
-  // CONTATOS DISTINTOS no período (decisões repetidas do bot não inflam).
-  steps: {
-    iniciados: number;       // contatos novos que escreveram
-    docsEnviados: number;    // receberam fluxo com "documento" no nome
-    qualificados: number;    // bot qualificou
-    desqualificados: number; // bot desqualificou
-    contratados: number;     // tag "Contratado*" aplicada no período
-  };
-}
-
-function leadFunnelWindow(range: LeadFunnelRange): { since: Date; until: Date | null } {
-  switch (range) {
-    case 'today':     return { since: brStartOfDaysAgo(0), until: null };
-    case 'yesterday': return { since: brStartOfDaysAgo(1), until: brStartOfDaysAgo(0) };
-    case '7d':        return { since: brStartOfDaysAgo(6), until: null };
-    case '15d':       return { since: brStartOfDaysAgo(14), until: null };
-    case '30d':       return { since: brStartOfDaysAgo(29), until: null };
-    case '90d':       return { since: brStartOfDaysAgo(89), until: null };
-  }
-}
-
-export async function getLeadFunnel(
-  range: LeadFunnelRange,
-  numberId: string | null = null,
-): Promise<LeadFunnelData> {
-  await requireChatbotDashboard();
-
-  const { since, until } = leadFunnelWindow(range);
-  const createdAt = until ? { gte: since, lt: until } : { gte: since };
-
-  const [allTags, tagApplications, newLeads, botLogs, flowLogs] = await Promise.all([
-    db.whatsAppTag.findMany({ select: { id: true, name: true, color: true }, orderBy: { name: 'asc' } }),
-    // Data de APLICAÇÃO da tag (não da conversa): "quantos contratados neste
-    // período". Atenção: linhas anteriores a 03/08/2026 herdaram a data da
-    // migration (histórico antigo não é recuperável).
-    db.whatsAppConversationTag.findMany({
-      where: { createdAt, ...(numberId ? { conversation: { numberId } } : {}) },
-      select: { tagId: true },
-    }),
-    db.whatsAppContact.count({
-      where: { createdAt, optInSource: 'inbound', ...(numberId ? { numberId } : {}) },
-    }),
-    db.log.findMany({
-      where: { action: 'wa_bot', createdAt },
-      select: { metadata: true },
-    }),
-    // Disparos de fluxo (bot e equipe): "enviada lista de documentos" =
-    // fluxo com "documento"/"doc" no nome disparado pro contato.
-    db.log.findMany({
-      where: { action: 'wa_flow', createdAt },
-      select: { metadata: true },
-    }),
-  ]);
-
-  const countByTag = new Map<string, number>();
-  for (const t of tagApplications) countByTag.set(t.tagId, (countByTag.get(t.tagId) ?? 0) + 1);
-
-  // Filtro por número nos logs do bot: resolve o dono de cada contactId citado
-  // (os logs não têm coluna numberId — mesma regra do JOIN por contactId do
-  // getChatbotAnalytics; este funil não tem uso na UI e segue em JS).
-  let logs = botLogs;
-  if (numberId) {
-    const ids = Array.from(new Set(
-      botLogs.map((l) => (l.metadata as any)?.contactId).filter((id): id is string => typeof id === 'string'),
-    ));
-    const owned = new Set(
-      (await db.whatsAppContact.findMany({ where: { id: { in: ids }, numberId }, select: { id: true } })).map((c) => c.id),
-    );
-    logs = botLogs.filter((l) => owned.has((l.metadata as any)?.contactId));
-  }
-
-  const bot = { qualified: 0, disqualified: 0 };
-  const qualifiedContacts = new Set<string>();
-  const disqualifiedContacts = new Set<string>();
-  for (const l of logs) {
-    const meta = l.metadata as any;
-    const outcome = meta?.outcome;
-    const cid = typeof meta?.contactId === 'string' ? meta.contactId : null;
-    if (outcome === 'qualify') {
-      bot.qualified += 1;
-      if (cid) qualifiedContacts.add(cid);
-    } else if (outcome === 'disqualify') {
-      bot.disqualified += 1;
-      if (cid) disqualifiedContacts.add(cid);
-    }
-  }
-
-  // "Enviada lista de documentos": fluxos de docs disparados no período,
-  // por contato distinto. Também conta os send_flow do próprio bot (wa_bot).
-  const docsContacts = new Set<string>();
-  const isDocsFlow = (name: unknown) => typeof name === 'string' && /doc/i.test(name);
-  for (const l of flowLogs) {
-    const meta = l.metadata as any;
-    if (isDocsFlow(meta?.flowName) && typeof meta?.contactId === 'string') docsContacts.add(meta.contactId);
-  }
-  for (const l of logs) {
-    const meta = l.metadata as any;
-    if (isDocsFlow(meta?.flowName) && typeof meta?.contactId === 'string') docsContacts.add(meta.contactId);
-  }
-
-  const tags = allTags.map((t) => ({ ...t, count: countByTag.get(t.id) ?? 0 }));
-  // "Contratado" = assinou o contrato (tag aplicada quando o link é assinado).
-  const contratados = tags
-    .filter((t) => /contratad/i.test(t.name))
-    .reduce((a, t) => a + t.count, 0);
-
-  return {
-    range,
-    newLeads,
-    bot,
-    tags,
-    steps: {
-      iniciados: newLeads,
-      docsEnviados: docsContacts.size,
-      qualificados: qualifiedContacts.size,
-      desqualificados: disqualifiedContacts.size,
-      contratados,
-    },
-  };
-}
+// O antigo funil de leads por período (getLeadFunnel) saiu em 25/09/2026: não
+// tinha tela, puxava todos os logs wa_bot e wa_flow do período sem teto e era
+// mais um endpoint 'use server' exposto. O funil vivo é o de bot-funnel.ts.
 
 // ─── Drill-down da campanha: quem qualificou, quem não, e por quê ───────────
 

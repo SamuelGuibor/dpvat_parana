@@ -111,7 +111,7 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
   const byNumber = numberId ? { numberId } : {};
   const inRange = (d: Date) => d >= from && (!to || d <= to);
 
-  const [convs, docsRows, numbers] = await Promise.all([
+  const [convs, numbers] = await Promise.all([
     // Sem teto: o kanban é virtualizado e o funil precisa da coorte inteira.
     // Coorte (14/09/2026) = conversas CRIADAS no período OU que receberam a
     // etiqueta "Contratados" no período (contratação é um EVENTO datado pela
@@ -133,21 +133,29 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
         tags: { select: { createdAt: true, tag: { select: { name: true } } } },
       },
     }),
-    // A lista de documentos pode ter saído DEPOIS do fim do período (coorte
-    // antiga) — o que importa é ter saído desde a criação da conversa.
-    db.whatsAppMessage.findMany({
-      where: {
-        ...byNumber,
-        direction: 'out',
-        internal: false,
-        createdAt: { gte: from },
-        body: { contains: DOCS_FINGERPRINT, mode: 'insensitive' },
-      },
-      select: { contactId: true },
-      distinct: ['contactId'],
-    }),
     db.whatsAppNumber.findMany({ select: { id: true, label: true } }),
   ]);
+
+  // "Lista docs" só dos contatos da coorte (auditoria de 25/09/2026): antes o
+  // ILIKE varria as mensagens de saída de TODOS os contatos desde `from` (seq
+  // scan em whatsapp_messages) e o `distinct` do Prisma deduplicava em
+  // memória. Com a coorte em mãos, o índice [contactId, createdAt] restringe
+  // às mensagens dela. O filtro por número fica implícito no conjunto de
+  // contatos — por isso um contato legado adotado por outra linha (mensagens
+  // antigas com numberId NULL) agora entra, como deveria.
+  // A lista pode ter saído DEPOIS do fim do período (coorte antiga): o que
+  // importa é ter saído desde o início dele.
+  const contactIds = Array.from(new Set(convs.map((c) => c.contact.id)));
+  const docsRows = contactIds.length
+    ? await db.$queryRaw<{ contactId: string }[]>`
+        SELECT DISTINCT m."contactId"
+        FROM whatsapp_messages m
+        WHERE m."contactId" = ANY(${contactIds}::text[])
+          AND m.direction = 'out'
+          AND m.internal = false
+          AND m."createdAt" >= ${from}
+          AND m.body ILIKE ${'%' + DOCS_FINGERPRINT + '%'}`
+    : [];
 
   const docsSet = new Set(docsRows.map((r) => r.contactId));
   const labelOf = new Map(numbers.map((n) => [n.id, n.label]));
