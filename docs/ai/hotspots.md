@@ -13,7 +13,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | 5 | `app/_shared/lib/whatsapp/bot.ts` | 1660 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
 | 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1253 | whatsapp-bot |
-| 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1228 | whatsapp-bot |
+| 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1369 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
 | 11 | `app/nova-dash/card-dialog/FilesTab.tsx` | 874 | kanban-cards / documentos-ia |
@@ -130,16 +130,18 @@ Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (
 - **L978-1122** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
 - **L1123-1253** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
 
-## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1228 linhas
+## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1369 linhas
 Crons do WhatsApp em 3 fases: nudge/encerramento por silêncio, recuperação standby e SLA (fila, humano, entrega travada, cards estourados, assinatura).
 
-- **L1-25** imports.
-- **L26-215** constantes e infraestrutura: nudge/close, alertas por degrau (`dueAlertStep`), `STUCK_SENT_*`, `OVERDUE_*`, recuperação (`recoveryMaxAttempts`, `RECOVERY_*`, `RECOVERY_DAILY_CAP`, `NON_RECOVERABLE_CATEGORIES`), marcapasso (`createPacer`, `SEND_GAP_*`, `RUN_BUDGET_MS`), `inSequence`, `timed`, `CronResults`, `emptyResults`.
-- **L216-565** helpers de decisão: `standbyBlockReason`, `isClosingAck`, `pendingFromState`, `buildFarewell`, `looksLikeFarewell`, `decideFollowup`, `finalizeClose`, `silentCloseCategory`, `enterStandby`, `buildRecoveryMessage`. O horário comercial (7h–21h BRT) vem de `date-br.ts`: `isBrBusinessHour`, `nextBrBusinessSlot`, `brBusinessMinutesBetween`.
-- **L566-718** `runNudgePhase`: sai fora do horário comercial (L579), 1. silêncio de 30min (L587), 2. encerramento por inatividade (L661).
-- **L719-918** `runRecoveryPhase`: teto diário, seleção `dueRecovery` (L738), loop de provocações (L748).
-- **L919-1221** `runSlaPhase`: 3. SLA da fila (L929), 3b. SLA humano (L980), 4. entrega travada (L1054), 5. cards estourados (L1098), 7. assinatura (L1200, `runSignatureReminders`).
-- **L1222-1228** `mergeResults`.
+- **L1-28** imports (`classifyLastMessage`, `isClosingAck`, `isBotDecisionLog`, `orphanReason`, `isEnvSwitchOn` de `wa-silence.ts`).
+- **L29-218** constantes e infraestrutura: nudge/close, alertas por degrau (`dueAlertStep`), `STUCK_SENT_*`, `OVERDUE_*`, recuperação (`recoveryMaxAttempts`, `RECOVERY_*`, `RECOVERY_DAILY_CAP`, `NON_RECOVERABLE_CATEGORIES`), marcapasso (`createPacer`, `SEND_GAP_*`, `RUN_BUDGET_MS`), `inSequence`, `timed`, `CronResults` (com `orphans`), `emptyResults`.
+- **L219-283** `standbyBlockReason`.
+- **L284-356** órfã e corrida da fase nudge: `ORPHAN_TO_QUEUE` (env `WA_ORPHAN_TO_QUEUE`), `inboundSince`, `botDecidedSince` (log `wa_bot` depois da mensagem), `sendOrphanToQueue`, `markSilenceSeen`.
+- **L357-660** helpers de decisão: `pendingFromState`, `buildFarewell`, `looksLikeFarewell`, `decideFollowup`, `CloseGuard`/`guardWhere` (L493), `finalizeClose` (L512), `silentCloseCategory`, `enterStandby` (L561), `buildRecoveryMessage`. O horário comercial (7h–21h BRT) vem de `date-br.ts`: `isBrBusinessHour`, `nextBrBusinessSlot`, `brBusinessMinutesBetween`.
+- **L661-863** `runNudgePhase`: sai fora do horário comercial (L674), 1. silêncio de 30min (L682), 2. encerramento por inatividade (L783), log-resumo `[WHATSAPP CRON] nudge:` no fim.
+- **L864-1059** `runRecoveryPhase`: teto diário, seleção `dueRecovery` (L883), loop de provocações (L893).
+- **L1060-1362** `runSlaPhase`: 3. SLA da fila (L1070), 3b. SLA humano (L1121), 4. entrega travada (L1195), 5. cards estourados (L1239), 7. assinatura (L1341, `runSignatureReminders`).
+- **L1363-1369** `mergeResults`.
 
 ## 9. `app/nova-dash/card-dialog/ScriptTab.tsx` — 893 linhas
 Aba "Roteiros" do CardDialog (componente `RoteirosTab`): chat com IA que gera roteiros a partir de anexos (upload direto ao S3), biblioteca de prompts e download em .docx.
