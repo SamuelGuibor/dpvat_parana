@@ -55,7 +55,7 @@ Hooks ativos (`.claude/settings.json`): bloqueiam `prisma migrate dev/reset`, `d
 - Toda query de `Document` filtra `deletedAt: null` (lixeira de 30 dias). Logs `move` e histórico do card nunca são purgados.
 
 **Acesso e segurança**
-- O `middleware.ts` só exige sessão — e cliente logado por CPF também tem sessão. Toda server action/rota da equipe começa com `requireTeam()`/`requirePermission()` de `app/_shared/lib/permissions-server.ts`. Decisão de acesso lê o banco (`getSessionPermissions`), não `session.user.role`.
+- O `middleware.ts` só exige sessão — e cliente logado por CPF também tem sessão. Toda server action/rota da equipe começa com `requireTeam()`/`requirePermission()` de `app/_shared/lib/permissions-server.ts` (route handler: `teamRoute()` de `app/_shared/lib/route-auth.ts`; recusa → 403, banco → 500; cliente lê com `jsonFetcher`). Decisão de acesso lê o banco (`getSessionPermissions`), não `session.user.role`.
 - Rota chamada por máquina (cron, webhook, microserviço) ou página/action pública precisa entrar nas allowlists do `middleware.ts` (`PUBLIC_API_PREFIXES`, `PUBLIC_GET_APIS`, `PUBLIC_ACTION_PAGES`…) **e** validar o próprio segredo (`CRON_SECRET`, HMAC, token) dentro da rota. Sem isso: 401 silencioso.
 - Rota/action do cliente tira o usuário de `getServerSession`, nunca de um id vindo do navegador.
 - Permissão nova: `PERMISSION_DEFS` + `ROLE_DEFAULTS` (`permissions.ts`) + guard no servidor.

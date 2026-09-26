@@ -11,7 +11,7 @@ Mapa completo: docs/ai/infra-integracoes.md
   - Registre a rota em `vercel.json`. O agendamento é em UTC.
 - **Nunca recoloque `/api/whatsapp/cron` (agregadora) no `vercel.json`.** As fases sla, nudge e recovery já têm cron próprio.
 - **Nunca hardcode segredo ou URL de serviço.** Use `process.env.*` e registre o nome no `.env.example`.
-- **Rota nova de equipe chama `requireTeam()` ou `requirePermission(key)`** (`app/_shared/lib/permissions-server.ts`, aplica a trava de IP). Elas lançam erro: try/catch e 403. O middleware só garante que existe sessão, e cliente também tem sessão. Hoje nenhuma rota daqui usa: não copie o padrão das vizinhas.
+- **Rota nova de equipe começa com `const auth = await teamRoute(); if ('res' in auth) return auth.res;`** (`app/_shared/lib/route-auth.ts`: `requireTeam` com cargo do banco + trava de IP; `AccessError` → 403, outro erro → 500) e responde com `noStoreJson`. POST por fetch também chama `sameOrigin(req)`. Não entra em allowlist do middleware. Modelo: `whatsapp/messages` e `presence`; a maioria das vizinhas só exige sessão: não copie.
 - **Webhook externo usa `verifyWebhookSecret(req, '<ENV>')`.** Ele fica ABERTO se a env não existir.
 - **No webhook da Meta:**
   - Leia `req.text()` cru antes do JSON (HMAC).

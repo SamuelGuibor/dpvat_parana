@@ -1,5 +1,5 @@
 # Autenticação, permissões e segurança — mapa para IA
-> Verificado em 2026-09-26 · Escopo: `middleware.ts`, `app/_shared/lib/{auth,permissions,permissions-server,ip-access,password,rate-limit,webhook-auth,managers,sector-admin,chatbot-access,chat-access,ponto-access,ai-review-access,sms,aws-messaging}.ts`, `app/login/**`, `app/_actions/{auth,security,team,users}/**`, `app/api/{auth,admins,user-status}/**`, `app/nova-dash/workspace/security/**`, `app/nova-dash/layout.tsx`, `tests/permissions.test.ts`, `scripts/{bootstrap-permissions,hash-passwords}.mjs`
+> Verificado em 2026-09-26 · Escopo: `middleware.ts`, `app/_shared/lib/{auth,permissions,permissions-server,route-auth,ip-access,password,rate-limit,webhook-auth,managers,sector-admin,chatbot-access,chat-access,ponto-access,ai-review-access,sms,aws-messaging}.ts`, `app/_shared/utils/route-guards.ts`, `app/login/**`, `app/_actions/{auth,security,team,users}/**`, `app/api/{auth,admins,user-status}/**`, `app/nova-dash/workspace/security/**`, `app/nova-dash/layout.tsx`, `tests/{permissions,route-guards}.test.ts`, `scripts/{bootstrap-permissions,hash-passwords}.mjs`
 
 ## TL;DR
 - Login por **CPF + senha** (NextAuth v4, Credentials, sessão **JWT** de 30 dias). Equipe e clientes são linhas da **mesma tabela `User`**; o que separa é `User.role` (`ADMIN`/`ADMIN+`/`ADMIN++` = equipe; qualquer outra coisa = card de cliente, `GHOST` = card-fantasma).
@@ -15,7 +15,9 @@
 | `app/api/auth/[...nextauth]/route.ts` | Handler do NextAuth | `GET`, `POST` |
 | `app/api/auth/route.ts` | Login **legado** que emite JWT próprio (`jsonwebtoken`, 7d); nenhum caller encontrado em `app/` | `POST` |
 | `app/_shared/lib/permissions.ts` | Catálogo puro (client+server) de cargos e permissões | `TEAM_ROLES`, `isTeamRole`, `PERMISSION_DEFS`, `PERMISSION_CATEGORIES`, `PERMISSION_KEYS`, `PermissionKey`, `roleDefaults`, `parseOverrides`, `resolvePermissions`, `diffFromDefaults` |
-| `app/_shared/lib/permissions-server.ts` | Resolve permissões da sessão (cache 30s) e guards | `getSessionPermissions`, `requireTeam`, `requirePermission`, `invalidateSessionPermissionsCache`, `SessionPermissions` |
+| `app/_shared/lib/permissions-server.ts` | Resolve permissões da sessão (cache 30s) e guards (recusa = `AccessError`) | `getSessionPermissions`, `requireTeam`, `requirePermission`, `invalidateSessionPermissionsCache`, `SessionPermissions` |
+| `app/_shared/lib/route-auth.ts` | Guarda dos route handlers da equipe | `teamRoute` (`requireTeam` → `{ ctx }` ou `{ res }` 403/500), `sameOrigin` (POST por fetch), `noStoreJson` (`Cache-Control: private, no-store`) |
+| `app/_shared/utils/route-guards.ts` | Decisões puras das guardas (testadas) | `AccessError`, `isAccessError`, `guardFailure`, `isSameOrigin`, `ROUTE_FAILURE_MESSAGE` |
 | `app/_shared/lib/ip-access.ts` | Trava de IP da dashboard (lista em `app_settings`, cache 60s) | `DASHBOARD_ALLOWED_IPS_KEY`, `getClientIp`, `parseIpList`, `getDashboardAllowedIps`, `ipMatches`, `checkDashboardIpAccess`, `invalidateAllowedIpsCache` |
 | `app/_shared/lib/password.ts` | bcrypt + compatibilidade com senha legada em texto puro | `hashPassword`, `verifyPassword`, `isHashedPassword` |
 | `app/_shared/lib/rate-limit.ts` | Rate limit em memória por instância | `rateLimit` |
@@ -58,12 +60,12 @@ flowchart LR
   T -- não --> X[401 JSON ou<br/>redirect /login]
   T -- sim --> G[requireTeam /<br/>requirePermission]
   G --> DB[(User por e-mail<br/>+ app_settings IPs)]
-  G -- falhou --> E[throw Error]
+  G -- falhou --> E[throw AccessError<br/>rota: 403]
   G -- ok --> A[ação / Prisma]
 ```
 1. `middleware.ts`: libera allowlists; senão `getToken` (tenta cookie `__Secure-` e o nome alternativo). Sem token: API/server action → 401 JSON; página → redirect `/login?callbackUrl=...`.
 2. Página `/nova-dash`: `layout.tsx` chama `getSessionPermissions()` + `checkDashboardIpAccess()` (bloqueio de IP); `page.tsx` (client component, só UI) esconde a dashboard de quem não é `isTeamRole(session.user.role)` e monta `PermissionsProvider` → `getMyPermissions()`.
-3. Server action/API da equipe: `requirePermission(key)` → `requireTeam()` → `getSessionPermissions()` (busca `User` **por e-mail da sessão**, `resolvePermissions`, + `isManager` concede `manager_dashboard`, `isAiReviewer` retira `review_ai`) → `checkDashboardIpAccess(bypass_ip_lock)` → lança `Error` se falhar.
+3. Server action/API da equipe: `requirePermission(key)` → `requireTeam()` → `getSessionPermissions()` (busca `User` **por e-mail da sessão**, `resolvePermissions`, + `isManager` concede `manager_dashboard`, `isAiReviewer` retira `review_ai`) → `checkDashboardIpAccess(bypass_ip_lock)` → lança `AccessError` (subclasse de `Error`) se falhar. Em route handler, `teamRoute()` (`route-auth.ts`) devolve `{ ctx }` ou `{ res }`: `AccessError` → 403 com o motivo; qualquer outro erro (banco, pool) → 500 "Falha ao carregar. Tente de novo." + `console.error`, para a UI não dizer "sem acesso" quando o problema é o Neon.
 
 **Recuperação de senha (anônima, `/login/recuperar-senha` está em `PUBLIC_ACTION_PAGES`):**
 `getRecoveryChannels(cpf)` (destino mascarado; e-mail placeholder com "inserir-email"/"inserir_email" = sem e-mail) → `requestPasswordReset(cpf, "sms"|"email")` (upsert `PasswordResetCode` com hash; SMS tenta SNS → Twilio → WhatsApp `sendText`; e-mail só SES) → `confirmPasswordReset(cpf, code, nova)` (senha ≥ 7, grava bcrypt + `usedAt` em transação).
@@ -111,11 +113,13 @@ flowchart LR
 - Segredo do NextAuth: `authOptions.secret` lê `NEXT_AUTH_SECRET` (NextAuth cai em `NEXTAUTH_SECRET` se vazio); middleware aceita os dois; `app/api/auth/route.ts` e `app/_shared/lib/whatsapp/crypto.ts` (fallback de `WHATSAPP_CRED_KEY`) usam `NEXT_AUTH_SECRET`. Trocar esse segredo derruba sessões e pode invalidar tokens da Meta salvos.
 - O provider **Google segue registrado** em `authOptions` sem botão na UI. Se `GOOGLE_CLIENT_ID/SECRET` existirem no deploy (não verificado), `/api/auth/signin/google` cria `User` novo via `PrismaAdapter` com `role` default (= coluna do kanban, ou seja, card) — não vira equipe.
 - Cookie: HTTPS usa `__Secure-next-auth.session-token`; com `NEXTAUTH_URL` https, `getServerSession` local só enxerga esse nome.
-- Erro lançado em server action vira mensagem genérica em produção — o texto de `requireTeam`/`requirePermission` não chega ao usuário.
+- Erro lançado em server action vira mensagem genérica em produção — o texto de `requireTeam`/`requirePermission` não chega ao usuário. Em rota com `teamRoute` ele chega (403 `{ error }`), e o cliente lê com `jsonFetcher` (`app/_shared/utils/fetch-json.ts`), que lança `HttpError` em vez de guardar `{ error }` como dado.
+- **Não troque o `instanceof AccessError` por checagem de texto**: `isAccessError` também aceita `name === "AccessError"` porque cada rota é um bundle próprio e um módulo duplicado quebraria o `instanceof` (a recusa viraria 500).
 - Não existe o pacote `server-only` no projeto — não importar.
 
 ## Receitas
 - **Proteger uma server action nova** → primeira linha `const ctx = await requirePermission("<chave>")` (ou `requireTeam()`) de `app/_shared/lib/permissions-server.ts` · cuidado: não use `getServerSession` sozinho; `requirePermission` chama `requireTeam`, então também aplica a trava de IP (fora do escritório só passa quem tem `bypass_ip_lock`) — `getSessionPermissions` sozinho não aplica · valide chamando logado como cliente (deve lançar).
+- **Proteger uma rota da equipe (route handler)** → `const auth = await teamRoute(); if ('res' in auth) return auth.res;` e responder com `noStoreJson` (`app/_shared/lib/route-auth.ts`); POST chamado por fetch também faz `const bad = sameOrigin(req); if (bad) return bad;` · cuidado: NÃO pôr a rota em allowlist do middleware (ele devolve 401 sem sessão; a rota, 403 para cliente/IP de fora); no cliente, leia com `jsonFetcher` no MESMO deploy (fetcher que não olha `res.ok` guarda o 403 como dado) · valide com `curl` sem cookie (401) e logado como cliente de teste (403).
 - **Criar permissão** → `PERMISSION_DEFS` + `ROLE_DEFAULTS` em `app/_shared/lib/permissions.ts`; guard no servidor; esconder UI com `usePermissions().perms.<chave>` · cuidado: padrão do ADMIN/ADMIN+ conservador · valide com `npm test -- tests/permissions.test.ts` e o dialog "Permissões" da tela Equipe.
 - **Página pública nova (site/área do cliente)** → `PUBLIC_PAGE_PREFIXES` em `middleware.ts` (+ `PUBLIC_ACTION_PAGES` se usar action) · cuidado: prefixo casa `p` e `p/...` · valide em aba anônima.
 - **Cron ou webhook novo** → validar `CRON_SECRET` (padrão `isCronAuthorized` em `app/api/whatsapp/cron/auth.ts`) ou `verifyWebhookSecret(req, "<ENV>")` na rota **e** adicionar o caminho em `PUBLIC_API_PREFIXES` · valide com `curl -H "Authorization: Bearer $CRON_SECRET"` sem cookie (não pode dar "Não autenticado").
@@ -128,7 +132,8 @@ flowchart LR
 - **Recuperar acesso de Super Admin** → `scripts/bootstrap-permissions.mjs` (idempotente, promove um ID fixo a ADMIN++ e grava overrides legados) · só em emergência; confira o ID no script antes · cuidado: re-rodar faz merge dos overrides antigos e **desfaz revogações** feitas depois na tela Equipe.
 
 ## Testes e validação
-- `tests/permissions.test.ts` (vitest, `npm test`): `isTeamRole`, `resolvePermissions` (ADMIN++ total, override concede, `manage_team` nunca por override, não-equipe sem nada), `parseOverrides` (ignora lixo), `diffFromDefaults`. Não há teste de middleware, `requireTeam`, trava de IP, senha ou reset.
+- `tests/permissions.test.ts` (vitest, `npm test`): `isTeamRole`, `resolvePermissions` (ADMIN++ total, override concede, `manage_team` nunca por override, não-equipe sem nada), `parseOverrides` (ignora lixo), `diffFromDefaults`.
+- `tests/route-guards.test.ts`: `guardFailure` (`AccessError` → 403, banco/rede → 500 genérico), `isAccessError` (inclusive por `name`), `isSameOrigin` (`x-forwarded-host` antes de `host`, sem Origin = recusa). Não há teste de middleware, `requireTeam`, trava de IP, senha ou reset.
 - CI: `.github/workflows/ci.yml` (tsc + lint + vitest).
 - Manual: (1) aba anônima em `/nova-dash` → redirect `/login`; `curl` numa `/api/...` da equipe sem cookie → 401 JSON; (2) login como cliente → cai em `/area-do-cliente`; server action da equipe deve lançar "Acesso restrito à equipe."; (3) ADMIN sem `bypass_ip_lock` fora da lista → tela "Acesso restrito ao escritório"; (4) `/login/recuperar-senha` com CPF de teste → código chega, 6ª tentativa errada bloqueia; (5) após mudar permissão, esperar 30s e recarregar.
 

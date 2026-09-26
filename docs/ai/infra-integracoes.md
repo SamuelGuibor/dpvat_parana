@@ -35,6 +35,8 @@
 | `app/_shared/lib/report-error.ts`, `app/_shared/utils/critical-error.ts` | Sink único de erro crítico: `console.error` + Log `critical_error` (com `contactId` quando há contato; o mesmo erro no máximo 1× a cada 10 min por instância); resumo puro do erro | `reportCriticalError`, `CriticalErrorExtra`, `describeError`, `criticalErrorKey` |
 | `app/_shared/lib/rate-limit.ts` | Rate limit em memória, **por instância** | `rateLimit` |
 | `app/_shared/lib/ip-access.ts` | Trava de IP da dashboard (lida por `requireTeam`) | `checkDashboardIpAccess`, `DASHBOARD_ALLOWED_IPS_KEY` |
+| `app/_shared/lib/route-auth.ts` + `app/_shared/utils/route-guards.ts` | Guarda dos route handlers da equipe e a decisão pura por trás (403 × 500, mesma origem) | `teamRoute`, `sameOrigin`, `noStoreJson`, `guardFailure`, `isSameOrigin`, `AccessError` |
+| `app/_shared/utils/fetch-json.ts` | Leitura de JSON das rotas no navegador: não-2xx lança; texto do erro e espera entre tentativas do poll | `jsonFetcher`, `postJson`, `HttpError`, `describeFetchError`, `pollRetryDelayMs` |
 | `.github/workflows/ci.yml` | CI em push na `main` e em PR: `npm ci`, prisma generate, tsc, lint, vitest (Node 20) | — |
 | `vitest.config.mts` | `tests/**/*.test.ts`, env `node`, alias `@` → raiz | — |
 | `railway/chat-relay.md` | Contrato e implementação de referência do relay (`/events`, `/broadcast`, `/health`) | — |
@@ -140,7 +142,8 @@
 - **Arquivo lido do disco com nome dinâmico entra em `outputFileTracingIncludes`.** Motivo: o tracing não enxerga essa leitura e dá ENOENT só em produção (já aconteceu com `templates/*.docx` e `pdf.worker.mjs`).
 - **Nunca rode `prisma migrate dev` nem `migrate reset` contra o Neon.** Motivo: o drift faz o Prisma propor reset do schema `public`. O README sugere `migrate dev`: ignore.
 - **Não valide com `next build` local.** Motivo: ele morre por OOM ou em silêncio. Valide com `tsc`, `lint` e `test`; o build fica para a Vercel.
-- **O middleware só garante que existe sessão, e cliente da área do cliente também tem sessão.** Rota nova de equipe usa `requireTeam()` ou `requirePermission()` (`app/_shared/lib/permissions-server.ts`, que aplica a trava de IP). Elas **lançam** erro: envolva em try/catch e devolva 403. `getSessionPermissions()` sozinho não aplica a trava. Hoje **nenhuma** rota de `app/api` usa `requireTeam`/`requirePermission` (só server actions): ~36 das 74 rotas não checam nada além do middleware e 6 usam `getSessionPermissions` (sem trava de IP).
+- **O middleware só garante que existe sessão, e cliente da área do cliente também tem sessão.** Rota nova de equipe começa por `teamRoute()` (`app/_shared/lib/route-auth.ts`: `requireTeam` com cargo do banco + trava de IP; `AccessError` → 403, outro erro → 500 para não dizer "sem acesso" quando o banco caiu) e responde com `noStoreJson`; POST por fetch também passa por `sameOrigin`. `getSessionPermissions()` sozinho não aplica a trava. Hoje só `app/api/whatsapp/messages` e `app/api/presence` usam `teamRoute`; ~36 das 74 rotas não checam nada além do middleware e 6 usam `getSessionPermissions` (sem trava de IP).
+- **Rota que passa a devolver 403/500 JSON exige cliente que olhe o status no MESMO deploy.** Motivo: fetcher que faz `r.json()` sem `res.ok` guarda `{ error }` como dado (a thread do inbox esvaziava). Use `jsonFetcher` (`app/_shared/utils/fetch-json.ts`), que lança `HttpError`; o SWR mantém o último dado e a UI mostra o aviso. Com erro guardado o `refreshInterval` do SWR 2.3.8 **não busca**: quem recupera é o `onErrorRetry` (use `pollRetryDelayMs`, teto de 30 s) ou o foco.
 - **`verifyWebhookSecret` fica aberto se a env não existir.** Motivo: compatibilidade. Defina a env antes de confiar.
 - **`rateLimit`, o cache de credenciais WhatsApp (60s), o de permissões (30s), o de destinatários do relay (60s, `whatsappRecipients`) e o do setor do autor do log (5 min) vivem em memória por instância.** Motivo: nada é compartilhado entre lambdas; o limite real é maior e `invalidateNumberCache`/troca de permissão só valem na instância que a executou.
 - **`reportCriticalError` grava no banco, mas não alerta ninguém** (o Discord foi removido): `console.error` + Log `critical_error`, consultado à mão. Motivo: o log da Vercel é efêmero e sem o registro as falhas fora do `try` do bot não deixavam causa. Ele nunca lança e passa pelo `createLog` (banco fora do ar = só o console). Não ponha texto do cliente no `metadata`; a mensagem do erro já vai cortada em 500 caracteres (erro do Prisma traz os dados da chamada).
@@ -177,10 +180,12 @@
   - `signature-{pdf,seed,templates,flow-seed}.smoke.test.ts`: `describe.skipIf`, rodam só via `npm run sign:*` ou env `SIGNATURE_*=1`.
   - `ttl-cache.test.ts` e `background.test.ts`: prazo/cache negativo do `createTtlCache` e `runAfterResponse` (waitUntil mockado; erro vira `[BG]` e nunca propaga).
   - `inbox-unread-sql.smoke.test.ts`: `describe.skipIf`, roda só via `npm run inbox:sql-smoke` ou `INBOX_SQL_SMOKE=1`; só leitura (transação READ ONLY) no banco do `.env`.
+  - `route-guards.test.ts` e `fetch-json.test.ts`: 403 × 500 do `teamRoute`, `isSameOrigin` e o `jsonFetcher`/`postJson` com fetch mockado (`vi.stubGlobal`).
 - **Lacuna:** não há teste de `middleware.ts`, das rotas de cron, do webhook (HMAC) nem dos clientes externos. Valide à mão:
   - Cron: `curl` com Bearer e sem cookie (ver Receitas). Em produção, aba Cron Jobs da Vercel.
   - Webhook: `GET /api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123` tem que devolver `123`. POST sem assinatura válida tem que dar 401.
   - Relay: `GET /api/chat/token` logado devolve `{url,token}`, ou `{url:null}` quando o relay não está configurado.
+  - Rota da equipe (`teamRoute`): `curl` sem cookie → 401 "Não autenticado" (middleware); logado como cliente de teste (CPF) → 403.
   - Custos: `app_settings.cost_sync_status` e `cost_snapshots.fetchedAt`.
 
 ## Fronteiras

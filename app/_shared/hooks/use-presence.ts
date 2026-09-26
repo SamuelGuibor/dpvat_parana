@@ -19,8 +19,10 @@ const HEARTBEAT_MS = 120_000;
 /**
  * Presença em tempo (quase) real via heartbeat.
  *
- * A cada 30s (e ao focar a aba) faz POST em /api/presence, que marca o usuário
- * como visto agora e devolve a lista de membros com o status online/offline.
+ * A cada 2 min (e quando a aba volta a ficar visível) faz POST em
+ * /api/presence, que marca o usuário como visto agora e devolve a lista de
+ * membros com o status online/offline. A rota é só da equipe (`teamRoute`):
+ * 403 (ex.: fora da internet do escritório) mantém a lista que já havia.
  */
 export function usePresence() {
   const [members, setMembers] = useState<PresenceMember[]>([]);
@@ -44,15 +46,16 @@ export function usePresence() {
       beat();
     }, HEARTBEAT_MS);
 
+    // Um gatilho só: voltar de outra aba dispara `focus` E `visibilitychange`
+    // juntos, e eram duas ESCRITAS no banco. Alt-tab entre janelas (aba sempre
+    // visível) não precisa de batida: o intervalo já cobre.
     const onWake = () => {
       if (document.visibilityState === 'visible') beat();
     };
-    window.addEventListener('focus', onWake);
     document.addEventListener('visibilitychange', onWake);
 
     return () => {
       clearInterval(id);
-      window.removeEventListener('focus', onWake);
       document.removeEventListener('visibilitychange', onWake);
     };
   }, [beat]);

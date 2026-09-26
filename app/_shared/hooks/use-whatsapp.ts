@@ -12,6 +12,7 @@ import {
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
 import { mergeThreadWindow, unionThreadMessages, upsertById } from '@/app/_shared/utils/thread-window';
+import { jsonFetcher, pollRetryDelayMs } from '@/app/_shared/utils/fetch-json';
 
 // Hooks do atendimento de WhatsApp — mesmo desenho do use-chat.ts:
 // SWR com polling como rede de segurança e o SSE (useChatStream, reaproveitado
@@ -49,7 +50,11 @@ export interface WhatsAppThreadMessage {
   mediaUrlExpiresAt?: string | null;
 }
 
-const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((r) => r.json());
+// Toda leitura por URL daqui passa por `jsonFetcher` (fetch-json.ts): status
+// não-ok LANÇA. A rota da thread decide o acesso pelo banco + trava de IP
+// (`teamRoute`) e pode responder 403 (atendente mudou de rede com a aba
+// aberta) ou 500 (banco); com o fetcher antigo isso virava dado e esvaziava
+// a thread. Os dois mudaram no MESMO deploy, de propósito.
 
 // Atraso do coalescer da lista: junta numa carga só os pedidos que chegam em
 // rajada (hash que mudou, eventos SSE, onDiscarded) e deixa o clique do
@@ -232,20 +237,33 @@ function threadKey(contactId: string): string {
  * (`mergeThreadWindow`). E o botão "Carregar anteriores", que o poll religava
  * a cada 8 s mesmo depois do início da conversa, passa a obedecer só à
  * resposta do before= depois do 1º clique.
+ *
+ * Erro (403 da trava de IP, 500, rede): o SWR guarda o `error` e MANTÉM as
+ * mensagens que já estavam na tela; a thread mostra o aviso. Com erro
+ * guardado o refreshInterval não busca (swr 2.3.8) — quem traz a thread de
+ * volta é a nova tentativa (`pollRetryDelayMs`, no máximo a cada 30 s) ou o
+ * foco da aba.
  */
 export function useWhatsAppMessages(contactId: string | null) {
   // `isLoading` (1ª carga desta conversa, sem nada em cache) vira o spinner da
   // thread — sem ele, abrir uma conversa não visitada mostrava a tela vazia.
-  const { data, mutate, isLoading } = useSWR<ThreadData>(
+  const { data, mutate, isLoading, error } = useSWR<ThreadData>(
     contactId ? threadKey(contactId) : null,
-    fetcher,
-    // 8s (era 5s): o SSE do relay já entrega a mensagem na hora; este poll é
-    // só a rede de segurança e o refresh dos ticks de status/reações.
-    { refreshInterval: 8_000, revalidateOnFocus: true },
+    (url: string) => jsonFetcher<ThreadData>(url),
+    {
+      // 8s (era 5s): o SSE do relay já entrega a mensagem na hora; este poll é
+      // só a rede de segurança e o refresh dos ticks de status/reações.
+      refreshInterval: 8_000,
+      revalidateOnFocus: true,
+      onErrorRetry: (err, _key, _config, revalidate, opts) => {
+        const delay = pollRetryDelayMs(err, opts.retryCount);
+        if (delay !== null) setTimeout(() => { void revalidate(opts); }, delay);
+      },
+    },
   );
 
-  // O fetcher não olha o status: um 401/403/500 chega como `{ error }`, sem
-  // `messages`. Vira lista vazia em vez de quebrar a thread.
+  // Defesa: resposta 2xx sem `messages` (não deveria acontecer) vira lista
+  // vazia em vez de quebrar a thread.
   const recent = useMemo(
     () => (Array.isArray(data?.messages) ? data.messages : EMPTY_THREAD),
     [data],
@@ -289,13 +307,11 @@ export function useWhatsAppMessages(contactId: string | null) {
       ? { ...prev, loadToken: token, historyOpen: true, olderHasMore: true }
       : prev));
     try {
-      const res = await fetch(
+      const json = await jsonFetcher<Partial<ThreadData>>(
         `/api/whatsapp/messages?contactId=${encodeURIComponent(cid)}`
           + `&before=${encodeURIComponent(oldest.createdAt)}&limit=${OLDER_PAGE_SIZE}`,
-        { cache: 'no-store' },
       );
-      const json = (await res.json()) as { messages?: WhatsAppThreadMessage[]; hasMore?: boolean };
-      if (!res.ok || !Array.isArray(json.messages)) throw new Error('falha ao carregar anteriores');
+      if (!Array.isArray(json.messages)) throw new Error('falha ao carregar anteriores');
       const batch = json.messages;
       // Resposta de uma janela que já foi zerada (troca de conversa) é descartada.
       setWin((prev) => (prev.loadToken === token
@@ -330,7 +346,7 @@ export function useWhatsAppMessages(contactId: string | null) {
   // quando for reaberta.
   const revalidateThread = useCallback((cid: string) => mutateCache(threadKey(cid)), [mutateCache]);
 
-  return { messages, mutate, isLoading, loadOlder, hasMore, loadingOlder, upsertThreadMessage, revalidateThread };
+  return { messages, mutate, isLoading, error: error as unknown, loadOlder, hasMore, loadingOlder, upsertThreadMessage, revalidateThread };
 }
 
 /** Chave SWR das linhas da empresa: a MESMA em todo seletor de número, para dividir o cache. */

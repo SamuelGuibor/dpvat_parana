@@ -49,6 +49,7 @@ import {
 } from '@/app/_shared/utils/whatsapp-inbox';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread-window';
+import { describeFetchError } from '@/app/_shared/utils/fetch-json';
 import {
   NEAR_BOTTOM_PX, countNewBelow, decideThreadScroll, isOwnThreadMessage, tailAdvanced, threadTail, type ThreadTail,
 } from '@/app/_shared/utils/thread-scroll';
@@ -206,7 +207,7 @@ export function WhatsAppInbox() {
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const {
     messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder, isLoading: messagesLoading,
-    upsertThreadMessage, revalidateThread,
+    error: messagesError, upsertThreadMessage, revalidateThread,
   } = useWhatsAppMessages(activeContactId);
 
   const [search, setSearch] = useState('');
@@ -2131,6 +2132,24 @@ export function WhatsAppInbox() {
 
             {/* Invólucro relativo só para o chip "Nova mensagem ↓" flutuar sobre o rodapé da thread. */}
             <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Poll da thread falhou (403 da trava de IP, 500, rede): as
+                mensagens que já estavam ficam (o SWR guarda o último dado) e
+                o aviso diz o motivo, em vez de a conversa esvaziar calada. */}
+            {messagesError != null && (
+              <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">
+                  {displayMessages.length > 0 ? 'Mensagens sem atualizar: ' : 'Não foi possível carregar as mensagens: '}
+                  {describeFetchError(messagesError)}
+                </span>
+                <button
+                  onClick={() => { void mutateMessages(); }}
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100"
+                >
+                  <RotateCcw className="h-3 w-3" /> Tentar de novo
+                </button>
+              </div>
+            )}
             <div
               ref={scrollRef}
               onScroll={handleThreadScroll}
