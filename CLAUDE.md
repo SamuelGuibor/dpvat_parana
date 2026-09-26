@@ -79,7 +79,7 @@ Hooks ativos (`.claude/settings.json`): bloqueiam `prisma migrate dev/reset`, `d
 
 **UI**
 - Modo escuro é o Dark Reader (`darkreader`): classes `dark:` do Tailwind não têm efeito.
-- O board e o inbox atualizam por polling com hash (sem `revalidatePath` ao mover/arquivar). Troca de aba da nova-dash: grave o `sessionStorage` antes de disparar o `CustomEvent`.
+- O board atualiza por polling com hash e o inbox por delta (só as conversas que mudaram desde o cursor), sem `revalidatePath` ao mover/arquivar. Troca de aba da nova-dash: grave o `sessionStorage` antes de disparar o `CustomEvent`.
 
 **Features desligadas de propósito** (não reative sem pedido): assinatura eletrônica (flags em código + `SIGNATURE_AUTO_ENABLED`), chat da equipe, envio de templates na linha pausada (`WhatsAppNumber.templatesPaused`).
 

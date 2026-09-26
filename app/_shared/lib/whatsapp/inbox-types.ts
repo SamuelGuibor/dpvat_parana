@@ -84,12 +84,28 @@ export interface WhatsAppConversationDTO {
 
 /**
  * GET /api/whatsapp/inbox/conversations (sem parâmetros): as conversas mais
- * recentes, até `LIST_PAGE`. `cursor` fica reservado para a sincronização
- * por delta (`?since=`): por enquanto vem sempre `null`.
+ * recentes, até `LIST_PAGE`. `cursor` = now() do BANCO no início da leitura
+ * (ISO), o ponto de partida do delta (`?since=`); `null` só em servidor
+ * antigo. `total` = conversas no banco (badge do topo; a lista é capada).
  */
 export interface InboxListResponse {
   items: WhatsAppConversationDTO[];
   cursor: string | null;
+  total: number;
+}
+
+/**
+ * GET /api/whatsapp/inbox/conversations?since=<ISO>: só as conversas que
+ * mudaram desde `since` (conversa, tag aplicada, contato ou card vinculado).
+ * `full: true` = o delta não vale (since inválido ou com mais de 24 h, ou
+ * mudou coisa demais): `items` vem vazio e o cliente busca a lista inteira.
+ * `total` = conversas no banco; `null` quando a rota nem chegou a ler.
+ */
+export interface InboxDeltaResponse {
+  items: WhatsAppConversationDTO[];
+  cursor: string | null;
+  full: boolean;
+  total: number | null;
 }
 
 /** GET /api/whatsapp/inbox/conversations?contactId=: UMA conversa, ou `null` se o contato não tem conversa. */
@@ -97,7 +113,12 @@ export interface InboxItemResponse {
   item: WhatsAppConversationDTO | null;
 }
 
-/** GET /api/whatsapp/inbox/version: hash do que a lista exibe + total real de conversas (mesma query). */
+/**
+ * GET /api/whatsapp/inbox/version: hash do que a lista exibe + total real de
+ * conversas (mesma query). TRANSITÓRIA: o cliente atual sincroniza pelo delta
+ * (`?since=`); a rota fica para abas com o bundle anterior e sai quando o
+ * delta estabilizar.
+ */
 export interface InboxVersionResponse {
   version: string;
   total: number;

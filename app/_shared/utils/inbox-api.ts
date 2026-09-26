@@ -8,18 +8,27 @@
 // GET as leituras correm em paralelo e a fila fica só com mutações.
 
 import type {
-  InboxItemResponse, InboxListResponse, InboxSearchResponse, InboxVersionResponse, WhatsAppConversationDTO,
+  InboxDeltaResponse, InboxItemResponse, InboxListResponse, InboxSearchResponse, InboxVersionResponse,
+  WhatsAppConversationDTO,
 } from '@/app/_shared/lib/whatsapp/inbox-types';
 
 /** Lista (as mais recentes); também é a key do SWR da lista. */
 export const INBOX_CONVERSATIONS_URL = '/api/whatsapp/inbox/conversations';
-/** Hash + total; também é a key do SWR da versão (lida por dois hooks). */
+/**
+ * Hash + total. TRANSITÓRIA: o inbox atual não consulta mais (sincroniza pelo
+ * delta); a rota fica para abas com o bundle anterior.
+ */
 export const INBOX_VERSION_URL = '/api/whatsapp/inbox/version';
 export const INBOX_SEARCH_URL = '/api/whatsapp/inbox/search';
 
 /** UMA conversa pelo contato (abrir pela agenda, notificação ou busca fora do topo). */
 export function inboxConversationUrl(contactId: string): string {
   return `${INBOX_CONVERSATIONS_URL}?contactId=${encodeURIComponent(contactId)}`;
+}
+
+/** Delta: só as conversas que mudaram desde `since` (ISO, já com a margem de `sinceWithOverlap`). */
+export function inboxDeltaUrl(since: string): string {
+  return `${INBOX_CONVERSATIONS_URL}?since=${encodeURIComponent(since)}`;
 }
 
 /** Busca em todo o histórico. O termo vai como veio: quem apara e corta em 2 caracteres é o servidor. */
@@ -49,10 +58,44 @@ export function readInboxItem(body: unknown): WhatsAppConversationDTO | null {
   return item && typeof item === 'object' ? item : null;
 }
 
+/** Contagem válida (inteiro ≥ 0) ou `null`. */
+function readCount(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : null;
+}
+
+/** Cursor do delta: ISO que o `Date.parse` entende, senão `null` (sem delta; a lista completa de 10 min segura). */
+function readCursor(v: unknown): string | null {
+  return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null;
+}
+
 /** `{ version, total }` do hash. */
 export function readInboxVersion(body: unknown): InboxVersionResponse {
   const b = isObject(body) ? (body as Partial<InboxVersionResponse>) : null;
   if (!b || typeof b.version !== 'string') throw new Error('Resposta inválida da versão do inbox.');
-  const total = typeof b.total === 'number' && Number.isFinite(b.total) && b.total >= 0 ? Math.floor(b.total) : 0;
-  return { version: b.version, total };
+  return { version: b.version, total: readCount(b.total) ?? 0 };
+}
+
+/**
+ * `{ items, cursor, total }` da lista completa. Sem cursor válido (servidor
+ * anterior ao delta) a lista vale do mesmo jeito: só não há delta até a
+ * próxima lista completa.
+ */
+export function readInboxList(body: unknown): InboxListResponse {
+  const items = readInboxItems(body);
+  const b = body as Partial<InboxListResponse>;
+  return { items, cursor: readCursor(b.cursor), total: readCount(b.total) ?? 0 };
+}
+
+/**
+ * `{ items, cursor, full, total }` do delta. `full` precisa ser booleano, e o
+ * delta que não pede a lista inteira precisa de cursor válido: sem ele o
+ * próximo pedido não teria de onde partir.
+ */
+export function readInboxDelta(body: unknown): InboxDeltaResponse {
+  const items = readInboxItems(body);
+  const b = body as Partial<InboxDeltaResponse>;
+  if (typeof b.full !== 'boolean') throw new Error('Resposta inválida do delta da lista.');
+  const cursor = readCursor(b.cursor);
+  if (!b.full && !cursor) throw new Error('Resposta inválida do delta da lista.');
+  return { items, cursor, full: b.full, total: readCount(b.total) };
 }

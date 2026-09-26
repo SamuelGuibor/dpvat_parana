@@ -26,7 +26,7 @@ import {
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
   fetchInboxConversation, fetchInboxSearch,
-  useWaNumberOptions, useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages,
+  useWaNumberOptions, useWhatsAppConversations, useWhatsAppMessages,
   type WaNumberOption, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
@@ -51,7 +51,8 @@ import {
 } from '@/app/_shared/utils/whatsapp-inbox';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread-window';
-import { describeFetchError } from '@/app/_shared/utils/fetch-json';
+import { HttpError, describeFetchError } from '@/app/_shared/utils/fetch-json';
+import { mergeConversationDelta } from '@/app/_shared/utils/inbox-delta';
 import {
   NEAR_BOTTOM_PX, countNewBelow, decideThreadScroll, isOwnThreadMessage, tailAdvanced, threadTail, type ThreadTail,
 } from '@/app/_shared/utils/thread-scroll';
@@ -200,14 +201,19 @@ export function WhatsAppInbox() {
   const meName = session?.user?.name ?? 'Atendente';
   const me = useMemo(() => ({ id: meId, name: meName }), [meId, meName]);
 
+  // Delta da lista também nas cópias fora do SWR (resultados da busca no
+  // servidor e conversa hidratada fora do topo): sem isso, a conversa aberta
+  // pela busca ou pela agenda nunca recebia a tag ou o encerramento feitos em
+  // outra aba. Preenchido mais abaixo, junto desses estados.
+  const deltaListenerRef = useRef<((items: WhatsAppConversationDTO[]) => void) | null>(null);
+  // `conversationsTotal` = total REAL no banco (a lista é capada em 1.000 pelo
+  // servidor), vindo com a lista e com cada delta, sem poll próprio.
   const {
-    conversations, refreshConversations, scheduleConversationsRefresh, patchConversations,
+    conversations, refreshConversations, reloadAll: reloadAllConversations, scheduleConversationsRefresh,
+    patchConversations, holdConversation, total: conversationsTotal,
     loaded: conversationsLoaded, isLoading: conversationsLoading, error: conversationsError,
     syncError: conversationsSyncError, retrySync: retryConversationsSync,
-  } = useWhatsAppConversations();
-  // Total REAL no banco (a lista acima é capada em 1.000 pelo servidor). Vem
-  // junto do hash de versão, sem poll próprio.
-  const conversationsTotal = useWhatsAppConversationsTotal();
+  } = useWhatsAppConversations({ onDelta: (items) => deltaListenerRef.current?.(items) });
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const {
     messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder, isLoading: messagesLoading,
@@ -610,13 +616,46 @@ export function WhatsAppInbox() {
   // sob demanda responde — contato inexistente volta ao estado vazio.
   const openingActive = !!activeContactId && !active && activeLookupDone !== activeContactId;
 
+  // Delta da lista (sincronização a cada 15 s): as cópias fora do SWR só
+  // SUBSTITUEM quem já têm (`insertNew: false`) — a busca não ganha conversa
+  // que não casa com o termo. As travas do patch otimista já vêm aplicadas
+  // pelo hook. Nada mudou = mesma referência (sem re-render).
+  deltaListenerRef.current = (items) => {
+    setRemoteResults((prev) => mergeConversationDelta(prev, items, { cap: prev.length, insertNew: false }));
+    setFetchedActive((prev) => (prev ? mergeConversationDelta([prev], items, { cap: 1, insertNew: false })[0] : prev));
+  };
+
+  // Tira UMA conversa de todas as cópias da tela (lista, busca, hidratada).
+  // Exclusão de contato não aparece no delta (o cascade apaga a conversa):
+  // quem excluiu tira na hora; as outras abas, no 404 ao abrir ou na lista
+  // completa de 10 min.
+  const dropConversation = useCallback((contactId: string) => {
+    void patchConversations((list) => (
+      list?.some((c) => c.contactId === contactId) ? list.filter((c) => c.contactId !== contactId) : list
+    ));
+    setRemoteResults((prev) => (prev.some((c) => c.contactId === contactId) ? prev.filter((c) => c.contactId !== contactId) : prev));
+    setFetchedActive((prev) => (prev?.contactId === contactId ? null : prev));
+  }, [patchConversations]);
+
   // Ficha + documentos do cliente da conversa aberta numa ida só (GET
   // /api/whatsapp/inbox/copilot/<id>, fora da fila serial de actions). A
   // MESMA key alimenta o Copiloto (abas Ficha, Arquivos e checklist); aqui ela
   // serve ao atalho "Card #N" do cabeçalho e ao CardDialog. O vínculo pelo
   // telefone acontece nessa leitura e os documentos já vêm lidos depois dele:
   // não há mais evento para a aba Arquivos recarregar.
-  const { clientInfo, reloadCopilot, setCopilotDocuments } = useCopilot(activeContactId);
+  const { clientInfo, error: copilotError, reloadCopilot, setCopilotDocuments } = useCopilot(activeContactId);
+
+  // 404 da ficha ou da thread = contato excluído em outra aba (o delta não vê
+  // exclusão). Sai da tela na hora, em vez de ficar na lista até a carga
+  // completa de 10 min com a thread vazia.
+  const activeGone = [copilotError, messagesError].some((e) => e instanceof HttpError && e.status === 404);
+  useEffect(() => {
+    if (!activeGone || !activeContactId) return;
+    const cid = activeContactId;
+    dropConversation(cid);
+    setActiveContactId((cur) => (cur === cid ? null : cur));
+    toast.info('Esta conversa foi excluída.');
+  }, [activeGone, activeContactId, dropConversation]);
 
   useEffect(() => { setCardDialogOpen(false); }, [activeContactId]);
 
@@ -640,12 +679,11 @@ export function WhatsAppInbox() {
 
   // SSE do relay existente: eventos de WhatsApp chegam como canal "whatsapp:*".
   // Guarda da auditoria de 24/09/2026: o relay hoje NÃO entrega em produção,
-  // mas quando voltar cada evento de QUALQUER contato recarregaria a lista
-  // inteira (1.000 conversas) em todas as abas abertas, inclusive as ocultas.
-  // Não tire esta guarda ao consertar o relay. A thread só recarrega com a aba
-  // visível (o foco já revalida a thread na volta) e a lista vai pelo
-  // coalescer (rajada = 1 carga; aba oculta só marca e carrega uma vez quando
-  // volta a ficar visível).
+  // e quando voltar cada evento de QUALQUER contato vai pedir a lista em todas
+  // as abas abertas, inclusive as ocultas. Não tire esta guarda ao consertar o
+  // relay. A thread só recarrega com a aba visível (o foco já revalida a
+  // thread na volta) e a lista pede só o DELTA pelo coalescer (rajada = 1
+  // pedido; aba oculta só marca, e a volta à aba já puxa um delta).
   const onStream = useCallback((e: ChatStreamEvent) => {
     const channelId = (e as { channelId?: string }).channelId;
     if (!channelId?.startsWith('whatsapp:')) return;
@@ -960,9 +998,11 @@ export function WhatsAppInbox() {
   // - `optimistic` entra no clique; a resposta da action, quando é um patch
   //   (assumir/devolver/encerrar), entra por cima e o toast sai logo em seguida;
   // - resposta vazia com otimista (lida/não lida): o otimista já é o estado
-  //   final e nada recarrega — as outras abas veem pelo hash;
-  // - resposta vazia sem otimista (bloquear/desbloquear): recarga em segundo
+  //   final e nada recarrega — as outras abas veem pelo delta;
+  // - resposta vazia sem otimista (bloquear/desbloquear): um delta em segundo
   //   plano (single-flight), sem segurar o toast;
+  // - enquanto a action roda, a conversa fica travada para o delta
+  //   (`holdConversation`): um delta lido antes do commit desfaria o otimista;
   // - erro: rollback e mensagem própria (erro de action chega mascarado em
   //   produção, e a aba com o bundle de antes do deploy também cai aqui).
   // `base` é a conversa capturada ANTES do clique (antes até de fechar a
@@ -978,6 +1018,7 @@ export function WhatsAppInbox() {
     },
   ) {
     const { base, optimistic, errorMsg } = opts;
+    const release = base ? holdConversation(base.contactId) : null;
     if (base && optimistic) patchConversation(base.contactId, optimistic);
     try {
       const res = await fn();
@@ -987,6 +1028,8 @@ export function WhatsAppInbox() {
     } catch {
       if (base && optimistic) patchConversation(base.contactId, revertPatch(base, optimistic));
       toast.error(errorMsg);
+    } finally {
+      release?.();
     }
   }
 
@@ -1011,10 +1054,12 @@ export function WhatsAppInbox() {
   // mostrando: a lista (SWR), os resultados da busca no servidor e a conversa
   // hidratada fora do topo (agenda/busca). Sem as duas últimas, a ação em
   // cliente antigo não aparecia até recarregar. Patch em função é calculado
-  // sobre a versão ATUAL de cada cópia (nunca sobre o `active` do render).
+  // sobre a versão ATUAL de cada cópia (nunca sobre o `active` do render). O
+  // contactId vai junto para o hook travar a conversa contra um delta que já
+  // estava em voo (ele traria o estado de antes do clique).
   const patchConversation = useCallback(
     (contactId: string, patch: ConversationPatch) => {
-      void patchConversations((list) => patchConversationList(list, contactId, patch));
+      void patchConversations((list) => patchConversationList(list, contactId, patch), contactId);
       setRemoteResults((prev) => patchConversationList(prev, contactId, patch));
       setFetchedActive((prev) => (prev?.contactId === contactId ? patchConversationRow(prev, patch) : prev));
     },
@@ -1028,8 +1073,10 @@ export function WhatsAppInbox() {
   // + recarga (~19% das cargas da lista). Agora "não lida" é só por mensagem
   // recebida (computeUnread), o badge some por patch local e a lista não
   // recarrega. A chave (conversa + última recebida + marcador manual) garante UM
-  // markRead por inbound novo: a lista percebe o inbound pelo hash (≤15 s) e a
-  // chave muda. Falhou → a chave zera e o próximo reload tenta de novo.
+  // markRead por inbound novo: a lista percebe o inbound pelo delta (≤15 s) e a
+  // chave muda. Falhou → a chave zera e o próximo reload tenta de novo. A
+  // conversa fica travada para o delta até a action voltar: um delta lido antes
+  // do commit reacenderia a bolinha.
   const readKeyRef = useRef<string | null>(null);
   useEffect(() => { readKeyRef.current = null; }, [activeContactId]);
   const readKey = active?.unread ? `${active.id}|${active.lastInboundAt ?? ''}|${active.manualUnread}` : null;
@@ -1039,9 +1086,12 @@ export function WhatsAppInbox() {
     if (!readKey || !readConversationId || !readContactId) return;
     if (readKeyRef.current === readKey) return;
     readKeyRef.current = readKey;
+    const release = holdConversation(readContactId);
     patchConversation(readContactId, readPatch(new Date().toISOString()));
-    markConversationRead(readConversationId).catch(() => { readKeyRef.current = null; });
-  }, [readKey, readConversationId, readContactId, patchConversation]);
+    markConversationRead(readConversationId)
+      .catch(() => { readKeyRef.current = null; })
+      .finally(release);
+  }, [readKey, readConversationId, readContactId, patchConversation, holdConversation]);
 
   // Gravações de tag em voo, por `${conversationId}:${tagId}`: chaveado por
   // conversa para trocar de conversa no meio de uma gravação não travar a
@@ -1059,14 +1109,15 @@ export function WhatsAppInbox() {
   // Tag na hora (auditoria de 24/09/2026): antes o clique esperava a action e
   // a recarga das 1.000 conversas, e o 2º clique desfazia a tag. Agora o check
   // e o chip mudam no clique, o servidor recebe o estado DESEJADO (idempotente)
-  // e a lista não é recarregada — outras abas veem pelo hash (a contagem de
-  // whatsapp_conversation_tags entra nele).
+  // e a lista não é recarregada — outras abas veem pelo delta (a action "toca"
+  // o updatedAt da conversa, senão tirar a tag não deixava rastro).
   async function handleSetTag(tag: WhatsAppTagDTO, on: boolean) {
     if (!active) return;
     const { id: conversationId, contactId } = active;
     const key = `${conversationId}:${tag.id}`;
     if (pendingTagsRef.current.has(key)) return;
     setTagPending(key, true);
+    const release = holdConversation(contactId);
     patchConversation(contactId, (c) => ({ tags: withTag(c.tags, tag, on) }));
     try {
       const res = await setConversationTag(conversationId, tag.id, on);
@@ -1083,6 +1134,8 @@ export function WhatsAppInbox() {
       // Erro de server action chega mascarado em produção — e a aba com o
       // bundle de antes do deploy também cai aqui: por isso a dica do F5.
       toast.error('Não foi possível salvar a tag. Recarregue a página (F5) e tente de novo.');
+    } finally {
+      release();
     }
   }
 
@@ -1153,7 +1206,7 @@ export function WhatsAppInbox() {
       .then((dto) => {
         commitSent(contactId, temp.id, dto, temp.authorName);
         // A conversa sobe para o topo com a prévia nova por patch local; a
-        // lista NÃO recarrega por envio (as outras abas veem pelo hash).
+        // lista NÃO recarrega por envio (as outras abas veem pelo delta).
         patchConversation(contactId, sentMessagePatch(dto, me));
         void revalidateThread(contactId);
       })
@@ -1312,7 +1365,9 @@ export function WhatsAppInbox() {
     try {
       await deleteWhatsAppContact(conv.contactId);
       setActiveContactId(null);
-      await refreshConversations();
+      // O delta não vê exclusão (o cascade apaga a conversa): sai da tela aqui,
+      // sem recarregar as 1.000 conversas.
+      dropConversation(conv.contactId);
       toast.success('Contato excluído.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao excluir contato.');
@@ -1716,7 +1771,7 @@ export function WhatsAppInbox() {
             </>)}
           </div>
 
-          {/* Lista já na tela, mas a recarga ou o hash falharam (403 da trava
+          {/* Lista já na tela, mas a lista completa ou o delta falharam (403 da trava
               de IP ao trocar de rede, 500 do banco, sem internet): as
               conversas ficam (o SWR guarda o último dado) e o aviso diz o
               motivo real — a rota GET devolve o texto, a action o mascarava. */}
@@ -1741,10 +1796,10 @@ export function WhatsAppInbox() {
                 numberFilter={numberFilter}
                 numberLabelOf={numberBadges ? (nid) => (nid ? numberBadges.get(nid) ?? null : null) : null}
                 // Abre na hora: quem está fora da lista é hidratado pelo
-                // fetchedActive (GET por contato). A lista (que pode ganhar a
-                // conversa recém-criada pelo openContactConversation)
-                // recarrega pelo coalescer, depois — antes o clique esperava
-                // as 1.000 conversas.
+                // fetchedActive (GET por contato). A conversa recém-criada
+                // pelo openContactConversation entra na lista por um delta
+                // coalescido, depois — antes o clique esperava as 1.000
+                // conversas.
                 onOpen={(contactId) => {
                   setActiveContactId(contactId);
                   scheduleConversationsRefresh();
@@ -1754,14 +1809,15 @@ export function WhatsAppInbox() {
               <ConversationListSkeleton />
             ) : listState === 'error' ? (
               // shouldRetryOnError:false no hook: sem este botão a lista só
-              // tentaria de novo no próximo hash que chegar. O motivo vem da
-              // rota (ex.: fora da internet do escritório), não um genérico.
+              // tentaria de novo no próximo delta. O motivo vem da rota (ex.:
+              // fora da internet do escritório), não um genérico. Sem lista
+              // não há delta: o botão pede a lista inteira.
               <div role="alert" className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 <AlertCircle className="mb-2 h-7 w-7 text-amber-300" />
                 <p className="text-sm">Não foi possível carregar as conversas.</p>
                 <p className="mt-1 text-xs">{describeFetchError(conversationsError)}</p>
                 <button
-                  onClick={() => { void refreshConversations(); }}
+                  onClick={() => { void reloadAllConversations(); }}
                   className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-3 py-1.5 text-[12px] font-bold text-[#6fd6ad] hover:bg-[#356b57]"
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> Tentar novamente
@@ -2338,7 +2394,14 @@ export function WhatsAppInbox() {
         />
       )}
 
-      <WhatsAppTagsModal open={tagsModalOpen} onOpenChange={setTagsModalOpen} onChanged={reloadTags} />
+      {/* Renomear, recolorir ou excluir tag não passa pelo delta (não toca
+          conversa nenhuma): quem editou recarrega a lista inteira para os
+          chips baterem; as outras abas, na carga de 10 min. */}
+      <WhatsAppTagsModal
+        open={tagsModalOpen}
+        onOpenChange={setTagsModalOpen}
+        onChanged={() => { reloadTags(); void reloadAllConversations(); }}
+      />
       <CloseReasonsModal
         open={reasonsModalOpen}
         onOpenChange={setReasonsModalOpen}
@@ -2349,7 +2412,7 @@ export function WhatsAppInbox() {
         open={addContactOpen}
         onOpenChange={setAddContactOpen}
         // Mesmo desenho do "Abrir" da agenda: abre na hora (fetchedActive) e a
-        // lista pega a conversa nova numa recarga coalescida.
+        // lista pega a conversa nova num delta coalescido.
         onCreated={(contactId) => {
           setActiveContactId(contactId);
           scheduleConversationsRefresh();

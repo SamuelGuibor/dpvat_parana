@@ -4,15 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
 // SÓ tipos (`import type`): inbox-data.ts, ao lado, importa o Prisma e não
 // pode entrar no bundle do navegador.
-import type { InboxVersionResponse, WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
+import type {
+  InboxDeltaResponse, InboxListResponse, WhatsAppConversationDTO,
+} from '@/app/_shared/lib/whatsapp/inbox-types';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
 import { mergeThreadWindow, unionThreadMessages, upsertById } from '@/app/_shared/utils/thread-window';
-import { jsonFetcher, pollRetryDelayMs } from '@/app/_shared/utils/fetch-json';
+import { HttpError, jsonFetcher, pollRetryDelayMs } from '@/app/_shared/utils/fetch-json';
 import {
-  INBOX_CONVERSATIONS_URL, INBOX_VERSION_URL, inboxConversationUrl, inboxSearchUrl,
-  readInboxItem, readInboxItems, readInboxVersion,
+  INBOX_CONVERSATIONS_URL, inboxConversationUrl, inboxDeltaUrl, inboxSearchUrl,
+  readInboxDelta, readInboxItem, readInboxItems, readInboxList,
 } from '@/app/_shared/utils/inbox-api';
+import {
+  INBOX_LIST_PAGE, lockedConversationIds, mergeConversationDelta, pruneLocalEdits, sinceWithOverlap,
+  type LocalEdit,
+} from '@/app/_shared/utils/inbox-delta';
 
 // Hooks do atendimento de WhatsApp — mesmo desenho do use-chat.ts:
 // SWR com polling como rede de segurança e o SSE (useChatStream, reaproveitado
@@ -51,21 +57,16 @@ export interface WhatsAppThreadMessage {
 }
 
 // Toda leitura por URL daqui passa por `jsonFetcher` (fetch-json.ts): status
-// não-ok LANÇA. As rotas (thread, lista, versão, busca) decidem o acesso pelo
+// não-ok LANÇA. As rotas (thread, lista, delta, busca) decidem o acesso pelo
 // banco + trava de IP (`teamRoute`) e podem responder 403 (atendente mudou de
 // rede com a aba aberta) ou 500 (banco); com um fetcher que não olha o status
 // isso viraria dado e esvaziaria a tela. O SWR guarda o erro e mantém o
 // último dado bom.
 //
-// Lista, versão e busca são GET, não server actions (auditoria de 24/09/2026,
+// Lista, delta e busca são GET, não server actions (auditoria de 24/09/2026,
 // FE-1): as actions de uma aba saem numa fila SERIAL, e a recarga da lista e o
 // hash de 15 s seguravam o clique do atendente (tag, assumir, encerrar). A
 // fila de actions agora fica só com mutações.
-
-/** Lista do inbox pela rota GET (lança em resposta não-ok ou fora do formato). */
-const fetchConversationList = (url: string) => jsonFetcher<unknown>(url).then(readInboxItems);
-/** Hash + total pela rota GET (a mesma key é lida pelos dois hooks abaixo). */
-const fetchInboxVersion = (url: string) => jsonFetcher<unknown>(url).then(readInboxVersion);
 
 /** Busca em TODO o histórico (GET, fora da fila de actions). Lança `HttpError` na falha. */
 export async function fetchInboxSearch(term: string): Promise<WhatsAppConversationDTO[]> {
@@ -77,167 +78,312 @@ export async function fetchInboxConversation(contactId: string): Promise<WhatsAp
   return readInboxItem(await jsonFetcher<unknown>(inboxConversationUrl(contactId)));
 }
 
-// Atraso do coalescer da lista: junta numa carga só os pedidos que chegam em
-// rajada (hash que mudou, eventos SSE, onDiscarded). A lista não disputa mais
-// a fila de server actions com o clique (é GET), mas cada carga ainda são
-// ~1,3 MB e ~5 idas ao banco: duas cargas seguidas por nada é desperdício.
+/**
+ * O que a key da lista guarda no cache do SWR: a lista completa + de onde o
+ * delta parte. `gen` muda a cada lista completa APLICADA (o SWR descarta a
+ * carga que um patch local atropelou): o delta que saiu sobre uma base velha
+ * não cai na nova, e o cursor dele só vale para a base em que foi aplicado.
+ */
+interface InboxListData extends InboxListResponse {
+  gen: number;
+}
+
+// Contador de gerações da lista completa (por página; basta ser único).
+let listGeneration = 0;
+
+/** Poll do delta com a aba visível (era o do hash: mesmo ritmo, sem a lista inteira atrás). */
+const DELTA_POLL_MS = 15_000;
+/** Junta numa ida os pedidos em rajada (eventos SSE, agenda, contato novo). O delta é barato: 1 s basta. */
+const DELTA_COALESCE_MS = 1_000;
+/** Foco/volta à aba não repete um delta que acabou de sair (foco e visibilitychange chegam juntos). */
+const DELTA_WAKE_MIN_GAP_MS = 5_000;
+// Atraso do coalescer da lista COMPLETA (onDiscarded, lista em erro): cada
+// carga são ~1,3 MB e ~5 idas ao banco; duas seguidas por nada é desperdício.
 const LIST_REFRESH_COALESCE_MS = 2_000;
+// Lista completa como rede de segurança para o que o delta não vê (tique de
+// status, mensagem editada, rename de tag, exclusão de contato por outra aba).
+const FULL_LIST_REFRESH_MS = 600_000;
+// Referência estável para "lista ainda não chegou".
+const NO_CONVERSATIONS: WhatsAppConversationDTO[] = [];
 
 const isDocumentHidden = () => typeof document !== 'undefined' && document.hidden;
 
+type ListPatchFn = (list?: WhatsAppConversationDTO[]) => WhatsAppConversationDTO[] | undefined;
+
 /**
- * Lista de conversas (fila, minhas, bot, encerradas).
+ * Lista de conversas (fila, minhas, bot, encerradas), sincronizada por DELTA.
  *
- * O que roda a cada 15s é GET /api/whatsapp/inbox/version (um hash de umas 4
- * agregações + o total, ~4 ms no banco); a lista completa (até 1.000
- * conversas hidratadas, GET /api/whatsapp/inbox/conversations) só é rebuscada
- * quando o hash muda, depois de uma ação, por evento SSE ou pela rede de
- * segurança de 10 min.
+ * Auditoria de 24/09/2026 (B3): a lista baixava as 1.000 conversas (~1,3 MB)
+ * a cada mudança do hash de 15 s — no expediente, quase toda janela — em toda
+ * aba aberta. Agora:
+ * - lista COMPLETA (GET /api/whatsapp/inbox/conversations) só na montagem, a
+ *   cada 10 min e quando o delta pede (`full: true`: mais de 300 mudanças ou
+ *   aba parada mais de 24 h);
+ * - DELTA (GET …?since=<cursor − 5 s>) a cada 15 s com a aba visível, no foco
+ *   e por evento: só as conversas que mudaram, fundidas por id
+ *   (`mergeConversationDelta`), com o total real de conversas junto. Parado,
+ *   quase sempre `items: []`. É fetch manual, não `mutate()`: no SWR 2.3.8 o
+ *   mutate apaga a busca em voo e não deduplica. A fusão entra por
+ *   `mutate(fn, { revalidate: false })`.
+ * O hash (/api/whatsapp/inbox/version) não é mais consultado.
  *
- * Auditoria de 24/09/2026 — por que o foco NÃO recarrega a lista: ~17% das
- * cargas completas vinham só de voltar à janela (alt-tab do WhatsApp Web), na
- * frente do primeiro clique. No foco só o hash (barato) é consultado, e ele
- * decide. Limitação conhecida: voltar de aba OCULTA ainda recarrega a lista
- * inteira se o hash mudou nesse meio tempo (o SWR não faz poll com a aba
- * oculta) — resolve na sincronização por delta.
+ * Patch otimista × delta: a resposta de um delta lido ANTES do clique chegar ao
+ * banco traria o estado velho por cima do otimista (a tag piscava). Por isso
+ * `patchConversations(fn, contactId)` e `holdConversation(contactId)` (ação em
+ * voo) travam a conversa: o delta não a sobrescreve e o cursor não anda, e ela
+ * volta no pedido seguinte já com o que a ação gravou.
  *
- * Toda recarga passa pelos portões de `refresh-gate.ts`, porque o mutate() do
- * SWR não deduplica (cada chamada descarta a busca em voo e começa outra):
- * - `refreshConversations` (single-flight): para quem faz `await` depois de
- *   uma mutação; nunca devolve uma carga que começou antes do pedido.
- * - `scheduleConversationsRefresh` (coalescer de 2s sobre o single-flight):
- *   para gatilhos automáticos (hash, SSE, onDiscarded). Com a aba oculta só
- *   marca e recarrega uma vez quando ela volta a ficar visível.
+ * Portões (`refresh-gate.ts`): `refreshConversations` = delta single-flight
+ * (quem faz `await` depois de uma mutação nunca recebe um delta que começou
+ * antes dela); `scheduleConversationsRefresh` = delta coalescido (SSE, agenda,
+ * contato novo; aba oculta só marca, e a volta à aba já puxa um delta);
+ * `reloadAll` = lista completa single-flight ("Tentar novamente", tags
+ * editadas).
  *
- * Erro (403 da trava de IP, 500, rede): a lista que já estava na tela FICA (o
- * SWR guarda o último dado) e `syncError` diz o motivo, para a tela avisar
- * "lista sem atualizar". Com erro guardado o SWR não faz o poll de intervalo:
- * o hash volta pelo `onErrorRetry` (5 s, 10 s, 20 s, depois 30 s; 401 para), e
- * cada hash que chega com a lista em erro reagenda a carga — sem isso a lista
- * só voltaria no próximo hash DIFERENTE.
+ * Erro (403 da trava de IP, 500, rede): a lista que já estava na tela FICA e
+ * `syncError` diz o motivo (lista completa ou delta). O delta segue tentando a
+ * cada 15 s, menos no 401 (sessão vencida), que para até o foco. Delta que
+ * volta a funcionar com a lista em erro reagenda a lista completa.
  */
-export function useWhatsAppConversations() {
-  const mutateRef = useRef<KeyedMutator<WhatsAppConversationDTO[]> | null>(null);
-  // Criado UMA vez por montagem: se o single-flight fosse recriado a cada
+export function useWhatsAppConversations(opts: {
+  /**
+   * Conversas do delta que já passaram pelas travas, para as cópias fora do
+   * SWR (busca no servidor, conversa aberta fora do topo) receberem tag e
+   * encerramento. Lido por ref: pode mudar a cada render.
+   */
+  onDelta?: (items: WhatsAppConversationDTO[]) => void;
+} = {}) {
+  const onDeltaRef = useRef(opts.onDelta);
+  onDeltaRef.current = opts.onDelta;
+  const { cache } = useSWRConfig();
+  const cachedList = useCallback(
+    () => cache.get(INBOX_CONVERSATIONS_URL)?.data as InboxListData | undefined,
+    [cache],
+  );
+
+  const mutateRef = useRef<KeyedMutator<InboxListData> | null>(null);
+  // Criados UMA vez por montagem: se o single-flight fosse recriado a cada
   // render, a proteção sumiria.
-  const [flight] = useState(() =>
+  const [fullFlight] = useState(() =>
     createSingleFlight(() => (mutateRef.current ? mutateRef.current() : Promise.resolve(undefined))),
   );
-  const coalescerRef = useRef<Coalescer | null>(null);
+  const runDeltaRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const [deltaFlight] = useState(() => createSingleFlight(() => runDeltaRef.current()));
+  const fullCoalescerRef = useRef<Coalescer | null>(null);
+  const deltaCoalescerRef = useRef<Coalescer | null>(null);
 
-  const { data, mutate, isLoading, error } = useSWR<WhatsAppConversationDTO[]>(
+  // Listas completas em voo (o fetcher conta). Com uma em voo o delta não
+  // funde nada: o mutate dele faria o SWR descartar a lista, e ela já traz tudo.
+  const fullInFlightRef = useRef(0);
+  const fetchFullList = useCallback(async (url: string): Promise<InboxListData> => {
+    fullInFlightRef.current += 1;
+    try {
+      const list = readInboxList(await jsonFetcher<unknown>(url));
+      listGeneration += 1;
+      return { ...list, gen: listGeneration };
+    } finally {
+      fullInFlightRef.current -= 1;
+    }
+  }, []);
+
+  const { data, mutate, isLoading, error } = useSWR<InboxListData>(
     INBOX_CONVERSATIONS_URL,
-    fetchConversationList,
+    fetchFullList,
     {
-      // Rede de segurança para mudança que o hash não captura (ex.: nome do
-      // card editado no Kanban). Era 2 min + foco; no expediente o hash muda
-      // em ~55% das janelas de 15s, então na prática a lista anda em segundos.
-      refreshInterval: 600_000,
+      refreshInterval: FULL_LIST_REFRESH_MS,
       revalidateOnFocus: false,
       // Sem retry próprio (cada tentativa é a lista inteira): quem tenta de
-      // novo é o hash (onSuccess abaixo) ou o botão "Tentar novamente".
+      // novo é o delta (lista em erro → reagenda) ou o botão "Tentar novamente".
       shouldRetryOnError: false,
-      // Um patch local (mutate com revalidate:false) no meio de uma carga faz
-      // o SWR descartar o resultado dela — e o hash já avançou, então a
-      // mudança de OUTRA conversa só voltaria em até 10 min. Reagenda uma
-      // carga (coalescida, para não entrar em laço com cliques em sequência).
-      onDiscarded: () => coalescerRef.current?.trigger(),
+      // Um patch local no meio de uma lista completa faz o SWR descartar o
+      // resultado dela. Reagenda (coalescido, para não entrar em laço com
+      // cliques em sequência).
+      onDiscarded: () => fullCoalescerRef.current?.trigger(),
     },
   );
   mutateRef.current = mutate;
   const listErrorRef = useRef<unknown>(undefined);
   listErrorRef.current = error;
 
-  // O coalescer tem timer e listener: nasce e morre no effect (seguro no
+  // Cursor do último delta aplicado, amarrado à geração da lista em que ele
+  // foi fundido. Fica fora do cache do SWR de propósito: delta vazio (o caso
+  // comum) só anda o cursor e não re-renderiza o inbox a cada 15 s.
+  const deltaCursorRef = useRef<{ gen: number; cursor: string } | null>(null);
+  const cursorOf = (list: InboxListData): string | null => {
+    const d = deltaCursorRef.current;
+    return d && d.gen === list.gen ? d.cursor : list.cursor;
+  };
+
+  // Travas do delta, por contactId (ver `lockedConversationIds`).
+  const editsRef = useRef(new Map<string, LocalEdit>());
+  const touchEdit = useCallback((contactId: string, pendingDelta: number) => {
+    const edits = editsRef.current;
+    const prev = edits.get(contactId);
+    edits.set(contactId, { at: Date.now(), pending: Math.max(0, (prev?.pending ?? 0) + pendingDelta) });
+  }, []);
+
+  const [deltaError, setDeltaError] = useState<unknown>(undefined);
+  // 401 no delta = sessão vencida: o poll para até o próximo foco.
+  const pausedRef = useRef(false);
+  const lastDeltaAtRef = useRef(0);
+
+  runDeltaRef.current = async () => {
+    const base = cachedList();
+    if (!base) {
+      // Sem lista (1ª carga falhou ou não chegou): o que resolve é a lista inteira.
+      if (fullInFlightRef.current === 0) await fullFlight.trigger();
+      return;
+    }
+    if (fullInFlightRef.current > 0) return;
+    const cursor = cursorOf(base);
+    // Servidor sem cursor (deploy anterior ao delta): a lista de 10 min segura.
+    if (!cursor) return;
+
+    const startedAt = Date.now();
+    lastDeltaAtRef.current = startedAt;
+    let res: InboxDeltaResponse;
+    try {
+      res = readInboxDelta(await jsonFetcher<unknown>(inboxDeltaUrl(sinceWithOverlap(cursor))));
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) pausedRef.current = true;
+      setDeltaError(err);
+      return;
+    }
+    setDeltaError(undefined);
+    // Delta voltou e a lista completa está em erro (ex.: voltou a rede do
+    // escritório): tenta a lista de novo.
+    if (listErrorRef.current) fullCoalescerRef.current?.trigger();
+    if (res.full) {
+      await fullFlight.trigger();
+      return;
+    }
+
+    const edits = editsRef.current;
+    pruneLocalEdits(edits, startedAt);
+    const locked = lockedConversationIds(res.items, edits, startedAt);
+    const fresh = locked.size ? res.items.filter((c) => !locked.has(c.id)) : res.items;
+    // Conversa travada: o cursor fica onde estava e ela volta no próximo delta.
+    const nextCursor = locked.size ? null : res.cursor;
+
+    // Lista completa começou no meio do caminho: ela já traz tudo, e um mutate
+    // agora faria o SWR descartá-la. O cursor não anda.
+    if (fullInFlightRef.current === 0) {
+      const cur = cachedList();
+      if (cur && cur.gen === base.gen) {
+        const total = res.total ?? cur.total;
+        if (fresh.length || total !== cur.total) {
+          void mutate((list) => {
+            if (!list || list.gen !== base.gen) return list;
+            const items = fresh.length ? mergeConversationDelta(list.items, fresh, { cap: INBOX_LIST_PAGE }) : list.items;
+            return items === list.items && total === list.total ? list : { ...list, items, total };
+          }, { revalidate: false });
+        }
+        if (nextCursor) deltaCursorRef.current = { gen: base.gen, cursor: nextCursor };
+      }
+    }
+    if (fresh.length) onDeltaRef.current?.(fresh);
+  };
+
+  // Coalescedores com timer e listener: nascem e morrem no effect (seguro no
   // StrictMode, que monta/desmonta/monta de novo em dev).
   useEffect(() => {
-    const coalescer = createCoalescer({
+    const full = createCoalescer({
       delayMs: LIST_REFRESH_COALESCE_MS,
       isHidden: isDocumentHidden,
-      run: () => flight.trigger(),
+      run: () => fullFlight.trigger(),
     });
-    coalescerRef.current = coalescer;
-    const onVisibility = () => {
-      if (!document.hidden) coalescer.flushIfDirty();
+    // Oculta, o delta só marca; não precisa do flush: a volta à aba já puxa um.
+    const delta = createCoalescer({
+      delayMs: DELTA_COALESCE_MS,
+      isHidden: isDocumentHidden,
+      run: () => deltaFlight.trigger(),
+    });
+    fullCoalescerRef.current = full;
+    deltaCoalescerRef.current = delta;
+
+    const tick = () => {
+      if (document.hidden || pausedRef.current) return;
+      void deltaFlight.trigger();
     };
-    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(tick, DELTA_POLL_MS);
+    const onWake = () => {
+      if (document.hidden) return;
+      full.flushIfDirty();
+      // Foco depois de um 401: o login pode ter sido refeito em outra aba.
+      pausedRef.current = false;
+      if (Date.now() - lastDeltaAtRef.current < DELTA_WAKE_MIN_GAP_MS) return;
+      void deltaFlight.trigger();
+    };
+    document.addEventListener('visibilitychange', onWake);
+    window.addEventListener('focus', onWake);
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      coalescer.dispose();
-      if (coalescerRef.current === coalescer) coalescerRef.current = null;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onWake);
+      window.removeEventListener('focus', onWake);
+      full.dispose();
+      delta.dispose();
+      if (fullCoalescerRef.current === full) fullCoalescerRef.current = null;
+      if (deltaCoalescerRef.current === delta) deltaCoalescerRef.current = null;
     };
-  }, [flight]);
+  }, [fullFlight, deltaFlight]);
 
-  const refreshConversations = flight.trigger;
-  const scheduleConversationsRefresh = useCallback(() => coalescerRef.current?.trigger(), []);
-  // Patch local da lista (ação otimista: tag, e as próximas da onda). Sem
-  // revalidar: o SWR 2 descarta uma carga que começou ANTES deste mutate — ela
-  // traria o estado velho por cima do otimista — e o `onDiscarded` acima
-  // reagenda a recarga descartada.
+  const refreshConversations = deltaFlight.trigger;
+  const reloadAll = fullFlight.trigger;
+  const scheduleConversationsRefresh = useCallback(() => deltaCoalescerRef.current?.trigger(), []);
+
+  // Patch local da lista (ação otimista). Sem revalidar: o SWR 2 descarta uma
+  // lista completa que começou ANTES deste mutate (traria o estado velho por
+  // cima do otimista) e o `onDiscarded` reagenda. Com `contactId`, a conversa
+  // fica travada para o delta que já estava em voo (ver acima).
   const patchConversations = useCallback(
-    (fn: (list?: WhatsAppConversationDTO[]) => WhatsAppConversationDTO[] | undefined) =>
-      mutate(fn, { revalidate: false }),
-    [mutate],
-  );
-
-  const { data: versionData, error: versionError, mutate: mutateVersion } = useSWR<InboxVersionResponse>(
-    INBOX_VERSION_URL,
-    fetchInboxVersion,
-    {
-      // Foco revalida SÓ o hash: se nada mudou, a lista fica como está.
-      refreshInterval: 15_000,
-      revalidateOnFocus: true,
-      onErrorRetry: (err, _key, _config, revalidate, opts) => {
-        const delay = pollRetryDelayMs(err, opts.retryCount);
-        if (delay !== null) setTimeout(() => { void revalidate(opts); }, delay);
-      },
-      // Hash chegou e a lista está em erro (ex.: voltou a rede do escritório):
-      // tenta a lista de novo mesmo que o hash não tenha mudado.
-      onSuccess: () => {
-        if (listErrorRef.current) coalescerRef.current?.trigger();
-      },
+    (fn: ListPatchFn, contactId?: string) => {
+      if (contactId) touchEdit(contactId, 0);
+      // Sem lista no cache: nada a corrigir, e um mutate descartaria a 1ª carga em voo.
+      if (!cachedList()) return Promise.resolve(undefined);
+      return mutate((list) => {
+        if (!list) return list;
+        const items = fn(list.items);
+        return !items || items === list.items ? list : { ...list, items };
+      }, { revalidate: false });
     },
+    [mutate, touchEdit, cachedList],
   );
-  const version = versionData?.version;
-  const lastVersion = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (!version) return;
-    if (lastVersion.current !== undefined && lastVersion.current !== version) scheduleConversationsRefresh();
-    lastVersion.current = version;
-  }, [version, scheduleConversationsRefresh]);
 
-  // "Tentar de novo" do aviso de lista sem atualizar: a falha pode ser da
-  // lista OU do hash, então os dois voltam juntos.
+  /**
+   * Ação em voo sobre a conversa (assumir, encerrar, tag, marcar lida): o
+   * delta não a sobrescreve até o `release` (chame no `finally`). Sem isso, um
+   * delta lido entre o clique e o commit da action desfazia o otimista por
+   * alguns segundos.
+   */
+  const holdConversation = useCallback((contactId: string): (() => void) => {
+    touchEdit(contactId, 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      touchEdit(contactId, -1);
+    };
+  }, [touchEdit]);
+
+  // "Tentar de novo" do aviso de lista sem atualizar: lista completa se foi
+  // ela que falhou; senão, o delta.
   const retrySync = useCallback(() => {
-    void mutateVersion();
-    return flight.trigger();
-  }, [mutateVersion, flight]);
+    pausedRef.current = false;
+    return listErrorRef.current ? fullFlight.trigger().then(() => undefined) : deltaFlight.trigger();
+  }, [fullFlight, deltaFlight]);
 
   // `loaded` separa "a lista chegou e está vazia" de "ainda não chegou" — o
   // `conversations` abaixo é [] nos dois casos. A tela decide entre esqueleto,
   // erro com "Tentar novamente" e "Nenhuma conversa ainda" por
   // `inboxListState` (app/_shared/utils/whatsapp-inbox.ts). `syncError` = a
-  // lista na tela pode estar velha (a carga ou o hash falharam).
+  // lista na tela pode estar velha (a lista completa ou o delta falharam).
+  // `total` = conversas no BANCO (a lista é capada em 1.000), vindo com a
+  // lista e com cada delta.
   return {
-    conversations: data ?? [], loaded: data !== undefined,
-    refreshConversations, scheduleConversationsRefresh, patchConversations, isLoading, error,
-    syncError: (error ?? versionError) as unknown, retrySync,
+    conversations: data?.items ?? NO_CONVERSATIONS, loaded: data !== undefined, total: data?.total ?? 0,
+    refreshConversations, reloadAll, scheduleConversationsRefresh, patchConversations, holdConversation,
+    isLoading, error, syncError: (error ?? deltaError) as unknown, retrySync,
   };
-}
-
-/**
- * Total REAL de conversas (badge do topo da lista do inbox). A lista é capada
- * em 1.000 (`LIST_PAGE`) pelo servidor — contar conversations.length
- * "estagnaria" no teto. Vem junto do hash (mesma query, mesma key do SWR):
- * sem poll próprio — quem busca a cada 15 s é o `useWhatsAppConversations`.
- */
-export function useWhatsAppConversationsTotal() {
-  const { data } = useSWR<InboxVersionResponse>(
-    INBOX_VERSION_URL,
-    fetchInboxVersion,
-    { refreshInterval: 0, revalidateOnFocus: false, revalidateIfStale: false, shouldRetryOnError: false },
-  );
-  return data?.total ?? 0;
 }
 
 // Tamanho de cada bloco ao "carregar mensagens anteriores".
@@ -285,8 +431,8 @@ function threadKey(contactId: string): string {
  *
  * Polling de 8s SÓ aqui (thread ABERTA — uma por vez, rota leve por contactId):
  * é a rede de segurança quando o SSE do relay cai (hoje ele não entrega em
- * produção). A LISTA de conversas não faz poll próprio: só o hash de 15s, e a
- * lista pesada recarrega quando ele muda (ver useWhatsAppConversations).
+ * produção). A LISTA de conversas tem o poll próprio do delta (15 s, só as
+ * conversas que mudaram; ver useWhatsAppConversations).
  *
  * Janela deslizante (auditoria de 24/09/2026, THR-5): cada mensagem nova tira
  * a mais antiga das 50 recentes. Com o histórico aberto, ela ia para um buraco

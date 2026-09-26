@@ -220,9 +220,9 @@ export function WhatsAppComposer({
       try {
         await sendWhatsAppInternalNote({ contactId, body: text });
         setValue('');
-        // Só a thread. A prévia "Você: <nota>" da lista chega no próximo hash
-        // (≤15 s): a nota não mexe na conversa, e não vale uma recarga das
-        // 1.000 conversas por ela.
+        // Só a thread. A prévia "Você: <nota>" da lista chega no próximo delta
+        // (≤15 s): a action toca o updatedAt da conversa, e não vale uma
+        // recarga das 1.000 conversas por ela.
         void onRefreshThread();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Falha ao salvar a nota.');

@@ -276,9 +276,15 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     },
   });
 
-  // Broadcast pro relay: colegas com a thread aberta veem a nota na hora.
   // Não mexe em lastMessageAt — nota interna não deve reordenar a lista nem
-  // marcar a conversa como "não lida" pro cliente ter respondido.
+  // marcar a conversa como "não lida" pro cliente ter respondido. Mas TOCA o
+  // updatedAt, DEPOIS de gravar a nota: a lista do inbox sincroniza por delta
+  // (loadConversationsSince), e a prévia da lista mostra a nota — sem o toque
+  // ela só chegaria às outras abas na lista completa de 10 min (antes quem
+  // pegava era o max(createdAt) de mensagens no hash).
+  await db.whatsAppConversation.updateMany({ where: { contactId }, data: { updatedAt: new Date() } });
+
+  // Broadcast pro relay: colegas com a thread aberta veem a nota na hora.
   const dto: WhatsAppMessageDTO = {
     id: message.id,
     channelId: whatsappChannelId(contactId),

@@ -5,9 +5,12 @@ import {
   INBOX_SEARCH_URL,
   INBOX_VERSION_URL,
   inboxConversationUrl,
+  inboxDeltaUrl,
   inboxSearchUrl,
+  readInboxDelta,
   readInboxItem,
   readInboxItems,
+  readInboxList,
   readInboxVersion,
 } from "@/app/_shared/utils/inbox-api";
 
@@ -30,6 +33,12 @@ describe("endereços das rotas do inbox", () => {
     expect(inboxConversationUrl("a&b=c")).toBe("/api/whatsapp/inbox/conversations?contactId=a%26b%3Dc");
     expect(inboxSearchUrl("João da Silva")).toBe("/api/whatsapp/inbox/search?q=Jo%C3%A3o%20da%20Silva");
     expect(inboxSearchUrl("+55 (41) 9")).toBe("/api/whatsapp/inbox/search?q=%2B55%20(41)%209");
+  });
+
+  it("delta: since codificado na query da mesma rota da lista", () => {
+    expect(inboxDeltaUrl("2026-09-26T11:59:55.000Z")).toBe(
+      "/api/whatsapp/inbox/conversations?since=2026-09-26T11%3A59%3A55.000Z",
+    );
   });
 
   it("o termo vai como veio: quem apara e corta em 2 caracteres é o servidor", () => {
@@ -87,5 +96,48 @@ describe("readInboxVersion (hash + total)", () => {
     expect(() => readInboxVersion("ddfd")).toThrow("Resposta inválida");
     expect(() => readInboxVersion({ total: 1 })).toThrow("Resposta inválida");
     expect(() => readInboxVersion(null)).toThrow("Resposta inválida");
+  });
+});
+
+describe("readInboxList (lista completa com cursor)", () => {
+  it("devolve itens, cursor e total", () => {
+    const items = [conv("1")];
+    expect(readInboxList({ items, cursor: "2026-09-26T12:00:00.000Z", total: 5028 })).toEqual({
+      items, cursor: "2026-09-26T12:00:00.000Z", total: 5028,
+    });
+  });
+
+  it("servidor sem cursor (antes do delta) ainda vale: cursor null, total 0", () => {
+    expect(readInboxList({ items: [], cursor: null })).toEqual({ items: [], cursor: null, total: 0 });
+    expect(readInboxList({ items: [], cursor: "ontem", total: -1 })).toEqual({ items: [], cursor: null, total: 0 });
+  });
+
+  it("sem items lança", () => {
+    expect(() => readInboxList({ cursor: "2026-09-26T12:00:00.000Z" })).toThrow("Resposta inválida");
+  });
+});
+
+describe("readInboxDelta (só o que mudou)", () => {
+  it("devolve itens, cursor, full e total", () => {
+    const items = [conv("1")];
+    expect(readInboxDelta({ items, cursor: "2026-09-26T12:00:00.000Z", full: false, total: 10 })).toEqual({
+      items, cursor: "2026-09-26T12:00:00.000Z", full: false, total: 10,
+    });
+  });
+
+  it("full sem cursor nem total vale (since inválido: a rota nem lê o banco)", () => {
+    expect(readInboxDelta({ items: [], cursor: null, full: true, total: null })).toEqual({
+      items: [], cursor: null, full: true, total: null,
+    });
+  });
+
+  it.each([
+    ["sem full", { items: [], cursor: "2026-09-26T12:00:00.000Z" }],
+    ["full não-booleano", { items: [], cursor: "2026-09-26T12:00:00.000Z", full: "false" }],
+    ["delta sem cursor", { items: [], cursor: null, full: false }],
+    ["delta com cursor inválido", { items: [], cursor: "x", full: false }],
+    ["sem items", { cursor: "2026-09-26T12:00:00.000Z", full: false }],
+  ])("formato errado (%s) lança", (_nome, body) => {
+    expect(() => readInboxDelta(body)).toThrow("Resposta inválida");
   });
 });

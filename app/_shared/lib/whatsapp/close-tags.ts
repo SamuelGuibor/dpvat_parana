@@ -77,7 +77,7 @@ export interface PreparedCloseTag {
  * da resposta (`runAfterResponse`). Uma onda de leituras quando o rótulo já é
  * conhecido; a tag em si (`whatsapp_tags`) é criada aqui se ainda não existir,
  * porque o id dela entra no patch. null = falhou (o encerramento vale assim
- * mesmo e a tela corrige na próxima recarga pelo hash).
+ * mesmo e a tela corrige no próximo delta da lista).
  */
 export async function prepareCloseTag(
   conversationId: string,

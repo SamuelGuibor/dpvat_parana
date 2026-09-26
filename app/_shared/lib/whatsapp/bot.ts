@@ -490,7 +490,14 @@ export async function postInternalNote(contactId: string, body: string): Promise
     const message = await db.whatsAppMessage.create({
       data: { contactId, direction: "out", body, sentByBot: true, internal: true, status: "sent" },
     });
-    const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { name: true, phone: true } });
+    // Toca o updatedAt da conversa DEPOIS da nota (sem lastMessageAt: nota não
+    // reordena a lista): a lista do inbox sincroniza por delta, e o motivo da
+    // Fila (a última nota do bot) só chegaria às abas abertas na lista
+    // completa de 10 min quando a nota sai depois do update que enfileira.
+    const [contact] = await Promise.all([
+      db.whatsAppContact.findUnique({ where: { id: contactId }, select: { name: true, phone: true } }),
+      db.whatsAppConversation.updateMany({ where: { contactId }, data: { updatedAt: new Date() } }),
+    ]);
     // Relay depois da resposta (não segura o laço do bot nem o webhook).
     broadcastWhatsAppEvent({
       id: message.id,

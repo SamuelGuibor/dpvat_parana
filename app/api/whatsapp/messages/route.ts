@@ -54,6 +54,16 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Thread vazia sem contato = contato excluído (em outra aba ou na agenda):
+    // 404, para o inbox tirar a conversa da tela — a lista sincroniza por
+    // delta, que não vê exclusão. Só no caso vazio (o poll normal não paga a
+    // ida extra) e fora da paginação ("carregar anteriores" vazio é o início
+    // da conversa, não exclusão).
+    if (!rows.length && !after && !before) {
+      const exists = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { id: true } });
+      if (!exists) return noStoreJson({ error: 'Contato não encontrado.' }, { status: 404 });
+    }
+
     // Nome dos atendentes que aparecem na thread (mensagens "out" humanas).
     const authorIds = [...new Set(rows.map((r) => r.authorId).filter(Boolean))] as string[];
     const authors = authorIds.length

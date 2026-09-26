@@ -432,6 +432,16 @@ export async function ingestIncomingMessage(
     },
   });
 
+  // Mídia: a conversa foi atualizada (lastMessageAt) ANTES do download, que
+  // pode levar até 40 s, e a mensagem só existe agora. A lista do inbox
+  // sincroniza por delta (loadConversationsSince, margem de 5 s): um delta
+  // lido nesse vão levava a conversa com a prévia e a contagem de não lidas
+  // antigas, e ela não voltava mais. Tocar o updatedAt aqui a traz de novo.
+  // Texto não precisa: entre o upsert e a gravação são milissegundos.
+  if (media) {
+    await db.whatsAppConversation.updateMany({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+  }
+
   const dto: WhatsAppMessageDTO = {
     id: message.id,
     channelId: whatsappChannelId(contact.id),

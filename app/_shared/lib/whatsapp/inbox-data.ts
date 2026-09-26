@@ -1,13 +1,17 @@
 import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
+import { TEAM_ROLES } from '@/app/_shared/lib/permissions';
 import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
 import { LIST_PREVIEW_MAX_CHARS, computeUnread, listPreview } from '@/app/_shared/utils/whatsapp-inbox';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { fallbackCloseLabel } from '@/app/_shared/utils/close-tag-plan';
-import type { InboxVersionResponse, WhatsAppConversationDTO } from './inbox-types';
+import { INBOX_LIST_PAGE } from '@/app/_shared/utils/inbox-delta';
+import type {
+  InboxDeltaResponse, InboxListResponse, InboxVersionResponse, WhatsAppConversationDTO,
+} from './inbox-types';
 
-// Leituras da lista do inbox do WhatsApp: lista, hash de versão, busca,
-// hidratação de UMA conversa e contagem de não lidas.
+// Leituras da lista do inbox do WhatsApp: lista, delta (só o que mudou), hash
+// de versão, busca, hidratação de UMA conversa e contagem de não lidas.
 //
 // Sem "use server" e SEM guarda de acesso: quem chama já passou pela guarda —
 // as rotas GET de app/api/whatsapp/inbox/* (`teamRoute`: cargo do banco +
@@ -20,10 +24,22 @@ import type { InboxVersionResponse, WhatsAppConversationDTO } from './inbox-type
 // seguravam o clique do atendente (tag, assumir, encerrar) atrás do poll. Por
 // rota GET as leituras correm em paralelo e a fila fica só com mutações.
 
-/** Quantas conversas a lista do inbox carrega de uma vez (as mais recentes). */
-export const LIST_PAGE = 1000;
+/**
+ * Quantas conversas a lista do inbox carrega de uma vez (as mais recentes).
+ * O valor mora em inbox-delta.ts: o cliente corta a lista fundida pelo delta
+ * no mesmo teto.
+ */
+export const LIST_PAGE = INBOX_LIST_PAGE;
 /** Quantas conversas a busca no servidor devolve. */
 export const SEARCH_PAGE = 300;
+/**
+ * Teto do delta: mais conversas mudadas que isto (pico, aba que voltou depois
+ * de horas) → `full: true` e o cliente busca a lista inteira, que sai mais
+ * barata que hidratar centenas de linhas avulsas.
+ */
+export const DELTA_CAP = 300;
+/** Cards alterados que o delta ainda segue um a um; acima disso (edição em massa), lista inteira. */
+const DELTA_USERS_CAP = 500;
 
 // Campos da ficha que a lista usa (resumo do caso + pendência de CPF). Vem do
 // User quando o contato já virou card, senão do clientDraft do contato.
@@ -321,18 +337,118 @@ export async function loadConversations(
  * pela busca no servidor (`searchConversations`).
  *
  * ~1,3 MB cru (~165 KB gzip) com 1.000 linhas: abaixo do teto de 4,5 MB de
- * resposta da função, mas `LIST_PAGE` não pode crescer sem a sincronização
- * por delta.
+ * resposta da função. Com o delta ela desce só na montagem e a cada 10 min,
+ * mas `LIST_PAGE` continua preso a esse teto.
  */
 export function loadConversationList(): Promise<WhatsAppConversationDTO[]> {
   return loadConversations(undefined, LIST_PAGE);
 }
 
 /**
+ * Instante do BANCO (o cursor do delta) e total real de conversas, numa ida.
+ *
+ * O cursor é o now() do Postgres, não o relógio da função: o cliente devolve
+ * esse valor no `?since=` seguinte e o recorte compara com colunas gravadas
+ * por várias instâncias. A margem de `sinceWithOverlap` (5 s) cobre relógio
+ * de quem escreveu e commit que chega depois da leitura.
+ *
+ * Roda EM PARALELO com a leitura da lista: se o now() sair uns milissegundos
+ * depois do SELECT das conversas, a mudança desse vão ainda cai dentro da
+ * margem. `total` é a mesma contagem do hash antigo (~5 mil linhas, ~1 ms).
+ */
+async function readSyncMeta(): Promise<{ cursor: Date; total: number }> {
+  const rows = await db.$queryRaw<{ cursor: Date; total: number }[]>`
+    SELECT now() AS cursor, (SELECT count(*)::int FROM whatsapp_conversations) AS total
+  `;
+  const row = rows[0];
+  return { cursor: row?.cursor ?? new Date(), total: Number(row?.total ?? 0) };
+}
+
+/**
+ * Lista completa para a sincronização por delta: as `LIST_PAGE` mais recentes
+ * + o cursor de onde o delta parte + o total. Só na montagem, a cada 10 min
+ * (rede de segurança para o que o delta não vê) ou quando o delta pede
+ * (`full: true`).
+ */
+export async function loadInboxList(): Promise<InboxListResponse> {
+  const [meta, items] = await Promise.all([readSyncMeta(), loadConversationList()]);
+  return { items, cursor: meta.cursor.toISOString(), total: meta.total };
+}
+
+/**
+ * Delta da lista (auditoria de 24/09/2026, B3): só as conversas que mudaram
+ * desde `since`, no MESMO DTO da lista. É o poll de 15 s do inbox — antes era
+ * o hash, que a cada mudança derrubava a lista inteira (~1,3 MB) em toda aba.
+ *
+ * O que entra (OR em whatsapp_conversations, ~5 mil linhas; nunca varre
+ * whatsapp_messages):
+ * - `updatedAt`: status, dono, desfecho, leitura (markRead/markUnread gravam
+ *   lastReadAt na conversa), tag (setConversationTag "toca" a conversa, senão
+ *   REMOVER tag não deixava rastro), nota interna (os gravadores de nota tocam
+ *   a conversa) e mídia recebida (a ingestão toca depois do download);
+ * - `lastMessageAt`: mensagem nova, recebida ou enviada;
+ * - tag APLICADA (`createdAt` da ligação): fluxo, qualificação e desfecho do
+ *   bot criam a tag sem tocar a conversa;
+ * - contato (`updatedAt`): nome, opt-out, vínculo com o card, ficha
+ *   (clientDraft) e origem do anúncio;
+ * - card vinculado alterado (User fora da equipe com `updatedAt` novo): nome,
+ *   coluna e ficha que a lista mostra. O filtro de cargo é para o heartbeat de
+ *   presença da equipe (que mexe no User.updatedAt) não puxar conversa nenhuma.
+ *
+ * Fora do delta (só na lista completa de 10 min): tique de status da última
+ * mensagem (applyStatusUpdate só mexe em whatsapp_messages), editar/apagar
+ * mensagem, docsCount, rename/recolor/exclusão de tag, nome do atendente,
+ * rótulo de motivo `nq_*` novo, número desativado e EXCLUSÃO de contato
+ * (cascade: quem excluiu tira da tela; as outras abas, no full ou no 404 ao
+ * abrir).
+ *
+ * Custo: sem índice em updatedAt, o OR vira varredura das ~5 mil conversas com
+ * subplans nas tags e nos contatos. EXPLAIN ANALYZE de 26/09/2026 (só
+ * leitura, janela de 20 s): ~7,5 ms, ~7 mil buffers em cache; a busca dos
+ * cards ~0,5 ms. Delta vazio = 3 idas curtas e nenhuma hidratação. Sem índice
+ * novo por ora.
+ *
+ * Mais de `cap` conversas mudadas → `full: true` sem itens (a lista inteira
+ * sai mais barata).
+ */
+export async function loadConversationsSince(since: Date, cap = DELTA_CAP): Promise<InboxDeltaResponse> {
+  const [meta, changedCards] = await Promise.all([
+    readSyncMeta(),
+    db.user.findMany({
+      where: { updatedAt: { gt: since }, role: { notIn: [...TEAM_ROLES] } },
+      select: { id: true },
+      take: DELTA_USERS_CAP + 1,
+    }),
+  ]);
+  const cursor = meta.cursor.toISOString();
+  if (changedCards.length > DELTA_USERS_CAP) {
+    return { items: [], cursor, full: true, total: meta.total };
+  }
+  const cardIds = changedCards.map((u) => u.id);
+
+  const items = await loadConversations(
+    {
+      OR: [
+        { updatedAt: { gt: since } },
+        { lastMessageAt: { gt: since } },
+        { tags: { some: { createdAt: { gt: since } } } },
+        { contact: { updatedAt: { gt: since } } },
+        ...(cardIds.length ? [{ contact: { userId: { in: cardIds } } }] : []),
+      ],
+    },
+    cap + 1,
+  );
+  if (items.length > cap) return { items: [], cursor, full: true, total: meta.total };
+  return { items, cursor, full: false, total: meta.total };
+}
+
+/**
  * "Versão" do inbox (14/09/2026): um hash barato do estado que a lista
- * exibe. O poll do client pergunta só isto; a lista completa (1.000
- * conversas hidratadas) desce apenas quando o hash mudou — mesmo desenho do
- * /api/board-state no Kanban. Cobre: qualquer conversa alterada (status,
+ * exibe. TRANSITÓRIO desde a sincronização por delta (`loadConversationsSince`,
+ * que virou o poll de 15 s): fica só para as abas com o bundle anterior
+ * (rota /api/whatsapp/inbox/version e o wrapper `getWhatsAppInboxVersion`) e
+ * sai quando o delta estabilizar. No desenho antigo o poll perguntava só isto
+ * e a lista completa (1.000 conversas hidratadas) descia quando o hash mudava. Cobre: qualquer conversa alterada (status,
  * atribuição, desfecho, lastMessageAt), leituras, etiquetas e o total.
  *
  * `total` sai da MESMA varredura de whatsapp_conversations que já entra no

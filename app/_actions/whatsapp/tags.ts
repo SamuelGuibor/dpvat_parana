@@ -100,10 +100,21 @@ async function applyConversationTag(
   }
 
   // Escrita e contexto do log em paralelo: nenhuma leitura depende da escrita.
-  const [write, conv, tag] = await Promise.all([
-    on
-      ? db.whatsAppConversationTag.createMany({ data: [{ conversationId, tagId }], skipDuplicates: true })
-      : db.whatsAppConversationTag.deleteMany({ where: { conversationId, tagId } }),
+  //
+  // A escrita "toca" o updatedAt da conversa na MESMA transação: a lista do
+  // inbox sincroniza por delta (loadConversationsSince), e REMOVER tag apaga
+  // a linha de whatsapp_conversation_tags sem deixar rastro — sem o toque, as
+  // outras abas só veriam na lista completa de 10 min. Tocar é seguro:
+  // updatedAt da conversa não entra em métrica nenhuma (closedAt substituiu;
+  // bot-funnel só o repassa no DTO). updateMany (e não update) para conversa
+  // apagada no meio não virar erro.
+  const [[write], conv, tag] = await Promise.all([
+    db.$transaction([
+      on
+        ? db.whatsAppConversationTag.createMany({ data: [{ conversationId, tagId }], skipDuplicates: true })
+        : db.whatsAppConversationTag.deleteMany({ where: { conversationId, tagId } }),
+      db.whatsAppConversation.updateMany({ where: { id: conversationId }, data: { updatedAt: new Date() } }),
+    ]),
     db.whatsAppConversation.findUnique({
       where: { id: conversationId },
       select: { contactId: true, numberId: true, contact: { select: { name: true, phone: true } } },
