@@ -48,7 +48,7 @@
 | `app/api/avatar/[userId]/route.ts` + `app/_actions/users/avatar.ts` | Foto de perfil da equipe (S3 `avatars/<userId>`) | `GET`, `getAvatarUploadUrl`, `confirmMyAvatar`, `removeMyAvatar` |
 | `app/_shared/lib/log.ts` | Tabela `Log` (histórico/atividade) | `createLog`, `logWhatsAppEvent`, `diffFields`, `buildUpdateMessage`, `CARD_FIELD_LABELS`, `LogAction`, `FieldChange` |
 | `app/_shared/lib/dev-activity.ts` | Peso de `dev_commit` por nº de arquivos | `DEV_COMMIT_ACTION`, `devCommitFiles`, `devFilesDelta`, `devFilesTotal` |
-| `app/_shared/lib/report-error.ts` | Erro crítico (hoje só `console.error`) | `reportCriticalError` |
+| `app/_shared/lib/report-error.ts` | Erro crítico (`console.error` + Log `critical_error`) | `reportCriticalError` |
 | `app/_shared/hooks/*` | Polling/SSE no client | `useChannelMessages`, `useUnread`, `useMyChannels`, `useChatStream`, `markChannelRead`, `sendTyping`, `isTypingEvent`, `isReactionEvent`, `usePendingMentions`, `notifyMentionsChanged`, `MENTIONS_CHANGED_EVENT`, `OPEN_MENTIONS_TAB_EVENT`, `useNotifications`, `usePresence` (`use-whatsapp.ts` é do domínio WhatsApp) |
 | `railway/chat-relay.md` | Contrato + implementação de referência do relay SSE | — |
 

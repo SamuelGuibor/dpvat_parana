@@ -9,7 +9,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - `flattenRules` (rule-events.ts) e `getRuleMetrics` (`app/_actions/whatsapp/rule-metrics.ts`) numeram R1..Rn igual ao `renderPlaybook` (bot.js). Mudou um, mude os três.
 - `sanitizeDecision`/`looksLikeReasoning`/`SCRIPT_STATES` do bot.ts espelham o bot.js: mude nos dois.
 - Não crie trava de negócio no código (qualificar, transferir, resolver). Mande o fato no payload e deixe o cérebro decidir; o código só tem rede de segurança.
-- Nenhuma falha pode virar mensagem de erro ao cliente: use `handoffToQueue` com o motivo real.
+- Nenhuma falha pode virar mensagem de erro ao cliente: use `handoffToQueue` com o motivo real. Dentro do fluxo do bot, `handoffToQueue`/`qualifyToQueue` vão sempre com `{ onlyIfStatus: "bot" }` e o envio de blocos passa por `shouldAbortSend`: sem isso o bot rouba ou atropela a conversa que o atendente assumiu. Erro engolido vai por `reportCriticalError(contexto, err, { contactId })`.
 - Chame `captureConversation` ANTES de qualquer update que encerre a conversa, passando `outcome`.
 - Não ponha nada volátil (timestamp, ordem instável) em `renderInstructions`, `getBrainExamples` ou `/api/whatsapp/brain-prompt`: isso quebra o cache de prompt.
 - Todo envio usa o `numberId` do contato. Número inativo → `getCreds` devolve null; nunca caia no default. Crons filtram com `activeNumberConversationWhere()`.
@@ -31,6 +31,6 @@ Mapa completo: docs/ai/whatsapp-bot.md
 
 ## Validação
 - `npx tsc --noEmit` · `npm run lint` · `npm test` (o `next build` local morre por OOM; o build fica com a Vercel).
-- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
+- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`, `tests/bot-timing.test.ts`, `tests/critical-error.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
 - Bot ponta a ponta: número em `WHATSAPP_TEST_NUMBERS` → cérebro de `CHATBOT_URL_STAGING`; confira o log `wa_bot` (`outcome`, `leaked`, `usage`).
 - Cron manual: `GET /api/whatsapp/cron` com `CRON_SECRET` (`whatsapp-cron.cmd`); veja `[WHATSAPP CRON]` nos logs.

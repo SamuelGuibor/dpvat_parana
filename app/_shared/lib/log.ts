@@ -43,6 +43,7 @@ export type LogAction =
   | "wa_media_fail"  // mídia recebida não foi salva no S3 (falha/timeout no download da Meta); autor = sistema
   | "wa_tag_add"     // aplicou tag na conversa (trilha do KPI de contratados: não purgável)
   | "wa_tag_remove"  // tirou tag da conversa
+  | "critical_error" // erro engolido de propósito (reportCriticalError): contexto, mensagem, contactId quando há; autor = sistema
   | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
   | "sheets_export"     // automação registrou o card numa planilha do Google
   | "tag_add"           // automação adicionou uma tag ao card

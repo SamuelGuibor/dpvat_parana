@@ -32,7 +32,7 @@
 | `app/_shared/lib/chat-relay.ts` + `app/api/chat/token/route.ts` | Relay SSE (token HMAC de 60s, broadcast best-effort com teto de 1,5 s; loga HTTP não-2xx e "entregue a 0 conexões" no máximo 1 vez/min por instância, nunca o corpo) | `isRelayConfigured`, `signRelayToken`, `broadcastToRelay` |
 | `app/_shared/lib/background.ts` + `app/_shared/utils/ttl-cache.ts` | Trabalho depois da resposta (`waitUntil` do `@vercel/functions`, no-op fora da Vercel) e cache em memória com prazo, por instância | `runAfterResponse`, `createTtlCache` |
 | `app/_shared/lib/{cost-sync,cost-providers,costs}.ts` | Painel de custos: fetch por provedor e snapshot diário | `runCostSync`, `fetchAllProviders`, `fetchUsdBrl`, `COST_SERVICES`, `COST_PROVIDER_INFO` |
-| `app/_shared/lib/report-error.ts` | Sink único de erro crítico (hoje **só `console.error`**) | `reportCriticalError` |
+| `app/_shared/lib/report-error.ts`, `app/_shared/utils/critical-error.ts` | Sink único de erro crítico: `console.error` + Log `critical_error` (com `contactId` quando há contato; o mesmo erro no máximo 1× a cada 10 min por instância); resumo puro do erro | `reportCriticalError`, `CriticalErrorExtra`, `describeError`, `criticalErrorKey` |
 | `app/_shared/lib/rate-limit.ts` | Rate limit em memória, **por instância** | `rateLimit` |
 | `app/_shared/lib/ip-access.ts` | Trava de IP da dashboard (lida por `requireTeam`) | `checkDashboardIpAccess`, `DASHBOARD_ALLOWED_IPS_KEY` |
 | `.github/workflows/ci.yml` | CI em push na `main` e em PR: `npm ci`, prisma generate, tsc, lint, vitest (Node 20) | — |
@@ -114,7 +114,7 @@
   - `appSecretEnc` **existe, mas o webhook não lê**.
 - `Notification` e `Log` (`logs`) são alvos da retenção:
   - Notificação lida some em 30 dias; qualquer uma some em 90.
-  - Logs entram na purga só se a ação estiver em `PURGEABLE_LOG_ACTIONS` (os `wa_*`) e tiverem mais de 180 dias. `move` e o histórico do card nunca são apagados.
+  - Logs entram na purga só se a ação estiver em `PURGEABLE_LOG_ACTIONS` (os `wa_*` operacionais e o `critical_error`) e tiverem mais de 180 dias. `move` e o histórico do card nunca são apagados.
 - A retenção apaga logs `wa_*` que carregam `metadata.usage` (ex.: `wa_bot`, `wa_ficha_ai`, `wa_suggest`): o Canto da IA não enxerga consumo com mais de 180 dias; `cost_snapshots` já gravados ficam.
 - `Document.deletedAt` marca a lixeira; `TRASH_RETENTION_DAYS = 30`. `User`/`Process.afastadoAte` + `afastadoNotificado` garantem notificação única por vencimento.
 - **Envs usadas no código mas ausentes do `.env.example`:** `CLAUDE_API_KEY`, `BOTCONVERSA_WEBHOOK_SECRET`, `META_ADS_TOKEN`, `META_ADS_TOKEN_BOTCONVERSA`, `META_ADS_ACCOUNT_BOTCONVERSA`, `SIGNATURE_AUTO_ENABLED`, `SIGNATURE_BASE_URL`, `SIGNATURE_OTP_DEV`, `WA_RECOVERY_DAILY_CAP`, `WA_SEND_GAP_MIN_S`, `WA_SEND_GAP_MAX_S`, `AI_REVIEW_EMAILS`, `DASHBOARD_ALLOWED_IPS`, `ANTHROPIC_COST_UNIT`, `NEON_PRICE_*`, `RAILWAY_PRICE_*`, `NEXT_AUTH_SECRET`.
@@ -143,7 +143,7 @@
 - **O middleware só garante que existe sessão, e cliente da área do cliente também tem sessão.** Rota nova de equipe usa `requireTeam()` ou `requirePermission()` (`app/_shared/lib/permissions-server.ts`, que aplica a trava de IP). Elas **lançam** erro: envolva em try/catch e devolva 403. `getSessionPermissions()` sozinho não aplica a trava. Hoje **nenhuma** rota de `app/api` usa `requireTeam`/`requirePermission` (só server actions): ~36 das 74 rotas não checam nada além do middleware e 6 usam `getSessionPermissions` (sem trava de IP).
 - **`verifyWebhookSecret` fica aberto se a env não existir.** Motivo: compatibilidade. Defina a env antes de confiar.
 - **`rateLimit`, o cache de credenciais WhatsApp (60s), o de permissões (30s), o de destinatários do relay (60s, `whatsappRecipients`) e o do setor do autor do log (5 min) vivem em memória por instância.** Motivo: nada é compartilhado entre lambdas; o limite real é maior e `invalidateNumberCache`/troca de permissão só valem na instância que a executou.
-- **`reportCriticalError` só faz `console.error`** (o Discord foi removido). Motivo: o log da Vercel é efêmero, não espere alerta.
+- **`reportCriticalError` grava no banco, mas não alerta ninguém** (o Discord foi removido): `console.error` + Log `critical_error`, consultado à mão. Motivo: o log da Vercel é efêmero e sem o registro as falhas fora do `try` do bot não deixavam causa. Ele nunca lança e passa pelo `createLog` (banco fora do ar = só o console). Não ponha texto do cliente no `metadata`; a mensagem do erro já vai cortada em 500 caracteres (erro do Prisma traz os dados da chamada).
 - **Toda chamada nova de IA grava `metadata.usage`** (`{model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens}`) no `Log`. Motivo: o custo é somado por `jsonb_exists(metadata,'usage')` e sem isso a chamada some do painel.
 - **`/api/whatsapp/brain-prompt` não pode ter nada volátil em `rendered`.** Motivo: o cache de prompt da Anthropic é por prefixo byte a byte.
 - **Microserviço fora do ar degrada, não quebra:** o relay cai para polling e o bot joga a conversa na fila humana. Mudança de comportamento neles exige deploy no Railway; mexer só no Next não basta.

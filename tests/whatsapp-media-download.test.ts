@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Download de mídia recebida (downloadMediaToS3): roda dentro do webhook
 // (maxDuration 120, bot inline), então cada fetch da Meta tem teto — 10 s na
 // metadata e 30 s no binário — e a falha volta null (a mensagem é gravada sem
-// anexo) passando pelo reportCriticalError. Sem rede, S3 nem banco: tudo
+// anexo) passando pelo reportCriticalError (com o contactId, que liga o Log
+// critical_error à conversa). Sem rede, S3 nem banco: tudo
 // mockado; o AbortSignal.timeout é interceptado para disparar o "timeout" na
 // hora, sem esperar 10/30 s de relógio.
 
@@ -111,7 +112,8 @@ describe("downloadMediaToS3", () => {
 
     await expect(pending).resolves.toBeNull();
     expect(mocks.s3Send).not.toHaveBeenCalled();
-    expect(mocks.reportCriticalError).toHaveBeenCalledWith("whatsapp.downloadMediaToS3 m3", expect.anything());
+    // O contato vai junto: o Log critical_error fica ligado à conversa.
+    expect(mocks.reportCriticalError).toHaveBeenCalledWith("whatsapp.downloadMediaToS3 m3", expect.anything(), { contactId: "c1" });
   });
 
   it("número sem credencial (inativo): null sem chamar a Meta nem cair no default", async () => {

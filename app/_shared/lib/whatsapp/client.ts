@@ -675,7 +675,7 @@ export async function downloadMediaToS3(
   } catch (err) {
     // Timeout chega aqui como TimeoutError (AbortSignal). Registro central de
     // erro engolido de propósito: a mensagem ainda é gravada, só sem anexo.
-    await reportCriticalError(`whatsapp.downloadMediaToS3 ${mediaId}`, err);
+    await reportCriticalError(`whatsapp.downloadMediaToS3 ${mediaId}`, err, { contactId });
     return null;
   }
 }

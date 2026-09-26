@@ -48,6 +48,9 @@ const PURGEABLE_LOG_ACTIONS = [
   "wa_note",
   // Telemetria de anexo perdido no webhook: só é contada por período.
   "wa_media_fail",
+  // Diagnóstico de erro engolido (reportCriticalError): serve para investigar
+  // falha recente; nenhuma tela o lê.
+  "critical_error",
 ];
 
 export interface RetentionResult {

@@ -152,17 +152,33 @@ export async function POST(req: NextRequest) {
             await reportCriticalError("WHATSAPP WEBHOOK ingest", err);
           }
         }
+        // Falha de um contato não derruba o bot dos outros, a ficha nem os
+        // status do lote, e fica gravada com o contato (Log critical_error).
+        // Antes subia para o catch geral abaixo, que não sabia de quem era: a
+        // conversa ficava órfã no bot sem causa investigável.
         for (const result of botCandidates.values()) {
-          await handleIncomingWhatsApp(result);
+          try {
+            await handleIncomingWhatsApp(result);
+          } catch (err) {
+            await reportCriticalError("WHATSAPP BOT", err, { contactId: result.contactId });
+          }
         }
         // Ficha automática: roda DEPOIS do bot (a transcrição do áudio já
         // existe) e é best-effort — nunca quebra o webhook.
         for (const contactId of fichaCandidates) {
-          await autoFillClientInfo(contactId);
+          try {
+            await autoFillClientInfo(contactId);
+          } catch (err) {
+            await reportCriticalError("WHATSAPP FICHA IA", err, { contactId });
+          }
         }
 
         for (const st of value.statuses ?? []) {
-          await applyStatusUpdate(st);
+          try {
+            await applyStatusUpdate(st);
+          } catch (err) {
+            await reportCriticalError("WHATSAPP STATUS", err, { metadata: { waMessageId: st.id, status: st.status } });
+          }
         }
       }
     }
