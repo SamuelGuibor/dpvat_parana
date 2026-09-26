@@ -16,6 +16,7 @@ import {
 } from '@/app/_shared/utils/whatsapp-inbox';
 import { CLOSE_CATEGORY_LABELS, CLOSE_CATEGORY_OPTIONS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
+import { STICKY_OWNER_ENABLED } from '@/app/_shared/lib/whatsapp/ownership';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
 // Fila e atribuição de conversas de WhatsApp (estilo Botconversa):
@@ -592,7 +593,17 @@ export async function returnConversationToBot(conversationId: string): Promise<P
     // devolução ao bot, por cima das mensagens do atendente (caso Víctor,
     // 28/07 — 2ª despedida no mesmo dia). Devolveu ao bot = ciclo de silêncio
     // recomeça do zero.
-    data: { status: 'bot', assignedToId: null, queuedAt: null, queueAlertAt: null, botNudge30At: null, botNudge24At: null },
+    //
+    // assignedToId FICA (dono pegajoso, EF-1 da auditoria de 24/09/2026):
+    // antes o devolver zerava o dono, e quando o cliente voltava e o bot
+    // transferia, a conversa caía na Fila sem dono e outro atendente pegava.
+    // Agora ela segue 'bot' com o selo do atendente, e handoff/qualify levam de
+    // volta para ele (ownership.ts). WA_HUMAN_HOLD_DAYS=0 volta a soltar.
+    data: {
+      status: 'bot',
+      ...(STICKY_OWNER_ENABLED ? {} : { assignedToId: null }),
+      queuedAt: null, queueAlertAt: null, botNudge30At: null, botNudge24At: null,
+    },
   });
   if (before) {
     const at = new Date();
@@ -607,7 +618,7 @@ export async function returnConversationToBot(conversationId: string): Promise<P
       at,
     }));
   }
-  return returnToBotPatch();
+  return returnToBotPatch({ keepOwner: STICKY_OWNER_ENABLED });
 }
 
 /**

@@ -13,6 +13,8 @@ import {
 import {
   classifyLastMessage, isBotDecisionLog, isClosingAck, isEnvSwitchOn, orphanReason,
 } from '@/app/_shared/utils/wa-silence';
+import { holdDaysLabel, humanLastVerdict } from '@/app/_shared/utils/ownership';
+import { HUMAN_HOLD_MS } from '@/app/_shared/lib/whatsapp/ownership';
 import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
 
 // FASES do cron de WhatsApp (07/08/2026) — o antigo /api/whatsapp/cron fazia
@@ -585,6 +587,62 @@ async function enterStandby(
   return count > 0;
 }
 
+// ---- ÚLTIMA FALA HUMANA (dono pegajoso, EF-1) --------------------------------
+// Conversa em 'bot' cuja última fala não interna é de atendente (o atendente
+// devolveu ao bot, ou escreveu e o cliente ainda não respondeu). Antes ela ia
+// para standby/encerrada ~106 min depois da última mensagem dele, e o cliente
+// que respondia no dia seguinte caía no bot sem contexto. Agora fica parada no
+// 'bot' durante a janela do dono pegajoso (WA_HUMAN_HOLD_DAYS, 7 dias) e, depois
+// dela, é encerrada direto, SEM standby: aos 7 dias a janela de 24 h da Meta
+// fechou há muito, e a recuperação sairia pelo template MARKETING a contato
+// frio (causa nº 1 do aviso de spam de 24/08). Aperta o anti-spam, não afrouxa.
+//
+// ARMADILHA: "parar" grava botNudge30At NO FUTURO (última fala humana + 7
+// dias). O campo deixa de ser "quando o silêncio foi visto" e vira "quando
+// reavaliar": a consulta do passo 2 (botNudge30At <= agora − 60 min) só volta
+// a pegar a conversa depois da janela. Sem isso ela voltava em toda rodada e
+// as 25 vagas da consulta enchiam de conversa parada (fome das outras). Só este
+// cron lê o campo; a ingestão (mensagem do cliente) e o returnConversationToBot
+// zeram o marcador, e o assumir tira a conversa do 'bot'. Leitor novo de
+// botNudge30At precisa saber disso (ou virar coluna própria, com migration).
+async function settleHumanLast(
+  conv: {
+    id: string;
+    contactId: string;
+    qualified: boolean | null;
+    closeCategory: string | null;
+    botState: string | null;
+    botNudge30At: Date | null;
+    contact: { name: string | null };
+  },
+  lastHumanAt: Date,
+  now: number,
+): Promise<'held' | 'closed' | 'changed' | 'legacy'> {
+  const verdict = humanLastVerdict(lastHumanAt.getTime(), now, HUMAN_HOLD_MS);
+  if (verdict.kind === 'legacy') return 'legacy';
+  // Mesmo guard do encerramento: mensagem nova do cliente zera o marcador e o
+  // UPDATE não pega; o bot da mensagem nova decide.
+  const guard: CloseGuard = { fromStatus: 'bot', botNudge30At: conv.botNudge30At };
+  if (verdict.kind === 'hold') {
+    const { count } = await db.whatsAppConversation.updateMany({
+      where: guardWhere(conv, guard),
+      data: { botNudge30At: new Date(verdict.untilMs) },
+    });
+    return count > 0 ? 'held' : 'changed';
+  }
+  if (!(await finalizeClose(conv, { ...guard, closeCategory: silentCloseCategory(conv) }))) return 'changed';
+  await recordCodeIntervention({
+    contactId: conv.contactId,
+    contactName: conv.contact.name,
+    botState: conv.botState,
+    action: 'recuperacao_bloqueada',
+    detail:
+      `Conversa encerrada sem entrar no ciclo de recuperação: última fala humana há mais de ${holdDaysLabel(HUMAN_HOLD_MS)} ` +
+      '(a janela de 24 h da Meta já fechou; a provocação sairia por template MARKETING).',
+  });
+  return 'closed';
+}
+
 /**
  * Provocação CONTEXTUAL via IA + pendência do template final; falha cai em
  * textos fixos derivados do botState.
@@ -713,7 +771,8 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       }
       // Só cutuca se a ÚLTIMA mensagem foi do bot (pergunta sem resposta).
       // Fecho do cliente, atendente por último ou silêncio escolhido pelo
-      // cérebro só ganham o marcador (e vão para standby/encerradas depois).
+      // cérebro só ganham o marcador (e vão para standby/encerradas depois;
+      // atendente por último fica parado no passo 2, ver settleHumanLast).
       if (!last || kind !== 'bot_asked') {
         await markSilenceSeen(conv);
         return;
@@ -781,7 +840,10 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   }));
 
   // ---- 2. Encerramento por inatividade -------------------------------------
-  // Mesma ordem: quem foi cutucado primeiro se despede primeiro.
+  // Mesma ordem: quem foi cutucado primeiro se despede primeiro. Conversa com
+  // a última fala de atendente dentro da janela do dono pegajoso é "parada"
+  // (botNudge30At no futuro, ver settleHumanLast) e não volta aqui até vencer.
+  let humanHeld = 0;
   const silentAfterNudge = await db.whatsAppConversation.findMany({
     where: {
       ...onlyActive,
@@ -810,6 +872,24 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
           return;
         }
         if (orphan === 'left') return;
+      }
+      // Última fala de atendente: parada no bot durante a janela do dono
+      // pegajoso; depois dela, encerrada direto, sem standby (settleHumanLast).
+      // Interruptor desligado ('legacy') segue o fluxo antigo abaixo.
+      if (kind === 'human_last' && lastMsg) {
+        const settled = await settleHumanLast(conv, lastMsg.createdAt, now);
+        if (settled === 'held') {
+          humanHeld++;
+          return;
+        }
+        if (settled === 'closed') {
+          results.closed++;
+          return;
+        }
+        if (settled === 'changed') {
+          console.log(`[WHATSAPP CRON] ${conv.contactId}: mudou durante a reavaliação (mensagem nova ou atendente) — nada feito.`);
+          return;
+        }
       }
       try {
         // Só se despede se a ÚLTIMA mensagem foi do PRÓPRIO BOT (caso Víctor).
@@ -856,7 +936,8 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   if (pacer.skipped()) console.log(`[WHATSAPP CRON] nudge: ${pacer.skipped()} conversa(s) adiadas pra próxima rodada (fila de envio).`);
   console.log(
     `[WHATSAPP CRON] nudge: ${results.nudged30} cutucada(s), ${results.standby} standby, ${results.closed} encerrada(s), ` +
-    `${results.orphans} órfã(s) para a Fila${ORPHAN_TO_QUEUE ? '' : ' (WA_ORPHAN_TO_QUEUE desligado)'}, ${results.errors} erro(s).`,
+    `${results.orphans} órfã(s) para a Fila${ORPHAN_TO_QUEUE ? '' : ' (WA_ORPHAN_TO_QUEUE desligado)'}, ` +
+    `${humanHeld} parada(s) com o atendente${HUMAN_HOLD_MS > 0 ? '' : ' (WA_HUMAN_HOLD_DAYS desligado)'}, ${results.errors} erro(s).`,
   );
   return results;
 }

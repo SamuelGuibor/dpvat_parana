@@ -8,6 +8,7 @@ import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
 import { recordRecoveryEvent } from "./rule-events";
+import { resolveConversationOwner } from "./ownership";
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
@@ -302,8 +303,13 @@ export async function ingestIncomingMessage(
   }
 
   // Conversa encerrada + cliente mandou mensagem de novo → reabre (volta pro
-  // bot, sem atendente). NÃO reabre se o contato está em opt-out: quem pediu
-  // silêncio não deve voltar a receber respostas automáticas.
+  // bot). NÃO reabre se o contato está em opt-out: quem pediu silêncio não
+  // deve voltar a receber respostas automáticas.
+  //
+  // DONO PEGAJOSO (EF-1, auditoria de 24/09/2026): reabre em 'bot' (o cérebro
+  // responde, nada de pular para 'human'/'queued'), mas com o último atendente
+  // da janela (WA_HUMAN_HOLD_DAYS, 7 dias) gravado como dono. Se o bot
+  // transferir, a conversa volta para ele em vez de cair na Fila sem dono.
   //
   // FICHA COM VALIDADE (25/07/2026): os encerramentos preservam botMemory/
   // botState (antes zeravam — e um "obrigado" pós-despedida reabria a conversa
@@ -336,7 +342,9 @@ export async function ingestIncomingMessage(
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: {
-        status: "bot", assignedToId: null, lastReadAt: null,
+        status: "bot",
+        assignedToId: await resolveConversationOwner(contact.id, conversation.assignedToId),
+        lastReadAt: null,
         // Conversa nova de verdade → ciclo de recuperação zerado.
         recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
         ...(staleContext ? { botMemory: null, botState: null } : {}),
@@ -348,13 +356,16 @@ export async function ingestIncomingMessage(
   // volta pro bot com a ficha intacta e a IA retoma de onde parou. O contador
   // de tentativas NÃO zera — se ele sumir de novo, o ciclo continua da
   // tentativa em que estava (máx. 3 no total). Telemetria: "recovered" com a
-  // tentativa que o trouxe de volta (aba Métricas da Revisão da IA).
+  // tentativa que o trouxe de volta (aba Métricas da Revisão da IA). Dono
+  // pegajoso igual à reabertura de encerrada (último atendente da janela).
   if (conversation.status === "standby" && !contact.optedOut && !wantsOptOut) {
     const rescuedAt = conversation.recoveryAttempts;
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: {
-        status: "bot", assignedToId: null, lastReadAt: null,
+        status: "bot",
+        assignedToId: await resolveConversationOwner(contact.id, conversation.assignedToId),
+        lastReadAt: null,
         recoveryNextAt: null, recoveryOutcome: "recuperado",
       },
     });
@@ -535,9 +546,11 @@ export async function ingestIncomingMessage(
 
 /**
  * Notificação (sino) do "cliente respondeu" — política de destinatário:
- *   - conversa "queued" (ninguém assumiu ainda) → toda a equipe pode pegar,
- *     então TODOS recebem (é a fila de distribuição).
- *   - conversa "human" com dono (assignedToId) → SÓ o dono é avisado.
+ *   - conversa "queued" SEM dono (ninguém assumiu ainda) → toda a equipe pode
+ *     pegar, então TODOS recebem (é a fila de distribuição).
+ *   - conversa "human" ou "queued" com dono (assignedToId) → SÓ o dono é
+ *     avisado. A "queued" com dono é a transferência que voltou para o último
+ *     atendente (dono pegajoso, ownership.ts).
  *   - conversa "bot" → não notifica aqui; se a IA escalar, handoffToQueue/
  *     qualifyToQueue já criam a notificação certa depois de decidir.
  * Debounce leve (3min) por destinatário pra não inundar o sino quando o
@@ -556,7 +569,7 @@ async function notifyIncomingMessage(
     // "human" SEM dono era buraco negro: retornava em silêncio e nem bot nem
     // humano agiam (qualquer limpeza que zere assignedToId mantendo o status
     // prendia a conversa). Agora é tratado como fila: avisa a equipe inteira.
-    const owned = conversation.status === "human" && !!conversation.assignedToId;
+    const owned = (conversation.status === "human" || conversation.status === "queued") && !!conversation.assignedToId;
     const recipientIds = owned
       ? [conversation.assignedToId as string]
       : await whatsappRecipients();
@@ -682,11 +695,17 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
   // Conversa ENCERRADA não volta pra fila: reabrir ticket fechado por causa de
   // status antigo era o que gerava alertas de fila a noite toda.
   const shouldQueue = conversation.status === "bot";
+  // Dono pegajoso: a conversa do bot vai para a fila com o último atendente
+  // (ownership.ts), não sem dono. Fora do 'bot' o dono fica como está.
+  const owner = shouldQueue
+    ? await resolveConversationOwner(contactId, conversation.assignedToId)
+    : conversation.assignedToId;
+  const status = shouldQueue ? "queued" : conversation.status;
   await db.whatsAppConversation.update({
     where: { id: conversation.id },
     data: {
       deliveryAlertAt: new Date(),
-      ...(shouldQueue ? { status: "queued", assignedToId: null, queuedAt: new Date(), queueAlertAt: null } : {}),
+      ...(shouldQueue ? { status: "queued", assignedToId: owner, queuedAt: new Date(), queueAlertAt: null } : {}),
     },
   });
 
@@ -696,10 +715,11 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
     `⚠️ WhatsApp: mensagem para ${label} não foi entregue — ${cause}. ` +
     `Verifique se o número está correto, se o cliente bloqueou nosso contato ou se a janela de 24h expirou.`;
 
-  // Dono do ticket é avisado sozinho; sem dono, a equipe toda (é a fila).
+  // Dono do ticket (atendimento humano ou fila que voltou para ele) é avisado
+  // sozinho; sem dono, a equipe toda (é a fila).
   const recipients =
-    conversation.status === "human" && conversation.assignedToId
-      ? [conversation.assignedToId]
+    (status === "human" || status === "queued") && owner
+      ? [owner]
       : await whatsappRecipients();
   for (const recipientId of recipients) {
     await db.notification.create({

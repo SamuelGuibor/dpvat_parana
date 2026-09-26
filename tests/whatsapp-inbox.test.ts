@@ -333,11 +333,26 @@ describe("patches de assumir / devolver / encerrar", () => {
     expect(out.closeCategory).toBe("perguntas");
   });
 
-  it("devolver ao bot: sai do atendente", () => {
+  it("devolver ao bot: o dono fica (dono pegajoso)", () => {
     const minha = conv({ status: "human", assignedToId: "u1", assignedToName: "Ana" });
     expect(patchConversationRow(minha, returnToBotPatch())).toMatchObject({
+      status: "bot", assignedToId: "u1", assignedToName: "Ana", closeCategoryLabel: null,
+    });
+    expect(returnToBotPatch()).not.toHaveProperty("assignedToId");
+  });
+
+  it("devolver ao bot com o interruptor desligado: sai do atendente, como antes", () => {
+    const minha = conv({ status: "human", assignedToId: "u1", assignedToName: "Ana" });
+    expect(patchConversationRow(minha, returnToBotPatch({ keepOwner: false }))).toMatchObject({
       status: "bot", assignedToId: null, assignedToName: null, closeCategoryLabel: null,
     });
+  });
+
+  it("rollback do devolver volta ao original", () => {
+    const original = conv({ status: "human", assignedToId: "u1", assignedToName: "Ana" });
+    const optimistic = returnToBotPatch();
+    const apos = patchConversationRow(original, optimistic);
+    expect(patchConversationRow(apos, revertPatch(original, optimistic))).toEqual(original);
   });
 
   it("encerrar: qualified segue a categoria (nq_* = não qualificado)", () => {

@@ -15,6 +15,7 @@ import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialo
 import { clientDocumentMediaWhere, docsReceivedSince } from "@/app/_shared/utils/wa-media";
 import { isTerminalBotAction, shouldAbortSend, type SendGuardVerdict } from "@/app/_shared/utils/bot-timing";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
+import { findConversationOwner, type ConversationOwner } from "./ownership";
 import {
   broadcastWhatsAppEvent,
   whatsappChannelId,
@@ -517,6 +518,11 @@ export interface QueueOpts {
  * interna e sem notificação. Caso de 11/09 18:47: o atendente assumiu enquanto
  * o cérebro pensava e, ~1 min depois, o timeout devolveu a conversa à Fila sem
  * dono (assignedToId null) e com nota de "timeout".
+ *
+ * DONO PEGAJOSO (EF-1): a fila guarda o último atendente (o atribuído, se ainda
+ * é da equipe, ou o autor da última mensagem humana dos 7 dias) e só ele é
+ * notificado; sem dono, a equipe toda, como antes. Continua 'queued' (queuedAt,
+ * SLA e métricas de fila iguais): é roteamento, a decisão segue do cérebro.
  */
 export async function handoffToQueue(
   contactId: string,
@@ -525,21 +531,23 @@ export async function handoffToQueue(
   closeCategory: string = "transferido",
   opts: QueueOpts = {},
 ): Promise<boolean> {
+  const owner = await queueOwner(contactId);
   const { count } = await db.whatsAppConversation.updateMany({
     where: { contactId, ...(opts.onlyIfStatus ? { status: opts.onlyIfStatus } : {}) },
     // queuedAt alimenta o SLA da fila (cron alerta se ninguém assumir).
-    data: { status: "queued", assignedToId: null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null },
+    data: { status: "queued", assignedToId: owner?.id ?? null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null },
   });
   if (count === 0) {
     console.log(`[WHATSAPP BOT] ${contactId}: transferência para a fila ignorada — a conversa já não está com o bot (${reason}).`);
     return false;
   }
 
-  // Motivo da transferência visível NA THREAD (nota interna, só equipe).
-  await postInternalNote(contactId, `🤖 Transferido para atendimento humano — ${reason}`);
+  // Motivo da transferência visível NA THREAD (nota interna, só equipe; o
+  // histórico do cérebro filtra internal, então o nome não chega à IA).
+  await postInternalNote(contactId, `🤖 Transferido para atendimento humano — ${reason}${ownerSuffix(owner)}`);
 
   try {
-    const recipients = await whatsappRecipients();
+    const recipients = owner ? [owner.id] : await whatsappRecipients();
     for (const id of recipients) {
       await db.notification.create({
         data: {
@@ -547,7 +555,9 @@ export async function handoffToQueue(
           authorId: "whatsapp-bot",
           authorName: "🤖 Bot WhatsApp",
           targetName: contactLabel,
-          message: `WhatsApp: ${contactLabel} aguardando atendente (${reason})`,
+          message: owner
+            ? `WhatsApp: ${contactLabel} voltou para você, aguardando atendimento (${reason})`
+            : `WhatsApp: ${contactLabel} aguardando atendente (${reason})`,
           // Clicar na notificação abre a conversa direto no inbox.
           contactId,
         },
@@ -557,6 +567,28 @@ export async function handoffToQueue(
     console.error("[WHATSAPP BOT] Falha ao criar notificações de handoff:", err);
   }
   return true;
+}
+
+/**
+ * Dono que a conversa leva para a fila (ownership.ts). `knownAssignee` = o
+ * assignedToId que o chamador já leu (undefined = ler aqui). Falha na busca não
+ * impede a transferência: cai na fila sem dono, como antes.
+ */
+async function queueOwner(contactId: string, knownAssignee?: string | null): Promise<ConversationOwner | null> {
+  try {
+    const assignee = knownAssignee !== undefined
+      ? knownAssignee
+      : (await db.whatsAppConversation.findUnique({ where: { contactId }, select: { assignedToId: true } }))?.assignedToId;
+    return await findConversationOwner(contactId, assignee);
+  } catch (err) {
+    await reportCriticalError("WHATSAPP BOT dono da fila", err, { contactId });
+    return null;
+  }
+}
+
+/** " — volta para Ana" na nota interna da fila; vazio sem dono. */
+function ownerSuffix(owner: ConversationOwner | null): string {
+  return owner ? ` — volta para ${owner.name?.trim() || "o último atendente"}` : "";
 }
 
 /** Garante a tag "Qualificada" e anexa à conversa. */
@@ -581,6 +613,9 @@ async function tagAsQualified(conversationId: string): Promise<void> {
  * atendente que assumiu nesse meio tempo perdia a conversa de volta para a
  * Fila, o mesmo bug do handoff. A assinatura (signature/core.ts) chama sem
  * opts, com o comportamento de sempre.
+ *
+ * Dono pegajoso igual ao handoffToQueue: a fila guarda o último atendente e
+ * só ele recebe o aviso de lead qualificado; sem dono, a equipe toda.
  */
 export async function qualifyToQueue(
   contactId: string,
@@ -593,14 +628,15 @@ export async function qualifyToQueue(
   // inédito e não redispara o evento pra Meta — só garante que voltou pra fila.
   const existing = await db.whatsAppConversation.findUnique({
     where: { contactId },
-    select: { id: true, qualified: true },
+    select: { id: true, qualified: true, assignedToId: true },
   });
   if (!existing) return false;
   const alreadyQualified = existing.qualified === true;
+  const owner = await queueOwner(contactId, existing.assignedToId);
 
   const { count } = await db.whatsAppConversation.updateMany({
     where: { contactId, ...(opts.onlyIfStatus ? { status: opts.onlyIfStatus } : {}) },
-    data: { status: "queued", assignedToId: null, qualified: true, botFailCount: 0, closeCategory: "qualificado", queuedAt: new Date(), queueAlertAt: null },
+    data: { status: "queued", assignedToId: owner?.id ?? null, qualified: true, botFailCount: 0, closeCategory: "qualificado", queuedAt: new Date(), queueAlertAt: null },
   });
   if (count === 0) {
     console.log(`[WHATSAPP BOT] ${contactId}: qualificação sem ida à fila — a conversa já não está com o bot (${reason}).`);
@@ -609,12 +645,12 @@ export async function qualifyToQueue(
   await tagAsQualified(existing.id);
 
   if (alreadyQualified) {
-    await postInternalNote(contactId, `🤖 Lead qualificado retornou ao atendimento — ${reason}`);
+    await postInternalNote(contactId, `🤖 Lead qualificado retornou ao atendimento — ${reason}${ownerSuffix(owner)}`);
     return true;
   }
 
-  await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}`);
-  await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId);
+  await postInternalNote(contactId, `🤖 Lead qualificado pela IA — ${reason}${ownerSuffix(owner)}`);
+  await handoffNotifyOnly(contactLabel, `LEAD QUALIFICADO ✅ — ${reason}`, contactId, owner ? [owner.id] : undefined);
   // Lead qualificado SEM card ainda: cria a tarefa na caixa de Menções e
   // Tarefas da equipe — criar o card e enviar o contrato pra assinatura não
   // pode depender de alguém lembrar do aviso volátil do sino.
@@ -744,10 +780,18 @@ async function sendMutedFallback(
   });
 }
 
-/** Só as notificações do handoff (sem mexer no status — já foi atualizado). */
-async function handoffNotifyOnly(contactLabel: string, reason: string, contactId?: string): Promise<void> {
+/**
+ * Só as notificações do handoff (sem mexer no status — já foi atualizado).
+ * `onlyTo` = o dono da fila (dono pegajoso); omitido = a equipe toda.
+ */
+async function handoffNotifyOnly(
+  contactLabel: string,
+  reason: string,
+  contactId?: string,
+  onlyTo?: string[],
+): Promise<void> {
   try {
-    const recipients = await whatsappRecipients();
+    const recipients = onlyTo?.length ? onlyTo : await whatsappRecipients();
     for (const id of recipients) {
       await db.notification.create({
         data: {

@@ -182,9 +182,16 @@ export function assumePatch(me: Attendant): ConversationChanges {
   return { status: 'human', assignedToId: me.id, assignedToName: me.name, closeCategoryLabel: null };
 }
 
-/** Devolver ao bot: sai do atendente. */
-export function returnToBotPatch(): ConversationChanges {
-  return { status: 'bot', assignedToId: null, assignedToName: null, closeCategoryLabel: null };
+/**
+ * Devolver ao bot. O dono FICA (dono pegajoso, EF-1): a conversa continua com
+ * o selo do atendente na pasta Bot e em "Só minhas", e se o bot transferir ela
+ * volta para ele. `keepOwner: false` = interruptor WA_HUMAN_HOLD_DAYS desligado
+ * no servidor (solta o atendente, como antes); o otimista do clique usa o
+ * padrão e a resposta da action corrige.
+ */
+export function returnToBotPatch(opts: { keepOwner?: boolean } = {}): ConversationChanges {
+  const patch: ConversationChanges = { status: 'bot', closeCategoryLabel: null };
+  return opts.keepOwner === false ? { ...patch, assignedToId: null, assignedToName: null } : patch;
 }
 
 /**
