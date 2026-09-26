@@ -6,13 +6,13 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 | # | Arquivo | Linhas | Mapa de domínio |
 |---|---|---|---|
-| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 3659 | whatsapp-bot |
+| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 3660 | whatsapp-bot |
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
 | 5 | `app/_shared/lib/whatsapp/bot.ts` | 1970 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
-| 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1279 | whatsapp-bot |
+| 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1282 | whatsapp-bot |
 | 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1475 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
@@ -21,10 +21,10 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 ---
 
-## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 3659 linhas
+## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 3660 linhas
 Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com envio otimista/mídia/reações, coluna Copiloto e CardDialog do cliente.
 
-- **L1-95** imports (DTO da lista por `import type` de `app/_shared/lib/whatsapp/inbox-types.ts`; `mergeConversationDelta` de `app/_shared/utils/inbox-delta.ts`; `HttpError`/`describeFetchError` de `app/_shared/utils/fetch-json.ts`; `fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`readPatch`/`manualUnreadPatch`/`assumePatch`/`returnToBotPatch`/`closePatch`/`sentMessagePatch`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`; `toThreadMessage` de `app/_shared/utils/thread-window.ts`; `decideThreadScroll`/`tailAdvanced`/`countNewBelow` de `app/_shared/utils/thread-scroll.ts`; `restoreInboxView`/`saveInboxViewState`/`pruneTagFilter` de `app/_shared/utils/inbox-view-state.ts`; `closedFolderOf` de `app/_shared/utils/inbox-folders.ts`; filtros no banco (`hasServerFilter`, `inboxFilterQuery`, `matchesInboxFilter`, `filterResultChanged`, `mergeLiveIntoFiltered`, `appendFilterPage`, `mergeRefreshedFirstPage`) de `app/_shared/utils/inbox-filter.ts`; `pruneColumnFilter` de `inbox-view-state.ts`; `useWaNumberOptions`/`useInboxColumns`/`fetchInboxFilter`/`fetchInboxConversation` de `use-whatsapp.ts`; `useCopilot` de `use-copilot.ts`; `flushSync` de `react-dom`; import de efeito colateral de `app/_actions/whatsapp/assist.ts`, só por 1 deploy, para as actions antigas da IA do Copiloto continuarem no manifesto).
+- **L1-95** imports (DTO da lista por `import type` de `app/_shared/lib/whatsapp/inbox-types.ts`; `mergeConversationDelta` de `app/_shared/utils/inbox-delta.ts`; `HttpError`/`describeFetchError` de `app/_shared/utils/fetch-json.ts`; `mediaDisplayName` vem de `app/_shared/utils/media-name.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`readPatch`/`manualUnreadPatch`/`assumePatch`/`returnToBotPatch`/`closePatch`/`sentMessagePatch`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`; `toThreadMessage` de `app/_shared/utils/thread-window.ts`; `decideThreadScroll`/`tailAdvanced`/`countNewBelow` de `app/_shared/utils/thread-scroll.ts`; `restoreInboxView`/`saveInboxViewState`/`pruneTagFilter` de `app/_shared/utils/inbox-view-state.ts`; `closedFolderOf` de `app/_shared/utils/inbox-folders.ts`; filtros no banco (`hasServerFilter`, `inboxFilterQuery`, `matchesInboxFilter`, `filterResultChanged`, `mergeLiveIntoFiltered`, `appendFilterPage`, `mergeRefreshedFirstPage`) de `app/_shared/utils/inbox-filter.ts`; `pruneColumnFilter` de `inbox-view-state.ts`; `useWaNumberOptions`/`useInboxColumns`/`fetchInboxFilter`/`fetchInboxConversation` de `use-whatsapp.ts`; `useCopilot` de `use-copilot.ts`; `flushSync` de `react-dom`; import de efeito colateral de `app/_actions/whatsapp/assist.ts`, só por 1 deploy, para as actions antigas da IA do Copiloto continuarem no manifesto).
 - **L96-210** helpers de módulo: `WINDOW_24H_MS`, `INBOX_SUPPORT_SWR` (opções SWR de tags/total da agenda), `INBOX_VIEW_SAVE_DEBOUNCE_MS`, `FILTER_DEBOUNCE_MS`/`FILTER_REFRESH_MIN_MS` (filtros no banco), `NO_WA_NUMBERS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
 - **L211-2655 `WhatsAppInbox()`** (componente principal):
   - L211-387 estado + filtros (`me` = id/nome dos patches locais): lista por delta (`useWhatsAppConversations` com `onDelta` → `deltaListenerRef`; `total`, `reloadAll`, `holdConversation`), `loaded`/`isLoading`/`error`/`syncError`/`retrySync` da lista, termo da busca (`search`), tags por SWR `wa-tags` (`allTags` undefined = carregando, `tagsFailed`, `reloadTags` = `mutateTags`, `pruneTagFilter`), data de entrada (`applyDatePreset`, `applyCustomRange`), coluna do Kanban pelo id da Label (`useInboxColumns`, `pruneColumnFilter`, `columnName`), leitura/fila (`changeReadFilter`), número (`useWaNumberOptions`, restauração do `wa-number-filter`, `changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
@@ -42,8 +42,8 @@ Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com e
 - **L2895-2944** estados de carga: `ConversationListSkeleton` (8 linhas `animate-pulse`), `TagMenuStatus` (carregando / erro com "Tentar novamente" / nenhuma tag, nos dois menus de tag).
 - **L2945-3117** `ConversationGroup` (item/seção da lista).
 - **L3118-3323** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
-- **L3324-3635** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`; `handleTranscribe` por POST `/api/whatsapp/assist/transcribe`).
-- **L3636-3659** `MsgAction`, `HeaderButton`.
+- **L3324-3636** mídia: `WaMediaBubble` (nome legível por `mediaDisplayName`, o mesmo da rota; `useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`; `handleTranscribe` por POST `/api/whatsapp/assist/transcribe`).
+- **L3637-3660** `MsgAction`, `HeaderButton`.
 
 ## 2. `app/nova-dash/KanbanBoard.tsx` — 2407 linhas
 Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, CRUD de etiquetas, arquivar/mover/excluir.
@@ -121,15 +121,15 @@ Dashboard "Fluxo do Kanban": 7 visões (tempo, destino, retrabalho, descarte, ci
 - **L893-1208** `buildView` (analytics → dados do painel): `tempo` L929, `destino` L969, `retrabalho` L998, `descarte` L1046, `ciclo` L1083, `throughput` L1131, `hospital` L1162; `deltaSub` L911.
 - **L1209-1263** `HospitalTable`.
 
-## 7. `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` — 1279 linhas
+## 7. `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` — 1282 linhas
 Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (dados do cliente editáveis + IA), Notas internas com @menção e Arquivos da ficha.
 
-- **L1-77** imports (tipos da ficha por `import type` de `copilot-types.ts`; `useCopilot` de `use-copilot.ts`; `fileNameFromKey` de `s3-keys.ts`; `useMediaUrl`/`seedMediaUrl`/`getMediaUrl` de `media-url-cache.ts`), `CopilotTab`, `mediaIcon`, `previewKind`, `timeStamp`, `Props`.
+- **L1-77** imports (tipos da ficha por `import type` de `copilot-types.ts`; `useCopilot` de `use-copilot.ts`; `mediaDisplayName` de `media-name.ts`; `useMediaUrl`/`seedMediaUrl`/`getMediaUrl` de `media-url-cache.ts`), `CopilotTab`, `mediaIcon`, `previewKind`, `timeStamp`, `Props`.
 - **L78-573 `CopilotPanel`** (export): ficha + documentos por `useCopilot` (escrita por `setCopilotDocuments`/`setCopilotClientInfo` com o contactId explícito), `handleSummarize`, `handleSuggest`, `handleFillFichaAI` (IA por POST `/api/whatsapp/assist/<op>`; resposta de outra conversa não entra na aberta: `activeContactRef`), `useSuggestionInComposer`, `handoffNote`, checklist, notas + `handleSaveNote`, `mediaMessages`, `handleAttach`; JSX por aba — copiloto L297, ficha L488, notas L505, arquivos L557.
 - **L574-859** `FichaTab`: `handleUploadDocs`, `setField`, selo IA (`byAi`), `handleCepChange` (ViaCEP), validação de CPF, `handleSave`, `handleCreateCard`, render L693 ("Carregando ficha…" ou, com `loadError`, o motivo + "Tentar de novo").
-- **L860-1003** `ArquivosTab`: `handlePreview` (URL assinada da lista, action só sem ela), `handleDownload`, `handleRename`, `handleDelete`.
-- **L1004-1150** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
-- **L1151-1279** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
+- **L860-1006** `ArquivosTab` (lista "ainda não anexada" com o nome de `mediaDisplayName`): `handlePreview` (URL assinada da lista, action só sem ela), `handleDownload`, `handleRename`, `handleDelete`.
+- **L1007-1153** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
+- **L1154-1282** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
 
 ## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1475 linhas
 Crons do WhatsApp em 3 fases: nudge/encerramento por silêncio, recuperação standby e SLA (fila, humano, entrega travada, cards estourados, assinatura).
@@ -183,7 +183,7 @@ PDF da assinatura: gera o PDF a partir do .docx (via docx-converter), acha as â
 ## Backlog de quebra (sugestões, não executadas)
 | Arquivo | Como dividir |
 |---|---|
-| `WhatsAppInbox.tsx` | Extrair `ConversationList` (L1537-2174 + filtros no banco L479-618 e derivações L1001-1160 como hook `useInboxFilters`), `ThreadPane` (L2175-2591 + envio otimista num hook `useOptimisticSend`) e mover bolhas/diálogos (L2721-3635) para `inbox/bubbles.tsx` e `inbox/dialogs.tsx`. |
+| `WhatsAppInbox.tsx` | Extrair `ConversationList` (L1537-2174 + filtros no banco L479-618 e derivações L1001-1160 como hook `useInboxFilters`), `ThreadPane` (L2175-2591 + envio otimista num hook `useOptimisticSend`) e mover bolhas/diálogos (L2721-3636) para `inbox/bubbles.tsx` e `inbox/dialogs.tsx`. |
 | `KanbanBoard.tsx` | Mover tipos/`services` para `kanban/types.ts`, `DraggableCard` e `DroppableColumn` para arquivos próprios, e sincronização (`fetchData` + polling + versão) para um hook `useBoardSync`. |
 | `signature/core.ts` | Separar por porta/etapa: `validation.ts` (campos, CPF, CEP, rua), `issue.ts` (gerar documento/link), `client-reply.ts` (coleta + confirmação), `manual.ts` (Porta 2), `post-sign.ts` + `reminders.ts`. |
 | `AutomationsPanel.tsx` | Tirar `ActionRow` para `automations/ActionRow.tsx` com um subcomponente por tipo de ação, e constantes de campos/operadores para `automations/fields.ts`. |

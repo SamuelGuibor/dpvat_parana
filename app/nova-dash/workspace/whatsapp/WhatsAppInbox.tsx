@@ -88,7 +88,7 @@ import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
 import { brDayKey, brLabelFromKey } from '@/app/_shared/utils/date-br';
-import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 import { getMediaUrl, useMediaUrl } from './media-url-cache';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -3324,9 +3324,10 @@ function ThreadMessageRow({
 function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessage; mine: boolean; onAttachToCard?: () => void }) {
   const mediaKey = msg.mediaKey as string;
   const mediaType = msg.mediaType;
-  const docName = fileNameFromKey(mediaKey);
-  // Mesmo nome que a rota usa ao assinar (fileNameFromKey): a URL do servidor
-  // e a do fallback caem na mesma entrada do cache.
+  // Nome legível ("Foto 24-09-2026 14h32m05.jpeg" no lugar de "midia.jpeg").
+  // É o mesmo que a rota da thread usa ao assinar: a URL do servidor e a do
+  // fallback caem na mesma entrada do cache.
+  const docName = mediaDisplayName({ key: mediaKey, mediaType, createdAt: msg.createdAt });
   const { url, failed, onError, retry } = useMediaUrl(mediaKey, msg.mediaUrl, msg.mediaUrlExpiresAt, { fileName: docName });
   const isTemp = msg.id.startsWith('temp-');
 

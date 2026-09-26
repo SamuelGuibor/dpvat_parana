@@ -17,7 +17,7 @@ import {
 } from '@/app/_shared/lib/whatsapp/service';
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
-import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -465,10 +465,14 @@ export async function sendWhatsAppMedia({
   }));
 
   // A bolha que substitui a otimista já nasce com o link, assinado IGUAL à
-  // rota da thread (inline + fileNameFromKey, janela estável de 30 min): sem
-  // isto ela cairia no fallback (uma server action por anexo) e trocaria de
-  // src quando o poll trouxesse a URL da rota. HMAC local, sem ida à rede.
-  const signed = await trySignGetUrl(key, { inline: true, fileName: fileNameFromKey(key) });
+  // rota da thread (inline + mediaDisplayName com o createdAt gravado, janela
+  // estável de 30 min): sem isto ela cairia no fallback (uma server action por
+  // anexo) e trocaria de src quando o poll trouxesse a URL da rota. HMAC
+  // local, sem ida à rede.
+  const signed = await trySignGetUrl(key, {
+    inline: true,
+    fileName: mediaDisplayName({ key, mediaType: mimeType, createdAt: dto.createdAt }),
+  });
   return { ...dto, mediaUrl: signed?.url ?? null, mediaUrlExpiresAt: signed?.expiresAt ?? null };
 }
 

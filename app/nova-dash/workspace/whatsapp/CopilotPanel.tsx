@@ -25,7 +25,7 @@ import { useCopilot } from '@/app/_shared/hooks/use-copilot';
 import { describeFetchError } from '@/app/_shared/utils/fetch-json';
 import { sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
-import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 import { getMediaUrl, seedMediaUrl, useMediaUrl } from './media-url-cache';
 import { maskCpf, isValidCpf, maskCep, formatPhone } from '@/app/_shared/utils/format';
 import { HospitalCombobox } from '@/app/nova-dash/card-dialog/HospitalCombobox';
@@ -962,7 +962,10 @@ function ArquivosTab({
                   <Icon className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold text-gray-700">{fileNameFromKey(key)}</span>
+                  {/* Mesmo nome que o "anexar" grava no card (mediaDisplayName). */}
+                  <span className="block truncate text-xs font-semibold text-gray-700">
+                    {mediaDisplayName({ key, mediaType: m.mediaType, createdAt: m.createdAt })}
+                  </span>
                   <span className="block text-[10px] text-gray-400">
                     {timeStamp(m.createdAt)} · {m.direction === 'in' ? 'do cliente' : 'da equipe'}
                   </span>

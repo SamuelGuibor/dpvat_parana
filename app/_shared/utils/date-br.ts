@@ -197,10 +197,14 @@ export function brDayRangeToInstants(fromKey: string, toKey: string): { gte: Dat
   };
 }
 
-/** Instante → { day: "YYYY-MM-DD", time: "HH:mm" } no fuso de Brasília. */
+/**
+ * Instante → { day: "YYYY-MM-DD", time: "HH:mm", second: "ss" } no fuso de
+ * Brasília. `second` fica à parte para não mudar o `time` de quem já usa (os
+ * campos de hora dos formulários são "HH:mm").
+ */
 export function brDateTimeParts(
   date: Date | string | number = new Date(),
-): { day: string; time: string } {
+): { day: string; time: string; second: string } {
   const p = Object.fromEntries(
     partsFmt.formatToParts(new Date(date)).filter((x) => x.type !== 'literal')
       .map((x) => [x.type, x.value]),
@@ -208,6 +212,7 @@ export function brDateTimeParts(
   return {
     day: `${p.year}-${p.month}-${p.day}`,
     time: `${String(Number(p.hour) % 24).padStart(2, '0')}:${p.minute}`,
+    second: p.second,
   };
 }
 

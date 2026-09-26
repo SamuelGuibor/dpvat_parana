@@ -7,6 +7,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { inferCategory } from '@/app/_shared/lib/document-categories';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
 import { loadClientDocuments } from '@/app/_shared/lib/whatsapp/copilot-data';
 import type { ClientDocumentDTO } from '@/app/_shared/lib/whatsapp/copilot-types';
@@ -108,17 +109,17 @@ export async function attachConversationMediaToCard(messageId: string): Promise<
 
   const msg = await db.whatsAppMessage.findUnique({
     where: { id: messageId },
-    select: { contactId: true, mediaKey: true },
+    select: { contactId: true, mediaKey: true, mediaType: true, createdAt: true },
   });
   if (!msg?.mediaKey) throw new Error('Esta mensagem não tem anexo.');
 
   const contact = await db.whatsAppContact.findUnique({ where: { id: msg.contactId } });
   if (!contact) throw new Error('Contato não encontrado.');
 
-  // Nome amigável a partir da chave S3 (".../{timestamp}-{nome}").
-  const raw = msg.mediaKey.split('/').pop() ?? 'anexo';
-  let name = raw.replace(/^\d{10,}-/, '');
-  try { name = decodeURIComponent(name); } catch { /* mantém como está */ }
+  // Mesmo nome que a bolha e a lista do Copiloto mostram: "midia.jpeg" vira
+  // "Foto 24-09-2026 14h32m05.jpeg"; o nome que o cliente deu ao PDF fica.
+  // A pasta continua saindo do nome (o rótulo padrão cai em OUTROS).
+  const name = mediaDisplayName({ key: msg.mediaKey, mediaType: msg.mediaType, createdAt: msg.createdAt });
 
   if (contact.userId) {
     const dup = await db.document.findFirst({

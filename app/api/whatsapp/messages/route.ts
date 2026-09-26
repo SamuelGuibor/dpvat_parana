@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { noStoreJson, teamRoute } from '@/app/_shared/lib/route-auth';
 import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
-import { fileNameFromKey, isAllowedKeyPrefix } from '@/app/_shared/utils/s3-keys';
+import { isAllowedKeyPrefix } from '@/app/_shared/utils/s3-keys';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 import { ROUTE_FAILURE_MESSAGE } from '@/app/_shared/utils/route-guards';
 
 // Histórico de uma conversa de WhatsApp (também é o polling de fallback do SWR,
@@ -72,14 +73,18 @@ export async function GET(req: NextRequest) {
     const nameById = new Map(authors.map((a) => [a.id, a.name ?? 'Atendente']));
 
     // Assinatura é HMAC local (sem ida à rede): assina tudo em paralelo. O nome
-    // do Content-Disposition é o mesmo que a bolha usa no fallback
-    // (fileNameFromKey), para as duas URLs caírem na mesma entrada do cache do
+    // do Content-Disposition é o mesmo que a bolha mostra e usa no fallback
+    // (mediaDisplayName: "Foto 24-09-2026 14h32m05.jpeg" no lugar de
+    // "midia.jpeg"), para as duas URLs caírem na mesma entrada do cache do
     // navegador (media-url-cache.ts). Mensagem apagada não mostra a mídia.
     const ordered = rows.reverse();
     const signed = await Promise.all(
       ordered.map((m) =>
         m.mediaKey && !m.deletedAt && isAllowedKeyPrefix(m.mediaKey)
-          ? trySignGetUrl(m.mediaKey, { inline: true, fileName: fileNameFromKey(m.mediaKey) })
+          ? trySignGetUrl(m.mediaKey, {
+            inline: true,
+            fileName: mediaDisplayName({ key: m.mediaKey, mediaType: m.mediaType, createdAt: m.createdAt }),
+          })
           : null,
       ),
     );
