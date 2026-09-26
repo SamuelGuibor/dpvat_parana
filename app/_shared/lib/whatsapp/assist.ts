@@ -9,8 +9,8 @@ import { findLinkedCard } from "./bot";
 //   - suggestReplyForContact  → propõe a próxima resposta (humano revisa/envia)
 //   - summarizeConversation   → resumo curto do histórico (vira comentário no card)
 //   - transcribeMessageAudio  → transcreve um áudio da thread (persiste na mensagem)
-// O gasto de tokens vai pro log (wa_suggest / wa_summary) e entra na conta do
-// dashboard "Desempenho do Chatbot".
+// O gasto de tokens vai pro log (wa_suggest / wa_summary / wa_transcribe) e
+// entra na conta do Canto da IA.
 
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, "") ?? "";
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? "";
@@ -260,7 +260,9 @@ export async function transcribeMessageAudio(
     { expiresIn: 600 },
   );
 
-  const out = await callAssist<{ transcript: string }>("/transcribe", {
+  // `usage` (Gemini, modelo com sufixo "-audio") só vem do micro novo; o
+  // antigo manda só o texto e o log fica sem custo, como antes.
+  const out = await callAssist<{ transcript: string; usage?: object | null }>("/transcribe", {
     url,
     mimeType: message.mediaType,
   });
@@ -284,6 +286,7 @@ export async function transcribeMessageAudio(
     contactId: message.contactId,
     contactName: contact?.name,
     contactPhone: contact?.phone,
+    metadata: { usage: out.usage ?? undefined },
   });
 
   return transcript;

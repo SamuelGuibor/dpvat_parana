@@ -31,6 +31,11 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
   // Google (tabela pública do Gemini API, sem cache).
   "gemini-2.5-pro": { input: 1.25, output: 10, label: "Gemini 2.5 Pro" },
   "gemini-2.5-flash-lite": { input: 0.1, output: 0.4, label: "Gemini 2.5 Flash-Lite" },
+  // Transcrição de áudio: o micro grava o modelo com o sufixo "-audio" porque
+  // o Gemini cobra entrada de ÁUDIO mais caro que texto (1,00 × 0,30 por 1M no
+  // 2.5 Flash). Tem que vir ANTES de "gemini-2.5-flash": priceFor casa por
+  // startsWith na ordem das chaves.
+  "gemini-2.5-flash-audio": { input: 1, output: 2.5, label: "Gemini 2.5 Flash (áudio)" },
   "gemini-2.5-flash": { input: 0.3, output: 2.5, label: "Gemini 2.5 Flash" },
   "gemini-2.0-flash-lite": { input: 0.075, output: 0.3, label: "Gemini 2.0 Flash-Lite" },
   "gemini-2.0-flash": { input: 0.1, output: 0.4, label: "Gemini 2.0 Flash" },

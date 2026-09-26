@@ -13,7 +13,13 @@ import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { signUrlFor } from "@/app/_shared/lib/signature/tokens";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import { clientDocumentMediaWhere, docsReceivedSince } from "@/app/_shared/utils/wa-media";
-import { isTerminalBotAction, shouldAbortSend, type SendGuardVerdict } from "@/app/_shared/utils/bot-timing";
+import {
+  BURST_DEBOUNCE_MS, isTerminalBotAction, newerInboundWhere, shouldAbortSend, type SendGuardVerdict,
+} from "@/app/_shared/utils/bot-timing";
+import {
+  discardOutcomeOf, queueEffective, sumUsageByModel, turnTimings,
+  type AiUsage, type DiscardOutcome, type EffectiveOutcome,
+} from "@/app/_shared/utils/bot-telemetry";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
 import { findConversationOwner, type ConversationOwner } from "./ownership";
 import { waAlertRecipients } from "./alert-recipients";
@@ -122,12 +128,8 @@ function brainUrlFor(phone: string): string {
   return CHATBOT_URL;
 }
 
-// Debounce de RAJADA: cliente que digita a mensagem picada em 3-4 balões gera
-// 3-4 webhooks em segundos — sem isso são 3-4 chamadas ao Claude respondendo
-// fora de ordem. Cada invocação espera DEBOUNCE_MS; se nesse meio tempo chegou
-// mensagem MAIS NOVA do cliente, esta invocação desiste (a da mensagem mais
-// recente processa o lote inteiro de uma vez).
-const BURST_DEBOUNCE_MS = 8_000;
+// Debounce de rajada: BURST_DEBOUNCE_MS (bot-timing.ts, 8 s; o webhook usa o
+// mesmo valor para a ficha automática).
 // 45s: o caminho de áudio tem dois saltos (S3 → transcrição Gemini → Claude);
 // 25s era curto demais e derrubava pra fila com "erro no bot" mesmo o cérebro
 // respondendo bem (só que tarde).
@@ -163,13 +165,7 @@ export interface LinkedCard extends ProcessInfo {
   id: string;
 }
 
-interface BotUsage {
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
+type BotUsage = AiUsage;
 
 interface BotDecision {
   reply: string;
@@ -212,6 +208,11 @@ interface BotDecision {
   // WhatsAppMessage.transcript: sem isso o conteúdo do áudio sumia do
   // histórico dos turnos seguintes (a IA via só "[anexo: áudio]").
   transcripts?: { id: string; transcript: string }[] | null;
+  // Tokens da transcrição dos áudios (Gemini), um item por áudio. Separado de
+  // `usage` de propósito: é outro modelo, com outro preço (MODEL_PRICING), e
+  // vira um log wa_transcribe próprio. Micro antigo não manda: fica sem custo,
+  // como antes.
+  transcribeUsage?: BotUsage[] | null;
 }
 
 function sumUsage(a?: BotUsage | null, b?: BotUsage | null): BotUsage | null {
@@ -705,8 +706,10 @@ async function createCardTaskForTeam(contactId: string, contactLabel: string, re
  * chaves do menu "Encerrar" do inbox. Só aceitamos prefixo "nq_" (qualquer
  * outra coisa cai no genérico), pra nunca gravar uma categoria que não seja de
  * não qualificado num encerramento por disqualify.
+ *
+ * Devolve a categoria gravada (vai para o desfecho efetivo do log wa_bot).
  */
-async function disqualifyAndClose(contactId: string, category?: string | null): Promise<void> {
+async function disqualifyAndClose(contactId: string, category?: string | null): Promise<string> {
   const closeCategory = category && category.startsWith("nq_") ? category : "nao_qualificado";
   // Cérebro: snapshot ANTES do update (que zera botMemory/botState logo abaixo).
   await captureConversation(contactId, "bot_disqualify", {
@@ -727,6 +730,7 @@ async function disqualifyAndClose(contactId: string, category?: string | null): 
   // encerramento manual: sem ela o filtro por motivo não trazia o bot.
   await syncCloseTag(conv.id, closeCategory);
   void reportLeadStageToMeta(contactId, "nao_qualificado");
+  return closeCategory;
 }
 
 /**
@@ -774,16 +778,18 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
  * nenhum texto e sem declarar silêncio deliberado (silent) — o cliente acabou
  * de falar e ficaria sem resposta alguma. Envia um fallback mínimo e registra
  * a intervenção em Métricas (kind="code"). Best-effort: falha no envio não
- * pode travar o encerramento que vem em seguida.
+ * pode travar o encerramento que vem em seguida. Devolve se a mensagem saiu
+ * (latência do turno no log wa_bot).
  */
 async function sendMutedFallback(
   contactId: string,
   message: { contactPhone: string; contactName: string | null },
   text: string,
   reason: string,
-): Promise<void> {
+): Promise<boolean> {
+  let sent = false;
   try {
-    await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text));
+    sent = await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text));
   } catch (err) {
     console.error("[WHATSAPP BOT] Fallback anti-mudez não entregue (seguindo com o desfecho):", contactId, err);
   }
@@ -794,6 +800,7 @@ async function sendMutedFallback(
     action: "fallback_texto",
     detail: `Rede de segurança: ${reason} — a IA encerrou sem mensagem e sem silent=true; texto mínimo enviado pelo código.`,
   });
+  return sent;
 }
 
 /**
@@ -834,6 +841,10 @@ async function handoffNotifyOnly(
  * Envia a resposta do bot pro cliente (com delay humanizado opcional) e
  * registra/transmite como as demais mensagens. Exportada também pro cron de
  * silêncio (/api/whatsapp/cron).
+ *
+ * Devolve true só se a mensagem saiu (o 1º envio marca a latência do turno no
+ * log wa_bot); false = barrada em silêncio pelo guard anti-spam abaixo. Falha
+ * da Meta continua lançando. Os chamadores antigos ignoram o retorno.
  */
 export async function sendBotReply(
   contactId: string,
@@ -841,7 +852,7 @@ export async function sendBotReply(
   name: string | null,
   text: string,
   delayMs = 0,
-): Promise<void> {
+): Promise<boolean> {
   // Guard anti-spam (política da Meta):
   // 1. NUNCA responde a quem pediu opt-out.
   // 2. NÃO reenvia uma mensagem idêntica à última enviada nos últimos 10min —
@@ -852,7 +863,7 @@ export async function sendBotReply(
   });
   if (contact?.optedOut) {
     console.warn("[WHATSAPP BOT] Envio bloqueado: contato em opt-out.", contactId);
-    return;
+    return false;
   }
   const lastOut = await db.whatsAppMessage.findFirst({
     where: { contactId, direction: "out", deletedAt: null },
@@ -862,7 +873,7 @@ export async function sendBotReply(
   if (lastOut?.body && lastOut.body.trim() === text.trim()
     && Date.now() - lastOut.createdAt.getTime() < 10 * 60_000) {
     console.warn("[WHATSAPP BOT] Envio bloqueado: mensagem idêntica recente (anti-spam).", contactId);
-    return;
+    return false;
   }
 
   if (delayMs > 0) await sleep(delayMs);
@@ -905,6 +916,7 @@ export async function sendBotReply(
     conversationStatus: conversation.status,
   };
   broadcastWhatsAppEvent(dto);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -979,8 +991,24 @@ async function callBrain(payload: object, baseUrl: string = CHATBOT_URL): Promis
 // Ponto de entrada (chamado pelo webhook quando a conversa está em modo bot)
 // ---------------------------------------------------------------------------
 export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void> {
+  // Relógio do turno ANTES do debounce (os 8 s entram na latência: é o tempo
+  // que o cliente de fato espera). Tempos e desfecho vão no log wa_bot
+  // (bot-telemetry.ts); até 26/09/2026 não existia medida de latência.
+  const startedAt = Date.now();
   const { contactId, message } = ingest;
   const contactLabel = message.contactName ?? `+${message.contactPhone}`;
+  const inboundAt = new Date(message.createdAt).getTime();
+  let brainMs = 0;
+  let firstSentAt: number | null = null;
+  const markSent = (sent: boolean) => {
+    if (sent && firstSentAt === null) firstSentAt = Date.now();
+  };
+  const timings = () => turnTimings({ startedAt, inboundAt, firstSentAt, brainMs, now: Date.now() });
+  // Gasto do Claude neste turno (lookup e retry somados). Fica fora do try
+  // para o catch gravar o que já foi pago quando a falha vem depois do
+  // cérebro (ex.: a Meta recusou o envio); `logged` evita contar 2x. Objeto (e
+  // não `let`) porque a closure `brain` escreve nele.
+  const turnCost: { usage: BotUsage | null; logged: boolean } = { usage: null, logged: false };
 
   // Todo handoff do fluxo do bot é condicional (onlyIfStatus "bot"): se um
   // atendente assumiu a conversa enquanto o bot trabalhava, ela fica com ele.
@@ -998,23 +1026,12 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     markMessageRead(message.waMessageId, true, ingest.numberId).catch(() => {});
   }
 
-  // Desempate determinístico: duas mensagens gravadas no MESMO milissegundo
-  // (dois webhooks concorrentes) não se enxergavam como "mais nova" com o `gt`
-  // estrito — as DUAS invocações prosseguiam e o cliente recebia resposta
-  // dupla. Em empate de createdAt, o maior id (cuid ~monotônico) vence.
-  // Declarada FORA do try porque o catch também a usa; só é chamada dentro
-  // dele (falha de banco aqui cai no handoff, não some no webhook).
+  // Mensagem do cliente mais nova que esta (desempate por id no mesmo ms:
+  // newerInboundWhere). Declarada FORA do try porque o catch também a usa; só
+  // é chamada dentro dele (falha de banco aqui cai no handoff, não some no
+  // webhook).
   const findNewerInbound = () => db.whatsAppMessage.findFirst({
-    where: {
-      contactId,
-      direction: "in",
-      deletedAt: null,
-      id: { not: message.id },
-      OR: [
-        { createdAt: { gt: new Date(message.createdAt) } },
-        { createdAt: new Date(message.createdAt), id: { gt: message.id } },
-      ],
-    },
+    where: newerInboundWhere(contactId, message),
     select: { id: true },
   });
   // A conversa segue com o bot? Um atendente pode assumir ou encerrar a
@@ -1284,13 +1301,26 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     if (brainUrl !== CHATBOT_URL) {
       console.log(`[WHATSAPP BOT] ${message.contactPhone} é número de TESTE → cérebro de staging.`);
     }
-    let decision = await callBrain(basePayload, brainUrl);
+    // Toda chamada ao cérebro passa aqui: soma o tempo (brainMs) e o gasto do
+    // Claude (turnCost) e junta o da transcrição dos áudios. A 2ª chamada
+    // (lookup ou retry de resposta vazia) manda o mesmo mediaList, e o micro
+    // transcreve de novo: cada transcrição é gasto real.
+    const transcribeUsages: BotUsage[] = [];
+    const brain = async (payload: object): Promise<BotDecision> => {
+      const t0 = Date.now();
+      try {
+        const d = await callBrain(payload, brainUrl);
+        turnCost.usage = sumUsage(turnCost.usage, d.usage);
+        if (Array.isArray(d.transcribeUsage)) transcribeUsages.push(...d.transcribeUsage);
+        return d;
+      } finally {
+        brainMs += Date.now() - t0;
+      }
+    };
+    let decision = await brain(basePayload);
     if (decision.action === "lookup" && decision.lookup) {
-      const firstUsage = decision.usage;
       const lookupResult = await runLookup(decision.lookup, contactId, card);
-      decision = await callBrain({ ...basePayload, lookupResult }, brainUrl);
-      // Soma o gasto das duas chamadas ao Claude na métrica de custo.
-      decision = { ...decision, usage: sumUsage(firstUsage, decision.usage) };
+      decision = await brain({ ...basePayload, lookupResult });
       // Segunda passada não pode pedir lookup de novo: rebaixa pra continue.
       if (decision.action === "lookup") decision = { ...decision, action: "continue" };
     }
@@ -1304,7 +1334,6 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       && !decision.reply?.trim() && !decision.replies?.length) {
       console.warn(`[WHATSAPP BOT] ${contactId}: IA devolveu resposta vazia — retry único antes do handoff.`);
       try {
-        const firstUsage = decision.usage;
         // 23/09/2026: o retry não repete a MESMA pergunta — avisa o cérebro do
         // que aconteceu e pede que ELE escolha a saída (responder, silent ou
         // handoff). Antes a 2ª chamada era idêntica à 1ª e, vindo vazia de
@@ -1315,19 +1344,22 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
           "(b) se realmente não há nada a dizer (o cliente só confirmou algo já combinado), use " +
           "silent=true; (c) se o assunto não é seu ou você não tem o contexto, use action=\"handoff\" " +
           "com handoffReason dizendo o motivo real. NUNCA devolva vazio de novo.]";
-        let second = await callBrain({
+        let second = await brain({
           ...basePayload,
           message: `${basePayload.message}
 
 ${emptyNote}`,
-        }, brainUrl);
+        });
         // O retry não repete a consulta intermediária: lookup vira continue.
         if (second.action === "lookup") second = { ...second, action: "continue" };
-        decision = { ...second, usage: sumUsage(firstUsage, second.usage) };
+        decision = second;
       } catch {
         // Mantém a decisão vazia — cai no handoff do default como antes.
       }
     }
+    // O gasto das chamadas ao Claude (lookup e retry inclusos) vai inteiro
+    // na métrica de custo do log desta decisão.
+    decision = { ...decision, usage: turnCost.usage };
 
     // ---- Persiste transcrições dos áudios do lote (16/08/2026) ------------
     // O micro transcreve cada áudio na hora da decisão e devolve o texto com o
@@ -1348,6 +1380,50 @@ ${emptyNote}`,
           .catch((err) => console.error("[WHATSAPP BOT] Falha ao salvar transcrição:", t.id, err)),
       ));
     }
+    // Custo da transcrição feita pelo micro no /reply (Gemini): log
+    // wa_transcribe próprio, por modelo, NUNCA somado ao usage do Claude
+    // (outro preço). Até 26/09/2026 esse gasto não aparecia em lugar nenhum.
+    // bySystem: fora do feed de atividade da equipe no painel Chatbot. Também
+    // antes da corrida: o áudio foi transcrito mesmo que a resposta seja
+    // descartada.
+    for (const usage of sumUsageByModel(transcribeUsages)) {
+      await logWhatsAppEvent({
+        action: "wa_transcribe",
+        message: `IA transcreveu ${transcribeUsages.length === 1 ? "o áudio" : `${transcribeUsages.length} áudios`} do cliente (bot)`,
+        authorId: "whatsapp-bot",
+        authorName: "🤖 Bot WhatsApp",
+        contactId,
+        numberId: ingest.numberId,
+        contactName: message.contactName,
+        contactPhone: message.contactPhone,
+        metadata: { usage, bySystem: true, audios: transcribeUsages.length },
+      });
+    }
+
+    // Resposta jogada fora (corrida, atendente assumiu, envio interrompido):
+    // log próprio `wa_bot_discarded` com o gasto do Claude, que antes sumia.
+    // Não é wa_bot de propósito: nenhuma métrica de decisão nem o critério de
+    // órfã do cron contam esses turnos (bot-telemetry.ts).
+    const logDiscarded = async (outcome: DiscardOutcome, sentBlocks: number, why: string) => {
+      turnCost.logged = true;
+      await logWhatsAppEvent({
+        action: "wa_bot_discarded",
+        message: `IA: resposta descartada — ${why}`,
+        authorId: "whatsapp-bot",
+        authorName: "🤖 Bot WhatsApp",
+        contactId,
+        numberId: ingest.numberId,
+        contactName: message.contactName,
+        contactPhone: message.contactPhone,
+        metadata: {
+          outcome,
+          intendedAction: decision.action,
+          usage: turnCost.usage ?? undefined,
+          sentBlocks,
+          ...timings(),
+        },
+      });
+    };
 
     // ---- Corrida pós-cérebro (30/07/2026) ---------------------------------
     // O debounce só protege ANTES da chamada à IA — mas o cérebro leva vários
@@ -1358,6 +1434,7 @@ ${emptyNote}`,
     // mensagem nova reprocessa o lote inteiro (burst) com o contexto completo.
     if (await findNewerInbound()) {
       console.log(`[WHATSAPP BOT] ${contactId}: mensagem nova chegou enquanto a IA pensava — descartando esta resposta (a invocação mais nova responde o lote).`);
+      await logDiscarded("discarded_race", 0, "o cliente escreveu de novo enquanto a IA pensava");
       return;
     }
     // Um atendente assumiu ou encerrou enquanto o cérebro pensava: a conversa
@@ -1365,6 +1442,7 @@ ${emptyNote}`,
     // cima do atendente e ainda executava a ação, até mandar para a Fila).
     if (!(await isStillBot())) {
       console.log(`[WHATSAPP BOT] ${contactId}: conversa saiu do modo bot enquanto a IA pensava — descartando esta resposta.`);
+      await logDiscarded("discarded_status", 0, "a conversa saiu do modo bot enquanto a IA pensava");
       return;
     }
 
@@ -1390,7 +1468,7 @@ ${emptyNote}`,
       const confirm = "Se você preferir não receber mais nenhuma mensagem nossa, é só responder SAIR, tá bom? 😊";
       const text = bye ? `${bye}\n\n${confirm}` : confirm;
       try {
-        await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text));
+        markSent(await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text)));
       } catch (err) {
         console.error("[WHATSAPP BOT] Confirmação de opt-out não entregue (encerrando mesmo assim):", contactId, err);
       }
@@ -1423,8 +1501,12 @@ ${emptyNote}`,
           outcome: "disqualify", optOut: true, intent: decision.intent,
           closeCategory: "nao_qualificado", usage: decision.usage ?? undefined,
           facts: basePayload.conversationFacts,
+          effective: { status: "closed", reason: "nao_qualificado (possível descadastro)" } satisfies EffectiveOutcome,
+          conversationAgeMs: conversation ? Date.now() - conversation.createdAt.getTime() : undefined,
+          ...timings(),
         },
       });
+      turnCost.logged = true;
       return;
     }
 
@@ -1463,13 +1545,18 @@ ${emptyNote}`,
     // do roteiro por cima da mensagem nova do cliente.
     let blocksSent = 0;
     let verdict: SendGuardVerdict = "continue_sending";
+    // Motivo da parada total (vai para o log wa_bot_discarded).
+    let stopOutcome: DiscardOutcome = "discarded_race";
     for (const msg of outgoing) {
       await sleep(humanDelay(msg));
       const [newer, stillBot] = await Promise.all([findNewerInbound(), isStillBot()]);
       verdict = shouldAbortSend({ hasNewerInbound: !!newer, stillBot, action: decision.action, blocksSent });
-      if (verdict !== "continue_sending") break;
+      if (verdict !== "continue_sending") {
+        stopOutcome = discardOutcomeOf({ stillBot });
+        break;
+      }
       await persistMemory();
-      await sendBotReply(contactId, message.contactPhone, message.contactName, msg, 0);
+      markSent(await sendBotReply(contactId, message.contactPhone, message.contactName, msg, 0));
       blocksSent += 1;
     }
     // Releitura depois do último bloco: o roteiro leva até ~15 s e a ação
@@ -1481,11 +1568,17 @@ ${emptyNote}`,
       && !(await isStillBot())
     ) {
       verdict = "stop_all";
+      stopOutcome = "discarded_status";
     }
     if (verdict === "stop_all") {
       console.log(
         `[WHATSAPP BOT] ${contactId}: envio interrompido (${blocksSent}/${outgoing.length} bloco(s), action=${decision.action}) — ` +
         "chegou mensagem nova do cliente ou a conversa saiu do modo bot; a ação não roda.",
+      );
+      await logDiscarded(
+        stopOutcome,
+        blocksSent,
+        `envio interrompido em ${blocksSent}/${outgoing.length} bloco(s) (${stopOutcome === "discarded_status" ? "a conversa saiu do modo bot" : "o cliente escreveu de novo"}); a ação não rodou`,
       );
       return;
     }
@@ -1500,6 +1593,13 @@ ${emptyNote}`,
     // Handoff/qualify condicionais que não moveram (a conversa saiu do bot no
     // último instante) ficam registrados no log da decisão.
     let queueSkipped = false;
+    // Onde a conversa ficou DE FATO (bot-telemetry.ts): o `outcome` é o que a
+    // IA escolheu, e um "continue" vazio, por exemplo, termina na Fila.
+    let effective: EffectiveOutcome = { status: "bot" };
+    const toQueue = (moved: boolean, reason: string) => {
+      queueSkipped = !moved;
+      effective = queueEffective(moved, reason);
+    };
     switch (decision.action) {
       case "send_flow": {
         // A IA escolheu um fluxo cadastrado que se encaixa na situação do
@@ -1511,15 +1611,17 @@ ${emptyNote}`,
               name: message.contactName,
             })
           : false;
+        markSent(sent);
         // Fluxo inexistente/falhou e nada foi enviado → não deixa o cliente no
         // vácuo: manda ao menos uma confirmação e passa pra fila humana.
         if (!sent && outgoing.length === 0) {
-          await sendBotReply(
+          markSent(await sendBotReply(
             contactId, message.contactPhone, message.contactName,
             "Só um instante que vou verificar isso pra você com um de nossos atendentes, tá?",
             humanDelay("x".repeat(50)),
-          );
-          queueSkipped = !(await handoffToQueue(contactId, contactLabel, "fluxo escolhido pela IA não pôde ser enviado", "perguntas", ONLY_IF_BOT));
+          ));
+          const reason = "fluxo escolhido pela IA não pôde ser enviado";
+          toQueue(await handoffToQueue(contactId, contactLabel, reason, "perguntas", ONLY_IF_BOT), reason);
         }
         break;
       }
@@ -1527,11 +1629,11 @@ ${emptyNote}`,
         // Qualificar sem nenhum texto deixaria o lead no vácuo até um humano
         // assumir — garante ao menos a ponte pro atendente.
         if (outgoing.length === 0) {
-          await sendMutedFallback(
+          markSent(await sendMutedFallback(
             contactId, message,
             "Perfeito! Vou te passar para um de nossos atendentes dar sequência, tá bom? Já já alguém fala com você 😊",
             "qualify sem texto",
-          );
+          ));
         }
         // Assinatura automática (SIGNATURE_AUTO_ENABLED): tenta extrair os
         // dados e mandar o RESUMO pro cliente confirmar. "confirming" = a
@@ -1539,7 +1641,10 @@ ${emptyNote}`,
         // confirmado/assinado); "queue" = flag desligada, dados incompletos ou
         // falha → segue o caminho de sempre (nota interna explica o porquê).
         if ((await signature.maybeStartSignatureFlow(contactId, contactRef)) === "queue") {
-          queueSkipped = !(await qualifyToQueue(contactId, contactLabel, decision.handoffReason ?? "triagem aprovada pela IA", ONLY_IF_BOT));
+          const reason = decision.handoffReason ?? "triagem aprovada pela IA";
+          toQueue(await qualifyToQueue(contactId, contactLabel, reason, ONLY_IF_BOT), reason);
+        } else {
+          effective = { status: "signature" };
         }
         break;
       case "disqualify":
@@ -1547,46 +1652,53 @@ ${emptyNote}`,
         // ex.: agradecimento pós-despedida. Vazio sem a flag = falha da IA:
         // manda uma despedida mínima pra não abandonar o cliente falando.
         if (outgoing.length === 0 && !decision.silent) {
-          await sendMutedFallback(
+          markSent(await sendMutedFallback(
             contactId, message,
             "Obrigado pelo contato! Qualquer coisa é só mandar uma mensagem por aqui, tá bom? 😊",
             "disqualify sem texto e sem silent",
-          );
+          ));
         }
-        await disqualifyAndClose(contactId, decision.closeCategory);
+        effective = { status: "closed", reason: await disqualifyAndClose(contactId, decision.closeCategory) };
         break;
       case "handoff":
         // Transferência sem texto: o cliente ficaria esperando sem saber que um
         // humano vai assumir — avisa antes de enfileirar.
         if (outgoing.length === 0 && !decision.silent) {
-          await sendMutedFallback(
+          markSent(await sendMutedFallback(
             contactId, message,
             "Vou te passar para um de nossos atendentes, só um instante, tá bom?",
             "handoff sem texto",
-          );
+          ));
         }
-        queueSkipped = !(await handoffToQueue(
-          contactId, contactLabel,
-          decision.handoffReason ?? "transferido pelo bot",
-          decision.closeCategory ?? "transferido",
-          ONLY_IF_BOT,
-        ));
+        {
+          const reason = decision.handoffReason ?? "transferido pelo bot";
+          toQueue(await handoffToQueue(
+            contactId, contactLabel,
+            reason,
+            decision.closeCategory ?? "transferido",
+            ONLY_IF_BOT,
+          ), reason);
+        }
         break;
       case "resolve":
         // Assunto resolvido pelo próprio bot (dúvida/status). Encerra como
         // "perguntas" (ou a categoria que a IA indicar). Mesmo guard de
         // silêncio do disqualify.
         if (outgoing.length === 0 && !decision.silent) {
-          await sendMutedFallback(
+          markSent(await sendMutedFallback(
             contactId, message,
             "Certo! Se precisar de mais alguma coisa é só mandar uma mensagem por aqui 😊",
             "resolve sem texto e sem silent",
-          );
+          ));
         }
         // 23/09/2026: a promoção automática de "resolve" para fila (cliente
         // cadastrado ou documentos recebidos) saiu daqui — os dois sinais vão
         // no payload (conversationFacts) e o cérebro decide o desfecho.
-        await resolveAndClose(contactId, decision.closeCategory ?? "perguntas");
+        {
+          const category = decision.closeCategory ?? "perguntas";
+          await resolveAndClose(contactId, category);
+          effective = { status: "closed", reason: category };
+        }
         break;
       default:
         // "continue" SEM nenhuma resposta = a IA se perdeu e não devolveu
@@ -1596,14 +1708,10 @@ ${emptyNote}`,
         // silent=true em continue = o cliente só confirmou algo já combinado
         // ("ok", 👍) — a conversa segue aberta com o bot, sem transferir.
         if (outgoing.length === 0 && !decision.silent) {
-          queueSkipped = !(await handoffToQueue(
-            contactId, contactLabel,
-            decision.leaked
-              ? "a IA vazou raciocínio no lugar da resposta (texto descartado antes do envio)"
-              : "IA devolveu resposta vazia (sem texto para enviar ao cliente)",
-            "transferido",
-            ONLY_IF_BOT,
-          ));
+          const reason = decision.leaked
+            ? "a IA vazou raciocínio no lugar da resposta (texto descartado antes do envio)"
+            : "IA devolveu resposta vazia (sem texto para enviar ao cliente)";
+          toQueue(await handoffToQueue(contactId, contactLabel, reason, "transferido", ONLY_IF_BOT), reason);
         }
         break; // continue com resposta: só seguiu a conversa
     }
@@ -1611,14 +1719,14 @@ ${emptyNote}`,
     // ---- Auditoria/métricas da IA -----------------------------------------
     // Uma linha por decisão do bot; alimenta o dashboard do chatbot (quantos
     // qualificados/não, dúvidas, % de entendimento, tempo até qualificar).
-    let durationMs: number | undefined;
-    const terminal = isTerminalBotAction(decision.action);
-    if (terminal && conversation) {
-      const conv = await db.whatsAppConversation.findUnique({
-        where: { contactId }, select: { createdAt: true },
-      });
-      if (conv) durationMs = Date.now() - conv.createdAt.getTime();
-    }
+    // Idade da conversa nos desfechos terminais (mediana de "tempo até
+    // qualificar"). Era `durationMs`, que parecia latência e não é; o
+    // createdAt já veio no select do início (a conversa é 1:1 com o contato e
+    // nunca é recriada), sem a consulta extra de antes.
+    const conversationAgeMs = isTerminalBotAction(decision.action) && conversation
+      ? Date.now() - conversation.createdAt.getTime()
+      : undefined;
+    turnCost.logged = true;
     await logWhatsAppEvent({
       action: "wa_bot",
       message: `IA: ${decision.action} (${decision.intent})`,
@@ -1638,8 +1746,16 @@ ${emptyNote}`,
         // Categoria de encerramento (perguntas/qualificado/novo_acidente/...).
         closeCategory: decision.closeCategory ?? undefined,
         flowName: decision.action === "send_flow" ? decision.flowName ?? undefined : undefined,
-        durationMs,
+        conversationAgeMs,
         usage: decision.usage ?? undefined,
+        // Onde a conversa ficou de fato ("continue" vazio termina na Fila) e
+        // os tempos do turno: latência até a 1ª mensagem, tempo no cérebro e
+        // duração total (bot-telemetry.ts).
+        effective,
+        ...timings(),
+        // Silêncio escolhido pelo cérebro: mede o falso positivo de órfã do
+        // cron (silent=true numa pergunta de verdade).
+        silent: decision.silent ? true : undefined,
         // Diagnóstico: o que o micro devolveu em appliedRules. `undefined` no
         // metadata = o campo NEM VEIO na resposta (micro rodando código antigo,
         // sem o campo no schema); [] = veio e a IA não citou regra nenhuma.
@@ -1682,7 +1798,11 @@ ${emptyNote}`,
       ? "timeout: o cérebro (IA) demorou demais para responder"
       : `erro no bot: ${err instanceof Error ? err.message : String(err)}`;
     console.error("[WHATSAPP BOT] Falha no fluxo do bot — caindo pra fila humana:", err);
-    const errorLog = (text: string, extra: Record<string, unknown>) =>
+    // O gasto do Claude que já foi pago (falha depois do cérebro, ex.: a Meta
+    // recusou o envio) entra no log do erro, senão some do Canto da IA.
+    const unloggedUsage = turnCost.logged ? undefined : turnCost.usage ?? undefined;
+    turnCost.logged = true;
+    const errorLog = (text: string, effective: EffectiveOutcome, extra: Record<string, unknown>) =>
       logWhatsAppEvent({
         action: "wa_bot",
         message: text,
@@ -1693,14 +1813,21 @@ ${emptyNote}`,
         contactName: message.contactName,
         contactPhone: message.contactPhone,
         // Métrica: registra o erro da IA para o dashboard (quantos erros x acertos).
-        metadata: { outcome: "error", error: true, timeout: isTimeout, detail, ...extra },
+        metadata: {
+          outcome: "error", error: true, timeout: isTimeout, detail,
+          usage: unloggedUsage, effective, ...timings(), ...extra,
+        },
       });
 
     // O cliente escreveu de novo enquanto esta invocação falhava: a invocação
     // da mensagem nova junta o lote e decide (se ela também falhar, cai no
     // próprio catch). Transferir daqui tiraria a conversa do bot por cima dela.
     if (await findNewerInbound().catch(() => null)) {
-      await errorLog(`IA: erro — ${detail} (a mensagem mais nova do cliente decide)`, { deferredToNewer: true });
+      await errorLog(
+        `IA: erro — ${detail} (a mensagem mais nova do cliente decide)`,
+        { status: "bot", reason: "a mensagem mais nova do cliente decide" },
+        { deferredToNewer: true },
+      );
       return;
     }
 
@@ -1715,9 +1842,13 @@ ${emptyNote}`,
       handoff = "failed";
       await reportCriticalError("WHATSAPP BOT handoff", handoffErr, { contactId, metadata: { botError: detail.slice(0, 300) } });
     }
-    await errorLog(`IA: erro — ${detail}`, {
-      handoffSkipped: handoff === "skipped",
-      ...(handoff === "failed" ? { handoffFailed: true } : {}),
-    });
+    await errorLog(
+      `IA: erro — ${detail}`,
+      handoff === "failed" ? { status: "bot", reason: "a transferência para a Fila falhou" } : queueEffective(handoff === "moved", detail),
+      {
+        handoffSkipped: handoff === "skipped",
+        ...(handoff === "failed" ? { handoffFailed: true } : {}),
+      },
+    );
   }
 }

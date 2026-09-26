@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle, BadgeCheck, Bot, Brain, FileText, Headset, HelpCircle, IdCard,
-  Loader2, MessageSquare, RotateCcw, ScrollText, ShieldCheck, Sparkles, Timer,
+  Loader2, MessageSquare, Mic, RotateCcw, ScrollText, ShieldCheck, Sparkles, Timer,
 } from 'lucide-react';
 import { Button } from '@/app/_shared/ui/button';
 import { getAiCorner, type AiCorner as AiCornerData, type AiOperation } from '@/app/_actions/analytics/get-ai-corner';
@@ -32,6 +32,7 @@ const ICONS: Record<string, React.ElementType> = {
   message: MessageSquare,
   file: FileText,
   id: IdCard,
+  mic: Mic,
   shield: ShieldCheck,
   scroll: ScrollText,
   sparkles: Sparkles,

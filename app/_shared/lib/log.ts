@@ -30,10 +30,11 @@ export type LogAction =
   | "wa_note"        // registrou uma nota interna na thread (só equipe vê)
   | "wa_reaction"    // reagiu com emoji a uma mensagem da thread
   | "wa_bot"         // decisão da IA (qualify/disqualify/handoff/continue/erro)
+  | "wa_bot_discarded" // resposta do cérebro jogada fora (corrida, atendente assumiu, envio interrompido), com o gasto
   | "wa_suggest"     // IA sugeriu resposta pro atendente (agent-assist)
   | "wa_summary"     // IA resumiu a conversa pro card do kanban
-  | "wa_transcribe"  // IA transcreveu um áudio a pedido do atendente
-  | "wa_ficha_ai"    // IA preencheu campos da ficha do cliente pela conversa
+  | "wa_transcribe"  // IA transcreveu áudio: a pedido do atendente ou no /reply do bot (metadata.bySystem)
+  | "wa_ficha_ai"    // ficha do cliente pela IA: preencheu, não achou nada (metadata.noop) ou falhou
   | "ficha_ai_fill"  // o mesmo preenchimento, registrado no HISTÓRICO do card
   | "roteiro_ai"     // gasto de IA do roteiro (docx-converter → sentinela no stream)
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)

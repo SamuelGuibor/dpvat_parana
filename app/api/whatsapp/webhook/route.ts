@@ -12,6 +12,7 @@ import { autoFillClientInfo } from "@/app/_shared/lib/whatsapp/ficha-ai";
 import { handleAccountEvent } from "@/app/_shared/lib/whatsapp/account-events";
 import { getCredsByPhoneNumberId } from "@/app/_shared/lib/whatsapp/numbers";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
+import { BURST_DEBOUNCE_MS } from "@/app/_shared/utils/bot-timing";
 
 // Webhook da WhatsApp Cloud API (Meta oficial).
 //
@@ -138,12 +139,13 @@ export async function POST(req: NextRequest) {
         // bot (debounce de rajada + burst desde a última resposta).
         const botCandidates = new Map<string, IngestResult>();
         // Contatos com mensagem nova neste lote (qualquer status): candidatos
-        // ao preenchimento automático da ficha pela IA.
-        const fichaCandidates = new Set<string>();
+        // ao preenchimento automático da ficha pela IA, com a ÚLTIMA mensagem
+        // de cada um (a ficha desiste se chegar outra mais nova).
+        const fichaCandidates = new Map<string, IngestResult>();
         for (const msg of value.messages ?? []) {
           try {
             const result = await ingestIncomingMessage(msg, profileName, numberId);
-            if (result?.isNew) fichaCandidates.add(result.contactId);
+            if (result?.isNew) fichaCandidates.set(result.contactId, result);
             if (result?.isNew && result.conversationStatus === "bot") {
               botCandidates.set(result.contactId, result); // fica a última do contato
             }
@@ -164,10 +166,19 @@ export async function POST(req: NextRequest) {
           }
         }
         // Ficha automática: roda DEPOIS do bot (a transcrição do áudio já
-        // existe) e é best-effort — nunca quebra o webhook.
-        for (const contactId of fichaCandidates) {
+        // existe) e é best-effort — nunca quebra o webhook. Uma por RAJADA, não
+        // por balão: o bot já esperou o debounce; conversa fora do modo bot
+        // (fila, atendente) espera o mesmo tempo aqui, uma vez, e a ficha
+        // desiste se chegou mensagem mais nova (a invocação dela preenche).
+        // Custa ~8 s a mais no webhook (maxDuration 120) e no preenchimento.
+        if ([...fichaCandidates.keys()].some((contactId) => !botCandidates.has(contactId))) {
+          await new Promise((r) => setTimeout(r, BURST_DEBOUNCE_MS));
+        }
+        for (const [contactId, result] of fichaCandidates) {
           try {
-            await autoFillClientInfo(contactId);
+            await autoFillClientInfo(contactId, {
+              afterMessage: { id: result.message.id, createdAt: result.message.createdAt },
+            });
           } catch (err) {
             await reportCriticalError("WHATSAPP FICHA IA", err, { contactId });
           }

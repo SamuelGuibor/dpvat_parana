@@ -16,7 +16,10 @@ import {
 // Métricas do chatbot para o dashboard (aba Chatbot). Deriva tudo dos logs de
 // WhatsApp (action começando com "wa_"):
 //   - wa_bot: decisões da IA (qualify/disqualify/handoff/continue/erro), com
-//     intent, understood, confidence e durationMs no metadata.
+//     intent, understood, confidence, idade da conversa (conversationAgeMs;
+//     durationMs nos logs antigos), latência e desfecho efetivo no metadata.
+//   - wa_bot_discarded: respostas descartadas (corrida/atendente); fora de
+//     tudo aqui (só entram no custo do Canto da IA).
 //   - wa_* com metadata.automated: avisos automáticos ao cliente.
 //   - wa_account: avisos oficiais da Meta (saúde da conta).
 //   - demais wa_*: feed de atividade dos atendentes.
@@ -167,8 +170,15 @@ export async function getChatbotAnalytics(
   // Não usa o índice [action, createdAt] (seq scan em logs), mas só trafegam
   // as linhas agregadas/limitadas — era o findMany sem teto que pesava.
   // wa_account/wa_media_fail/wa_bot têm bloco próprio (ou nenhum), como no
-  // laço antigo.
-  const otherWaLogs = Prisma.sql`left(l.action, 3) = 'wa_' AND l.action NOT IN ('wa_account', 'wa_media_fail', 'wa_bot')`;
+  // laço antigo; wa_bot_discarded é telemetria do bot. Log gravado pelo
+  // sistema (metadata.bySystem: transcrição feita pelo bot) ou que não fez
+  // nada (metadata.noop: ficha sem dado novo, ~500/dia) não é ação de
+  // atendente: fora do feed. `IS DISTINCT FROM` porque a chave quase sempre
+  // falta (NOT (NULL = …) descartaria a linha).
+  const otherWaLogs = Prisma.sql`left(l.action, 3) = 'wa_'
+    AND l.action NOT IN ('wa_account', 'wa_media_fail', 'wa_bot', 'wa_bot_discarded')
+    AND (l.metadata->'noop') IS DISTINCT FROM 'true'::jsonb
+    AND (l.metadata->'bySystem') IS DISTINCT FROM 'true'::jsonb`;
   // Aviso automático = metadata.automated === true (boolean). `->` compara
   // jsonb: string "true" não conta, e metadata sem a chave dá NULL — por isso
   // a exclusão usa IS DISTINCT FROM (NOT (NULL = …) descartaria a linha).
@@ -198,10 +208,15 @@ export async function getChatbotAnalytics(
     `,
     // Q2 — mediana até qualificar. O CASE guarda o cast (num AND do WHERE o
     // Postgres não garante a ordem de avaliação e o ::float8 poderia explodir).
+    // Idade da conversa = conversationAgeMs ?? durationMs (nome antigo, que
+    // segue válido nos logs dos últimos 180 dias): mesma régua de
+    // conversationAgeOf (bot-telemetry.ts).
     db.$queryRaw<{ median: number | null }[]>`
       SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY d)::float8 AS median
       FROM (
-        SELECT CASE WHEN jsonb_typeof(l.metadata->'durationMs') = 'number'
+        SELECT CASE WHEN jsonb_typeof(l.metadata->'conversationAgeMs') = 'number'
+                    THEN (l.metadata->>'conversationAgeMs')::float8
+                    WHEN jsonb_typeof(l.metadata->'durationMs') = 'number'
                     THEN (l.metadata->>'durationMs')::float8 END AS d
         FROM logs l
         ${byNumber}

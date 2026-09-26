@@ -36,6 +36,8 @@ const LOG_RETENTION_DAYS = 180;
  */
 const PURGEABLE_LOG_ACTIONS = [
   "wa_bot",
+  // Resposta do cérebro descartada: telemetria e custo, contados por período.
+  "wa_bot_discarded",
   "wa_text",
   "wa_ficha_ai",
   "wa_return_bot",

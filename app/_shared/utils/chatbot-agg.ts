@@ -81,8 +81,9 @@ export function aggregateBotRows(rows: readonly BotOutcomeRow[]): BotAggregate {
 
 /**
  * Mediana (ms, vinda do percentile_cont) → minutos inteiros; null sem dados.
- * Mediana, não média: `durationMs` conta desde a criação da conversa, e um
- * contato que voltou no dia seguinte arrastava a média (era o "1416 min").
+ * Mediana, não média: a idade da conversa (`conversationAgeMs`, antes
+ * `durationMs`) conta desde a criação dela, e um contato que voltou no dia
+ * seguinte arrastava a média (era o "1416 min").
  */
 export function medianMsToMinutes(medianMs: number | null | undefined): number | null {
   return typeof medianMs === 'number' && Number.isFinite(medianMs) ? Math.round(medianMs / 60_000) : null;

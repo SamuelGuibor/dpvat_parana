@@ -7,6 +7,8 @@
 // encerrada. Com isso a pergunta do cliente que o bot nunca respondeu (erro de
 // infra, função interrompida) sumia sem ninguém da equipe ver.
 
+import { isDiscardedOutcome } from './bot-telemetry';
+
 // Palavras de FECHO: a última mensagem do cliente ser dessas não é pergunta
 // pendente, é o "tá bom, obrigada" que encerra o assunto.
 export const ACK_WORDS = new Set([
@@ -67,7 +69,8 @@ export function classifyLastMessage(last: LastMessageInfo | null): LastMessageKi
  * Um log `wa_bot` gravado depois da mensagem do cliente prova que o cérebro
  * decidiu sobre ela, inclusive quando escolheu ficar calado (`silent`). Não
  * provam:
- * - `outcome: "discarded_*"`: resposta descartada sem nada enviado;
+ * - `outcome: "discarded_*"`: resposta descartada sem nada enviado (hoje vai
+ *   para o log próprio `wa_bot_discarded`, que o cron nem lê; fica a defesa);
  * - `deferredToNewer`: o erro de uma invocação anterior deixou a decisão para
  *   a mensagem mais nova, justamente a que pode ter ficado sem resposta;
  * - `handoffFailed`: o bot falhou e nem a transferência para a Fila rodou.
@@ -76,7 +79,7 @@ export function classifyLastMessage(last: LastMessageInfo | null): LastMessageKi
 export function isBotDecisionLog(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return true;
   const m = metadata as Record<string, unknown>;
-  if (typeof m.outcome === 'string' && m.outcome.startsWith('discarded_')) return false;
+  if (isDiscardedOutcome(m.outcome)) return false;
   if (m.deferredToNewer === true || m.handoffFailed === true) return false;
   return true;
 }

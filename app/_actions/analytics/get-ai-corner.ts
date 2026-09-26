@@ -28,6 +28,10 @@ export type { AiCorner, AiOperation, AiWindow };
 /** Rótulo de cada operação. Ação sem rótulo aqui aparece com a própria chave. */
 const OPERATION_LABELS: Record<string, string> = {
   wa_bot: 'Bot do WhatsApp',
+  // Fora do wa_bot de propósito: o custo por decisão do bot não conta turno
+  // descartado (corrida, atendente assumiu).
+  wa_bot_discarded: 'Bot — respostas descartadas',
+  wa_transcribe: 'Transcrição de áudio',
   wa_suggest: 'Sugestão de resposta',
   wa_summary: 'Resumo da conversa',
   wa_ficha_ai: 'Ficha automática',
@@ -38,6 +42,8 @@ const OPERATION_LABELS: Record<string, string> = {
 /** Ícone (chave lucide resolvida na UI) por operação. */
 const OPERATION_ICONS: Record<string, string> = {
   wa_bot: 'bot',
+  wa_bot_discarded: 'bot',
+  wa_transcribe: 'mic',
   wa_suggest: 'message',
   wa_summary: 'file',
   wa_ficha_ai: 'id',

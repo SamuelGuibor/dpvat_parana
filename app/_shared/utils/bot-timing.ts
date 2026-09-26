@@ -7,6 +7,42 @@
 // depois de a conversa ter ido para a Fila e mandava o resto do roteiro
 // comercial por cima da mensagem nova do cliente.
 
+import type { Prisma } from "@prisma/client";
+
+// Debounce de RAJADA: cliente que digita a mensagem picada em 3-4 balões gera
+// 3-4 webhooks em segundos — sem isso são 3-4 chamadas ao Claude respondendo
+// fora de ordem. Cada invocação espera o debounce; se nesse meio tempo chegou
+// mensagem MAIS NOVA do cliente, esta invocação desiste (a da mensagem mais
+// recente processa o lote inteiro de uma vez). A ficha automática da conversa
+// fora do modo bot espera o mesmo tempo no webhook, pelo mesmo motivo (uma
+// chamada ao Haiku por rajada, não por balão). O atraso é proposital.
+export const BURST_DEBOUNCE_MS = 8_000;
+
+/**
+ * Filtro de "chegou mensagem do cliente MAIS NOVA que esta". Desempate
+ * determinístico: duas mensagens gravadas no MESMO milissegundo (dois webhooks
+ * concorrentes) não se enxergavam como "mais nova" com o `gt` estrito — as
+ * DUAS invocações prosseguiam e o cliente recebia resposta dupla. Em empate de
+ * createdAt, o maior id (cuid ~monotônico) vence. Usado pelo bot (debounce e
+ * corrida pós-cérebro) e pela ficha automática (uma por rajada).
+ */
+export function newerInboundWhere(
+  contactId: string,
+  message: { id: string; createdAt: string | Date },
+): Prisma.WhatsAppMessageWhereInput {
+  const at = new Date(message.createdAt);
+  return {
+    contactId,
+    direction: "in",
+    deletedAt: null,
+    id: { not: message.id },
+    OR: [
+      { createdAt: { gt: at } },
+      { createdAt: at, id: { gt: message.id } },
+    ],
+  };
+}
+
 /** Ações que fecham o turno do bot: fila (qualify/handoff) ou encerramento. */
 const TERMINAL_BOT_ACTIONS = new Set(["qualify", "disqualify", "handoff", "resolve"]);
 
