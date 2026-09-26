@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
-import {
-  listWhatsAppConversations,
-  getWhatsAppInboxVersion,
-  countWhatsAppUnread,
-  countWhatsAppConversationsTotal,
-  type WhatsAppConversationDTO,
-} from '@/app/_actions/whatsapp/conversations';
+import { countWhatsAppUnread } from '@/app/_actions/whatsapp/conversations';
+// SÓ tipos (`import type`): inbox-data.ts, ao lado, importa o Prisma e não
+// pode entrar no bundle do navegador.
+import type { InboxVersionResponse, WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
 import { mergeThreadWindow, unionThreadMessages, upsertById } from '@/app/_shared/utils/thread-window';
 import { jsonFetcher, pollRetryDelayMs } from '@/app/_shared/utils/fetch-json';
+import {
+  INBOX_CONVERSATIONS_URL, INBOX_VERSION_URL, inboxConversationUrl, inboxSearchUrl,
+  readInboxItem, readInboxItems, readInboxVersion,
+} from '@/app/_shared/utils/inbox-api';
 
 // Hooks do atendimento de WhatsApp — mesmo desenho do use-chat.ts:
 // SWR com polling como rede de segurança e o SSE (useChatStream, reaproveitado
@@ -51,14 +52,36 @@ export interface WhatsAppThreadMessage {
 }
 
 // Toda leitura por URL daqui passa por `jsonFetcher` (fetch-json.ts): status
-// não-ok LANÇA. A rota da thread decide o acesso pelo banco + trava de IP
-// (`teamRoute`) e pode responder 403 (atendente mudou de rede com a aba
-// aberta) ou 500 (banco); com o fetcher antigo isso virava dado e esvaziava
-// a thread. Os dois mudaram no MESMO deploy, de propósito.
+// não-ok LANÇA. As rotas (thread, lista, versão, busca) decidem o acesso pelo
+// banco + trava de IP (`teamRoute`) e podem responder 403 (atendente mudou de
+// rede com a aba aberta) ou 500 (banco); com um fetcher que não olha o status
+// isso viraria dado e esvaziaria a tela. O SWR guarda o erro e mantém o
+// último dado bom.
+//
+// Lista, versão e busca são GET, não server actions (auditoria de 24/09/2026,
+// FE-1): as actions de uma aba saem numa fila SERIAL, e a recarga da lista e o
+// hash de 15 s seguravam o clique do atendente (tag, assumir, encerrar). A
+// fila de actions agora fica só com mutações.
+
+/** Lista do inbox pela rota GET (lança em resposta não-ok ou fora do formato). */
+const fetchConversationList = (url: string) => jsonFetcher<unknown>(url).then(readInboxItems);
+/** Hash + total pela rota GET (a mesma key é lida pelos dois hooks abaixo). */
+const fetchInboxVersion = (url: string) => jsonFetcher<unknown>(url).then(readInboxVersion);
+
+/** Busca em TODO o histórico (GET, fora da fila de actions). Lança `HttpError` na falha. */
+export async function fetchInboxSearch(term: string): Promise<WhatsAppConversationDTO[]> {
+  return readInboxItems(await jsonFetcher<unknown>(inboxSearchUrl(term)));
+}
+
+/** UMA conversa pelo contato (abrir fora do topo da lista); `null` = contato sem conversa. */
+export async function fetchInboxConversation(contactId: string): Promise<WhatsAppConversationDTO | null> {
+  return readInboxItem(await jsonFetcher<unknown>(inboxConversationUrl(contactId)));
+}
 
 // Atraso do coalescer da lista: junta numa carga só os pedidos que chegam em
-// rajada (hash que mudou, eventos SSE, onDiscarded) e deixa o clique do
-// atendente entrar na fila de server actions antes da recarga pesada.
+// rajada (hash que mudou, eventos SSE, onDiscarded). A lista não disputa mais
+// a fila de server actions com o clique (é GET), mas cada carga ainda são
+// ~1,3 MB e ~5 idas ao banco: duas cargas seguidas por nada é desperdício.
 const LIST_REFRESH_COALESCE_MS = 2_000;
 
 const isDocumentHidden = () => typeof document !== 'undefined' && document.hidden;
@@ -66,10 +89,11 @@ const isDocumentHidden = () => typeof document !== 'undefined' && document.hidde
 /**
  * Lista de conversas (fila, minhas, bot, encerradas).
  *
- * O que roda a cada 15s é `getWhatsAppInboxVersion` (um hash de umas 4
- * agregações); a lista completa (até 1.000 conversas hidratadas) só é
- * rebuscada quando o hash muda, depois de uma ação, por evento SSE ou pela
- * rede de segurança de 10 min.
+ * O que roda a cada 15s é GET /api/whatsapp/inbox/version (um hash de umas 4
+ * agregações + o total, ~4 ms no banco); a lista completa (até 1.000
+ * conversas hidratadas, GET /api/whatsapp/inbox/conversations) só é rebuscada
+ * quando o hash muda, depois de uma ação, por evento SSE ou pela rede de
+ * segurança de 10 min.
  *
  * Auditoria de 24/09/2026 — por que o foco NÃO recarrega a lista: ~17% das
  * cargas completas vinham só de voltar à janela (alt-tab do WhatsApp Web), na
@@ -85,6 +109,13 @@ const isDocumentHidden = () => typeof document !== 'undefined' && document.hidde
  * - `scheduleConversationsRefresh` (coalescer de 2s sobre o single-flight):
  *   para gatilhos automáticos (hash, SSE, onDiscarded). Com a aba oculta só
  *   marca e recarrega uma vez quando ela volta a ficar visível.
+ *
+ * Erro (403 da trava de IP, 500, rede): a lista que já estava na tela FICA (o
+ * SWR guarda o último dado) e `syncError` diz o motivo, para a tela avisar
+ * "lista sem atualizar". Com erro guardado o SWR não faz o poll de intervalo:
+ * o hash volta pelo `onErrorRetry` (5 s, 10 s, 20 s, depois 30 s; 401 para), e
+ * cada hash que chega com a lista em erro reagenda a carga — sem isso a lista
+ * só voltaria no próximo hash DIFERENTE.
  */
 export function useWhatsAppConversations() {
   const mutateRef = useRef<KeyedMutator<WhatsAppConversationDTO[]> | null>(null);
@@ -96,14 +127,16 @@ export function useWhatsAppConversations() {
   const coalescerRef = useRef<Coalescer | null>(null);
 
   const { data, mutate, isLoading, error } = useSWR<WhatsAppConversationDTO[]>(
-    'whatsapp-conversations',
-    () => listWhatsAppConversations(),
+    INBOX_CONVERSATIONS_URL,
+    fetchConversationList,
     {
       // Rede de segurança para mudança que o hash não captura (ex.: nome do
       // card editado no Kanban). Era 2 min + foco; no expediente o hash muda
       // em ~55% das janelas de 15s, então na prática a lista anda em segundos.
       refreshInterval: 600_000,
       revalidateOnFocus: false,
+      // Sem retry próprio (cada tentativa é a lista inteira): quem tenta de
+      // novo é o hash (onSuccess abaixo) ou o botão "Tentar novamente".
       shouldRetryOnError: false,
       // Um patch local (mutate com revalidate:false) no meio de uma carga faz
       // o SWR descartar o resultado dela — e o hash já avançou, então a
@@ -113,6 +146,8 @@ export function useWhatsAppConversations() {
     },
   );
   mutateRef.current = mutate;
+  const listErrorRef = useRef<unknown>(undefined);
+  listErrorRef.current = error;
 
   // O coalescer tem timer e listener: nasce e morre no effect (seguro no
   // StrictMode, que monta/desmonta/monta de novo em dev).
@@ -146,12 +181,25 @@ export function useWhatsAppConversations() {
     [mutate],
   );
 
-  const { data: version } = useSWR<string>(
-    'whatsapp-inbox-version',
-    () => getWhatsAppInboxVersion(),
-    // Foco revalida SÓ o hash: se nada mudou, a lista fica como está.
-    { refreshInterval: 15_000, revalidateOnFocus: true, shouldRetryOnError: false },
+  const { data: versionData, error: versionError, mutate: mutateVersion } = useSWR<InboxVersionResponse>(
+    INBOX_VERSION_URL,
+    fetchInboxVersion,
+    {
+      // Foco revalida SÓ o hash: se nada mudou, a lista fica como está.
+      refreshInterval: 15_000,
+      revalidateOnFocus: true,
+      onErrorRetry: (err, _key, _config, revalidate, opts) => {
+        const delay = pollRetryDelayMs(err, opts.retryCount);
+        if (delay !== null) setTimeout(() => { void revalidate(opts); }, delay);
+      },
+      // Hash chegou e a lista está em erro (ex.: voltou a rede do escritório):
+      // tenta a lista de novo mesmo que o hash não tenha mudado.
+      onSuccess: () => {
+        if (listErrorRef.current) coalescerRef.current?.trigger();
+      },
+    },
   );
+  const version = versionData?.version;
   const lastVersion = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!version) return;
@@ -159,28 +207,38 @@ export function useWhatsAppConversations() {
     lastVersion.current = version;
   }, [version, scheduleConversationsRefresh]);
 
+  // "Tentar de novo" do aviso de lista sem atualizar: a falha pode ser da
+  // lista OU do hash, então os dois voltam juntos.
+  const retrySync = useCallback(() => {
+    void mutateVersion();
+    return flight.trigger();
+  }, [mutateVersion, flight]);
+
   // `loaded` separa "a lista chegou e está vazia" de "ainda não chegou" — o
   // `conversations` abaixo é [] nos dois casos. A tela decide entre esqueleto,
   // erro com "Tentar novamente" e "Nenhuma conversa ainda" por
-  // `inboxListState` (app/_shared/utils/whatsapp-inbox.ts).
+  // `inboxListState` (app/_shared/utils/whatsapp-inbox.ts). `syncError` = a
+  // lista na tela pode estar velha (a carga ou o hash falharam).
   return {
     conversations: data ?? [], loaded: data !== undefined,
     refreshConversations, scheduleConversationsRefresh, patchConversations, isLoading, error,
+    syncError: (error ?? versionError) as unknown, retrySync,
   };
 }
 
 /**
  * Total REAL de conversas (badge do topo da lista do inbox). A lista é capada
  * em 1.000 (`LIST_PAGE`) pelo servidor — contar conversations.length
- * "estagnaria" no teto. Count barato: sem recarga no foco, 5 min basta.
+ * "estagnaria" no teto. Vem junto do hash (mesma query, mesma key do SWR):
+ * sem poll próprio — quem busca a cada 15 s é o `useWhatsAppConversations`.
  */
 export function useWhatsAppConversationsTotal() {
-  const { data } = useSWR<number>(
-    'whatsapp-conversations-total',
-    () => countWhatsAppConversationsTotal(),
-    { refreshInterval: 300_000, revalidateOnFocus: false, shouldRetryOnError: false },
+  const { data } = useSWR<InboxVersionResponse>(
+    INBOX_VERSION_URL,
+    fetchInboxVersion,
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateIfStale: false, shouldRetryOnError: false },
   );
-  return data ?? 0;
+  return data?.total ?? 0;
 }
 
 // Tamanho de cada bloco ao "carregar mensagens anteriores".
@@ -373,8 +431,9 @@ export function useWaNumberOptions(): WaNumberOption[] | undefined {
 
 /**
  * Total de conversas não lidas (badge das abas). Usa a action de CONTAGEM
- * leve em vez de hidratar as 200 conversas — o badge montava a query mais
- * pesada do app a cada 15s mesmo com o inbox fechado.
+ * leve (`countUnreadConversations`) em vez de hidratar a lista — o badge
+ * montava a query mais pesada do app mesmo com o inbox fechado. Ainda é
+ * server action: vai para a rota única dos badges do cabeçalho.
  *
  * Sem recarga no foco (auditoria de 24/09/2026): server actions saem numa
  * fila serial por aba, e voltar à janela enfileirava esta contagem na frente

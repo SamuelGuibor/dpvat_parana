@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/app/_shared/lib/prisma";
 
 // Conferência SÓ LEITURA da contagem de não lidas da lista do inbox
-// (loadConversations em app/_actions/whatsapp/conversations.ts): a query nova
+// (loadConversations em app/_shared/lib/whatsapp/inbox-data.ts): a query nova
 // (LATERAL por conversa, com a leitura efetiva no SQL) tem que devolver
 // exatamente o que a antiga devolvia (JOIN de todas as mensagens recebidas +
 // GROUP BY) e a leitura efetiva que o JS calculava a partir do include `reads`.

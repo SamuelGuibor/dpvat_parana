@@ -25,6 +25,7 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
+  fetchInboxConversation, fetchInboxSearch,
   useWaNumberOptions, useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages,
   type WaNumberOption, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
@@ -35,9 +36,10 @@ import {
 import { closedFolderOf, type ClosedFolderKey } from '@/app/_shared/utils/inbox-folders';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
-  searchWhatsAppConversations, getWhatsAppConversationByContact,
-  type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
+// Só tipo: o módulo de dados (inbox-data.ts) importa o Prisma e não pode
+// entrar no bundle do navegador.
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import {
   sendWhatsAppMessage, sendWhatsAppMedia, getWhatsAppUploadUrl,
   editWhatsAppMessage, deleteWhatsAppMessage, reactToWhatsAppMessage,
@@ -201,8 +203,10 @@ export function WhatsAppInbox() {
   const {
     conversations, refreshConversations, scheduleConversationsRefresh, patchConversations,
     loaded: conversationsLoaded, isLoading: conversationsLoading, error: conversationsError,
+    syncError: conversationsSyncError, retrySync: retryConversationsSync,
   } = useWhatsAppConversations();
-  // Total REAL no banco (a lista acima é capada em 1.000 pelo servidor).
+  // Total REAL no banco (a lista acima é capada em 1.000 pelo servidor). Vem
+  // junto do hash de versão, sem poll próprio.
   const conversationsTotal = useWhatsAppConversationsTotal();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const {
@@ -214,7 +218,11 @@ export function WhatsAppInbox() {
   // BUSCA NO SERVIDOR (27/08/2026): a lista carregada é só o TOPO (as mais
   // recentes). Filtrar só ela fazia conversas antigas "sumirem" do inbox —
   // pesquisar um nome não achava nada e a conversa parecia ter evaporado.
-  // Agora o termo também vai ao banco e o resultado é fundido na lista.
+  // Agora o termo também vai ao banco e o resultado é fundido na lista. Por GET
+  // (/api/whatsapp/inbox/search), não action: cada termo digitado entrava na
+  // fila serial de server actions na frente do clique. O `searchSeq` descarta
+  // a resposta de um termo que já foi trocado (as buscas GET correm em
+  // paralelo e podem chegar fora de ordem).
   const [remoteResults, setRemoteResults] = useState<WhatsAppConversationDTO[]>([]);
   const [searchingServer, setSearchingServer] = useState(false);
   const searchSeq = useRef(0);
@@ -228,7 +236,7 @@ export function WhatsAppInbox() {
     }
     setSearchingServer(true);
     const t = setTimeout(() => {
-      searchWhatsAppConversations(term)
+      fetchInboxSearch(term)
         .then((rows) => { if (searchSeq.current === seq) setRemoteResults(rows); })
         .catch(() => { if (searchSeq.current === seq) setRemoteResults([]); })
         .finally(() => { if (searchSeq.current === seq) setSearchingServer(false); });
@@ -559,7 +567,9 @@ export function WhatsAppInbox() {
   // Conversa aberta: procura na lista, depois nos resultados da busca. Quem
   // está FORA dos dois (contato antigo aberto pela agenda, por exemplo) é
   // hidratado sob demanda — antes a thread abria vazia e parecia que a
-  // conversa "não abria" (27/08/2026).
+  // conversa "não abria" (27/08/2026). A hidratação é GET
+  // (/api/whatsapp/inbox/conversations?contactId=), fora da fila de actions:
+  // abrir pela agenda não espera mais uma recarga da lista em andamento.
   const listActive = useMemo(
     () => conversations.find((c) => c.contactId === activeContactId)
       ?? remoteResults.find((c) => c.contactId === activeContactId)
@@ -574,7 +584,7 @@ export function WhatsAppInbox() {
     if (!activeContactId || hasListActive) return;
     let cancelled = false;
     const cid = activeContactId;
-    getWhatsAppConversationByContact(cid)
+    fetchInboxConversation(cid)
       .then((c) => {
         if (cancelled) return;
         if (c) setFetchedActive(c);
@@ -1713,6 +1723,23 @@ export function WhatsAppInbox() {
             </>)}
           </div>
 
+          {/* Lista já na tela, mas a recarga ou o hash falharam (403 da trava
+              de IP ao trocar de rede, 500 do banco, sem internet): as
+              conversas ficam (o SWR guarda o último dado) e o aviso diz o
+              motivo real — a rota GET devolve o texto, a action o mascarava. */}
+          {!contactsMode && conversationsLoaded && conversationsSyncError != null && (
+            <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-amber-300/40 bg-amber-500/15 px-3 py-1.5 text-[11px] text-amber-100">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+              <span className="min-w-0 flex-1">Lista sem atualizar: {describeFetchError(conversationsSyncError)}</span>
+              <button
+                onClick={() => { void retryConversationsSync(); }}
+                className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300/50 px-1.5 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20"
+              >
+                <RotateCcw className="h-3 w-3" /> Tentar de novo
+              </button>
+            </div>
+          )}
+
           {/* Área rolável: só a lista de conversas rola */}
           <div className="wa-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
             {contactsMode ? (
@@ -1721,10 +1748,10 @@ export function WhatsAppInbox() {
                 numberFilter={numberFilter}
                 numberLabelOf={numberBadges ? (nid) => (nid ? numberBadges.get(nid) ?? null : null) : null}
                 // Abre na hora: quem está fora da lista é hidratado pelo
-                // fetchedActive. A lista (que pode ganhar a conversa recém-
-                // criada pelo openContactConversation) recarrega pelo
-                // coalescer, DEPOIS da hidratação entrar na fila de actions —
-                // antes o clique esperava as 1.000 conversas.
+                // fetchedActive (GET por contato). A lista (que pode ganhar a
+                // conversa recém-criada pelo openContactConversation)
+                // recarrega pelo coalescer, depois — antes o clique esperava
+                // as 1.000 conversas.
                 onOpen={(contactId) => {
                   setActiveContactId(contactId);
                   scheduleConversationsRefresh();
@@ -1734,11 +1761,12 @@ export function WhatsAppInbox() {
               <ConversationListSkeleton />
             ) : listState === 'error' ? (
               // shouldRetryOnError:false no hook: sem este botão a lista só
-              // tentaria de novo no próximo hash que mudar (ou em 10 min).
+              // tentaria de novo no próximo hash que chegar. O motivo vem da
+              // rota (ex.: fora da internet do escritório), não um genérico.
               <div role="alert" className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 <AlertCircle className="mb-2 h-7 w-7 text-amber-300" />
                 <p className="text-sm">Não foi possível carregar as conversas.</p>
-                <p className="mt-1 text-xs">Confira a conexão e tente de novo.</p>
+                <p className="mt-1 text-xs">{describeFetchError(conversationsError)}</p>
                 <button
                   onClick={() => { void refreshConversations(); }}
                   className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-3 py-1.5 text-[12px] font-bold text-[#6fd6ad] hover:bg-[#356b57]"

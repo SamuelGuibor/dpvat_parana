@@ -33,7 +33,7 @@ import { HospitalCombobox } from '@/app/nova-dash/card-dialog/HospitalCombobox';
 import { ESTADOS, ESTADO_CIVIL } from '@/app/nova-dash/card-dialog/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/app/_shared/ui/dialog';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
-import type { WhatsAppConversationDTO } from '@/app/_actions/whatsapp/conversations';
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 
 // Coluna direita do inbox (redesign aprovado): Copiloto (IA) + Ficha no padrão

@@ -22,6 +22,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - Template só sai por `sendTemplate` (onde vale `templatesPaused`). Exija `status === "APPROVED"`.
 - Opt-out só por regex (`opt-out.ts`). A IA nunca marca `optedOut`. Mantenha o "de" obrigatório em "para de ...".
 - Não use `distinct` do Prisma com `orderBy` em `whatsapp_messages`; use SQL `LATERAL`/`DISTINCT ON`.
+- `inbox-data.ts` (lista, hash, busca do inbox) não tem guarda: só atrás de `teamRoute`/`requireTeam`. O cliente importa o DTO de `inbox-types.ts` com `import type` (valor de `inbox-data.ts` põe o Prisma no bundle).
 - Cortes de dia/mês/hora vêm de `app/_shared/utils/date-br.ts` (servidor em UTC), inclusive o horário comercial dos crons (7h–21h BRT: `isBrBusinessHour`/`nextBrBusinessSlot`). Mensagem proativa nova de cron respeita essa janela.
 - Toda chamada de IA nova grava `metadata.usage` no log. Resposta do cérebro descartada vai em `wa_bot_discarded` (nunca `wa_bot`); usage do Gemini (transcrição) nunca soma no do Claude.
 - Evento novo no canal `whatsapp:<contactId>` sai por `broadcastWhatsAppEvent` (relay depois da resposta), não por `await broadcastToRelay`. Log `wa_*` sem IA pode ir por `runAfterResponse` com `at`; log de IA fica com await (só vai para depois da resposta junto com a chamada de IA inteira, como o resumo de vínculo).

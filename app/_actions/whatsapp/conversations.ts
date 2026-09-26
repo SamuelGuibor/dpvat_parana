@@ -4,18 +4,19 @@
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
-import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
+import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
-import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
 import {
-  LIST_PREVIEW_MAX_CHARS, assumePatch, closePatch, computeUnread, listPreview,
-  qualifiedForCategory, returnToBotPatch,
+  countUnreadConversations, getInboxVersion, loadConversationByContact, loadConversationList, searchConversations,
+} from '@/app/_shared/lib/whatsapp/inbox-data';
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
+import {
+  assumePatch, closePatch, qualifiedForCategory, returnToBotPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
-import { CLOSE_CATEGORY_LABELS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
-import { fallbackCloseLabel } from '@/app/_shared/utils/close-tag-plan';
+import { QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 import { closeCategoryLabel, prepareCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { STICKY_OWNER_ENABLED } from '@/app/_shared/lib/whatsapp/ownership';
@@ -23,13 +24,13 @@ import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
 // Fila e atribuição de conversas de WhatsApp (estilo Botconversa):
 // bot → queued (handoff) → human (atendente assume) → closed.
+//
+// As LEITURAS da lista (lista, hash, busca, conversa por contato, contagens)
+// moram em app/_shared/lib/whatsapp/inbox-data.ts e o inbox as lê pelas rotas
+// GET de app/api/whatsapp/inbox/* (fora da fila serial de server actions: o
+// clique do atendente não espera mais o poll). O DTO mora em inbox-types.ts.
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
-
-// Quantas conversas a lista do inbox carrega de uma vez (as mais recentes)
-// e quantas a busca no servidor devolve.
-const LIST_PAGE = 1000;
-const SEARCH_PAGE = 300;
 
 /**
  * Busca contactId + status + nome/telefone para anexar aos logs de auditoria.
@@ -53,6 +54,9 @@ async function convContact(conversationId: string): Promise<{
   return { contactId: row.contactId, status: row.status, contact: { name: row.name, phone: row.phone } };
 }
 
+// Guarda das MUTAÇÕES deste arquivo: role do JWT, sem trava de IP. A troca por
+// requireTeam (cargo do banco + trava) nas mutações é outra etapa; as leituras
+// abaixo já usam requireTeam.
 async function requireTeamMember(): Promise<{ id: string; name: string }> {
   // Role e nome já vêm no JWT da sessão — o findUnique extra por chamada era
   // uma query redundante em TODO poll do inbox.
@@ -64,464 +68,52 @@ async function requireTeamMember(): Promise<{ id: string; name: string }> {
   return { id: session.user.id, name: session.user.name ?? 'Atendente' };
 }
 
-/**
- * Contagem leve de conversas não lidas para o badge das abas. Não hidrata
- * contato/tags/preview — o poll do badge rodava a query mais pesada do app
- * (200 conversas + 3 includes) a cada 15s só para exibir um número.
- *
- * Mesma regra de `computeUnread` na lista (auditoria de 24/09/2026): não lida
- * = "Marcar como não lida" (lastReadAt na época) OU mensagem RECEBIDA (sem
- * nota interna) depois da leitura efetiva de qualquer atendente. Antes era
- * lastMessageAt > leitura, que contava o envio do próprio atendente e do bot,
- * num findMany de 500 sem orderBy (conversas abertas fora do corte sumiam do
- * número). Conta só as NÃO encerradas — o badge do topo = linhas com bolinha
- * verde nas pastas abertas. Roda a cada 30 s em toda aba da /nova-dash:
- * EXPLAIN de 25/09/2026 com ~380 abertas = ~5 ms, EXISTS pelo índice
- * (contactId, createdAt), sem seq scan em whatsapp_messages.
- *
- * `TIMESTAMP 'epoch'` (e não to_timestamp(0)): as colunas são timestamp SEM
- * fuso, e a igualdade da sentinela não pode depender do TimeZone da sessão.
- */
-export async function countWhatsAppUnread(): Promise<number> {
-  await requireTeamMember();
-  const rows = await db.$queryRaw<{ n: number }[]>`
-    SELECT count(*)::int AS n
-    FROM whatsapp_conversations c
-    CROSS JOIN LATERAL (
-      SELECT GREATEST(c."lastReadAt", MAX(r."lastReadAt")) AS read_at
-      FROM whatsapp_conversation_reads r
-      WHERE r."conversationId" = c.id
-    ) rr
-    WHERE c.status <> 'closed'
-      AND (
-        rr.read_at = TIMESTAMP 'epoch'
-        OR EXISTS (
-          SELECT 1
-          FROM whatsapp_messages m
-          WHERE m."contactId" = c."contactId" AND m.direction = 'in' AND m.internal = false
-            AND m."createdAt" > COALESCE(rr.read_at, TIMESTAMP 'epoch')
-        )
-      )
-  `;
-  return Number(rows[0]?.n ?? 0);
-}
-
-/**
- * Total REAL de conversas (badge do topo da lista). A lista em si é limitada
- * a 200 (take) — o badge mostrava conversations.length e "estagnava" em 200.
- */
-export async function countWhatsAppConversationsTotal(): Promise<number> {
-  await requireTeamMember();
-  return db.whatsAppConversation.count();
-}
-
-export interface WhatsAppConversationDTO {
-  id: string;
-  contactId: string;
-  contactName: string | null;
-  contactPhone: string;
-  status: string; // bot | queued | human | closed
-  qualified: boolean | null; // só relevante quando status="closed"
-  // Categoria do desfecho (só relevante quando status="closed"): qualificado |
-  // nao_qualificado | nq_* (sub-motivo) | perguntas | novo_acidente | transferido.
-  closeCategory: string | null;
-  // Rótulo humano do desfecho, já resolvido no servidor (inclui os motivos
-  // dinâmicos da tabela whatsapp_close_reasons) — ex.: "Não qualificada — sem
-  // cobertura INSS". Vai no chip "Encerrada · {label}" e nos grupos da pasta.
-  closeCategoryLabel: string | null;
-  assignedToId: string | null;
-  assignedToName: string | null;
-  lastMessageAt: string;
-  lastReadAt: string | null;
-  lastInboundAt: string | null; // controla a janela de 24h da Meta
-  lastMessagePreview: string | null;
-  // Quem falou por último (para o selinho de atendente na lista): nome do
-  // atendente da última mensagem enviada, ou null se foi o cliente.
-  lastMessageAuthorName: string | null;
-  lastMessageFromBot: boolean;
-  // A última mensagem foi do CLIENTE (direction "in") — usado pra destacar na
-  // lista quem está esperando resposta da equipe.
-  lastMessageFromClient: boolean;
-  // Status da ÚLTIMA mensagem quando ela é nossa (sent/delivered/read) — o
-  // "radar de vácuo": read + horas sem resposta = cliente viu e ignorou.
-  lastMessageStatus: string | null;
-  // Tipo de mídia da última mensagem (image/*, video/*, audio/*, application/*),
-  // null quando é só texto — vira ícone na prévia da lista.
-  lastMessageMediaType: string | null;
-  // Última nota interna que o BOT deixou ao transferir pra fila (o "por que
-  // caiu na fila" que hoje só aparecia dentro do Copiloto) — mostrado direto
-  // na linha da Fila pra decidir quem atender primeiro sem abrir a conversa.
-  handoffReason: string | null;
-  // Origem do lead (first-touch de Click-to-WhatsApp ads): facebook | instagram
-  // | null (orgânico). Vira o logo no canto do avatar.
-  adPlatform: string | null;
-  // Quando a conversa começou — âncora da linha de jornada na thread.
-  createdAt: string;
-  // Resumo do caso pro card rico (direto da ficha, sem chamada de IA):
-  caseLesoes: string | null;
-  caseCidade: string | null;
-  caseDataAcidente: string | null;
-  // O que trava o CONTRATO (única pendência que aparece na tela): o CPF.
-  hasCpf: boolean;
-  // Provocações do ciclo de recuperação já enviadas (0-5) — exibido quando
-  // status="standby" como "1ª de 5".
-  recoveryAttempts: number;
-  // Não lida = o cliente mandou algo que ninguém da equipe viu (unreadCount >
-  // 0) ou alguém usou "Marcar como não lida". Mensagem de SAÍDA não conta
-  // (regra em computeUnread, app/_shared/utils/whatsapp-inbox.ts).
-  unread: boolean;
-  // Quantas mensagens RECEBIDAS desde a última leitura de qualquer atendente —
-  // o badge verde de contagem (estilo WhatsApp) na lista.
-  unreadCount: number;
-  // Alguém usou "Marcar como não lida" (12/08/2026): o badge vira um marcador
-  // próprio em vez da contagem (que seria o histórico inteiro, "99+").
-  manualUnread: boolean;
-  // Coluna do kanban do cliente vinculado (null quando a conversa ainda não
-  // virou card) — filtro "Coluna do Kanban" do inbox.
-  kanbanColumn: string | null;
-  // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
-  optedOut: boolean;
-  // Número da empresa que atende esta conversa (multi-número): o inbox filtra
-  // e etiqueta por ele. Null em conversa legada ainda não adotada.
-  numberId: string | null;
-  // Número desativado na tela Números: histórico só para consulta — a tela
-  // esconde o composer e o servidor recusa qualquer envio.
-  readOnly: boolean;
-  tags: { id: string; name: string; color: string }[];
-}
-
-// Campos da ficha que a lista usa (resumo do caso + pendência de CPF). Vem do
-// User quando o contato já virou card, senão do clientDraft do contato.
-interface DraftFichaShape {
-  cpf?: string | null; cidade?: string | null;
-  lesoes?: string | null; data_acidente?: string | null;
-}
-
-// Montagem do DTO da lista, compartilhada pelas três entradas: a lista normal
-// do inbox (mais recentes), a BUSCA no servidor e a hidratação de UMA conversa
-// pelo contato. Antes só existia a lista capada — quem estava fora do topo não
-// aparecia na busca nem abria pela agenda (27/08/2026).
+// ---------------------------------------------------------------------------
+// Leituras antigas do inbox, agora wrappers finos de inbox-data.ts.
 //
-// Desenho (auditoria de 24/09/2026): o findMany e depois UMA onda de consultas
-// em paralelo. Antes eram ~10-12 idas e voltas em série ao Neon e a contagem
-// de não lidas sozinha era 44-48% do tempo do banco (JOIN de todas as
-// mensagens recebidas dos 1.000 contatos + GROUP BY, ~83 ms). Hoje são ~5-6 em
-// série: o findMany com contact + tags ainda custa ~4 internas, porque o
-// schema não liga `relationJoins` (próxima alavanca, fora desta mudança).
-async function loadConversations(
-  where: Prisma.WhatsAppConversationWhereInput | undefined,
-  take: number,
-): Promise<WhatsAppConversationDTO[]> {
-  // `select` explícito (não `include`): a conversa carrega botMemory (JSON
-  // grande) e uma dúzia de colunas de controle que a lista nunca mostra —
-  // 1.000 linhas disso a cada poll era tráfego puro Neon → Vercel.
-  //
-  // Sem `reads` aqui: sem relationJoins, `reads: { orderBy, take: 1 }` trazia
-  // TODAS as leituras das 1.000 conversas e cortava em memória. A leitura
-  // efetiva vem do readRows abaixo, junto com a contagem.
-  const conversations = await db.whatsAppConversation.findMany({
-    where,
-    orderBy: { lastMessageAt: 'desc' },
-    take,
-    select: {
-      id: true, contactId: true, numberId: true, status: true, qualified: true,
-      closeCategory: true, assignedToId: true, lastMessageAt: true,
-      createdAt: true, recoveryAttempts: true,
-      contact: {
-        select: {
-          id: true, name: true, phone: true, optedOut: true, userId: true,
-          clientDraft: true, adPlatform: true,
-        },
-      },
-      // Ordem de aplicação, a mesma de setConversationTag e do patch otimista
-      // (withTag põe a nova no fim): sem ela os chips trocavam de lugar quando
-      // a recarga trazia a lista depois de um clique.
-      tags: {
-        orderBy: { createdAt: 'asc' },
-        select: { tag: { select: { id: true, name: true, color: true } } },
-      },
-    },
-  });
-  if (!conversations.length) return [];
+// Ficam por UM deploy só para as abas abertas com o bundle antigo (que ainda
+// chamam estas actions pelo id); o bundle novo lê pelas rotas GET
+// (/api/whatsapp/inbox/{conversations,version,search}). No deploy seguinte,
+// remover as que ficarem sem uso (npx knip). `countWhatsAppUnread` ainda é o
+// badge das abas (useWhatsAppUnread) até ele ir para a rota dos badges.
+// ---------------------------------------------------------------------------
 
-  const contactIds = conversations.map((c) => c.contactId);
-  // Motivo do handoff só aparece na Fila — a nota do bot é buscada só pra elas.
-  const queuedContactIds = conversations.filter((c) => c.status === 'queued').map((c) => c.contactId);
-  const assigneeIds = [...new Set(
-    conversations.map((c) => c.assignedToId).filter((id): id is string => !!id),
-  )];
-  // Nome EXIBIDO: manda o nome do card quando o contato já está vinculado a um
-  // cliente. O `whatsapp_contacts.name` nasce do perfil do WhatsApp (apelido,
-  // "Askeladd") e nem sempre acompanha a correção feita no card — na lista quem
-  // vale é o cadastro.
-  const linkedUserIds = [...new Set(
-    conversations.map((c) => c.contact.userId).filter((id): id is string => !!id),
-  )];
-
-  const [lastRows, assignees, handoffNotes, linkedUsers, readRows, reasonRows, inactiveIds] = await Promise.all([
-    // Última mensagem (preview) e última mensagem RECEBIDA (janela de 24h) por
-    // contato. ATENÇÃO (14/09/2026): isto era `findMany` + `distinct:['contactId']`
-    // + `orderBy createdAt`. O Prisma NÃO traduz esse distinct pra DISTINCT ON —
-    // ele puxava TODAS as mensagens dos 1.000 contatos (~30 mil linhas, com
-    // corpo) e deduplicava em memória, a cada poll de 15s. Era a maior fonte de
-    // tráfego de saída da Neon. Agora é um LATERAL LIMIT 1 por contato no
-    // Postgres, servido pelo índice (contactId, createdAt): 1 linha por contato.
-    // A prévia já sai cortada (left conta caracteres, não quebra emoji) e o
-    // nome do autor vem no mesmo JOIN — antes era mais uma ida ao banco.
-    db.$queryRaw<{
-      contactId: string;
-      body: string | null; mediaType: string | null; direction: string | null;
-      sentByBot: boolean | null; status: string | null;
-      authorUserId: string | null; authorName: string | null;
-      lastInboundAt: Date | null;
-    }[]>`
-      SELECT c."contactId",
-             left(lm.body, ${LIST_PREVIEW_MAX_CHARS}::int) AS body,
-             lm."mediaType", lm.direction, lm."sentByBot", lm.status,
-             au.id AS "authorUserId", au.name AS "authorName",
-             li."createdAt" AS "lastInboundAt"
-      FROM unnest(${contactIds}::text[]) AS c("contactId")
-      LEFT JOIN LATERAL (
-        SELECT m.body, m."mediaType", m.direction, m."sentByBot", m."authorId", m.status
-        FROM whatsapp_messages m
-        WHERE m."contactId" = c."contactId"
-        ORDER BY m."createdAt" DESC
-        LIMIT 1
-      ) lm ON true
-      LEFT JOIN "User" au ON au.id = lm."authorId"
-      LEFT JOIN LATERAL (
-        SELECT m."createdAt"
-        FROM whatsapp_messages m
-        WHERE m."contactId" = c."contactId" AND m.direction = 'in'
-        ORDER BY m."createdAt" DESC
-        LIMIT 1
-      ) li ON true
-    `,
-    assigneeIds.length
-      ? db.user.findMany({ where: { id: { in: assigneeIds } }, select: { id: true, name: true } })
-      : Promise.resolve([] as { id: string; name: string | null }[]),
-    // Linha da Fila: 200 caracteres bastam (a lista mostra uma linha só).
-    queuedContactIds.length
-      ? db.$queryRaw<{ contactId: string; body: string | null }[]>`
-          SELECT c."contactId", left(hn.body, 200) AS body
-          FROM unnest(${queuedContactIds}::text[]) AS c("contactId")
-          JOIN LATERAL (
-            SELECT m.body
-            FROM whatsapp_messages m
-            WHERE m."contactId" = c."contactId" AND m.internal = true AND m."sentByBot" = true
-            ORDER BY m."createdAt" DESC
-            LIMIT 1
-          ) hn ON true
-        `
-      : Promise.resolve([] as { contactId: string; body: string | null }[]),
-    linkedUserIds.length
-      ? db.user.findMany({
-          where: { id: { in: linkedUserIds } },
-          select: { id: true, name: true, role: true, cpf: true, cidade: true, lesoes: true, data_acidente: true },
-        })
-      : Promise.resolve([] as { id: string; name: string | null; role: string; cpf: string | null; cidade: string | null; lesoes: string | null; data_acidente: string | null }[]),
-    // Leitura efetiva + contagem de não lidas, 1 linha por conversa. Leitura
-    // GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa de contar
-    // como não lida para o resto da equipe (GREATEST ignora NULL, então vale a
-    // mais recente entre o lastReadAt legado e as leituras por atendente).
-    // A contagem é um COUNT por contato no índice (contactId, createdAt), só
-    // das mensagens RECEBIDAS depois dessa leitura. O MAX fica no FROM do
-    // LATERAL (não num subselect escalar) para o Postgres calcular a leitura
-    // uma vez só por conversa. Conferido 1:1 com a query antiga em 25/09/2026
-    // (1.000 conversas): ~8,5 ms e ~8 mil buffers, contra ~110 ms e ~91 mil.
-    db.$queryRaw<{ contactId: string; readAt: Date | null; cnt: number }[]>`
-      SELECT c."contactId", rr.read_at AS "readAt", u.cnt
-      FROM whatsapp_conversations c
-      CROSS JOIN LATERAL (
-        SELECT GREATEST(c."lastReadAt", MAX(r."lastReadAt")) AS read_at
-        FROM whatsapp_conversation_reads r
-        WHERE r."conversationId" = c.id
-      ) rr
-      CROSS JOIN LATERAL (
-        SELECT COUNT(*)::int AS cnt
-        FROM whatsapp_messages m
-        WHERE m."contactId" = c."contactId" AND m.direction = 'in' AND m.internal = false
-          AND m."createdAt" > COALESCE(rr.read_at, to_timestamp(0))
-      ) u
-      WHERE c."contactId" = ANY(${contactIds})
-    `,
-    // Rótulos dos motivos dinâmicos (nq_*): tabela minúscula e, dentro da
-    // onda, não soma latência — sem cache, para motivo novo não aparecer como
-    // chave crua em outra instância.
-    db.whatsAppCloseReason.findMany({ select: { key: true, label: true } }),
-    getInactiveNumberIdsCached(),
-  ]);
-
-  const previewByContact = new Map(
-    lastRows.filter((r) => r.direction !== null).map((r) => [r.contactId, r]),
-  );
-  const inboundByContact = new Map(
-    lastRows.filter((r) => r.lastInboundAt !== null).map((r) => [r.contactId, r.lastInboundAt as Date]),
-  );
-  const handoffByContact = new Map(handoffNotes.map((m) => [m.contactId, m.body]));
-  const assigneeNameById = new Map(assignees.map((u) => [u.id, u.name ?? 'Atendente']));
-  const cardNameById = new Map(linkedUsers.map((u) => [u.id, u.name]));
-  // Coluna do kanban do cliente vinculado (User.role guarda o nome da coluna)
-  // — alimenta o filtro "Coluna do Kanban" do inbox (12/08/2026).
-  const columnByUserId = new Map(linkedUsers.map((u) => [u.id, u.role]));
-  const fichaByUserId = new Map<string, DraftFichaShape>(linkedUsers.map((u) => [u.id, u]));
-  const readAtByContact = new Map(readRows.map((r) => [r.contactId, r.readAt]));
-  const unreadCountByContact = new Map(readRows.map((r) => [r.contactId, Number(r.cnt)]));
-  const reasonLabelByKey = new Map(reasonRows.map((r) => [r.key, r.label]));
-  const inactiveNumberIds = new Set(inactiveIds);
-  // Mesma regra do closeCategoryLabel (close-tags.ts): o chip da lista e o
-  // nome da tag de desfecho saem iguais, nunca a chave crua ("nq_engano").
-  const closeLabelOf = (cat: string | null): string | null => {
-    if (!cat) return null;
-    return CLOSE_CATEGORY_LABELS[cat] ?? reasonLabelByKey.get(cat) ?? fallbackCloseLabel(cat);
-  };
-
-  return conversations.map((c) => {
-    const last = previewByContact.get(c.contactId);
-    const inboundAt = inboundByContact.get(c.contactId) ?? null;
-    // Leitura efetiva: a mais recente de QUALQUER atendente, com o lastReadAt
-    // global (legado) como fallback — já resolvida no SQL.
-    const effectiveReadAt = readAtByContact.get(c.contactId) ?? null;
-    const unreadCount = unreadCountByContact.get(c.contactId) ?? 0;
-    // Não lida só por mensagem RECEBIDA (a mesma contagem do badge verde) ou
-    // pela sentinela de "Marcar como não lida". Era lastMessageAt > leitura,
-    // e o envio do próprio atendente/bot reacendia a conversa (ver computeUnread).
-    const { unread, manualUnread } = computeUnread({ readAt: effectiveReadAt, unreadCount });
-    // Ficha do caso: do User quando o contato já virou cliente, senão do
-    // rascunho coletado no atendimento (clientDraft).
-    const ficha: DraftFichaShape | null = c.contact.userId
-      ? fichaByUserId.get(c.contact.userId) ?? null
-      : (c.contact.clientDraft as unknown as DraftFichaShape | null);
-    return {
-      id: c.id,
-      contactId: c.contactId,
-      contactName:
-        (c.contact.userId ? cardNameById.get(c.contact.userId)?.trim() : null) || c.contact.name,
-      contactPhone: c.contact.phone,
-      status: c.status,
-      qualified: c.qualified,
-      closeCategory: c.closeCategory,
-      closeCategoryLabel: c.status === 'closed' ? closeLabelOf(c.closeCategory) : null,
-      assignedToId: c.assignedToId,
-      assignedToName: c.assignedToId ? assigneeNameById.get(c.assignedToId) ?? null : null,
-      lastMessageAt: c.lastMessageAt.toISOString(),
-      lastReadAt: effectiveReadAt?.toISOString() ?? null,
-      lastInboundAt: inboundAt?.toISOString() ?? null,
-      // Mesma regra do patch local do envio (sentMessagePatch): a linha não
-      // "pula" quando o hash recarrega a lista depois de um envio.
-      lastMessagePreview: last ? listPreview(last) : null,
-      // authorUserId nulo = autor apagado ou mensagem sem autor humano.
-      lastMessageAuthorName:
-        last?.direction === 'out' && !last.sentByBot && last.authorUserId
-          ? last.authorName ?? 'Atendente'
-          : null,
-      lastMessageFromBot: !!last?.sentByBot,
-      lastMessageFromClient: last?.direction === 'in',
-      lastMessageStatus: last?.direction === 'out' ? last.status ?? null : null,
-      lastMessageMediaType: last?.mediaType ?? null,
-      handoffReason: c.status === 'queued' ? handoffByContact.get(c.contactId) ?? null : null,
-      adPlatform: c.contact.adPlatform ?? null,
-      createdAt: c.createdAt.toISOString(),
-      caseLesoes: ficha?.lesoes?.trim() || null,
-      caseCidade: ficha?.cidade?.trim() || null,
-      caseDataAcidente: ficha?.data_acidente?.trim() || null,
-      hasCpf: !!ficha?.cpf?.trim(),
-      recoveryAttempts: c.recoveryAttempts,
-      unread,
-      unreadCount,
-      // Sentinela da época (epoch) = "Marcar como não lida" — a UI mostra um
-      // marcador próprio em vez da contagem do histórico inteiro.
-      manualUnread,
-      kanbanColumn: c.contact.userId ? columnByUserId.get(c.contact.userId) ?? null : null,
-      optedOut: c.contact.optedOut,
-      numberId: c.numberId,
-      readOnly: !!c.numberId && inactiveNumberIds.has(c.numberId),
-      tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),
-    };
-  });
+/** Badge de não lidas das abas (só não encerradas). Regra em `countUnreadConversations`. */
+export async function countWhatsAppUnread(): Promise<number> {
+  await requireTeam();
+  return countUnreadConversations();
 }
 
-/**
- * Lista do inbox: as conversas mais recentes. O dropdown de encerradas e o
- * filtro por tag contam em cima DESTA lista — com take menor que o total,
- * encerradas antigas sumiam da contagem. Quem fica FORA deste topo é achável
- * pela busca no servidor (searchWhatsAppConversations).
- */
+/** @deprecated bundle antigo: o total vem junto do hash em GET /api/whatsapp/inbox/version. */
+export async function countWhatsAppConversationsTotal(): Promise<number> {
+  await requireTeam();
+  return (await getInboxVersion()).total;
+}
+
+/** @deprecated bundle antigo: a lista vem de GET /api/whatsapp/inbox/conversations. */
 export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
-  await requireTeamMember();
-  return loadConversations(undefined, LIST_PAGE);
+  await requireTeam();
+  return loadConversationList();
 }
 
-/**
- * "Versão" do inbox (14/09/2026): um hash barato do estado que a lista
- * exibe. O poll do client pergunta só isto; a lista completa (1.000
- * conversas hidratadas) desce apenas quando o hash mudou — mesmo desenho do
- * /api/board-state no Kanban. Cobre: qualquer conversa alterada (status,
- * atribuição, desfecho, lastMessageAt), leituras, etiquetas e o total.
- *
- * O termo de whatsapp_messages continua porque nota interna
- * (sendWhatsAppInternalNote, postInternalNote do bot) cria mensagem sem mexer
- * em whatsapp_conversations, e a prévia da lista mostra a nota. O custo vem
- * do índice whatsapp_messages_createdAt_idx: max("createdAt") vira Index Only
- * Scan Backward (~1 ms) em vez de seq scan da tabela toda a cada 15 s por aba.
- */
+/** @deprecated bundle antigo: o hash vem de GET /api/whatsapp/inbox/version. */
 export async function getWhatsAppInboxVersion(): Promise<string> {
-  await requireTeamMember();
-  const rows = await db.$queryRaw<{ v: string }[]>`
-    SELECT md5(concat_ws('|',
-      (SELECT concat(count(*), ':', coalesce(max("updatedAt")::text, ''), ':', coalesce(max("lastMessageAt")::text, ''))
-         FROM whatsapp_conversations),
-      (SELECT coalesce(max("lastReadAt")::text, '') FROM whatsapp_conversation_reads),
-      (SELECT concat(count(*), ':', coalesce(max("createdAt")::text, '')) FROM whatsapp_conversation_tags),
-      (SELECT coalesce(max("createdAt")::text, '') FROM whatsapp_messages)
-    )) AS v
-  `;
-  return rows[0]?.v ?? '';
+  await requireTeam();
+  return (await getInboxVersion()).version;
 }
 
-/**
- * BUSCA no servidor (27/08/2026): procura em TODAS as conversas, não só nas
- * carregadas na lista. Casa por nome do contato, nome do CARD vinculado (o
- * nome que a lista de fato exibe) e telefone. Sem isso, quem tinha conversa
- * antiga simplesmente "sumia" do inbox ao ser pesquisado.
- */
+/** @deprecated bundle antigo: a busca vem de GET /api/whatsapp/inbox/search?q=. */
 export async function searchWhatsAppConversations(term: string): Promise<WhatsAppConversationDTO[]> {
-  await requireTeamMember();
-  const q = term.trim();
-  if (q.length < 2) return [];
-  const digits = q.replace(/\D/g, '');
-  // O nome EXIBIDO na lista é o do card quando o contato já virou cliente, e
-  // WhatsAppContact não tem relação com User (só o userId solto) — então o
-  // casamento por nome de card sai de uma busca separada em users.
-  const cardMatches = await db.user.findMany({
-    where: { name: { contains: q, mode: 'insensitive' } },
-    select: { id: true },
-    take: 300,
-  });
-  const cardIds = cardMatches.map((u) => u.id);
-  return loadConversations(
-    {
-      OR: [
-        { contact: { name: { contains: q, mode: 'insensitive' as const } } },
-        ...(cardIds.length ? [{ contact: { userId: { in: cardIds } } }] : []),
-        ...(digits.length >= 2 ? [{ contact: { phone: { contains: digits } } }] : []),
-      ],
-    },
-    SEARCH_PAGE,
-  );
+  await requireTeam();
+  return searchConversations(term);
 }
 
-/**
- * Hidrata UMA conversa pelo contato — usado ao abrir alguém pela agenda ou
- * pela busca: sem isso, contato fora do topo da lista abria a thread "vazia"
- * porque o cabeçalho procurava a conversa dentro da lista carregada.
- */
+/** @deprecated bundle antigo: a hidratação vem de GET /api/whatsapp/inbox/conversations?contactId=. */
 export async function getWhatsAppConversationByContact(
   contactId: string,
 ): Promise<WhatsAppConversationDTO | null> {
-  await requireTeamMember();
-  const [conv] = await loadConversations({ contactId }, 1);
-  return conv ?? null;
+  await requireTeam();
+  return loadConversationByContact(contactId);
 }
 
 export interface AttendantDTO {

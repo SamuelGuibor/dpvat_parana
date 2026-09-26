@@ -1,12 +1,12 @@
 // Regras puras da lista do inbox do WhatsApp, compartilhadas entre o servidor
-// (loadConversations em app/_actions/whatsapp/conversations.ts) e o cliente,
+// (loadConversations em app/_shared/lib/whatsapp/inbox-data.ts) e o cliente,
 // para a prévia montada no navegador bater com a que vem do banco.
 //
 // Sem "use server" e sem banco: só tipos dos DTOs e o mapa neutro de
 // close-categories.ts, para os testes rodarem puros
 // (tests/whatsapp-inbox.test.ts e tests/whatsapp-unread.test.ts).
 
-import type { WhatsAppConversationDTO } from '@/app/_actions/whatsapp/conversations';
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
 

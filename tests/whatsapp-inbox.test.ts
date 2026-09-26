@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WhatsAppConversationDTO } from "@/app/_actions/whatsapp/conversations";
+import type { WhatsAppConversationDTO } from "@/app/_shared/lib/whatsapp/inbox-types";
 import {
   LIST_PREVIEW_MAX_CHARS,
   assumePatch,
