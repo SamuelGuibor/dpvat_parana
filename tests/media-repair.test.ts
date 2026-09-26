@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupRepairWrites,
   looksLikeRenamedContactKey,
   mediaRepairCsv,
+  mediaRepairResultCsv,
+  parseCsv,
   planMediaRepair,
+  planMediaRepairUndo,
+  readMediaRepairCsv,
+  selectReviewedRepairs,
   summarizeMediaRepair,
+  versionCopySource,
   type MediaRepairInput,
+  type MediaRepairResultRow,
+  type MediaRepairRow,
   type RepairDocument,
   type RepairMessage,
 } from "@/app/_shared/utils/media-repair";
@@ -318,5 +327,183 @@ describe("summarizeMediaRepair e mediaRepairCsv", () => {
     expect(lines).toHaveLength(4);
     expect(csv).toContain('"whatsapp/c1/1758800000000-RG, ""frente"";.jpeg"');
     expect(lines[1]).toContain('"sim"');
+  });
+});
+
+// --apply (PR24): o CSV revisado é o que a pessoa aprovou; o plano recalculado
+// na hora é o que ainda é verdade. Só se escreve a interseção dos dois.
+describe("parseCsv", () => {
+  it("aspas dobradas, vírgula e quebra de linha dentro de aspas, CRLF e BOM", () => {
+    const text = '﻿"a","b"\r\n"x, ""y""","linha1\nlinha2"\r\n\r\n"z",""\r\n';
+    expect(parseCsv(text)).toEqual([
+      ["a", "b"],
+      ['x, "y"', "linha1\nlinha2"],
+      ["z", ""],
+    ]);
+  });
+
+  it("aceita ; como separador (Excel em pt-BR) e campo sem aspas", () => {
+    expect(parseCsv("a;b\nsim;k,1\n")).toEqual([
+      ["a", "b"],
+      ["sim", "k,1"],
+    ]);
+  });
+
+  it("aspas sem fechar é erro", () => {
+    expect(() => parseCsv('"a","b\n')).toThrow(/aspas/);
+  });
+});
+
+const OLD = "whatsapp/c1/1-x.jpeg";
+const RENAMED = `whatsapp/c1/${TS}-RG Maria, "frente".jpeg`;
+
+function planFor(extra: Partial<MediaRepairInput> = {}) {
+  return planMediaRepair(
+    input({
+      present: [RENAMED],
+      messages: [msg("m1", OLD, 1)],
+      documents: [doc("dRen", RENAMED, 5), doc("dReanexo", OLD, 40)],
+      ...extra,
+    }),
+  );
+}
+
+describe("readMediaRepairCsv", () => {
+  it("lê de volta o CSV do dry-run sem perder key com vírgula, aspas e espaço", () => {
+    const rows = planFor();
+    const back = readMediaRepairCsv(mediaRepairCsv(rows));
+    expect(back).toEqual(rows.map((r) => ({ ...r, resultado: "", detalhe: "" })));
+  });
+
+  it("aplica só é verdadeiro com 'sim' (qualquer caixa)", () => {
+    const csv = mediaRepairCsv(planFor()).replace('"sim"', '"SIM"').replace(/"sim"/g, '"talvez"');
+    const back = readMediaRepairCsv(csv);
+    expect(back.filter((r) => r.aplica)).toHaveLength(1);
+  });
+
+  it("coluna faltando ou ação fora do vocabulário = erro (CSV editado à mão não vira escrita)", () => {
+    expect(() => readMediaRepairCsv('"origem","id"\n"mensagem","m1"\n')).toThrow(/colunas/);
+    const csv = mediaRepairCsv(planFor()).replace('"apontar_para_doc"', '"apagar_tudo"');
+    expect(() => readMediaRepairCsv(csv)).toThrow(/Linha 2 .*acao/);
+  });
+
+  it("lê o CSV de resultado com as colunas resultado e detalhe", () => {
+    const rows: MediaRepairResultRow[] = planFor().map((r) => ({ ...r, resultado: "aplicado", detalhe: "ok; sem erro" }));
+    expect(readMediaRepairCsv(mediaRepairResultCsv(rows))).toEqual(rows);
+  });
+});
+
+describe("selectReviewedRepairs", () => {
+  const byId = (rows: MediaRepairRow[], id: string) => rows.find((r) => r.id === id)!;
+
+  it("aprova só o que a revisão marcou sim e o plano atual ainda traz igual; soft-delete depois da mensagem", () => {
+    const fresh = planFor();
+    const reviewed = readMediaRepairCsv(mediaRepairCsv(fresh));
+    const sel = selectReviewedRepairs(fresh, reviewed);
+    expect(sel.aprovadas.map((r) => [r.id, r.acao])).toEqual([
+      ["m1", "apontar_para_doc"],
+      ["dReanexo", "soft_delete_doc"],
+    ]);
+    expect(sel).toMatchObject({ puladas: [], naoRevisadas: 0, recusadas: 0 });
+  });
+
+  it("linha marcada nao fica de fora e conta como recusada; o soft-delete do mesmo par cai junto", () => {
+    const fresh = planFor();
+    const reviewed = readMediaRepairCsv(mediaRepairCsv(fresh)).map((r) => (r.id === "m1" ? { ...r, aplica: false } : r));
+    const sel = selectReviewedRepairs(fresh, reviewed);
+    expect(sel.aprovadas).toEqual([]);
+    expect(sel.recusadas).toBe(1);
+    expect(sel.puladas).toEqual([
+      { row: byId(fresh, "dReanexo"), motivo: expect.stringMatching(/par da mensagem/) },
+    ]);
+  });
+
+  it("key editada no CSV ou linha já consertada não bate com o plano = pulada", () => {
+    const fresh = planFor();
+    const reviewed = readMediaRepairCsv(mediaRepairCsv(fresh)).map((r) =>
+      r.id === "m1" ? { ...r, newKey: "whatsapp/c1/outra.jpeg" } : r,
+    );
+    const sel = selectReviewedRepairs(fresh, reviewed);
+    expect(sel.aprovadas).toEqual([]);
+    expect(sel.puladas.map((p) => [p.row.id, p.motivo])).toEqual([
+      ["m1", expect.stringMatching(/não está no plano atual/)],
+      ["dReanexo", expect.stringMatching(/par da mensagem/)],
+    ]);
+    // A linha verdadeira do plano não foi revisada: não entra, só é contada.
+    expect(sel.naoRevisadas).toBe(1);
+  });
+
+  it("par por ordem aprovado na revisão só passa se o --apply também rodar com --incluir-ordem", () => {
+    const base = {
+      present: [`whatsapp/c1/${TS}-b.jpeg`, `whatsapp/c1/${TS}-a.jpeg`],
+      messages: [msg("m2", "whatsapp/c1/2-y.jpeg", 2), msg("m1", "whatsapp/c1/1-x.jpeg", 1)],
+      documents: [doc("dB", `whatsapp/c1/${TS}-b.jpeg`, 8), doc("dA", `whatsapp/c1/${TS}-a.jpeg`, 7)],
+    };
+    const reviewed = readMediaRepairCsv(mediaRepairCsv(planMediaRepair(input({ ...base, includeOrderPairs: true }))));
+    const sem = selectReviewedRepairs(planMediaRepair(input(base)), reviewed);
+    expect(sem.aprovadas).toEqual([]);
+    expect(sem.puladas).toHaveLength(2);
+    expect(sem.puladas.every((p) => /--incluir-ordem/.test(p.motivo))).toBe(true);
+    const com = selectReviewedRepairs(planMediaRepair(input({ ...base, includeOrderPairs: true })), reviewed);
+    expect(com.aprovadas.map((r) => r.id).sort()).toEqual(["m1", "m2"]);
+  });
+
+  it("linha só de relatório marcada sim à mão não vira escrita", () => {
+    const fresh = planMediaRepair(input({ present: [], messages: [msg("m1", OLD, 1)] }));
+    const reviewed = readMediaRepairCsv(mediaRepairCsv(fresh)).map((r) => ({ ...r, aplica: true }));
+    const sel = selectReviewedRepairs(fresh, reviewed);
+    expect(sel.aprovadas).toEqual([]);
+    expect(sel.puladas[0].motivo).toMatch(/só relatório/);
+  });
+
+  it("--contact deixa as linhas de outro contato de fora", () => {
+    const fresh = planFor();
+    const reviewed = readMediaRepairCsv(mediaRepairCsv(fresh));
+    const sel = selectReviewedRepairs(fresh, reviewed, { inScope: (r) => r.contactId === "c9" });
+    expect(sel.aprovadas).toEqual([]);
+    expect(sel.puladas).toHaveLength(2);
+    expect(sel.puladas.every((p) => p.motivo === "fora do escopo do --contact")).toBe(true);
+    expect(sel.naoRevisadas).toBe(0);
+  });
+
+  it("restauração de versão vem primeiro e uma key vira um CopyObject só", () => {
+    const fresh = planFor({ versions: new Map([[OLD, "v1"]]), canRestoreVersion: true });
+    const sel = selectReviewedRepairs(fresh, readMediaRepairCsv(mediaRepairCsv(fresh)));
+    expect(sel.aprovadas).toHaveLength(2);
+    expect(sel.aprovadas.every((r) => r.acao === "restaurar_versao")).toBe(true);
+    const writes = groupRepairWrites(sel.aprovadas);
+    expect(writes).toEqual({ restaurar: [{ key: OLD, versionId: "v1" }], mensagens: [], documentos: [] });
+  });
+
+  it("groupRepairWrites separa mensagens e soft-deletes", () => {
+    const fresh = planFor();
+    const writes = groupRepairWrites(selectReviewedRepairs(fresh, readMediaRepairCsv(mediaRepairCsv(fresh))).aprovadas);
+    expect(writes.restaurar).toEqual([]);
+    expect(writes.mensagens.map((r) => r.id)).toEqual(["m1"]);
+    expect(writes.documentos.map((r) => [r.id, r.docId])).toEqual([["dReanexo", "dRen"]]);
+  });
+});
+
+describe("planMediaRepairUndo", () => {
+  it("volta só o que saiu aplicado; restauração de versão não se desfaz", () => {
+    const applied = (rows: MediaRepairRow[]): MediaRepairResultRow[] =>
+      rows.map((r) => ({ ...r, resultado: "aplicado", detalhe: "" }));
+    const rows: MediaRepairResultRow[] = [
+      ...applied(planFor()),
+      ...applied(planFor({ versions: new Map([[OLD, "v1"]]), canRestoreVersion: true })),
+      { ...planFor()[0], id: "m9", resultado: "pulado", detalhe: "mudou" },
+    ];
+    const undo = planMediaRepairUndo(rows);
+    expect(undo.mensagens.map((r) => [r.id, r.oldKey, r.newKey])).toEqual([["m1", OLD, RENAMED]]);
+    expect(undo.documentos.map((r) => r.id)).toEqual(["dReanexo"]);
+    expect(undo.semDesfazer).toBe(2);
+  });
+});
+
+describe("versionCopySource", () => {
+  it("codifica cada segmento da key (espaço, acento, vírgula) e o versionId", () => {
+    expect(versionCopySource("meu-bucket", "whatsapp/c1/1-RG Mária,1.jpeg", "a+b/c")).toBe(
+      "meu-bucket/whatsapp/c1/1-RG%20M%C3%A1ria%2C1.jpeg?versionId=a%2Bb%2Fc",
+    );
   });
 });

@@ -13,9 +13,10 @@
 // - a purga da lixeira apagava o objeto mesmo com mensagem ainda usando a key.
 //
 // O reparo (--apply, PR24) nunca apaga nada: restaura a versão do objeto (bucket
-// versionado) ou aponta a mensagem para a cópia renomeada, e o CSV old→new serve
-// de rollback. O que sobra sem par (purgado/ambíguo) só volta reenviando; na
-// thread ele aparece como "Arquivo indisponível" pelo fallback de UI do PR14.
+// versionado) ou aponta a mensagem para a cópia renomeada, e o CSV de resultado
+// (old→new) é o rollback do --desfazer. O que sobra sem par (purgado/ambíguo) só
+// volta reenviando; na thread ele aparece como "Arquivo indisponível" pelo
+// fallback de UI do PR14.
 
 import { contactIdFromWhatsAppKey, isSharedLibraryKey } from "./s3-keys";
 import { extensionFromKey } from "./doc-name";
@@ -392,10 +393,314 @@ const CSV_COLUMNS: (keyof MediaRepairRow)[] = [
   "evidencia",
 ];
 
+function toCsv<T>(columns: (keyof T)[], rows: T[]): string {
+  const cell = (v: unknown) => `"${String(typeof v === "boolean" ? (v ? "sim" : "nao") : v).replace(/"/g, '""')}"`;
+  const lines = [columns.map(cell).join(",")];
+  for (const r of rows) lines.push(columns.map((c) => cell(r[c])).join(","));
+  return lines.join("\n") + "\n";
+}
+
 /** CSV com todas as colunas entre aspas (a key pode ter vírgula, aspas ou ponto e vírgula). */
 export function mediaRepairCsv(rows: MediaRepairRow[]): string {
-  const cell = (v: unknown) => `"${String(typeof v === "boolean" ? (v ? "sim" : "nao") : v).replace(/"/g, '""')}"`;
-  const lines = [CSV_COLUMNS.map(cell).join(",")];
-  for (const r of rows) lines.push(CSV_COLUMNS.map((c) => cell(r[c])).join(","));
-  return lines.join("\n") + "\n";
+  return toCsv(CSV_COLUMNS, rows);
+}
+
+// ---------------------------------------------------------------------------
+// --apply (PR24): do CSV revisado ao que se escreve em produção.
+//
+// O --apply NÃO confia no CSV sozinho nem no plano recalculado sozinho: só
+// escreve a linha que a revisão marcou "sim" E que o plano recalculado na hora
+// ainda traz idêntica e aplicável. Assim uma key editada no CSV, uma mensagem
+// consertada no meio do caminho ou um par que mudou desde a revisão viram
+// "pulado" em vez de escrita às cegas. Linha aplicável que não passou pela
+// revisão (dado novo) também não entra: rode o dry-run de novo e revise.
+// ---------------------------------------------------------------------------
+
+/** Autor do soft-delete do Document reanexado quebrado (a lixeira do card mostra "por reparo-midia"). */
+export const MEDIA_REPAIR_DELETED_BY = "reparo-midia";
+
+export type MediaRepairResultStatus = "aplicado" | "pulado" | "erro" | "desfeito";
+
+/** Linha do CSV de resultado do --apply/--desfazer (o do dry-run vem com as duas colunas vazias). */
+export type MediaRepairResultRow = MediaRepairRow & {
+  resultado: MediaRepairResultStatus | "";
+  detalhe: string;
+};
+
+const RESULT_COLUMNS: (keyof MediaRepairResultRow)[] = [...CSV_COLUMNS, "resultado", "detalhe"];
+
+/** CSV de resultado: o do dry-run + `resultado` e `detalhe`. É o arquivo de rollback do --desfazer. */
+export function mediaRepairResultCsv(rows: MediaRepairResultRow[]): string {
+  return toCsv(RESULT_COLUMNS, rows);
+}
+
+// O separador sai do cabeçalho: quem abre o CSV no Excel em pt-BR para mudar a
+// coluna "aplica" costuma salvar com ";".
+function detectCsvDelimiter(src: string): "," | ";" {
+  let inQuotes = false;
+  let commas = 0;
+  let semicolons = 0;
+  for (const ch of src) {
+    if (ch === '"') inQuotes = !inQuotes; // aspas dobradas alternam duas vezes
+    else if (!inQuotes) {
+      if (ch === "\n" || ch === "\r") break;
+      if (ch === ",") commas += 1;
+      else if (ch === ";") semicolons += 1;
+    }
+  }
+  return semicolons > commas ? ";" : ",";
+}
+
+/**
+ * CSV (RFC 4180): campo entre aspas com aspas dobradas, separador ou quebra de
+ * linha dentro; CRLF ou LF; BOM do Excel ignorado; linha em branco descartada.
+ */
+export function parseCsv(text: string): string[][] {
+  const src = text.replace(/^﻿/, "");
+  const sep = detectCsvDelimiter(src);
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuotes) {
+      if (ch !== '"') field += ch;
+      else if (src[i + 1] === '"') {
+        field += '"';
+        i += 1;
+      } else inQuotes = false;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === sep) {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && src[i + 1] === "\n") i += 1;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else field += ch;
+  }
+  if (inQuotes) throw new Error("CSV com aspas sem fechar.");
+  if (field !== "" || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+}
+
+const ORIGINS: readonly MediaRepairOrigin[] = ["mensagem", "documento", "fluxo", "template"];
+const CATEGORIES: readonly MediaRepairCategory[] = [
+  "rename_pareavel",
+  "purgado",
+  "doc_quebrado",
+  "doc_quebrado_lixeira",
+  "ambiguo",
+  "biblioteca",
+  "fluxo_renomeado",
+];
+const ACTIONS: readonly MediaRepairAction[] = [
+  "restaurar_versao",
+  "apontar_para_doc",
+  "par_por_ordem",
+  "soft_delete_doc",
+  "reenviar_pela_tela",
+  "nenhuma",
+];
+const CONFIDENCES: readonly MediaRepairConfidence[] = ["alta", "media", ""];
+const RESULTS: readonly (MediaRepairResultStatus | "")[] = ["aplicado", "pulado", "erro", "desfeito", ""];
+
+function oneOf<T extends string>(allowed: readonly T[], value: string, column: string, line: number): T {
+  if ((allowed as readonly string[]).includes(value)) return value as T;
+  throw new Error(`Linha ${line} do CSV: valor desconhecido em "${column}": "${value}".`);
+}
+
+/**
+ * Lê o CSV do dry-run (ou o de resultado do --apply). Keys e ids ficam como
+ * estão (sem trim: a key é comparada byte a byte com o plano); `aplica` só é
+ * verdadeiro com "sim". Coluna faltando ou valor fora do vocabulário = erro,
+ * para um CSV editado à mão não virar escrita inesperada.
+ */
+export function readMediaRepairCsv(text: string): MediaRepairResultRow[] {
+  const [header, ...lines] = parseCsv(text);
+  if (!header) throw new Error("CSV vazio.");
+  const index = new Map(header.map((h, i) => [h.trim(), i]));
+  const missing = CSV_COLUMNS.filter((c) => !index.has(c));
+  if (missing.length) {
+    throw new Error(`CSV sem as colunas ${missing.join(", ")}: use o CSV gerado pelo dry-run do script.`);
+  }
+  return lines.map((cells, n) => {
+    const line = n + 2;
+    const raw = (col: string) => {
+      const i = index.get(col);
+      return i === undefined ? "" : (cells[i] ?? "");
+    };
+    const word = (col: string) => raw(col).trim().toLowerCase();
+    return {
+      origem: oneOf(ORIGINS, word("origem"), "origem", line),
+      id: raw("id"),
+      contactId: raw("contactId"),
+      categoria: oneOf(CATEGORIES, word("categoria"), "categoria", line),
+      acao: oneOf(ACTIONS, word("acao"), "acao", line),
+      confianca: oneOf(CONFIDENCES, word("confianca"), "confianca", line),
+      aplica: word("aplica") === "sim",
+      oldKey: raw("oldKey"),
+      newKey: raw("newKey"),
+      versionId: raw("versionId"),
+      docId: raw("docId"),
+      evidencia: raw("evidencia"),
+      resultado: oneOf(RESULTS, word("resultado"), "resultado", line),
+      detalhe: raw("detalhe"),
+    };
+  });
+}
+
+/** Identidade de uma linha do plano: o que a revisão aprovou tem que bater campo a campo. */
+export function mediaRepairRowId(r: MediaRepairRow): string {
+  return [r.origem, r.id, r.acao, r.oldKey, r.newKey, r.versionId, r.docId].join("\u0000");
+}
+
+const isMessageRepoint = (r: MediaRepairRow) =>
+  r.origem === "mensagem" && (r.acao === "apontar_para_doc" || r.acao === "par_por_ordem");
+const pairKey = (r: MediaRepairRow) => `${r.oldKey}\u0000${r.newKey}`;
+
+// Ordem de escrita: restaurar o objeto (S3) → apontar mensagens → soft-delete
+// do reanexado, que só faz sentido depois de o par ter sido aceito.
+const ACTION_ORDER: Partial<Record<MediaRepairAction, number>> = {
+  restaurar_versao: 0,
+  apontar_para_doc: 1,
+  par_por_ordem: 1,
+  soft_delete_doc: 2,
+};
+
+function notApplicableReason(r: MediaRepairRow): string {
+  if (r.acao === "par_por_ordem" || (r.acao === "soft_delete_doc" && r.confianca === "media")) {
+    return "par por ordem: só aplica rodando com --incluir-ordem";
+  }
+  if (r.acao === "restaurar_versao") return "a credencial não tem s3:GetObjectVersion";
+  return "o plano atual não aplica esta linha (só relatório)";
+}
+
+export type MediaRepairSkip = { row: MediaRepairRow; motivo: string };
+
+export type MediaRepairSelection = {
+  /** O que o --apply escreve, já na ordem de escrita. */
+  aprovadas: MediaRepairRow[];
+  puladas: MediaRepairSkip[];
+  /** Aplicáveis no plano atual que não estão no CSV revisado (dado novo: rode o dry-run e revise). */
+  naoRevisadas: number;
+  /** Aplicáveis no plano atual que a revisão marcou "nao". */
+  recusadas: number;
+};
+
+/**
+ * Cruza o plano recalculado agora (`fresh`) com o CSV revisado. Só passa a
+ * linha marcada "sim" na revisão que existe idêntica no plano atual e que o
+ * plano atual aplica. O soft-delete do Document reanexado exige que o par
+ * mensagem → cópia renomeada (mesmas oldKey/newKey) também tenha sido aprovado:
+ * se a revisão duvidou do par, o reanexado fica como está.
+ */
+export function selectReviewedRepairs(
+  fresh: MediaRepairRow[],
+  reviewed: MediaRepairRow[],
+  opts: { inScope?: (r: MediaRepairRow) => boolean } = {},
+): MediaRepairSelection {
+  const inScope = opts.inScope ?? (() => true);
+  const freshById = new Map(fresh.map((r) => [mediaRepairRowId(r), r]));
+  const reviewedIds = new Set(reviewed.map(mediaRepairRowId));
+  const approvedIds = new Set(reviewed.filter((r) => r.aplica).map(mediaRepairRowId));
+
+  const ok: MediaRepairRow[] = [];
+  const puladas: MediaRepairSkip[] = [];
+  const seen = new Set<string>();
+  for (const r of reviewed) {
+    if (!r.aplica) continue;
+    const id = mediaRepairRowId(r);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (!inScope(r)) {
+      puladas.push({ row: r, motivo: "fora do escopo do --contact" });
+      continue;
+    }
+    const f = freshById.get(id);
+    if (!f) {
+      puladas.push({ row: r, motivo: "não está no plano atual (já reparada ou mudou desde a revisão)" });
+    } else if (!f.aplica) {
+      puladas.push({ row: f, motivo: notApplicableReason(f) });
+    } else ok.push(f);
+  }
+
+  const approvedPairs = new Set(ok.filter(isMessageRepoint).map(pairKey));
+  const aprovadas: MediaRepairRow[] = [];
+  for (const r of ok) {
+    if (r.acao === "soft_delete_doc" && !approvedPairs.has(pairKey(r))) {
+      puladas.push({ row: r, motivo: "o par da mensagem (oldKey → newKey) não foi aprovado na revisão" });
+    } else aprovadas.push(r);
+  }
+  aprovadas.sort((a, b) => (ACTION_ORDER[a.acao] ?? 9) - (ACTION_ORDER[b.acao] ?? 9));
+
+  let naoRevisadas = 0;
+  let recusadas = 0;
+  for (const f of fresh) {
+    if (!f.aplica || !inScope(f)) continue;
+    const id = mediaRepairRowId(f);
+    if (!reviewedIds.has(id)) naoRevisadas += 1;
+    else if (!approvedIds.has(id)) recusadas += 1;
+  }
+  return { aprovadas, puladas, naoRevisadas, recusadas };
+}
+
+export type MediaRepairWrites = {
+  /** Um CopyObject por key (mensagens e Documents da mesma key dividem a restauração). */
+  restaurar: { key: string; versionId: string }[];
+  /** UPDATE da mediaKey com guarda pelo valor antigo. */
+  mensagens: MediaRepairRow[];
+  /** Soft-delete do Document reanexado (deletedBy "reparo-midia"). */
+  documentos: MediaRepairRow[];
+};
+
+export function groupRepairWrites(aprovadas: MediaRepairRow[]): MediaRepairWrites {
+  const restore = new Map<string, string>();
+  const mensagens: MediaRepairRow[] = [];
+  const documentos: MediaRepairRow[] = [];
+  for (const r of aprovadas) {
+    if (r.acao === "restaurar_versao") {
+      if (!restore.has(r.oldKey)) restore.set(r.oldKey, r.versionId);
+    } else if (isMessageRepoint(r)) mensagens.push(r);
+    else if (r.acao === "soft_delete_doc" && r.origem === "documento") documentos.push(r);
+  }
+  return { restaurar: [...restore].map(([key, versionId]) => ({ key, versionId })), mensagens, documentos };
+}
+
+export type MediaRepairUndo = {
+  /** Mensagens que voltam para a key antiga (guarda: ainda apontam para a nova). */
+  mensagens: MediaRepairResultRow[];
+  /** Documents que saem da lixeira (guarda: deletedBy "reparo-midia"). */
+  documentos: MediaRepairResultRow[];
+  /** Restaurações de versão aplicadas: não se desfazem (só trouxeram o objeto de volta, o banco não mudou). */
+  semDesfazer: number;
+};
+
+/** Rollback a partir do CSV de resultado do --apply: só o que saiu "aplicado". */
+export function planMediaRepairUndo(rows: MediaRepairResultRow[]): MediaRepairUndo {
+  const out: MediaRepairUndo = { mensagens: [], documentos: [], semDesfazer: 0 };
+  for (const r of rows) {
+    if (r.resultado !== "aplicado") continue;
+    if (isMessageRepoint(r) && r.newKey) out.mensagens.push(r);
+    else if (r.acao === "soft_delete_doc" && r.origem === "documento") out.documentos.push(r);
+    else if (r.acao === "restaurar_versao") out.semDesfazer += 1;
+  }
+  return out;
+}
+
+/**
+ * CopySource de uma versão para o CopyObject: `bucket/key` URL-encoded por
+ * segmento (a key tem espaço, acento e o nome digitado pela equipe) +
+ * `?versionId=`. Restaurar = copiar a versão boa para a MESMA key, que vira a
+ * versão atual; nada é apagado.
+ */
+export function versionCopySource(bucket: string, key: string, versionId: string): string {
+  const encoded = `${bucket}/${key}`.split("/").map(encodeURIComponent).join("/");
+  return `${encoded}?versionId=${encodeURIComponent(versionId)}`;
 }

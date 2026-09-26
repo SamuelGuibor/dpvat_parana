@@ -1467,6 +1467,8 @@ Onda C_documentos · esforço P · depende de C6 · migration: não · micro: n�
 ### C1b (--apply)
 Spec completa de C1b em **PR09**; aqui entra só: C1b (--apply)
 
+- Feito assim: `--apply --plano=<CSV revisado>` recalcula o plano e escreve só a interseção "marcado sim na revisão" × "idêntico e aplicável no plano atual" (`selectReviewedRepairs` em app/_shared/utils/media-repair.ts, testado): key editada, linha já consertada ou caso novo desde a revisão ficam de fora; par por ordem exige `--incluir-ordem` nas duas rodadas; o soft-delete do reanexado exige o par da mensagem aprovado. Escritas: CopyObject da versão (HEAD 404 antes; hoje o bucket não é versionado, então não ocorre), HEAD da cópia renomeada, e uma transação com `updateMany` guardado pelo valor antigo (mensagem) e soft-delete com `deletedBy` 'reparo-midia' (cópia ativa no mesmo card). Sai um CSV de resultado (aplicado/pulado/erro + detalhe) que é o rollback de `--desfazer=<csv>`. Dry-run rodado de novo em 25/09 (só leitura): 432 linhas, 51 `apontar_para_doc` aplicáveis, 207 `par_por_ordem` (só com --incluir-ordem), 0 `soft_delete_doc`, bucket sem versionamento. O --apply NÃO foi executado.
+
 ## PR25 Bot WhatsApp: docsReceived só com foto/PDF do atendimento atual
 **Por que agora:** Esforço P e isolado. O cérebro lê 'arquivo nesta conversa', mas recebe a contagem da vida inteira do contato, incluindo áudio (DOC-5/EF-4). É pré-requisito do D11.
 

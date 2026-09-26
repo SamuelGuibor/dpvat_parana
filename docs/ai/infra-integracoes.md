@@ -75,7 +75,7 @@
 - `log-dev-commits.mjs`: grava commits do git como `Log` de ação `dev_commit` (dry-run sem `--apply`).
 - `migrate-templates-to-db.mjs`: move os modelos `.docx` do disco para `doc_templates` + S3.
 - `normalize-docs.mjs`: normalização única de CPF/telefone/CEP para só dígitos.
-- `reparar-midias-renomeadas.mjs`: diagnóstico das mídias do WhatsApp quebradas por rename/purga (ver `docs/ai/documentos-ia.md`). Só dry-run: banco em transação READ ONLY e leituras no S3; o `--apply` é recusado. O CSV sai em `os.tmpdir()` (ou `--out` fora do repo) e tem dado pessoal.
+- `reparar-midias-renomeadas.mjs`: diagnóstico e reparo das mídias do WhatsApp quebradas por rename/purga (ver `docs/ai/documentos-ia.md`). Dry-run por padrão (banco em transação READ ONLY e leituras no S3); `--apply` exige `--plano=<CSV revisado>` e grava; `--desfazer=<CSV de resultado>` é o rollback. Os CSVs saem em `os.tmpdir()` (ou `--out` fora do repo) e têm dado pessoal.
 - `prank-isadora.mjs`: pegadinha que insere logs falsos marcados com `metadata.prank`. **Não rodar.**
 - `seed-hospitals.ts`: seed da lista de hospitais.
 
