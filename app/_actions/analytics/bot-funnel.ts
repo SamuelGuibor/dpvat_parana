@@ -2,7 +2,7 @@
 
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam, requirePermission } from '@/app/_shared/lib/permissions-server';
-import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey } from '@/app/_shared/utils/date-br';
+import { brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey } from '@/app/_shared/utils/date-br';
 import { HIRED_TAG_NAME, QUALIFIED_TAG_NAME } from '@/app/_shared/lib/whatsapp/close-categories';
 
 // Funil do bot da IA (substitui o Funil de leads antigo, que contava pelo
@@ -94,8 +94,6 @@ export interface BotKanbanLead {
   numberLabel: string | null;
 }
 
-const KANBAN_WINDOW_DAYS = 90;
-
 function parseRange(fromISO?: string, toISO?: string): { from: Date; to: Date } | null {
   if (!fromISO || !toISO) return null;
   const f = new Date(fromISO);
@@ -183,28 +181,27 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
   return { leads, qualified };
 }
 
-/**
- * from/to (ISO) têm prioridade sobre periodDays — o dashboard geral filtra por
- * intervalo livre; a aba do chatbot continua mandando 7/30/90 dias.
- */
-export async function getBotFunnel(
-  periodDays: number,
-  numberId: string | null,
-  fromISO?: string,
-  toISO?: string,
-): Promise<BotFunnelData> {
-  await requireTeam();
-  const days = Math.min(Math.max(Math.round(periodDays) || 7, 1), 365);
-  const range = parseRange(fromISO, toISO);
-  const since = range?.from ?? brStartOfDaysAgo(days - 1);
-  const until = range?.to ?? null;
+type Cohort = Awaited<ReturnType<typeof loadCohort>>;
+
+/** O que o Funil soma além da coorte: meta e série "Mensal" + legado do período. */
+interface FunnelTotals {
+  monthHiredBot: number;
+  monthHiredLegacy: number;
+  monthGoal: number;
+  hiredLegacy: number;
+  yearHiredAt: Date[];
+  yearRejectedAt: Date[];
+  yearOpenAt: Date[];
+}
+
+async function loadFunnelTotals(numberId: string | null, since: Date, until: Date): Promise<FunnelTotals> {
   const byNumber = numberId ? { numberId } : {};
 
   // "Meta do mês" e a série "Mensal" acompanham o calendário: a referência é
   // o FIM do período selecionado (antes eram sempre o mês/ano correntes,
   // ignorando o filtro). Selecionou março → meta de março + série do ano de
   // março.
-  const ref = until ?? new Date();
+  const ref = until;
   const monthStart = brStartOfMonth(ref);
   const monthEnd = brStartOfMonth(new Date(monthStart.getTime() + 40 * 86_400_000));
   const inGoalMonth = { gte: monthStart, lt: monthEnd };
@@ -213,10 +210,9 @@ export async function getBotFunnel(
   const yearEnd = brStartOfDay(new Date(Date.UTC(refYear + 1, 0, 1, 12)));
   const inRefYear = { gte: yearStart, lt: yearEnd };
 
-  const periodRange = until ? { gte: since, lte: until } : { gte: since };
-  const [cohort, monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen, hiredLegacy] =
+  const periodRange = { gte: since, lte: until };
+  const [monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen, hiredLegacy] =
     await Promise.all([
-      loadCohort(numberId, since, until),
       db.whatsAppConversationTag.count({
         where: {
           createdAt: inGoalMonth,
@@ -263,10 +259,23 @@ export async function getBotFunnel(
         : db.botconversa.count({ where: { evento: 'contratado', updatedAt: periodRange } }),
     ]);
 
+  return {
+    monthHiredBot,
+    monthHiredLegacy,
+    monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
+    hiredLegacy,
+    yearHiredAt: yearHiredTags.map((t) => t.createdAt),
+    yearRejectedAt: yearRejected.flatMap((c) => (c.closedAt ? [c.closedAt] : [])),
+    yearOpenAt: yearOpen.map((c) => c.createdAt),
+  };
+}
+
+/** Parte pura do Funil: etapas da coorte + totais já buscados. */
+function computeFunnel(cohort: Cohort, totals: FunnelTotals, since: Date, until: Date): BotFunnelData {
   const monthly = MONTHS.map((month) => ({ month, aprovados: 0, indeferidos: 0, emAndamento: 0 }));
-  for (const t of yearHiredTags) monthly[brMonthIndex(t.createdAt)].aprovados++;
-  for (const c of yearRejected) if (c.closedAt) monthly[brMonthIndex(c.closedAt)].indeferidos++;
-  for (const c of yearOpen) monthly[brMonthIndex(c.createdAt)].emAndamento++;
+  for (const at of totals.yearHiredAt) monthly[brMonthIndex(at)].aprovados++;
+  for (const at of totals.yearRejectedAt) monthly[brMonthIndex(at)].indeferidos++;
+  for (const at of totals.yearOpenAt) monthly[brMonthIndex(at)].emAndamento++;
 
   const count: Record<BotStage, number> = {
     iniciado: 0, em_conversa: 0, enviou_documentos: 0, nao_contratado: 0,
@@ -278,7 +287,7 @@ export async function getBotFunnel(
   // conversas antigas etiquetadas Contratados no período — elas contam na
   // etapa Contratado, não no total de novas).
   const sinceMs = since.getTime();
-  const untilMs = until ? until.getTime() : Number.POSITIVE_INFINITY;
+  const untilMs = until.getTime();
   const createdInPeriod = cohort.leads.filter((l) => {
     const t = l.createdAt ? new Date(l.createdAt).getTime() : 0;
     return t >= sinceMs && t <= untilMs;
@@ -294,40 +303,45 @@ export async function getBotFunnel(
     notHired: count.nao_contratado,
     disqualified: count.nao_qualificado,
     qualified: cohort.qualified,
-    hired: count.contratado + hiredLegacy,
+    hired: count.contratado + totals.hiredLegacy,
     hiredBot: count.contratado,
-    hiredLegacy,
+    hiredLegacy: totals.hiredLegacy,
     others: count.outros,
-    monthHired: monthHiredBot + monthHiredLegacy,
-    monthHiredBot,
-    monthHiredLegacy,
-    monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
+    monthHired: totals.monthHiredBot + totals.monthHiredLegacy,
+    monthHiredBot: totals.monthHiredBot,
+    monthHiredLegacy: totals.monthHiredLegacy,
+    monthGoal: totals.monthGoal,
     monthly,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Leads do NOSSO sistema no "Fluxo de Eventos Rápidos" (MiniKanban): cada
-// conversa da coorte vira um card na etapa derivada do estado real, com a
-// etiqueta do número que atendeu (Principal, Paraná DPVAT...). Os cards do
-// sistema são somente-leitura — a etapa muda sozinha conforme o atendimento
-// anda. Mesma classificação do Funil (loadCohort) — os dois batem por
-// construção.
+// Funil + leads do NOSSO sistema no "Fluxo de Eventos Rápidos" (MiniKanban)
+// numa chamada só: cada conversa da coorte vira um card na etapa derivada do
+// estado real, com a etiqueta do número que atendeu (Principal, Paraná
+// DPVAT...). Os cards do sistema são somente-leitura — a etapa muda sozinha
+// conforme o atendimento anda.
+//
+// Uma coorte só (auditoria de 25/09/2026): antes o Funil (getBotFunnel) e o
+// MiniKanban (getBotKanbanLeads) chamavam loadCohort cada um, e a Gestão
+// Estratégica rodava a coorte 2 a 3 vezes por abertura — duas actions pesadas
+// na fila serial do navegador. Agora os dois leem a MESMA classificação e
+// batem por construção.
 
-/** from/to (ISO) seguem o calendário do dashboard; sem eles, 90 dias fixos. */
-export async function getBotKanbanLeads(
+/** from/to (ISO) = calendário do dashboard (DateFilter). */
+export async function getBotFunnelAndLeads(
   numberId: string | null,
-  fromISO?: string,
-  toISO?: string,
-): Promise<BotKanbanLead[]> {
+  fromISO: string,
+  toISO: string,
+): Promise<{ funnel: BotFunnelData; leads: BotKanbanLead[] }> {
   await requireTeam();
   const range = parseRange(fromISO, toISO);
-  const { leads } = await loadCohort(
-    numberId,
-    range?.from ?? brStartOfDaysAgo(KANBAN_WINDOW_DAYS - 1),
-    range?.to ?? null,
-  );
-  return leads;
+  if (!range) throw new Error('Período inválido.');
+  const [cohort, totals] = await Promise.all([
+    loadCohort(numberId, range.from, range.to),
+    loadFunnelTotals(numberId, range.from, range.to),
+  ]);
+  return { funnel: computeFunnel(cohort, totals, range.from, range.to), leads: cohort.leads };
 }
 
 /** Ajusta a meta mensal de contratados (Visão do Gestor). */

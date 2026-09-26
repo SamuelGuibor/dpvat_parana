@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Bot, Loader2, BadgeCheck, XCircle, AlertTriangle,
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
@@ -112,23 +112,19 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
   );
 }
 
-export function ChatbotDashboard({ numberId = null, initialData = null, range }: {
+export function ChatbotDashboard({ numberId = null, range }: {
   numberId?: string | null;
-  /** Analytics do período inicial, vindo da carga única do dashboard —
-   *  evita refetch na primeira renderização. */
-  initialData?: ChatbotAnalytics | null;
   /** Calendário do dashboard (ISO). Presente → modo "Calendário" por padrão. */
   range?: { from: string; to: string };
 } = {}) {
   // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
-  // O initialData da carga única (get-strategic-dashboard) é SEMPRE de "Todos
-  // os números" no período do calendário. Só vale se a aba abrir exatamente
-  // nessa visão: com um número já escolhido no topo, ele mostrava as métricas
-  // somadas de todos os números até o gestor mexer em outro filtro.
-  const initialMatches = Boolean(initialData) && numberId === null && period === 'range';
-  const [data, setData] = useState<ChatbotAnalytics | null>(initialMatches ? initialData : null);
-  const [loading, setLoading] = useState(!initialMatches);
+  // Sem dado inicial vindo de fora: o painel busca ao montar (a aba Chatbot só
+  // monta quando o gestor a abre), já com o número e o período certos. O
+  // initialData antigo era sempre de "Todos os números" e mostrava a soma de
+  // todas as linhas com um número escolhido no topo.
+  const [data, setData] = useState<ChatbotAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
   const [reloadKey, setReloadKey] = useState(0);
@@ -138,15 +134,7 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
   const rangeFrom = useRange ? range!.from : undefined;
   const rangeTo = useRange ? range!.to : undefined;
 
-  // Com initialData que bate com a visão inicial, o primeiro fetch é pulado —
-  // ele só volta a rodar quando o usuário troca o período, o número ou o
-  // calendário.
-  const skipFirstFetch = useRef(initialMatches);
   useEffect(() => {
-    if (skipFirstFetch.current) {
-      skipFirstFetch.current = false;
-      return;
-    }
     let alive = true;
     setLoading(true);
     getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)

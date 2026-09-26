@@ -1,5 +1,5 @@
 # Site público, área do cliente e integrações de entrada — mapa para IA
-> Verificado em 2026-09-23 · Escopo: `app/(site)/**`, `app/(cliente)/**`, `app/store/**`, `app/layout.tsx`, `app/{sitemap,robots}.ts`, `public/` (estrutura), `app/api/{process-status,zapier,botconversa,migrate-hospitals}/**`, `app/_actions/botconversa.ts`, `app/_shared/lib/aws-messaging.ts` (+ satélites lidos: `app/_shared/lib/db/botconversa.ts`, `app/_actions/contacts/*`, `app/_actions/users/{user-stats,get-status-user}.ts`, `app/_actions/process/get-status-process.ts`, `app/_components/landing_page/*`)
+> Verificado em 2026-09-26 · Escopo: `app/(site)/**`, `app/(cliente)/**`, `app/store/**`, `app/layout.tsx`, `app/{sitemap,robots}.ts`, `public/` (estrutura), `app/api/{process-status,zapier,botconversa,migrate-hospitals}/**`, `app/_actions/botconversa.ts`, `app/_shared/lib/aws-messaging.ts` (+ satélites lidos: `app/_shared/lib/db/botconversa.ts`, `app/_actions/contacts/*`, `app/_actions/users/{user-stats,get-status-user}.ts`, `app/_actions/process/get-status-process.ts`, `app/_components/landing_page/*`)
 
 ## TL;DR
 - **Site institucional** (grupo `(site)`): home, blog com 4 posts estáticos, FAQ, equipe e páginas legais. Todo o conteúdo está escrito direto no TSX (sem CMS). A única escrita no banco é o formulário de contato (`ContactUsers` → tabela `Contact`).
@@ -65,7 +65,7 @@
    - `recordSectorTask({ kind: 'botconversa_contratado', source: 'botconversa', … })` cria a tarefa no setor `comercial` da Caixa de Menções;
    - se não existe `User` com o mesmo `telefone`, cria o card com role `Filtro de Cartões`, `Label` com `order: 0`, `cardNumber` via `nextval('card_number_seq')`, e-mail placeholder `inserir_email-<telefone>@…` e senha padrão fixa (hasheada). Sem `service`, `status` nem `statusStartedAt` (o `createUser` normal grava `INSS`/`INSS_S1`/timer), sem log e sem automação.
 3. Faz um upsert manual em `Botconversa` pelo `telefone`: uma linha por telefone; `evento` só é regravado quando muda (e só então `updatedAt` anda).
-4. Quem lê: `getStrategicDashboardData` (`fetchEventsCount`, `fetchEventsByMonth`, `fetchBotconversaAll`), `getBotFunnel` em `bot-funnel.ts` (conta `evento='contratado'` por `updatedAt`) e `MiniKanban` (recebe `data` do `StrategicDashboard`, recarrega por `/api/botconversa/get-kanban` e usa `PUT`/`DELETE` em `changes/[id]`).
+4. Quem lê: `getStrategicDashboardData` (`fetchEventsCount`, `fetchEventsByMonth`, `fetchBotconversaAll`), `getBotFunnelAndLeads` em `bot-funnel.ts` (conta `evento='contratado'` por `updatedAt`) e `MiniKanban` (recebe `data` do `StrategicDashboard`, recarrega por `/api/botconversa/get-kanban` e usa `PUT`/`DELETE` em `changes/[id]`).
 
 **D) Recuperação de senha** (única consumidora de `aws-messaging.ts`): `app/_actions/auth/password-reset.ts` manda SMS pela ordem SNS → Twilio → WhatsApp `sendText`, e e-mail só por SES. Detalhes em `docs/ai/auth-permissoes.md`.
 
@@ -170,7 +170,7 @@
 - **Menções e tarefas**: `recordSectorTask` em `app/_shared/lib/sector-tasks.ts` (rota `botconversa_contratado` → `comercial`).
 - **Analytics**:
   - dashboard: `getStrategicDashboardData` (`app/_actions/analytics/get-strategic-dashboard.ts`);
-  - funil: `getBotFunnel` (`app/_actions/analytics/bot-funnel.ts`);
+  - funil: `getBotFunnelAndLeads` (`app/_actions/analytics/bot-funnel.ts`);
   - `MiniKanban` (`app/nova-dash/minikanban.tsx`) e `LeadsTable` (`app/nova-dash/form-leads.tsx`);
   - `app/_shared/lib/cost-providers.ts` lê `META_ADS_ACCOUNT_BOTCONVERSA` → `docs/ai/analytics-custos.md`.
 - **Onboarding**: `Tour` e `fetchOnboarding` em `app/_components/onboarding/Tour.tsx`, com a API em `app/api/onboarding/route.ts`.

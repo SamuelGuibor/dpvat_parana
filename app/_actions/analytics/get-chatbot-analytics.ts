@@ -4,8 +4,6 @@
 import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/_shared/lib/auth';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import { fetchAdNames } from '@/app/_shared/lib/whatsapp/meta-ad-names';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
@@ -104,11 +102,8 @@ export interface LeadOriginsData {
   adOrigins: AdOriginsData;
 }
 
-/** A UI usa isto pra decidir se mostra a seção "Desempenho do Chatbot". */
-export async function getChatbotDashboardAccess(): Promise<boolean> {
-  const session = await getServerSession(authOptions);
-  return !!session?.user?.id && canViewChatbotDashboard(session.user.email);
-}
+// Quem pode ver a aba Chatbot a UI sabe pela carga única do dashboard
+// (getStrategicDashboardData → canViewChatbot), com a mesma allowlist.
 
 /**
  * Trava das métricas do chatbot: equipe lendo o banco (requireTeam: role

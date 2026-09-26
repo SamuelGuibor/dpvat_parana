@@ -5,18 +5,23 @@
 // buscava seus dados por conta própria — eram 7+ idas ao servidor e a tela
 // montava aos pedaços. Agora tudo sai numa chamada só, com as consultas
 // rodando em paralelo, e a página só aparece com os dados completos.
+//
+// Sem o ramo do chatbot (auditoria de 25/09/2026): a carga única rodava
+// getChatbotAnalytics a cada abertura e troca de período — a análise mais
+// pesada do painel —, e a aba Chatbot rodava de novo ao ser aberta com um
+// número escolhido. Agora a aba busca as próprias métricas só quando o gestor
+// a abre; daqui sai só a permissão (canViewChatbot). O funil e os leads do
+// Fluxo de Eventos Rápidos vêm de getBotFunnelAndLeads (bot-funnel.ts, uma
+// coorte só) e as linhas da empresa, do cache SWR 'wa-number-options'.
 
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
+import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import { fetchEventsCount, fetchEventsByMonth, fetchBotconversaAll } from '@/app/_shared/lib/db/botconversa';
 import { getContratadosTagCount } from '@/app/_actions/whatsapp/tags';
-import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import {
   getFunnelAnalytics, getKanbanFlowAnalytics, getMonthGoal,
   type FunnelAnalytics, type KanbanFlowAnalytics, type MonthGoal,
 } from './get-funnel-analytics';
-import {
-  getChatbotAnalytics, getChatbotDashboardAccess, type ChatbotAnalytics,
-} from './get-chatbot-analytics';
 
 export interface StrategicCounts {
   contratado?: number;
@@ -45,12 +50,6 @@ export interface DashboardKanbanItem {
   updatedAt: string | null;
 }
 
-export interface WaNumberOption {
-  id: string;
-  label: string;
-  displayPhone: string | null;
-}
-
 export interface StrategicDashboardData {
   counts: StrategicCounts;
   monthly: MonthlyRow[];
@@ -60,8 +59,11 @@ export interface StrategicDashboardData {
   monthGoal: MonthGoal;
   funnel: FunnelAnalytics;
   kanbanFlow: KanbanFlowAnalytics;
-  /** null = usuário fora da allowlist do dashboard do chatbot. */
-  chatbot: { analytics: ChatbotAnalytics; numberOptions: WaNumberOption[] } | null;
+  /**
+   * Allowlist do painel do chatbot (canViewChatbotDashboard): mostra a aba
+   * Chatbot e a Origem dos leads. A UI só esconde; o guard é o das actions.
+   */
+  canViewChatbot: boolean;
 }
 
 export async function getStrategicDashboardData(
@@ -69,12 +71,13 @@ export async function getStrategicDashboardData(
   toISO: string,
   monthKey: string,
 ): Promise<StrategicDashboardData> {
-  await requireTeam();
+  const ctx = await requireTeam();
 
   const range = { from: new Date(fromISO), to: new Date(toISO) };
-  const canViewChatbot = await getChatbotDashboardAccess();
+  // E-mail do banco (requireTeam), não do JWT: mesma régua das actions do painel.
+  const canViewChatbot = canViewChatbotDashboard(ctx.email);
 
-  const [counts, monthly, kanbanRows, contratadosBot, monthGoal, funnel, kanbanFlow, chatbot] =
+  const [counts, monthly, kanbanRows, contratadosBot, monthGoal, funnel, kanbanFlow] =
     await Promise.all([
       fetchEventsCount(range),
       fetchEventsByMonth(range.from.getFullYear(), range),
@@ -83,13 +86,6 @@ export async function getStrategicDashboardData(
       getMonthGoal(monthKey),
       getFunnelAnalytics(fromISO, toISO),
       getKanbanFlowAnalytics(fromISO, toISO),
-      canViewChatbot
-        // A aba Chatbot nasce no MESMO período do calendário do dashboard
-        // (antes era 7 dias fixos, ignorando o filtro).
-        ? Promise.all([getChatbotAnalytics(7, null, fromISO, toISO), listWaNumberOptions()]).then(
-            ([analytics, numberOptions]) => ({ analytics, numberOptions }),
-          )
-        : Promise.resolve(null),
     ]);
 
   return {
@@ -107,6 +103,6 @@ export async function getStrategicDashboardData(
     monthGoal,
     funnel,
     kanbanFlow,
-    chatbot,
+    canViewChatbot,
   };
 }
