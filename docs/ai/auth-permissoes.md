@@ -1,5 +1,5 @@
 # Autenticação, permissões e segurança — mapa para IA
-> Verificado em 2026-09-25 · Escopo: `middleware.ts`, `app/_shared/lib/{auth,permissions,permissions-server,ip-access,password,rate-limit,webhook-auth,managers,sector-admin,chatbot-access,chat-access,ponto-access,ai-review-access,sms,aws-messaging}.ts`, `app/login/**`, `app/_actions/{auth,security,team,users}/**`, `app/api/{auth,admins,user-status}/**`, `app/nova-dash/workspace/security/**`, `app/nova-dash/layout.tsx`, `tests/permissions.test.ts`, `scripts/{bootstrap-permissions,hash-passwords}.mjs`
+> Verificado em 2026-09-26 · Escopo: `middleware.ts`, `app/_shared/lib/{auth,permissions,permissions-server,ip-access,password,rate-limit,webhook-auth,managers,sector-admin,chatbot-access,chat-access,ponto-access,ai-review-access,sms,aws-messaging}.ts`, `app/login/**`, `app/_actions/{auth,security,team,users}/**`, `app/api/{auth,admins,user-status}/**`, `app/nova-dash/workspace/security/**`, `app/nova-dash/layout.tsx`, `tests/permissions.test.ts`, `scripts/{bootstrap-permissions,hash-passwords}.mjs`
 
 ## TL;DR
 - Login por **CPF + senha** (NextAuth v4, Credentials, sessão **JWT** de 30 dias). Equipe e clientes são linhas da **mesma tabela `User`**; o que separa é `User.role` (`ADMIN`/`ADMIN+`/`ADMIN++` = equipe; qualquer outra coisa = card de cliente, `GHOST` = card-fantasma).
@@ -138,7 +138,7 @@ flowchart LR
 - **Chat da equipe**: `chat-access.ts` usado em `app/_actions/chat/*` e `app/api/chat/{messages,read,typing}`.
 - **Setores**: `requireSectorAdmin` em `app/_actions/sectors/manage-sectors.ts`; `isSectorAdmin` em `list-sectors.ts`.
 - **Ponto**: `canManagePonto` em `app/api/ponto-adjustments/route.ts` e `app/api/work-session/route.ts`.
-- **IA/analytics/custos**: `canViewChatbotDashboard` em `app/_actions/analytics/get-chatbot-analytics.ts` (depois de `requireTeam`, com o e-mail do ctx) e `get-ai-corner.ts` (ainda só sessão + allowlist); `review_ai`, `run_ai_audit`, `view_costs` via `requirePermission`.
+- **IA/analytics/custos**: `canViewChatbotDashboard` em `app/_actions/analytics/get-chatbot-analytics.ts` e `app/_actions/analytics/get-ai-corner.ts` (os dois depois de `requireTeam`, com o e-mail do ctx); `review_ai`, `run_ai_audit`, `view_costs` via `requirePermission`.
 - **Assinatura eletrônica**: rotas públicas `/assinar`, `/verificar`, `/api/signature/pdf` (token do link é a credencial) e `rateLimit` em `app/assinar/[token]/actions.ts`.
 - **Logs/auditoria**: `createLog` (`app/_shared/lib/log.ts`).
 - **Espaço de Trabalho**: `Workspace.tsx`/`WorkspaceSidebar.tsx` mostram seções por `perms` (`seguranca` = `manage_team`).
