@@ -12,7 +12,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
 | 5 | `app/_shared/lib/whatsapp/bot.ts` | 1970 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
-| 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1282 | whatsapp-bot |
+| 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 990 | whatsapp-bot |
 | 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1475 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
@@ -121,15 +121,13 @@ Dashboard "Fluxo do Kanban": 7 visões (tempo, destino, retrabalho, descarte, ci
 - **L893-1208** `buildView` (analytics → dados do painel): `tempo` L929, `destino` L969, `retrabalho` L998, `descarte` L1046, `ciclo` L1083, `throughput` L1131, `hospital` L1162; `deltaSub` L911.
 - **L1209-1263** `HospitalTable`.
 
-## 7. `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` — 1282 linhas
-Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (dados do cliente editáveis + IA), Notas internas com @menção e Arquivos da ficha.
+## 7. `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` — 990 linhas
+Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (dados do cliente editáveis + IA), Notas internas com @menção e Arquivos (componente em `ArquivosTab.tsx`, 683 linhas: grade `ConversationMedia`/`MediaTile` da mídia ainda não anexada de toda a conversa + `DocRow`/`AudioDocRow`).
 
-- **L1-77** imports (tipos da ficha por `import type` de `copilot-types.ts`; `useCopilot` de `use-copilot.ts`; `mediaDisplayName` de `media-name.ts`; `useMediaUrl`/`seedMediaUrl`/`getMediaUrl` de `media-url-cache.ts`), `CopilotTab`, `mediaIcon`, `previewKind`, `timeStamp`, `Props`.
-- **L78-573 `CopilotPanel`** (export): ficha + documentos por `useCopilot` (escrita por `setCopilotDocuments`/`setCopilotClientInfo` com o contactId explícito), `handleSummarize`, `handleSuggest`, `handleFillFichaAI` (IA por POST `/api/whatsapp/assist/<op>`; resposta de outra conversa não entra na aberta: `activeContactRef`), `useSuggestionInComposer`, `handoffNote`, checklist, notas + `handleSaveNote`, `mediaMessages`, `handleAttach`; JSX por aba — copiloto L297, ficha L488, notas L505, arquivos L557.
-- **L574-859** `FichaTab`: `handleUploadDocs`, `setField`, selo IA (`byAi`), `handleCepChange` (ViaCEP), validação de CPF, `handleSave`, `handleCreateCard`, render L693 ("Carregando ficha…" ou, com `loadError`, o motivo + "Tentar de novo").
-- **L860-1006** `ArquivosTab` (lista "ainda não anexada" com o nome de `mediaDisplayName`): `handlePreview` (URL assinada da lista, action só sem ela), `handleDownload`, `handleRename`, `handleDelete`.
-- **L1007-1153** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
-- **L1154-1282** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
+- **L1-52** imports (tipos da ficha por `import type` de `copilot-types.ts`; `useCopilot` de `use-copilot.ts`; `useWhatsAppContactFiles` de `use-whatsapp.ts`; `mergeNotes`/`latestBotNote`/`latestMediaMessageId` de `contact-files.ts`; `ArquivosTab`), `CopilotTab`, `timeStamp`, `Props`.
+- **L53-575 `CopilotPanel`** (export): ficha + documentos por `useCopilot` (escrita por `setCopilotDocuments`/`setCopilotClientInfo` com o contactId explícito), `handleSummarize`, `handleSuggest`, `handleFillFichaAI` (IA por POST `/api/whatsapp/assist/<op>`; resposta de outra conversa não entra na aberta: `activeContactRef`), `useSuggestionInComposer`, checklist; L174 notas: janela da thread + histórico (`notesWantedFor` por contato), `handoffText` (janela → `handoffReason` → histórico), `handleSaveNote`; L238 gatilhos da grade (`latestMediaId`, `attachedSig`); JSX por aba — copiloto L276, ficha L467, notas L484, arquivos L559.
+- **L576-859** `FichaTab`: `handleUploadDocs`, `setField`, selo IA (`byAi`), `handleCepChange` (ViaCEP), validação de CPF, `handleSave`, `handleCreateCard`, render L697 ("Carregando ficha…" ou, com `loadError`, o motivo + "Tentar de novo").
+- **L860-990** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
 
 ## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1475 linhas
 Crons do WhatsApp em 3 fases: nudge/encerramento por silêncio, recuperação standby e SLA (fila, humano, entrega travada, cards estourados, assinatura).
@@ -189,7 +187,7 @@ PDF da assinatura: gera o PDF a partir do .docx (via docx-converter), acha as â
 | `AutomationsPanel.tsx` | Tirar `ActionRow` para `automations/ActionRow.tsx` com um subcomponente por tipo de ação, e constantes de campos/operadores para `automations/fields.ts`. |
 | `whatsapp/bot.ts` | Extrair filtros de sanidade para `bot-sanitize.ts`, fila/qualificação/encerramento para `bot-outcomes.ts`, e partir `handleIncomingWhatsApp` em etapas nomeadas (`collectBurst`, `buildPayload`, `executeDecision`). |
 | `KanbanFlowPanel.tsx` | Mover os gráficos SVG para `flow/charts.tsx` e `buildView` para `flow/build-view.ts` (uma função por visão). |
-| `CopilotPanel.tsx` | Um arquivo por aba: `FichaTab.tsx`, `ArquivosTab.tsx` (+ `DocRow`/`AudioDocRow`), com os campos `F*` em `copilot/fields.tsx`. |
+| `CopilotPanel.tsx` | A aba Arquivos já saiu (`ArquivosTab.tsx`); falta `FichaTab.tsx`, com os campos `F*` em `copilot/fields.tsx`. |
 | `whatsapp/cron-tasks.ts` | Um arquivo por fase (`cron-nudge.ts`, `cron-recovery.ts`, `cron-sla.ts`) com o marcapasso em `cron-shared.ts` (o horário comercial já está em `date-br.ts`). |
 | `ScriptTab.tsx` | Extrair a biblioteca de prompts (`PromptLibrary.tsx` + hook) e a lógica de envio/upload S3 para um hook `useRoteiroChat`; renomear o arquivo para bater com `RoteirosTab`. |
 | `MentionsInbox.tsx` | Mover `MentionRow`/`RowActions`/badges para `mentions/MentionRow.tsx` e a derivação (filtros, placar, grupos por dia) para `useMentionsView`. |

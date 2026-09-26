@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mediaDisplayName, mediaKindLabel } from "@/app/_shared/utils/media-name";
+import { batchMediaNames, cleanBaseName, mediaDisplayName, mediaKindLabel } from "@/app/_shared/utils/media-name";
 import { brDateTimeParts } from "@/app/_shared/utils/date-br";
 import { inferCategory } from "@/app/_shared/lib/document-categories";
 
@@ -170,5 +170,51 @@ describe("integração com o resto", () => {
     ]) {
       expect(inferCategory(n)).toBe("OUTROS");
     }
+  });
+});
+
+describe("batchMediaNames — 'Anexar selecionadas' do Copiloto", () => {
+  const foto = (ts: string, at: string) => ({ key: `whatsapp/c/${ts}-midia.jpeg`, mediaType: "image/jpeg", createdAt: at });
+  const fotos = [
+    foto("1727000000000", "2026-09-24T17:32:05Z"),
+    foto("1727000000001", "2026-09-24T17:32:09Z"),
+    foto("1727000000002", "2026-09-24T17:33:00Z"),
+  ];
+
+  it("com nome-base: numera na ordem dada, com a extensão de cada arquivo", () => {
+    const pdf = { key: "whatsapp/c/1727000000003-Laudo_hospital.pdf", mediaType: "application/pdf", createdAt: AT };
+    expect(batchMediaNames([...fotos, pdf], "DOCUMENTO PESSOAL")).toEqual([
+      "DOCUMENTO PESSOAL 1.jpeg",
+      "DOCUMENTO PESSOAL 2.jpeg",
+      "DOCUMENTO PESSOAL 3.jpeg",
+      "DOCUMENTO PESSOAL 4.pdf",
+    ]);
+  });
+
+  it("uma mídia só não leva número; extensão digitada no nome-base não se repete", () => {
+    expect(batchMediaNames([fotos[0]], "DOCUMENTO PESSOAL")).toEqual(["DOCUMENTO PESSOAL.jpeg"]);
+    expect(batchMediaNames([fotos[0]], "RG.jpeg")).toEqual(["RG.jpeg"]);
+  });
+
+  it("sem nome-base: o nome legível de cada mídia (segundos evitam nomes iguais)", () => {
+    expect(batchMediaNames(fotos.slice(0, 2), "   ")).toEqual([
+      "Foto 24-09-2026 14h32m05.jpeg",
+      "Foto 24-09-2026 14h32m09.jpeg",
+    ]);
+  });
+
+  it("o nome-base escolhido decide a pasta automática", () => {
+    expect(inferCategory(batchMediaNames(fotos, "DOCUMENTO PESSOAL")[0])).toBe("IDENTIFICACAO");
+    expect(inferCategory(batchMediaNames(fotos, "LAUDO MÉDICO")[0])).toBe("EXAME_MEDICO");
+  });
+});
+
+describe("cleanBaseName", () => {
+  it("tira o que o Windows e o Content-Disposition recusam, junta espaços e corta em 80", () => {
+    expect(cleanBaseName('  RG / CPF: "frente"; verso  ')).toBe("RG CPF frente verso");
+    expect(cleanBaseName("comprovante...")).toBe("comprovante");
+    expect(cleanBaseName("a".repeat(120))).toHaveLength(80);
+    expect(cleanBaseName(null)).toBe("");
+    expect(cleanBaseName("\u0000\u001f")).toBe("");
   });
 });

@@ -319,7 +319,8 @@ export async function migrateDraftDocuments(contactId: string, userId: string): 
 
       if (plan.create.length) {
         await tx.document.createMany({
-          data: plan.create.map((d) => ({ userId, key: d.key, name: d.name, category: inferCategory(d.name) })),
+          // Pasta escolhida no "Anexar selecionadas" vence; sem ela, pelo nome.
+          data: plan.create.map((d) => ({ userId, key: d.key, name: d.name, category: d.category ?? inferCategory(d.name) })),
         });
       }
       if (plan.restoreIds.length) {

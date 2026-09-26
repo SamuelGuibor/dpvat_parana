@@ -54,6 +54,24 @@ export interface ClientDocumentDTO {
 }
 
 /**
+ * Resposta do "Anexar selecionadas" (attachConversationMediaBatch). Recusa
+ * esperada (seleção vazia, acima do teto, mídia de outra conversa) volta como
+ * `ok: false` com o texto para o toast: erro lançado por server action chega
+ * mascarado em produção e a tela não saberia dizer o motivo.
+ */
+export type AttachMediaBatchResult =
+  | {
+    ok: true;
+    /** Lista nova de documentos (card ou rascunho), para trocar no cache do Copiloto. */
+    documents: ClientDocumentDTO[];
+    /** Mídias que viraram documento agora (novas ou restauradas da lixeira). */
+    added: number;
+    /** Já estavam no card/ficha: nada mudou nelas. */
+    alreadyAttached: number;
+  }
+  | { ok: false; error: string };
+
+/**
  * GET /api/whatsapp/inbox/copilot/<contactId>: a ficha e os documentos da
  * conversa numa ida só. Contato vinculado → documentos pessoais do card
  * (fora da lixeira); sem card → os do rascunho da conversa.

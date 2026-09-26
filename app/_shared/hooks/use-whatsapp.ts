@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
+import useSWRInfinite, { type SWRInfiniteConfiguration } from 'swr/infinite';
 // SÓ tipos (`import type`): inbox-data.ts, ao lado, importa o Prisma e não
 // pode entrar no bundle do navegador.
 import type {
@@ -19,6 +20,10 @@ import {
   INBOX_LIST_PAGE, lockedConversationIds, mergeConversationDelta, pruneLocalEdits, sinceWithOverlap,
   type LocalEdit,
 } from '@/app/_shared/utils/inbox-delta';
+import {
+  contactFilesUrl, flattenPages, nextPageCursor, readContactFilesPage,
+  type ContactFileDirection, type ContactFilesPage, type ContactMediaItem, type ContactNoteItem,
+} from '@/app/_shared/utils/contact-files';
 
 // Hooks do atendimento de WhatsApp — mesmo desenho do use-chat.ts:
 // SWR com polling como rede de segurança e o SSE (useChatStream, reaproveitado
@@ -554,6 +559,106 @@ export function useWhatsAppMessages(contactId: string | null) {
   const revalidateThread = useCallback((cid: string) => mutateCache(threadKey(cid)), [mutateCache]);
 
   return { messages, mutate, isLoading, error: error as unknown, loadOlder, hasMore, loadingOlder, upsertThreadMessage, revalidateThread };
+}
+
+/** Tentativas depois de erro (403 da trava de IP, 500, rede): 5 s, 10 s e 20 s, e para. */
+const CONTACT_FILES_MAX_RETRIES = 3;
+
+const CONTACT_FILES_SWR: SWRInfiniteConfiguration<ContactFilesPage<unknown>> = {
+  // Sem poll e sem foco: quem busca de novo é a tela — mídia nova na janela
+  // da thread (o poll de 8 s dela já roda), lista de documentos que mudou
+  // (anexar, excluir) e a reabertura da aba (a 1ª página é revalidada ao
+  // montar; as seguintes são refeitas se o cursor mudar).
+  revalidateOnFocus: false,
+  onErrorRetry: (err, _key, _config, revalidate, opts) => {
+    // 404 = contato excluído em outra aba: tentar de novo não resolve.
+    if (err instanceof HttpError && err.status === 404) return;
+    if (opts.retryCount > CONTACT_FILES_MAX_RETRIES) return;
+    const delay = pollRetryDelayMs(err, opts.retryCount);
+    if (delay !== null) setTimeout(() => { void revalidate(opts); }, delay);
+  },
+};
+
+const fetchContactFilesPage = (url: string) => jsonFetcher<unknown>(url).then((b) => readContactFilesPage<never>(b));
+
+export type ContactFilesQueryInput =
+  | { kind: 'media'; direction: ContactFileDirection; onlyUnattached?: boolean }
+  | { kind: 'notes' };
+
+export interface ContactFilesState<T> {
+  items: T[];
+  /** Há páginas mais antigas ainda não carregadas. */
+  hasMore: boolean;
+  /** Mídias fora do card no filtro de direção (1ª página); null em notas ou antes de chegar. */
+  unattachedCount: number | null;
+  /** 1ª carga, sem nada em cache. */
+  isLoading: boolean;
+  /** Falha da última busca (403 da trava de IP, 500, rede); os itens já carregados continuam. */
+  error: unknown;
+  loadingMore: boolean;
+  loadMore: () => void;
+  /** Busca de novo todas as páginas carregadas. */
+  reload: () => Promise<unknown>;
+}
+
+/**
+ * Mídias ou notas de TODA a conversa do contato (GET
+ * /api/whatsapp/inbox/contact-files), em páginas do mais novo para o mais
+ * antigo com "carregar mais" pelo cursor. A thread traz só as 50 mensagens
+ * mais recentes, e 31% dos documentos do cliente ficavam fora dela.
+ * `enabled` false (ou contactId null) não busca: a aba Arquivos só consulta
+ * quando está aberta, e as notas só quando a aba Notas (ou o motivo da fila)
+ * precisa delas.
+ */
+export function useWhatsAppContactFiles(
+  contactId: string | null,
+  query: { kind: 'media'; direction: ContactFileDirection; onlyUnattached?: boolean },
+  enabled?: boolean,
+): ContactFilesState<ContactMediaItem>;
+export function useWhatsAppContactFiles(
+  contactId: string | null,
+  query: { kind: 'notes' },
+  enabled?: boolean,
+): ContactFilesState<ContactNoteItem>;
+export function useWhatsAppContactFiles(
+  contactId: string | null,
+  query: ContactFilesQueryInput,
+  enabled = true,
+): ContactFilesState<ContactMediaItem | ContactNoteItem> {
+  type Item = ContactMediaItem | ContactNoteItem;
+  const kind = query.kind;
+  const direction = query.kind === 'media' ? query.direction : undefined;
+  const onlyUnattached = query.kind === 'media' ? !!query.onlyUnattached : false;
+
+  const getKey = useCallback((index: number, prev: ContactFilesPage<Item> | null) => {
+    if (!contactId || !enabled) return null;
+    if (index === 0) return contactFilesUrl({ contactId, kind, direction, onlyUnattached });
+    const cursor = nextPageCursor(prev);
+    return cursor ? contactFilesUrl({ contactId, kind, direction, onlyUnattached, ...cursor }) : null;
+  }, [contactId, enabled, kind, direction, onlyUnattached]);
+
+  const { data, error, isLoading, size, setSize, mutate } = useSWRInfinite<ContactFilesPage<Item>>(
+    getKey,
+    fetchContactFilesPage,
+    CONTACT_FILES_SWR as SWRInfiniteConfiguration<ContactFilesPage<Item>>,
+  );
+
+  const items = useMemo(() => flattenPages(data), [data]);
+  const hasMore = !!data?.[data.length - 1]?.hasMore;
+  const loadingMore = !error && size > 1 && !!data && data[size - 1] === undefined;
+  const loadMore = useCallback(() => { void setSize((s) => s + 1); }, [setSize]);
+  const reload = useCallback(() => mutate(), [mutate]);
+
+  return {
+    items,
+    hasMore,
+    unattachedCount: data?.[0]?.unattachedCount ?? null,
+    isLoading,
+    error: error as unknown,
+    loadingMore,
+    loadMore,
+    reload,
+  };
 }
 
 /** Chave SWR das linhas da empresa: a MESMA em todo seletor de número, para dividir o cache. */

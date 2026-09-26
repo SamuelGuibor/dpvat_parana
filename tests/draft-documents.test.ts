@@ -73,3 +73,23 @@ describe("planDraftMigration", () => {
     expect(plan).toEqual({ create: [b], restoreIds: [], alreadyInCard: 0 });
   });
 });
+
+describe("pasta escolhida no rascunho (Anexar selecionadas sem card)", () => {
+  it("mantém a pasta válida e descarta a inválida (a migração cai no inferCategory)", () => {
+    expect(parseDraftDocuments([
+      { key: "whatsapp/c1/1-midia.jpeg", name: "DOCUMENTO PESSOAL 1.jpeg", category: "IDENTIFICACAO" },
+      { key: "whatsapp/c1/2-midia.jpeg", name: "Foto.jpeg", category: "PASTA_QUE_NAO_EXISTE" },
+    ])).toEqual([
+      { key: "whatsapp/c1/1-midia.jpeg", name: "DOCUMENTO PESSOAL 1.jpeg", category: "IDENTIFICACAO" },
+      { key: "whatsapp/c1/2-midia.jpeg", name: "Foto.jpeg" },
+    ]);
+  });
+
+  it("a pasta segue no plano de migração (vira a category do Document)", () => {
+    const plan = planDraftMigration(
+      [{ key: "k/rg.jpeg", name: "RG.jpeg", category: "IDENTIFICACAO" }],
+      [],
+    );
+    expect(plan.create).toEqual([{ key: "k/rg.jpeg", name: "RG.jpeg", category: "IDENTIFICACAO" }]);
+  });
+});

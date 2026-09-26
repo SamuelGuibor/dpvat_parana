@@ -114,3 +114,43 @@ export function mediaDisplayName({ key, mediaType, createdAt }: MediaNameInput):
   const [hh, min] = time.split(':');
   return `${label} ${dd}-${mm}-${yyyy} ${hh}h${min}m${second}${suffix}`;
 }
+
+// Caracteres que o Windows recusa em nome de arquivo (o download do card sai
+// com este nome), o ";" que abre outro parâmetro no Content-Disposition
+// (mesma regra do sanitizeDocName) e controles invisíveis.
+// eslint-disable-next-line no-control-regex
+const INVALID_FILE_CHARS_RE = /[\\/:*?"<>|;\u0000-\u001f\u007f]/g;
+const BASE_NAME_MAX = 80;
+
+/**
+ * Nome-base digitado no "Anexar selecionadas" → nome seguro: sem os
+ * caracteres que o Windows recusa, espaços juntos, sem ponto no fim, até 80
+ * caracteres. Vazio = usar o nome legível de cada mídia.
+ */
+export function cleanBaseName(raw: string | null | undefined): string {
+  return (raw ?? '')
+    .replace(INVALID_FILE_CHARS_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, BASE_NAME_MAX)
+    .replace(/[.\s]+$/, '');
+}
+
+/**
+ * Nomes do "Anexar selecionadas" (aba Arquivos do Copiloto), na ordem dada
+ * (a action ordena da mais antiga para a mais nova). Sem nome-base: o nome
+ * legível de cada mídia. Com nome-base: "DOCUMENTO PESSOAL 1.jpeg",
+ * "DOCUMENTO PESSOAL 2.pdf"… com a extensão de cada arquivo; uma mídia só
+ * fica sem número ("DOCUMENTO PESSOAL.jpeg"). A extensão digitada junto do
+ * nome-base ("RG.jpeg") não se repete.
+ */
+export function batchMediaNames(items: MediaNameInput[], baseName?: string | null): string[] {
+  const base = cleanBaseName(baseName);
+  if (!base) return items.map((it) => mediaDisplayName(it));
+  return items.map((it, i) => {
+    const ext = EXT_RE.exec(mediaDisplayName(it))?.[1]?.toLowerCase() ?? '';
+    const stem = ext && base.toLowerCase().endsWith(`.${ext}`) ? base.slice(0, -(ext.length + 1)).trim() || base : base;
+    const n = items.length > 1 ? ` ${i + 1}` : '';
+    return `${stem}${n}${ext ? `.${ext}` : ''}`;
+  });
+}

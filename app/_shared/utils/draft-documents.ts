@@ -4,11 +4,17 @@
 // (app/_shared/lib/whatsapp/copilot-data.ts).
 
 import { fileNameFromKey } from "./s3-keys";
+import { isDocumentCategory, type DocumentCategoryId } from "@/app/_shared/lib/document-categories";
 
 export interface DraftDocument {
   key: string;
   name: string;
   uploadedAt?: string;
+  /**
+   * Pasta escolhida no "Anexar selecionadas" do Copiloto antes de o contato
+   * ter card. Sem ela, a migração adivinha pelo nome (inferCategory).
+   */
+  category?: DocumentCategoryId;
 }
 
 /**
@@ -21,12 +27,14 @@ export function parseDraftDocuments(raw: unknown): DraftDocument[] {
   const out: DraftDocument[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
-    const { key, name, uploadedAt } = item as Record<string, unknown>;
+    const { key, name, uploadedAt, category } = item as Record<string, unknown>;
     if (typeof key !== "string" || !key.trim()) continue;
     out.push({
       key,
       name: typeof name === "string" && name.trim() ? name : fileNameFromKey(key),
       ...(typeof uploadedAt === "string" ? { uploadedAt } : {}),
+      // Pasta inválida (JSON antigo ou editado à mão) cai no inferCategory da migração.
+      ...(isDocumentCategory(category) ? { category } : {}),
     });
   }
   return out;
