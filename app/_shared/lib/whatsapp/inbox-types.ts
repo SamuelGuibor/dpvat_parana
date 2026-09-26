@@ -69,8 +69,11 @@ export interface WhatsAppConversationDTO {
   // próprio em vez da contagem (que seria o histórico inteiro, "99+").
   manualUnread: boolean;
   // Coluna do kanban do cliente vinculado (null quando a conversa ainda não
-  // virou card) — filtro "Coluna do Kanban" do inbox.
+  // virou card): NOME da Label do card (fallback: `User.role`, a cópia do
+  // nome) e o id dela, que é o que o filtro "Coluna do Kanban" usa (o nome
+  // diverge do `role` quando a coluna é renomeada).
   kanbanColumn: string | null;
+  kanbanLabelId: string | null;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
   // Número da empresa que atende esta conversa (multi-número): o inbox filtra
@@ -124,7 +127,26 @@ export interface InboxVersionResponse {
   total: number;
 }
 
-/** GET /api/whatsapp/inbox/search?q=: conversas de TODO o histórico que casam com o termo. */
+/**
+ * GET /api/whatsapp/inbox/search?q=&tag=&from=&to=&label=&number=&fila=&skip=:
+ * conversas de TODO o histórico que casam com os filtros (busca, tag, data de
+ * entrada, coluna do Kanban; número e "Em fila" junto deles), uma página de
+ * `INBOX_FILTER_PAGE` a partir de `skip`. `total` = quantas casam no banco
+ * inteiro (o "X de Y" do inbox). Sem filtro de servidor → `{ items: [], total: 0 }`.
+ */
 export interface InboxSearchResponse {
   items: WhatsAppConversationDTO[];
+  total: number;
+}
+
+/** Uma coluna do Kanban no filtro do inbox: `count` = conversas com card NÃO arquivado nela. */
+export interface InboxColumnOption {
+  id: string;
+  name: string;
+  count: number;
+}
+
+/** GET /api/whatsapp/inbox/columns: colunas do Kanban na ordem do quadro. */
+export interface InboxColumnsResponse {
+  items: InboxColumnOption[];
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  brBusinessMinutesBetween, brDayKey, brDayKeySeries, brLabelFromKey, brMonthIndex, brStartOfDay,
-  brStartOfDaysAgo, isBrBusinessHour, nextBrBusinessSlot,
+  brBusinessMinutesBetween, brDayKey, brDayKeySeries, brDayRangeToInstants, brLabelFromKey, brMonthIndex,
+  brStartOfDay, brStartOfDaysAgo, isBrBusinessHour, nextBrBusinessSlot,
 } from "@/app/_shared/utils/date-br";
 
 // O cenário do bug: em produção o Node roda em UTC. Às 22:39 de 06/08 em
@@ -44,6 +44,39 @@ describe("datas no fuso de Brasília", () => {
   it("evento do dia 31 às 22h conta no mês certo", () => {
     // 31/07 22:00 BRT = 01:00 UTC de 01/08 — o getMonth() dava agosto.
     expect(brMonthIndex(new Date("2026-08-01T01:00:00.000Z"))).toBe(6); // julho
+  });
+});
+
+// Filtro "Data de entrada" do inbox no servidor: os dias são de Brasília e o
+// fim é exclusivo na meia-noite BRT do dia seguinte. new Date('YYYY-MM-DD')
+// seria meia-noite UTC (21h do dia anterior em Brasília).
+describe("brDayRangeToInstants (dias de Brasília → instantes do banco)", () => {
+  it("intervalo inclusivo: 00:00 BRT do início até 00:00 BRT do dia seguinte ao fim", () => {
+    const r = brDayRangeToInstants("2026-09-01", "2026-09-24");
+    expect(r.gte.toISOString()).toBe("2026-09-01T03:00:00.000Z");
+    expect(r.lt.toISOString()).toBe("2026-09-25T03:00:00.000Z");
+  });
+
+  it("de = até é um dia só (24 h)", () => {
+    const r = brDayRangeToInstants("2026-09-26", "2026-09-26");
+    expect(r.gte.toISOString()).toBe("2026-09-26T03:00:00.000Z");
+    expect(r.lt.toISOString()).toBe("2026-09-27T03:00:00.000Z");
+  });
+
+  it("vira o mês e o ano sem se perder", () => {
+    expect(brDayRangeToInstants("2026-09-30", "2026-09-30").lt.toISOString()).toBe("2026-10-01T03:00:00.000Z");
+    expect(brDayRangeToInstants("2026-12-31", "2026-12-31").lt.toISOString()).toBe("2027-01-01T03:00:00.000Z");
+  });
+
+  it("uma conversa das 22h do último dia (01:00Z do dia seguinte) fica dentro", () => {
+    const r = brDayRangeToInstants("2026-09-01", "2026-09-24");
+    const t = Date.parse("2026-09-25T01:00:00.000Z"); // 22:00 BRT de 24/09
+    expect(t >= r.gte.getTime() && t < r.lt.getTime()).toBe(true);
+  });
+
+  it("dia fora do formato lança (nunca vira 'sem filtro' em silêncio)", () => {
+    expect(() => brDayRangeToInstants("2026-9-1", "2026-09-24")).toThrow(RangeError);
+    expect(() => brDayRangeToInstants("2026-09-01", "")).toThrow(RangeError);
   });
 });
 

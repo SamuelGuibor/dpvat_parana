@@ -1,13 +1,18 @@
 import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
+import { fetchLabels } from '@/app/_shared/lib/db/labels';
 import { TEAM_ROLES } from '@/app/_shared/lib/permissions';
 import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
 import { LIST_PREVIEW_MAX_CHARS, computeUnread, listPreview } from '@/app/_shared/utils/whatsapp-inbox';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { fallbackCloseLabel } from '@/app/_shared/utils/close-tag-plan';
 import { INBOX_LIST_PAGE } from '@/app/_shared/utils/inbox-delta';
+import {
+  INBOX_FILTER_PAGE, buildInboxWhere, hasServerFilter, normalizeFilterTerm, type InboxServerFilter,
+} from '@/app/_shared/utils/inbox-filter';
 import type {
-  InboxDeltaResponse, InboxListResponse, InboxVersionResponse, WhatsAppConversationDTO,
+  InboxColumnsResponse, InboxDeltaResponse, InboxListResponse, InboxSearchResponse, InboxVersionResponse,
+  WhatsAppConversationDTO,
 } from './inbox-types';
 
 // Leituras da lista do inbox do WhatsApp: lista, delta (só o que mudou), hash
@@ -30,8 +35,10 @@ import type {
  * no mesmo teto.
  */
 export const LIST_PAGE = INBOX_LIST_PAGE;
-/** Quantas conversas a busca no servidor devolve. */
-export const SEARCH_PAGE = 300;
+/** Quantas conversas a busca/filtro no servidor devolve por página ("Carregar mais" pede a próxima). */
+export const SEARCH_PAGE = INBOX_FILTER_PAGE;
+/** Cards que o termo da busca casa pelo nome (o nome exibido na lista é o do card). */
+const CARD_NAME_MATCH_CAP = 300;
 /**
  * Teto do delta: mais conversas mudadas que isto (pico, aba que voltou depois
  * de horas) → `full: true` e o cliente busca a lista inteira, que sai mais
@@ -100,6 +107,9 @@ export async function countUnreadConversations(): Promise<number> {
 export async function loadConversations(
   where: Prisma.WhatsAppConversationWhereInput | undefined,
   take: number,
+  // Páginas do filtro no servidor ("Carregar mais"). Mesma ordem do findMany:
+  // lastMessageAt desc.
+  skip = 0,
 ): Promise<WhatsAppConversationDTO[]> {
   // `select` explícito (não `include`): a conversa carrega botMemory (JSON
   // grande) e uma dúzia de colunas de controle que a lista nunca mostra —
@@ -112,6 +122,7 @@ export async function loadConversations(
     where,
     orderBy: { lastMessageAt: 'desc' },
     take,
+    ...(skip > 0 ? { skip } : {}),
     select: {
       id: true, contactId: true, numberId: true, status: true, qualified: true,
       closeCategory: true, assignedToId: true, lastMessageAt: true,
@@ -147,7 +158,7 @@ export async function loadConversations(
     conversations.map((c) => c.contact.userId).filter((id): id is string => !!id),
   )];
 
-  const [lastRows, assignees, handoffNotes, linkedUsers, readRows, reasonRows, inactiveIds] = await Promise.all([
+  const [lastRows, assignees, handoffNotes, linkedUsers, readRows, reasonRows, inactiveIds, labels] = await Promise.all([
     // Última mensagem (preview) e última mensagem RECEBIDA (janela de 24h) por
     // contato. ATENÇÃO (14/09/2026): isto era `findMany` + `distinct:['contactId']`
     // + `orderBy createdAt`. O Prisma NÃO traduz esse distinct pra DISTINCT ON —
@@ -206,9 +217,15 @@ export async function loadConversations(
     linkedUserIds.length
       ? db.user.findMany({
           where: { id: { in: linkedUserIds } },
-          select: { id: true, name: true, role: true, cpf: true, cidade: true, lesoes: true, data_acidente: true },
+          select: {
+            id: true, name: true, role: true, labelId: true,
+            cpf: true, cidade: true, lesoes: true, data_acidente: true,
+          },
         })
-      : Promise.resolve([] as { id: string; name: string | null; role: string; cpf: string | null; cidade: string | null; lesoes: string | null; data_acidente: string | null }[]),
+      : Promise.resolve([] as {
+          id: string; name: string | null; role: string; labelId: string | null;
+          cpf: string | null; cidade: string | null; lesoes: string | null; data_acidente: string | null;
+        }[]),
     // Leitura efetiva + contagem de não lidas, 1 linha por conversa. Leitura
     // GLOBAL: se QUALQUER atendente já abriu a conversa, ela deixa de contar
     // como não lida para o resto da equipe (GREATEST ignora NULL, então vale a
@@ -239,6 +256,10 @@ export async function loadConversations(
     // chave crua em outra instância.
     db.whatsAppCloseReason.findMany({ select: { key: true, label: true } }),
     getInactiveNumberIdsCached(),
+    // Nome da coluna pelo labelId do card (cache com tag 'labels', o mesmo do
+    // board): sem o `label` aninhado no findMany acima, que sem relationJoins
+    // seria mais uma ida ao banco em série.
+    fetchLabels(),
   ]);
 
   const previewByContact = new Map(
@@ -250,9 +271,14 @@ export async function loadConversations(
   const handoffByContact = new Map(handoffNotes.map((m) => [m.contactId, m.body]));
   const assigneeNameById = new Map(assignees.map((u) => [u.id, u.name ?? 'Atendente']));
   const cardNameById = new Map(linkedUsers.map((u) => [u.id, u.name]));
-  // Coluna do kanban do cliente vinculado (User.role guarda o nome da coluna)
-  // — alimenta o filtro "Coluna do Kanban" do inbox (12/08/2026).
-  const columnByUserId = new Map(linkedUsers.map((u) => [u.id, u.role]));
+  // Coluna do kanban do cliente vinculado: a fonte da verdade é o labelId do
+  // card; `User.role` é só a cópia do nome (diverge quando a coluna é
+  // renomeada) e fica de fallback. O filtro "Coluna do Kanban" usa o id.
+  const labelNameById = new Map(labels.map((l) => [l.id, l.name]));
+  const columnByUserId = new Map(linkedUsers.map((u) => [
+    u.id,
+    { labelId: u.labelId, name: (u.labelId ? labelNameById.get(u.labelId) : undefined) ?? u.role },
+  ]));
   const fichaByUserId = new Map<string, DraftFichaShape>(linkedUsers.map((u) => [u.id, u]));
   const readAtByContact = new Map(readRows.map((r) => [r.contactId, r.readAt]));
   const unreadCountByContact = new Map(readRows.map((r) => [r.contactId, Number(r.cnt)]));
@@ -278,6 +304,7 @@ export async function loadConversations(
     const { unread, manualUnread } = computeUnread({ readAt: effectiveReadAt, unreadCount });
     // Ficha do caso: do User quando o contato já virou cliente, senão do
     // rascunho coletado no atendimento (clientDraft).
+    const column = c.contact.userId ? columnByUserId.get(c.contact.userId) : undefined;
     const ficha: DraftFichaShape | null = c.contact.userId
       ? fichaByUserId.get(c.contact.userId) ?? null
       : (c.contact.clientDraft as unknown as DraftFichaShape | null);
@@ -321,7 +348,8 @@ export async function loadConversations(
       // Sentinela da época (epoch) = "Marcar como não lida" — a UI mostra um
       // marcador próprio em vez da contagem do histórico inteiro.
       manualUnread,
-      kanbanColumn: c.contact.userId ? columnByUserId.get(c.contact.userId) ?? null : null,
+      kanbanColumn: column?.name ?? null,
+      kanbanLabelId: column?.labelId ?? null,
       optedOut: c.contact.optedOut,
       numberId: c.numberId,
       readOnly: !!c.numberId && inactiveNumberIds.has(c.numberId),
@@ -331,10 +359,10 @@ export async function loadConversations(
 }
 
 /**
- * Lista do inbox: as conversas mais recentes. O dropdown de encerradas e o
- * filtro por tag contam em cima DESTA lista — com take menor que o total,
- * encerradas antigas sumiam da contagem. Quem fica FORA deste topo é achável
- * pela busca no servidor (`searchConversations`).
+ * Lista do inbox: as conversas mais recentes. As pastas do rail e os filtros
+ * de leitura/número contam em cima DESTA lista (o inbox avisa que é o recorte
+ * recente). Busca, tag, data de entrada e coluna do Kanban vão ao banco
+ * inteiro (`queryConversations`), com o total real.
  *
  * ~1,3 MB cru (~165 KB gzip) com 1.000 linhas: abaixo do teto de 4,5 MB de
  * resposta da função. Com o delta ela desce só na montagem e a cada 10 min,
@@ -482,35 +510,81 @@ export async function getInboxVersion(): Promise<InboxVersionResponse> {
 }
 
 /**
- * BUSCA no servidor (27/08/2026): procura em TODAS as conversas, não só nas
- * carregadas na lista. Casa por nome do contato, nome do CARD vinculado (o
- * nome que a lista de fato exibe) e telefone. Sem isso, quem tinha conversa
- * antiga simplesmente "sumia" do inbox ao ser pesquisado. Termo com menos de
- * 2 caracteres → lista vazia.
+ * Filtros do inbox no BANCO INTEIRO (auditoria de 24/09/2026, E3): busca,
+ * tag, data de entrada e coluna do Kanban (número e "Em fila" entram junto),
+ * uma página de `SEARCH_PAGE` a partir de `f.skip` + o total que casa. Antes
+ * tag e data filtravam só as 1.000 carregadas e o contador mentia (tag
+ * Contratados 124 de 276; "Este mês" 861 de 1.608).
+ *
+ * Regras do where em `buildInboxWhere` (inbox-filter.ts, puro e testado). O
+ * que ele precisa de `users` sai antes, numa onda só: cards cujo nome casa com
+ * o termo (WhatsAppContact não tem relação com User, só o userId solto) e os
+ * cards NÃO arquivados da coluna (o quadro não mostra arquivados). Depois a
+ * página e o count em paralelo, só em whatsapp_conversations (~5 mil linhas)
+ * e nas tabelas pequenas; whatsapp_messages só entra pelo LATERAL da montagem.
+ *
+ * Sem filtro de servidor (termo < 2 caracteres e nada mais) → vazio: a lista
+ * normal já é o "sem filtro".
+ */
+export async function queryConversations(f: InboxServerFilter): Promise<InboxSearchResponse> {
+  if (!hasServerFilter(f)) return { items: [], total: 0 };
+  const term = normalizeFilterTerm(f.term);
+  const [cardMatches, labelCards] = await Promise.all([
+    term
+      ? db.user.findMany({
+          where: { name: { contains: term, mode: 'insensitive' } },
+          select: { id: true },
+          take: CARD_NAME_MATCH_CAP,
+        })
+      : Promise.resolve([] as { id: string }[]),
+    f.labelId
+      ? db.user.findMany({ where: { labelId: f.labelId, archivedAt: null }, select: { id: true } })
+      : Promise.resolve(null),
+  ]);
+  const where = buildInboxWhere(f, {
+    cardIdsForTerm: cardMatches.map((u) => u.id),
+    userIdsForLabel: labelCards ? labelCards.map((u) => u.id) : null,
+  });
+  const [items, total] = await Promise.all([
+    loadConversations(where, SEARCH_PAGE, f.skip ?? 0),
+    db.whatsAppConversation.count({ where }),
+  ]);
+  return { items, total };
+}
+
+/**
+ * BUSCA por termo (27/08/2026): nome do contato, nome do CARD vinculado (o
+ * nome que a lista exibe) e telefone, em TODAS as conversas. Sem isso, quem
+ * tinha conversa antiga "sumia" do inbox ao ser pesquisado. Termo com menos
+ * de 2 caracteres → lista vazia. Só para a action antiga
+ * (`searchWhatsAppConversations`, bundle anterior); a rota usa
+ * `queryConversations`.
  */
 export async function searchConversations(term: string): Promise<WhatsAppConversationDTO[]> {
-  const q = term.trim();
-  if (q.length < 2) return [];
-  const digits = q.replace(/\D/g, '');
-  // O nome EXIBIDO na lista é o do card quando o contato já virou cliente, e
-  // WhatsAppContact não tem relação com User (só o userId solto) — então o
-  // casamento por nome de card sai de uma busca separada em users.
-  const cardMatches = await db.user.findMany({
-    where: { name: { contains: q, mode: 'insensitive' } },
-    select: { id: true },
-    take: 300,
-  });
-  const cardIds = cardMatches.map((u) => u.id);
-  return loadConversations(
-    {
-      OR: [
-        { contact: { name: { contains: q, mode: 'insensitive' as const } } },
-        ...(cardIds.length ? [{ contact: { userId: { in: cardIds } } }] : []),
-        ...(digits.length >= 2 ? [{ contact: { phone: { contains: digits } } }] : []),
-      ],
-    },
-    SEARCH_PAGE,
-  );
+  return (await queryConversations({ term })).items;
+}
+
+/**
+ * Colunas do Kanban para o filtro do inbox, na ordem do quadro, com quantas
+ * conversas têm card NÃO arquivado em cada uma (a mesma regra do filtro). O
+ * número antigo contava só as 1.000 carregadas. EXPLAIN ANALYZE de 26/09/2026
+ * (só leitura): ~4 ms.
+ */
+export async function loadInboxColumns(): Promise<InboxColumnsResponse> {
+  const rows = await db.$queryRaw<{ id: string; name: string; n: number }[]>`
+    SELECT l.id, l.name, COALESCE(x.n, 0)::int AS n
+    FROM "Label" l
+    LEFT JOIN (
+      SELECT u."labelId" AS label_id, count(*)::int AS n
+      FROM whatsapp_conversations c
+      JOIN whatsapp_contacts ct ON ct.id = c."contactId"
+      JOIN "User" u ON u.id = ct."userId"
+      WHERE u."archivedAt" IS NULL AND u."labelId" IS NOT NULL
+      GROUP BY u."labelId"
+    ) x ON x.label_id = l.id
+    ORDER BY l."order" ASC, l.name ASC
+  `;
+  return { items: rows.map((r) => ({ id: r.id, name: r.name, count: Number(r.n) })) };
 }
 
 /**

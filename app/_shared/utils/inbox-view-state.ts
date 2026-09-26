@@ -41,6 +41,7 @@ export interface InboxViewState {
   search: string;
   tagFilter: string[];
   dateRange: InboxDateRange | null;
+  /** Id da Label (coluna do Kanban). Estado antigo guardava o nome: `pruneColumnFilter` converte. */
   columnFilter: string | null;
   contactsMode: boolean;
 }
@@ -178,4 +179,20 @@ export function pruneTagFilter(tagFilter: string[], known: ReadonlyArray<{ id: s
   const ids = new Set(known.map((t) => t.id));
   const next = tagFilter.filter((id) => ids.has(id));
   return next.length === tagFilter.length ? tagFilter : next;
+}
+
+/**
+ * O filtro de coluna guarda o ID da Label (desde que o filtro foi ao banco,
+ * 26/09/2026). Estado salvo antes disso guardava o NOME da coluna: vira o id
+ * da coluna com esse nome. Coluna apagada (id e nome desconhecidos) sai do
+ * filtro, senão a lista ficaria vazia com o chip ligado. Colunas ainda não
+ * carregadas → fica como está. Mesma referência quando nada muda.
+ */
+export function pruneColumnFilter(
+  columnFilter: string | null,
+  known: ReadonlyArray<{ id: string; name: string }> | undefined,
+): string | null {
+  if (!known || !columnFilter) return columnFilter;
+  if (known.some((c) => c.id === columnFilter)) return columnFilter;
+  return known.find((c) => c.name === columnFilter)?.id ?? null;
 }

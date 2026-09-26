@@ -235,7 +235,7 @@ const conv = (extra: Partial<WhatsAppConversationDTO> = {}): WhatsAppConversatio
   lastMessageFromClient: true, lastMessageStatus: null, lastMessageMediaType: null,
   handoffReason: "quer falar com atendente", adPlatform: null, createdAt: "2026-09-20T10:00:00.000Z",
   caseLesoes: null, caseCidade: null, caseDataAcidente: null, hasCpf: false, recoveryAttempts: 0,
-  unread: true, unreadCount: 2, manualUnread: false, kanbanColumn: null, optedOut: false,
+  unread: true, unreadCount: 2, manualUnread: false, kanbanColumn: null, kanbanLabelId: null, optedOut: false,
   numberId: "n1", readOnly: false, tags: [VIP],
   ...extra,
 });

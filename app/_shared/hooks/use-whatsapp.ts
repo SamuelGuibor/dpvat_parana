@@ -5,15 +5,15 @@ import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
 // SÓ tipos (`import type`): inbox-data.ts, ao lado, importa o Prisma e não
 // pode entrar no bundle do navegador.
 import type {
-  InboxDeltaResponse, InboxListResponse, WhatsAppConversationDTO,
+  InboxColumnOption, InboxDeltaResponse, InboxListResponse, InboxSearchResponse, WhatsAppConversationDTO,
 } from '@/app/_shared/lib/whatsapp/inbox-types';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
 import { createCoalescer, createSingleFlight, type Coalescer } from '@/app/_shared/utils/refresh-gate';
 import { mergeThreadWindow, unionThreadMessages, upsertById } from '@/app/_shared/utils/thread-window';
 import { HttpError, jsonFetcher, pollRetryDelayMs } from '@/app/_shared/utils/fetch-json';
 import {
-  INBOX_CONVERSATIONS_URL, inboxConversationUrl, inboxDeltaUrl, inboxSearchUrl,
-  readInboxDelta, readInboxItem, readInboxItems, readInboxList,
+  INBOX_COLUMNS_URL, INBOX_CONVERSATIONS_URL, inboxConversationUrl, inboxDeltaUrl, inboxFilterUrl,
+  readInboxColumns, readInboxDelta, readInboxFilter, readInboxItem, readInboxList,
 } from '@/app/_shared/utils/inbox-api';
 import {
   INBOX_LIST_PAGE, lockedConversationIds, mergeConversationDelta, pruneLocalEdits, sinceWithOverlap,
@@ -68,9 +68,13 @@ export interface WhatsAppThreadMessage {
 // hash de 15 s seguravam o clique do atendente (tag, assumir, encerrar). A
 // fila de actions agora fica só com mutações.
 
-/** Busca em TODO o histórico (GET, fora da fila de actions). Lança `HttpError` na falha. */
-export async function fetchInboxSearch(term: string): Promise<WhatsAppConversationDTO[]> {
-  return readInboxItems(await jsonFetcher<unknown>(inboxSearchUrl(term)));
+/**
+ * Busca + filtros (tag, data de entrada, coluna) em TODO o histórico (GET,
+ * fora da fila de actions): uma página a partir de `skip` e o total que casa.
+ * `query` = `inboxFilterQuery(...)` (inbox-filter.ts). Lança `HttpError` na falha.
+ */
+export async function fetchInboxFilter(query: string, skip = 0): Promise<InboxSearchResponse> {
+  return readInboxFilter(await jsonFetcher<unknown>(inboxFilterUrl(query, skip)));
 }
 
 /** UMA conversa pelo contato (abrir fora do topo da lista); `null` = contato sem conversa. */
@@ -572,6 +576,23 @@ export function useWaNumberOptions(): WaNumberOption[] | undefined {
     { revalidateOnFocus: false, dedupingInterval: 60_000, shouldRetryOnError: false },
   );
   return data;
+}
+
+/**
+ * Colunas do Kanban do filtro do inbox (GET /api/whatsapp/inbox/columns),
+ * com a contagem real de conversas por coluna. Cache global do SWR como as
+ * linhas: voltar ao WhatsApp dentro de 60 s não busca de novo. `columns`
+ * undefined = ainda não chegou; `failed` = a busca falhou (sem retry
+ * automático; o menu tem "Tentar novamente").
+ */
+export function useInboxColumns(): { columns: InboxColumnOption[] | undefined; failed: boolean; reload: () => void } {
+  const { data, error, isValidating, mutate } = useSWR<InboxColumnOption[]>(
+    INBOX_COLUMNS_URL,
+    async (url: string) => readInboxColumns(await jsonFetcher<unknown>(url)),
+    { revalidateOnFocus: false, dedupingInterval: 60_000, shouldRetryOnError: false },
+  );
+  const reload = useCallback(() => { void mutate(); }, [mutate]);
+  return { columns: data, failed: !!error && !isValidating, reload };
 }
 
 // O badge de não lidas das abas não mora mais aqui: vem de GET

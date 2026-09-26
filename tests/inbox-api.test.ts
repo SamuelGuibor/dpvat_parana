@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { WhatsAppConversationDTO } from "@/app/_shared/lib/whatsapp/inbox-types";
 import {
+  INBOX_COLUMNS_URL,
   INBOX_CONVERSATIONS_URL,
   INBOX_SEARCH_URL,
   INBOX_VERSION_URL,
   inboxConversationUrl,
   inboxDeltaUrl,
-  inboxSearchUrl,
+  inboxFilterUrl,
+  readInboxColumns,
   readInboxDelta,
+  readInboxFilter,
   readInboxItem,
   readInboxItems,
   readInboxList,
   readInboxVersion,
 } from "@/app/_shared/utils/inbox-api";
+import { inboxFilterQuery } from "@/app/_shared/utils/inbox-filter";
 
 // Endereços e leitura das respostas das rotas GET do inbox (lista, versão,
 // busca e conversa por contato), que tiraram essas leituras da fila serial de
@@ -23,7 +27,7 @@ const conv = (id: string) => ({ id, contactId: `c-${id}` }) as unknown as WhatsA
 
 describe("endereços das rotas do inbox", () => {
   it("rotas da equipe fora de /api/whatsapp/webhook, /cron e /brain-prompt (allowlists do middleware)", () => {
-    for (const url of [INBOX_CONVERSATIONS_URL, INBOX_VERSION_URL, INBOX_SEARCH_URL]) {
+    for (const url of [INBOX_CONVERSATIONS_URL, INBOX_VERSION_URL, INBOX_SEARCH_URL, INBOX_COLUMNS_URL]) {
       expect(url.startsWith("/api/whatsapp/inbox/")).toBe(true);
     }
   });
@@ -31,8 +35,8 @@ describe("endereços das rotas do inbox", () => {
   it("contactId e termo vão codificados na query", () => {
     expect(inboxConversationUrl("abc123")).toBe("/api/whatsapp/inbox/conversations?contactId=abc123");
     expect(inboxConversationUrl("a&b=c")).toBe("/api/whatsapp/inbox/conversations?contactId=a%26b%3Dc");
-    expect(inboxSearchUrl("João da Silva")).toBe("/api/whatsapp/inbox/search?q=Jo%C3%A3o%20da%20Silva");
-    expect(inboxSearchUrl("+55 (41) 9")).toBe("/api/whatsapp/inbox/search?q=%2B55%20(41)%209");
+    expect(inboxFilterUrl(inboxFilterQuery({ term: "João da Silva" }))).toBe("/api/whatsapp/inbox/search?q=Jo%C3%A3o+da+Silva");
+    expect(inboxFilterUrl(inboxFilterQuery({ term: "+55 (41) 9" }))).toBe("/api/whatsapp/inbox/search?q=%2B55+%2841%29+9");
   });
 
   it("delta: since codificado na query da mesma rota da lista", () => {
@@ -41,9 +45,48 @@ describe("endereços das rotas do inbox", () => {
     );
   });
 
-  it("o termo vai como veio: quem apara e corta em 2 caracteres é o servidor", () => {
-    expect(inboxSearchUrl(" a ")).toBe("/api/whatsapp/inbox/search?q=%20a%20");
-    expect(inboxSearchUrl("")).toBe("/api/whatsapp/inbox/search?q=");
+  it("filtro + página: skip só a partir da 2ª página", () => {
+    const q = inboxFilterQuery({ tagIds: ["t1"], fromDay: "2026-09-01", toDay: "2026-09-24" });
+    expect(inboxFilterUrl(q)).toBe("/api/whatsapp/inbox/search?tag=t1&from=2026-09-01&to=2026-09-24");
+    expect(inboxFilterUrl(q, 300)).toBe("/api/whatsapp/inbox/search?tag=t1&from=2026-09-01&to=2026-09-24&skip=300");
+    expect(inboxFilterUrl("", 0)).toBe("/api/whatsapp/inbox/search");
+  });
+});
+
+describe("readInboxFilter (busca/filtro com total real)", () => {
+  it("devolve itens e total", () => {
+    const items = [conv("1")];
+    expect(readInboxFilter({ items, total: 364 })).toEqual({ items, total: 364 });
+  });
+
+  it("servidor antigo sem total: o total é o que veio (nada de 'X de Y' inventado)", () => {
+    const items = [conv("1"), conv("2")];
+    expect(readInboxFilter({ items })).toEqual({ items, total: 2 });
+    expect(readInboxFilter({ items, total: -1 })).toEqual({ items, total: 2 });
+  });
+
+  it("sem items lança", () => {
+    expect(() => readInboxFilter({ total: 3 })).toThrow("Resposta inválida");
+  });
+});
+
+describe("readInboxColumns (colunas do Kanban)", () => {
+  it("devolve id, nome e contagem; linha fora do formato sai", () => {
+    expect(readInboxColumns({
+      items: [
+        { id: "l1", name: "AFASTADOS", count: 15 },
+        { id: "l2", name: "COLHER ASSINATURA", count: "x" },
+        { id: 3, name: "lixo" },
+        null,
+      ],
+    })).toEqual([
+      { id: "l1", name: "AFASTADOS", count: 15 },
+      { id: "l2", name: "COLHER ASSINATURA", count: 0 },
+    ]);
+  });
+
+  it("sem items lança", () => {
+    expect(() => readInboxColumns({ error: "x" })).toThrow("Resposta inválida");
   });
 });
 

@@ -25,14 +25,18 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
-  fetchInboxConversation, fetchInboxSearch,
+  fetchInboxConversation, fetchInboxFilter, useInboxColumns,
   useWaNumberOptions, useWhatsAppConversations, useWhatsAppMessages,
   type WaNumberOption, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
-  OPEN_CONTACT_STORAGE_KEY, browserSessionStorage, pruneTagFilter, restoreInboxView, saveInboxViewState,
-  type InboxFolderKey, type InboxViewState,
+  OPEN_CONTACT_STORAGE_KEY, browserSessionStorage, pruneColumnFilter, pruneTagFilter, restoreInboxView,
+  saveInboxViewState, type InboxFolderKey, type InboxViewState,
 } from '@/app/_shared/utils/inbox-view-state';
+import {
+  INBOX_FILTER_PAGE, appendFilterPage, filterResultChanged, hasServerFilter, inboxFilterQuery, matchesInboxFilter,
+  mergeLiveIntoFiltered, mergeRefreshedFirstPage, type InboxServerFilter,
+} from '@/app/_shared/utils/inbox-filter';
 import { closedFolderOf, type ClosedFolderKey } from '@/app/_shared/utils/inbox-folders';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
@@ -83,7 +87,7 @@ import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
-import { brDayKey } from '@/app/_shared/utils/date-br';
+import { brDayKey, brLabelFromKey } from '@/app/_shared/utils/date-br';
 import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
 import { getMediaUrl, useMediaUrl } from './media-url-cache';
 import { formatDistanceToNow } from 'date-fns';
@@ -101,6 +105,11 @@ const INBOX_SUPPORT_SWR = { revalidateOnFocus: false, dedupingInterval: 60_000, 
 // Uma gravação da navegação (conversa, pasta, busca, filtros) por pausa de
 // digitação na busca; o desmontar grava na hora o que estiver pendente.
 const INBOX_VIEW_SAVE_DEBOUNCE_MS = 300;
+// Filtros no banco: uma busca por pausa de digitação/cliques (cada troca de
+// filtro é um GET) e, com o filtro ligado, no máximo uma rebusca a cada 30 s
+// quando o delta mostra conversa entrando ou saindo do resultado.
+const FILTER_DEBOUNCE_MS = 350;
+const FILTER_REFRESH_MIN_MS = 30_000;
 // Referência estável para "linhas ainda não chegaram" (deps dos useMemo).
 const NO_WA_NUMBERS: WaNumberOption[] = [];
 
@@ -226,35 +235,10 @@ export function WhatsAppInbox() {
     error: messagesError, upsertThreadMessage, revalidateThread,
   } = useWhatsAppMessages(activeContactId);
 
+  // Busca por nome ou celular. Com 2+ caracteres ela vai ao banco inteiro
+  // junto com os outros filtros de servidor (ver "FILTROS NO BANCO" abaixo);
+  // com 1, filtra só as conversas carregadas.
   const [search, setSearch] = useState('');
-  // BUSCA NO SERVIDOR (27/08/2026): a lista carregada é só o TOPO (as mais
-  // recentes). Filtrar só ela fazia conversas antigas "sumirem" do inbox —
-  // pesquisar um nome não achava nada e a conversa parecia ter evaporado.
-  // Agora o termo também vai ao banco e o resultado é fundido na lista. Por GET
-  // (/api/whatsapp/inbox/search), não action: cada termo digitado entrava na
-  // fila serial de server actions na frente do clique. O `searchSeq` descarta
-  // a resposta de um termo que já foi trocado (as buscas GET correm em
-  // paralelo e podem chegar fora de ordem).
-  const [remoteResults, setRemoteResults] = useState<WhatsAppConversationDTO[]>([]);
-  const [searchingServer, setSearchingServer] = useState(false);
-  const searchSeq = useRef(0);
-  useEffect(() => {
-    const term = search.trim();
-    const seq = ++searchSeq.current;
-    if (term.length < 2) {
-      setRemoteResults([]);
-      setSearchingServer(false);
-      return;
-    }
-    setSearchingServer(true);
-    const t = setTimeout(() => {
-      fetchInboxSearch(term)
-        .then((rows) => { if (searchSeq.current === seq) setRemoteResults(rows); })
-        .catch(() => { if (searchSeq.current === seq) setRemoteResults([]); })
-        .finally(() => { if (searchSeq.current === seq) setSearchingServer(false); });
-    }, 350);
-    return () => clearTimeout(t);
-  }, [search]);
   // Coluna Copiloto (lg+) e CardDialog do cliente vinculado.
   const [copilotOpen, setCopilotOpen] = useState(true);
   const [cardDialogOpen, setCardDialogOpen] = useState(false);
@@ -294,8 +278,8 @@ export function WhatsAppInbox() {
   // "Coluna do Kanban" = estágio do card do cliente vinculado.
   // Filtro por DATA DE ENTRADA do lead (21/09/2026, estilo BotConversa):
   // substitui o antigo chip "Hoje" — presets + intervalo livre. Dias em
-  // "YYYY-MM-DD" (Brasília), inclusivos. Filtra só as conversas carregadas
-  // (as 1.000 mais recentes); a busca por nome é que vai ao banco inteiro.
+  // "YYYY-MM-DD" (Brasília), inclusivos. Vai ao banco inteiro (createdAt da
+  // conversa via brDayRangeToInstants), não só às 1.000 carregadas.
   const [dateRange, setDateRange] = useState<{ from: string; to: string; label: string } | null>(null);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -317,7 +301,16 @@ export function WhatsAppInbox() {
     const fmt = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
     setDateRange({ from, to, label: from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}` });
   };
+  // Coluna do Kanban = ID da Label do card (a coluna de verdade; o nome em
+  // `role` diverge quando a coluna é renomeada). Opções com a contagem real
+  // por GET /api/whatsapp/inbox/columns. Estado salvo com o NOME (antes de
+  // 26/09/2026) ou coluna apagada: `pruneColumnFilter` converte ou tira.
   const [columnFilter, setColumnFilter] = useState<string | null>(null);
+  const { columns: inboxColumns, failed: columnsFailed, reload: reloadColumns } = useInboxColumns();
+  useEffect(() => {
+    if (inboxColumns) setColumnFilter((prev) => pruneColumnFilter(prev, inboxColumns));
+  }, [inboxColumns, columnFilter]);
+  const columnName = columnFilter ? inboxColumns?.find((c) => c.id === columnFilter)?.name ?? null : null;
 
   // Estado de leitura/fila (19/08/2026): triagem rápida do que ainda não foi
   // visto, do que já foi, ou de quem espera atendente na fila — sem precisar
@@ -483,6 +476,146 @@ export function WhatsAppInbox() {
     INBOX_SUPPORT_SWR,
   );
 
+  // FILTROS NO BANCO (auditoria de 24/09/2026, E3/LISTA-3): busca (2+
+  // caracteres), tag, data de entrada e coluna do Kanban procuram em TODO o
+  // histórico por GET (/api/whatsapp/inbox/search), com o total real ("X de
+  // Y") e "Carregar mais" de 300 em 300. Antes tag e data filtravam só as 1.000
+  // carregadas e o contador mentia (Contratados 124 de 276; "Este mês" 861 de
+  // 1.608). Com um deles ligado, número e "Em fila" vão junto no where, a lista
+  // vira GLOBAL (seções por pasta sobre o resultado, a pasta do rail não
+  // filtra) e só "lidas/não lidas" filtram no navegador, na página carregada.
+  // Regras puras em app/_shared/utils/inbox-filter.ts.
+  const serverFilter = useMemo<InboxServerFilter>(() => ({
+    term: search,
+    tagIds: tagFilter,
+    fromDay: dateRange?.from,
+    toDay: dateRange?.to,
+    labelId: columnFilter ?? undefined,
+    numberId: numberFilter ?? undefined,
+    queuedOnly: readFilter === 'fila',
+  }), [search, tagFilter, dateRange, columnFilter, numberFilter, readFilter]);
+  // Na Agenda a busca é dos contatos: nenhum filtro de conversa vai ao banco.
+  const serverFilterActive = !contactsMode && hasServerFilter(serverFilter);
+  // Chave do resultado = a query normalizada, sem a página.
+  const filterQuery = serverFilterActive ? inboxFilterQuery(serverFilter) : null;
+  type FilterResult = { key: string; items: WhatsAppConversationDTO[]; total: number };
+  const [remote, setRemote] = useState<FilterResult | null>(null);
+  const [remoteError, setRemoteError] = useState<{ key: string; error: unknown } | null>(null);
+  const [filterFetching, setFilterFetching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Lidos pelos callbacks (delta, timer, resposta do GET): vale o último render.
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
+  const filterQueryRef = useRef(filterQuery);
+  filterQueryRef.current = filterQuery;
+  const serverFilterRef = useRef(serverFilter);
+  serverFilterRef.current = serverFilter;
+  const lastFilterFetchAtRef = useRef(0);
+  const filterRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Rebusca pedida com a aba oculta: sai na volta à aba.
+  const filterRefreshDirtyRef = useRef(false);
+
+  // Uma página do filtro. A resposta só vale se o filtro na tela ainda for o
+  // mesmo (os GET correm em paralelo e chegam fora de ordem). 'first' = filtro
+  // novo (substitui); 'refresh' = rebusca da 1ª página sem perder as seguintes
+  // já carregadas; 'more' = "Carregar mais".
+  const fetchFilterPage = useCallback(async (query: string, mode: 'first' | 'refresh' | 'more') => {
+    const current = remoteRef.current;
+    const skip = mode === 'more' && current?.key === query ? current.items.length : 0;
+    if (mode === 'more') setLoadingMore(true);
+    else lastFilterFetchAtRef.current = Date.now();
+    try {
+      const page = await fetchInboxFilter(query, skip);
+      if (filterQueryRef.current !== query) return;
+      setRemote((prev) => {
+        const same = prev?.key === query ? prev : null;
+        if (!same || mode === 'first') return { key: query, items: page.items, total: page.total };
+        const items = mode === 'more'
+          ? appendFilterPage(same.items, page.items)
+          : mergeRefreshedFirstPage(same.items, page.items, INBOX_FILTER_PAGE);
+        return { key: query, items, total: page.total };
+      });
+      setRemoteError((prev) => (prev?.key === query ? null : prev));
+    } catch (err) {
+      if (filterQueryRef.current !== query) return;
+      // Rebusca que falha deixa na tela o resultado que já estava; a próxima
+      // mudança tenta de novo. O motivo vem da rota (ex.: fora da rede do escritório).
+      if (mode === 'first') setRemoteError({ key: query, error: err });
+      else if (mode === 'more') toast.error(`Não foi possível carregar mais conversas: ${describeFetchError(err)}`);
+    } finally {
+      if (mode === 'more') setLoadingMore(false);
+      else if (mode === 'first' && filterQueryRef.current === query) setFilterFetching(false);
+    }
+  }, []);
+
+  // Filtro mudou → 1ª página depois da pausa (debounce). Filtro desligado →
+  // volta à lista normal. O resultado anterior fica em `remote` até o novo
+  // chegar: serve de prévia (a lista não pisca a cada tecla).
+  useEffect(() => {
+    if (filterRefreshTimerRef.current) {
+      clearTimeout(filterRefreshTimerRef.current);
+      filterRefreshTimerRef.current = null;
+    }
+    filterRefreshDirtyRef.current = false;
+    if (!filterQuery) {
+      setRemote(null);
+      setRemoteError(null);
+      setFilterFetching(false);
+      return;
+    }
+    setFilterFetching(true);
+    const t = setTimeout(() => { void fetchFilterPage(filterQuery, 'first'); }, FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [filterQuery, fetchFilterPage]);
+
+  // Rebusca da 1ª página quando o delta mostra conversa entrando ou saindo do
+  // resultado (a fusão do delta já atualiza quem continua nele): no máximo a
+  // cada 30 s, e nunca com a aba oculta (marca e sai na volta).
+  const scheduleFilterRefresh = useCallback(() => {
+    if (filterRefreshTimerRef.current) return;
+    if (document.hidden) {
+      filterRefreshDirtyRef.current = true;
+      return;
+    }
+    const wait = Math.max(0, lastFilterFetchAtRef.current + FILTER_REFRESH_MIN_MS - Date.now());
+    filterRefreshTimerRef.current = setTimeout(() => {
+      filterRefreshTimerRef.current = null;
+      const query = filterQueryRef.current;
+      if (!query) return;
+      if (document.hidden) {
+        filterRefreshDirtyRef.current = true;
+        return;
+      }
+      void fetchFilterPage(query, 'refresh');
+    }, wait);
+  }, [fetchFilterPage]);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden || !filterRefreshDirtyRef.current) return;
+      filterRefreshDirtyRef.current = false;
+      scheduleFilterRefresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (filterRefreshTimerRef.current) {
+        clearTimeout(filterRefreshTimerRef.current);
+        filterRefreshTimerRef.current = null;
+      }
+    };
+  }, [scheduleFilterRefresh]);
+
+  // Resultado do banco para o filtro NA TELA (o de um filtro anterior só serve de prévia).
+  const serverResult = remote && remote.key === filterQuery ? remote : null;
+  const serverFilterError = remoteError && remoteError.key === filterQuery ? remoteError.error : null;
+  const searchingServer = serverFilterActive && !serverResult && (filterFetching || !serverFilterError);
+  const retryServerFilter = () => {
+    if (!filterQuery) return;
+    setRemoteError(null);
+    setFilterFetching(true);
+    void fetchFilterPage(filterQuery, 'first');
+  };
+
   // Paginação client-side: cada pasta mostra 200 por vez, com "Carregar mais".
   // Reinicia ao trocar de pasta, buscar ou filtrar por tag.
   const [visibleCount, setVisibleCount] = useState(200);
@@ -584,9 +717,9 @@ export function WhatsAppInbox() {
   // abrir pela agenda não espera mais uma recarga da lista em andamento.
   const listActive = useMemo(
     () => conversations.find((c) => c.contactId === activeContactId)
-      ?? remoteResults.find((c) => c.contactId === activeContactId)
+      ?? remote?.items.find((c) => c.contactId === activeContactId)
       ?? null,
-    [conversations, remoteResults, activeContactId],
+    [conversations, remote, activeContactId],
   );
   const [fetchedActive, setFetchedActive] = useState<WhatsAppConversationDTO | null>(null);
   // contactId cuja busca sob demanda já terminou (achando ou não).
@@ -623,12 +756,23 @@ export function WhatsAppInbox() {
   const openingActive = !!activeContactId && !active && activeLookupDone !== activeContactId;
 
   // Delta da lista (sincronização a cada 15 s): as cópias fora do SWR só
-  // SUBSTITUEM quem já têm (`insertNew: false`) — a busca não ganha conversa
-  // que não casa com o termo. As travas do patch otimista já vêm aplicadas
-  // pelo hook. Nada mudou = mesma referência (sem re-render).
+  // SUBSTITUEM quem já têm (`insertNew: false`) — o resultado filtrado não
+  // ganha conversa que não casa. As travas do patch otimista já vêm aplicadas
+  // pelo hook. Nada mudou = mesma referência (sem re-render). Conversa que
+  // entrou ou saiu do filtro (tag aplicada, card que mudou de coluna…) pede a
+  // rebusca do total no banco (`scheduleFilterRefresh`).
   deltaListenerRef.current = (items) => {
-    setRemoteResults((prev) => mergeConversationDelta(prev, items, { cap: prev.length, insertNew: false }));
+    setRemote((prev) => {
+      if (!prev) return prev;
+      const merged = mergeConversationDelta(prev.items, items, { cap: prev.items.length, insertNew: false });
+      return merged === prev.items ? prev : { ...prev, items: merged };
+    });
     setFetchedActive((prev) => (prev ? mergeConversationDelta([prev], items, { cap: 1, insertNew: false })[0] : prev));
+    const current = remoteRef.current;
+    if (current && current.key === filterQueryRef.current
+      && filterResultChanged(items, current.items, serverFilterRef.current)) {
+      scheduleFilterRefresh();
+    }
   };
 
   // Tira UMA conversa de todas as cópias da tela (lista, busca, hidratada).
@@ -639,7 +783,9 @@ export function WhatsAppInbox() {
     void patchConversations((list) => (
       list?.some((c) => c.contactId === contactId) ? list.filter((c) => c.contactId !== contactId) : list
     ));
-    setRemoteResults((prev) => (prev.some((c) => c.contactId === contactId) ? prev.filter((c) => c.contactId !== contactId) : prev));
+    setRemote((prev) => (prev?.items.some((c) => c.contactId === contactId)
+      ? { ...prev, items: prev.items.filter((c) => c.contactId !== contactId), total: Math.max(0, prev.total - 1) }
+      : prev));
     setFetchedActive((prev) => (prev?.contactId === contactId ? null : prev));
   }, [patchConversations]);
 
@@ -846,63 +992,40 @@ export function WhatsAppInbox() {
     await loadOlder();
   }
 
-  // Busca por nome ou celular + filtro por tags (basta bater em uma das
-  // selecionadas) + "Hoje" + coluna do Kanban.
-  const inDateRange = (iso: string) => {
-    if (!dateRange) return true;
-    const k = brDayKey(iso);
-    return k >= dateRange.from && k <= dateRange.to;
-  };
-  // Lista carregada + o que a busca no servidor trouxe de fora dela (sem
-  // duplicar quem já está nas duas).
-  const searchUniverse = useMemo(() => {
-    if (!remoteResults.length) return conversations;
+  // Com filtro no banco e a resposta na tela: o resultado do servidor (com a
+  // versão mais nova da lista viva por cima) e SÓ "lidas/não lidas" no
+  // navegador — busca, tag, data, coluna, número e fila já vieram aplicados, e
+  // refiltrar uma página faria o "X de Y" mentir de novo. Esperando a resposta
+  // (ou com erro): prévia local do mesmo filtro sobre a lista + o último
+  // resultado, para a digitação não piscar. Sem filtro no banco: tudo local
+  // sobre as conversas carregadas (busca de 1 caractere, número, leitura/fila).
+  const serverItems = useMemo(
+    () => (serverResult ? mergeLiveIntoFiltered(serverResult.items, conversations) : null),
+    [serverResult, conversations],
+  );
+  const previewUniverse = useMemo(() => {
+    if (!serverFilterActive || !remote?.items.length) return conversations;
     const known = new Set(conversations.map((c) => c.contactId));
-    return [...conversations, ...remoteResults.filter((r) => !known.has(r.contactId))];
-  }, [conversations, remoteResults]);
-
+    return [...conversations, ...remote.items.filter((r) => !known.has(r.contactId))];
+  }, [serverFilterActive, remote, conversations]);
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const digits = term.replace(/\D/g, '');
-    return searchUniverse.filter((c) => {
-      if (term) {
-        const nameMatch = (c.contactName ?? '').toLowerCase().includes(term);
-        const phoneMatch = digits.length >= 2 && c.contactPhone.includes(digits);
-        if (!nameMatch && !phoneMatch) return false;
-      }
-      if (tagFilter.length && !c.tags.some((t) => tagFilter.includes(t.id))) return false;
-      if (!inDateRange(c.createdAt)) return false;
-      if (columnFilter && c.kanbanColumn !== columnFilter) return false;
-      if (numberFilter && c.numberId !== numberFilter) return false;
-      // Estado de leitura: "não lidas" = mensagem recebida depois da última
-      // leitura; "fila" = aguardando atendente (status queued).
-      if (readFilter === 'nao_lidas' && !c.unread) return false;
-      if (readFilter === 'lidas' && c.unread) return false;
-      if (readFilter === 'fila' && c.status !== 'queued') return false;
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchUniverse, search, tagFilter, dateRange, columnFilter, numberFilter, readFilter]);
+    // "Não lidas" = mensagem recebida depois da última leitura (computeUnread).
+    const readOk = (c: WhatsAppConversationDTO) => (
+      readFilter === 'nao_lidas' ? c.unread : readFilter === 'lidas' ? !c.unread : true
+    );
+    if (serverItems) {
+      return readFilter === 'nao_lidas' || readFilter === 'lidas' ? serverItems.filter(readOk) : serverItems;
+    }
+    return previewUniverse.filter((c) => matchesInboxFilter(c, serverFilter) && readOk(c));
+  }, [serverItems, previewUniverse, serverFilter, readFilter]);
 
-  // Contagem do chip de período (só o período, independe dos outros filtros)
-  // e colunas disponíveis pro seletor.
-  const dateCount = useMemo(() => conversations.filter((c) => inDateRange(c.createdAt)).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversations, dateRange]);
-  // Contagens dos chips de leitura/fila: também independem dos outros filtros
-  // pelo mesmo motivo do "Hoje" — o número não pode mudar ao clicar no chip.
+  // Contagens dos chips de leitura/fila: independem dos outros filtros — o
+  // número não pode mudar ao clicar no chip. Contam as conversas carregadas.
   const readCounts = useMemo(() => ({
     nao_lidas: conversations.filter((c) => c.unread).length,
     lidas: conversations.filter((c) => !c.unread).length,
     fila: conversations.filter((c) => c.status === 'queued').length,
   }), [conversations]);
-  const kanbanColumns = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of conversations) {
-      if (c.kanbanColumn) map.set(c.kanbanColumn, (map.get(c.kanbanColumn) ?? 0) + 1);
-    }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [conversations]);
   // Contagem por número (dropdown do filtro de linha).
   const numberCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -916,8 +1039,8 @@ export function WhatsAppInbox() {
     // Encerradas: uma pasta por desfecho pela regra pura closedFolderOf
     // (inclui o fallback pelo `qualified` antigo e os sub-motivos nq_*).
     // 'outros' é a rede de segurança para categoria sem pasta: não tem ícone
-    // no rail, mas aparece nas seções da busca/tag para a lista bater com o
-    // contador "N resultados".
+    // no rail, mas aparece nas seções da lista global ("Outros desfechos")
+    // para as seções baterem com o resultado.
     const closed: Record<ClosedFolderKey, WhatsAppConversationDTO[]> = {
       qualified: [], unqualified: [], churn: [], sem_resposta: [], perguntas: [],
       novo_acidente: [], transferido: [], descartado: [], outros: [],
@@ -974,23 +1097,50 @@ export function WhatsAppInbox() {
   };
   const unreadInFolder = (key: FolderKey) => FOLDER_ITEMS[key].filter((c) => c.unread).length;
 
-  // Filtro de tag E busca são globais: ignoram a pasta selecionada e procuram
-  // em TODAS as conversas — pesquisar um número acha o cliente mesmo que ele
-  // esteja em outra aba.
-  const tagFilterActive = tagFilter.length > 0 || search.trim().length > 0;
-  const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
+  // Lista GLOBAL: ignora a pasta selecionada e mostra o resultado em seções
+  // por pasta — pesquisar um número acha o cliente mesmo que ele esteja em
+  // outra pasta. Vale com filtro no banco (busca, tag, data, coluna) e com a
+  // busca de 1 caractere (local). Uma pasta refiltrando a PÁGINA do resultado
+  // faria o "X de Y" mentir.
+  const globalView = serverFilterActive || search.trim().length > 0;
+  const visibleItems = globalView ? filtered : FOLDER_ITEMS[activeFolder];
   // Esqueleto / erro com "Tentar novamente" / "Nenhuma conversa ainda" — regra
-  // em inboxListState. Com busca ou tag ativa, o que a busca no servidor achou
-  // aparece mesmo que a carga principal ainda não tenha chegado.
+  // em inboxListState. Com a lista global, o que o banco achou aparece mesmo
+  // que a carga principal ainda não tenha chegado.
   const listState = inboxListState({
     loaded: conversationsLoaded,
     isLoading: conversationsLoading,
     hasError: !!conversationsError,
     count: conversations.length,
-    searchHits: tagFilterActive ? filtered.length : 0,
+    searchHits: globalView ? filtered.length : 0,
   });
 
-  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter, dateRange]);
+  // Aviso da lista parcial: desde quando vão as conversas carregadas (a lista
+  // vem por lastMessageAt desc; o mínimo protege de uma ordem trocada).
+  const loadedSinceLabel = useMemo(() => {
+    let min = Number.POSITIVE_INFINITY;
+    for (const c of conversations) {
+      const t = Date.parse(c.lastMessageAt);
+      if (t < min) min = t;
+    }
+    return Number.isFinite(min) ? brLabelFromKey(brDayKey(min)) : null;
+  }, [conversations]);
+
+  // Pasta do rail = sair da lista global: limpa tag, data e coluna (os
+  // filtros que vão ao banco e ignoram a pasta), como o clique já limpava a
+  // tag. A busca digitada fica, como antes.
+  const selectFolder = (key: FolderKey) => {
+    setTagFilter([]);
+    setDateRange(null);
+    setCustomFrom('');
+    setCustomTo('');
+    setColumnFilter(null);
+    setAttendantFilter(null);
+    setContactsMode(false);
+    setActiveFolder(key);
+  };
+
+  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter, dateRange, columnFilter]);
 
   // Janela de 24h: sem mensagem recebida recente, a Meta só aceita template.
   const windowExpired = !!active && (
@@ -1057,7 +1207,7 @@ export function WhatsAppInbox() {
   }
 
   // Patch local de UMA conversa em todas as cópias que a tela pode estar
-  // mostrando: a lista (SWR), os resultados da busca no servidor e a conversa
+  // mostrando: a lista (SWR), o resultado dos filtros no servidor e a conversa
   // hidratada fora do topo (agenda/busca). Sem as duas últimas, a ação em
   // cliente antigo não aparecia até recarregar. Patch em função é calculado
   // sobre a versão ATUAL de cada cópia (nunca sobre o `active` do render). O
@@ -1066,7 +1216,11 @@ export function WhatsAppInbox() {
   const patchConversation = useCallback(
     (contactId: string, patch: ConversationPatch) => {
       void patchConversations((list) => patchConversationList(list, contactId, patch), contactId);
-      setRemoteResults((prev) => patchConversationList(prev, contactId, patch));
+      setRemote((prev) => {
+        if (!prev) return prev;
+        const items = patchConversationList(prev.items, contactId, patch);
+        return items === prev.items ? prev : { ...prev, items };
+      });
       setFetchedActive((prev) => (prev?.contactId === contactId ? patchConversationRow(prev, patch) : prev));
     },
     [patchConversations],
@@ -1405,8 +1559,8 @@ export function WhatsAppInbox() {
               title={f.title}
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
-              active={!tagFilterActive && !contactsMode && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(false); setActiveFolder(f.key); }}
+              active={!globalView && !contactsMode && activeFolder === f.key}
+              onClick={() => selectFolder(f.key)}
             />
           ))}
           <div className="mx-3 my-2 h-px bg-[#14332a]" />
@@ -1419,8 +1573,8 @@ export function WhatsAppInbox() {
               title={f.title}
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
-              active={!tagFilterActive && !contactsMode && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(false); setActiveFolder(f.key); }}
+              active={!globalView && !contactsMode && activeFolder === f.key}
+              onClick={() => selectFolder(f.key)}
             />
           ))}
           <div className="mx-3 my-2 h-px bg-[#14332a]" />
@@ -1520,8 +1674,15 @@ export function WhatsAppInbox() {
                   <button title="Filtrar pela data de entrada do lead" className={chipCls(!!dateRange)}>
                     <Clock className="h-3.5 w-3.5 shrink-0" />
                     <span className={chipLabelCls(!!dateRange)}>{dateRange?.label ?? 'Data de entrada'}</span>
+                    {/* Total do banco com TODOS os filtros ligados (o número
+                        antigo contava só as 1.000 carregadas). */}
                     {dateRange && (
-                      <span className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">{dateCount}</span>
+                      <span
+                        title="Conversas com todos os filtros ativos, em todo o histórico"
+                        className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white"
+                      >
+                        {serverResult ? serverResult.total.toLocaleString('pt-BR') : '…'}
+                      </span>
                     )}
                   </button>
                 </DropdownMenuTrigger>
@@ -1608,13 +1769,14 @@ export function WhatsAppInbox() {
                 </DropdownMenu>
               )}
 
-              {/* Coluna do Kanban (só conversas já vinculadas a um card) */}
+              {/* Coluna do Kanban (só conversas já vinculadas a um card), pelo
+                  id da coluna e em todo o histórico */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button title="Filtrar pela coluna do card no Kanban" className={chipCls(!!columnFilter)}>
+                  <button title="Filtrar pela coluna do card no Kanban (em todo o histórico)" className={chipCls(!!columnFilter)}>
                     <Columns3 className="h-3.5 w-3.5 shrink-0" />
                     <span className={chipLabelCls(!!columnFilter)}>
-                      {columnFilter ?? 'Coluna do Kanban'}
+                      {columnFilter ? columnName ?? 'Coluna' : 'Coluna do Kanban'}
                     </span>
                   </button>
                 </DropdownMenuTrigger>
@@ -1631,26 +1793,39 @@ export function WhatsAppInbox() {
                     )}
                   </div>
                   <DropdownMenuSeparator />
-                  {kanbanColumns.length === 0 && (
+                  {inboxColumns === undefined && !columnsFailed && (
                     <DropdownMenuItem disabled className="text-sm text-gray-400">
-                      Nenhuma conversa vinculada a card ainda.
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Carregando colunas…
                     </DropdownMenuItem>
                   )}
-                  {kanbanColumns.map(([col, n]) => (
+                  {columnsFailed && (
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); reloadColumns(); }}
+                      className="text-sm text-amber-600"
+                    >
+                      <RotateCcw className="mr-2 h-3.5 w-3.5" /> Não carregou · Tentar novamente
+                    </DropdownMenuItem>
+                  )}
+                  {inboxColumns?.length === 0 && (
+                    <DropdownMenuItem disabled className="text-sm text-gray-400">
+                      Nenhuma coluna no Kanban.
+                    </DropdownMenuItem>
+                  )}
+                  {(inboxColumns ?? []).map((col) => (
                     <DropdownMenuCheckboxItem
-                      key={col}
-                      checked={columnFilter === col}
-                      onCheckedChange={() => setColumnFilter((cur) => (cur === col ? null : col))}
+                      key={col.id}
+                      checked={columnFilter === col.id}
+                      onCheckedChange={() => setColumnFilter((cur) => (cur === col.id ? null : col.id))}
                       onSelect={(e) => e.preventDefault()}
                       className="text-sm"
                     >
-                      <span className="min-w-0 flex-1 truncate">{col}</span>
-                      <span className="ml-2 text-xs text-gray-400">{n}</span>
+                      <span className={`min-w-0 flex-1 truncate ${col.count === 0 ? 'opacity-50' : ''}`}>{col.name}</span>
+                      <span className="ml-2 text-xs text-gray-400">{col.count}</span>
                     </DropdownMenuCheckboxItem>
                   ))}
-                  
+
                   <p className="px-2 py-1.5 text-[10px] leading-snug text-gray-400">
-                    Só conversas já vinculadas a um card do Kanban entram neste filtro.
+                    Conversas com card nesta coluna do Kanban, em todo o histórico (cards arquivados não entram).
                   </p>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1658,7 +1833,7 @@ export function WhatsAppInbox() {
               {/* Tags */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button title="Filtrar por tag (busca em todas as pastas)" className={chipCls(tagFilter.length > 0)}>
+                  <button title="Filtrar por tag (em todo o histórico)" className={chipCls(tagFilter.length > 0)}>
                     <TagIcon className="h-3.5 w-3.5 shrink-0" />
                     <span className={chipLabelCls(tagFilter.length > 0)}>
                       {tagFilter.length ? `Tags (${tagFilter.length})` : 'Tags'}
@@ -1701,7 +1876,7 @@ export function WhatsAppInbox() {
               {/* Equipe: dropdown em vez da fileira de pills (que ocupava uma
                   linha inteira e não cabia com muitos atendentes) — clique
                   abre a lista, com quem está selecionado destacado. */}
-              {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
+              {!globalView && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button title="Filtrar pelo atendente" className={chipCls(!!attendantFilter)}>
@@ -1748,7 +1923,7 @@ export function WhatsAppInbox() {
                 </DropdownMenu>
               )}
 
-              {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && (
+              {!globalView && (activeFolder === 'ativas' || activeFolder === 'todos') && (
                 <button
                   onClick={() => setOnlyMine((v) => !v)}
                   title="Mostrar só o atendimento humano atribuído a mim (a fila continua visível pra todo mundo)"
@@ -1759,18 +1934,45 @@ export function WhatsAppInbox() {
                 </button>
               )}
             </div>
-            {tagFilterActive && (
+            {/* Faixa da lista global: o total vem do banco ("X de Y"), nunca
+                da página na tela. Leitura (lidas/não lidas) filtra só a
+                página carregada, e a faixa diz isso. */}
+            {globalView && (
               <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#26483c] px-2 py-1.5 text-[11px] font-semibold text-[#a9f2d8]">
                 {searchingServer
                   ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-                  : <Search className="h-3 w-3 shrink-0" />}
-                {searchingServer ? (
-                  <>Procurando em todo o histórico…</>
-                ) : (
-                  <>
-                    {filtered.length} resultado{filtered.length === 1 ? '' : 's'} {search.trim() ? 'pra essa busca' : 'com essas tags'}, em <b>todas as pastas</b>
-                    {search.trim() ? <> e em <b>todo o histórico</b></> : null}.
-                  </>
+                  : serverFilterError != null
+                    ? <AlertCircle className="h-3 w-3 shrink-0 text-amber-300" />
+                    : <Search className="h-3 w-3 shrink-0" />}
+                <span className="min-w-0 flex-1">
+                  {!serverFilterActive ? (
+                    <>
+                      {filtered.length} resultado{filtered.length === 1 ? '' : 's'} nas conversas carregadas. Digite ao
+                      menos 2 letras para procurar em <b>todo o histórico</b>.
+                    </>
+                  ) : searchingServer ? (
+                    <>Procurando em todo o histórico…</>
+                  ) : serverFilterError != null ? (
+                    <>Sem resposta do histórico ({describeFetchError(serverFilterError)}): mostrando só as conversas carregadas.</>
+                  ) : serverResult ? (
+                    <>
+                      {serverResult.items.length < serverResult.total
+                        ? `${serverResult.items.length.toLocaleString('pt-BR')} de ${serverResult.total.toLocaleString('pt-BR')}`
+                        : serverResult.total.toLocaleString('pt-BR')}
+                      {' '}conversa{serverResult.total === 1 ? '' : 's'} com esses filtros, em <b>todo o histórico</b>.
+                      {(readFilter === 'nao_lidas' || readFilter === 'lidas') && (
+                        <> {readFilter === 'nao_lidas' ? 'Não lidas' : 'Lidas'}: {filtered.length} (leitura filtrada só nesta página).</>
+                      )}
+                    </>
+                  ) : null}
+                </span>
+                {serverFilterError != null && !searchingServer && (
+                  <button
+                    onClick={retryServerFilter}
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300/50 px-1.5 py-0.5 text-amber-100 hover:bg-amber-500/20"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Tentar de novo
+                  </button>
                 )}
               </div>
             )}
@@ -1846,7 +2048,9 @@ export function WhatsAppInbox() {
                 ) : (
                   <>
                     <Search className="mb-2 h-6 w-6 opacity-40" />
-                    <p className="text-sm">Nada encontrado com esse filtro.</p>
+                    <p className="text-sm">
+                      {serverResult?.total === 0 ? 'Nenhuma conversa com esses filtros em todo o histórico.' : 'Nada encontrado com esse filtro.'}
+                    </p>
                     {search.trim().length >= 2 && (
                       <p className="mt-1 text-xs">
                         Sem conversa com esse termo — veja na <b>Agenda de contatos</b>.
@@ -1857,10 +2061,10 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Com tag/busca ativa: mostra cada pasta em sua própria seção
-                (sem a "Todos", que duplicaria tudo) — os resultados aparecem
-                sem precisar entrar em pasta nenhuma. */}
-            {tagFilterActive ? (<>
+            {/* Lista global (filtro no banco ou busca): cada pasta em sua
+                própria seção (sem a "Todos", que duplicaria tudo) — os
+                resultados aparecem sem precisar entrar em pasta nenhuma. */}
+            {globalView ? (<>
               {ALL_FOLDERS.filter((f) => f.key !== 'todos').map((f) => (
                 <ConversationGroup
                   key={f.key}
@@ -1919,7 +2123,7 @@ export function WhatsAppInbox() {
               />
             )}
 
-            {!tagFilterActive && visibleItems.length > visibleCount && (
+            {!globalView && visibleItems.length > visibleCount && (
               <div className="px-3 pt-1">
                 <button
                   onClick={() => setVisibleCount((v) => v + 200)}
@@ -1930,15 +2134,31 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* A lista carrega só as mais recentes: dizer isso em voz alta
-                evita a sensação de "sumiu conversa" — o que está fora do topo
-                aparece pela busca, que agora vai ao banco (27/08/2026). */}
-            {!tagFilterActive && conversationsTotal > conversations.length && conversations.length > 0 && (
+            {/* Resultado do banco maior que a página: a próxima de 300 (skip). */}
+            {serverResult && serverResult.items.length < serverResult.total && (
+              <div className="px-3 pt-1">
+                <button
+                  onClick={() => { if (filterQuery) void fetchFilterPage(filterQuery, 'more'); }}
+                  disabled={loadingMore}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#2e5749] py-1.5 text-[11px] font-bold text-[#6fd6ad] hover:bg-[#356b57] disabled:opacity-60"
+                >
+                  {loadingMore && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Mostrando {serverResult.items.length.toLocaleString('pt-BR')} de {serverResult.total.toLocaleString('pt-BR')} · Carregar mais
+                </button>
+              </div>
+            )}
+
+            {/* Sem filtro no banco, pastas, leitura e número contam só as
+                conversas carregadas (as mais recentes): dizer isso em voz
+                alta evita a sensação de "sumiu conversa" e de contador
+                errado. Busca, tag, data e coluna vão ao histórico inteiro. */}
+            {!globalView && conversationsTotal > conversations.length && conversations.length > 0 && (
               <p className="px-3 pb-1 pt-2 text-center text-[10px] leading-relaxed text-[#7fae9c]">
                 Mostrando as {conversations.length.toLocaleString('pt-BR')} conversas mais recentes
-                de {conversationsTotal.toLocaleString('pt-BR')}.
+                {loadedSinceLabel ? ` (desde ${loadedSinceLabel})` : ''} de {conversationsTotal.toLocaleString('pt-BR')} —
+                pastas e filtros de leitura/número valem só para elas.
                 <br />
-                Use a <b>busca</b> acima para achar as anteriores — ela procura em todo o histórico.
+                <b>Busca</b>, <b>tags</b>, <b>data de entrada</b> e <b>coluna do Kanban</b> procuram em todo o histórico.
               </p>
             )}
             </>)}

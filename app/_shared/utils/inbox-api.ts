@@ -8,8 +8,8 @@
 // GET as leituras correm em paralelo e a fila fica só com mutações.
 
 import type {
-  InboxDeltaResponse, InboxItemResponse, InboxListResponse, InboxSearchResponse, InboxVersionResponse,
-  WhatsAppConversationDTO,
+  InboxColumnOption, InboxColumnsResponse, InboxDeltaResponse, InboxItemResponse, InboxListResponse,
+  InboxSearchResponse, InboxVersionResponse, WhatsAppConversationDTO,
 } from '@/app/_shared/lib/whatsapp/inbox-types';
 
 /** Lista (as mais recentes); também é a key do SWR da lista. */
@@ -20,6 +20,8 @@ export const INBOX_CONVERSATIONS_URL = '/api/whatsapp/inbox/conversations';
  */
 export const INBOX_VERSION_URL = '/api/whatsapp/inbox/version';
 export const INBOX_SEARCH_URL = '/api/whatsapp/inbox/search';
+/** Colunas do Kanban (filtro do inbox); também é a key do SWR delas. */
+export const INBOX_COLUMNS_URL = '/api/whatsapp/inbox/columns';
 
 /** UMA conversa pelo contato (abrir pela agenda, notificação ou busca fora do topo). */
 export function inboxConversationUrl(contactId: string): string {
@@ -31,9 +33,14 @@ export function inboxDeltaUrl(since: string): string {
   return `${INBOX_CONVERSATIONS_URL}?since=${encodeURIComponent(since)}`;
 }
 
-/** Busca em todo o histórico. O termo vai como veio: quem apara e corta em 2 caracteres é o servidor. */
-export function inboxSearchUrl(term: string): string {
-  return `${INBOX_SEARCH_URL}?q=${encodeURIComponent(term)}`;
+/**
+ * Busca/filtros em todo o histórico: `query` = `inboxFilterQuery` (a chave do
+ * resultado, já normalizada) e `skip` = quantas já estão na tela ("Carregar
+ * mais"; 0 = 1ª página).
+ */
+export function inboxFilterUrl(query: string, skip = 0): string {
+  const params = [query, skip > 0 ? `skip=${Math.floor(skip)}` : ''].filter(Boolean).join('&');
+  return params ? `${INBOX_SEARCH_URL}?${params}` : INBOX_SEARCH_URL;
 }
 
 // As leituras abaixo LANÇAM quando a resposta 2xx não tem o formato esperado
@@ -44,7 +51,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object';
 }
 
-/** `{ items }` da lista e da busca → as conversas. */
+/** `{ items }` da lista, da busca e do filtro → as conversas. */
 export function readInboxItems(body: unknown): WhatsAppConversationDTO[] {
   const items = isObject(body) ? (body as Partial<InboxListResponse | InboxSearchResponse>).items : undefined;
   if (!Array.isArray(items)) throw new Error('Resposta inválida da lista de conversas.');
@@ -66,6 +73,25 @@ function readCount(v: unknown): number | null {
 /** Cursor do delta: ISO que o `Date.parse` entende, senão `null` (sem delta; a lista completa de 10 min segura). */
 function readCursor(v: unknown): string | null {
   return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null;
+}
+
+/**
+ * `{ items, total }` da busca/filtro no servidor. Sem `total` válido (servidor
+ * anterior a este formato) o total é o que veio: a tela não inventa um "X de Y".
+ */
+export function readInboxFilter(body: unknown): InboxSearchResponse {
+  const items = readInboxItems(body);
+  const total = readCount((body as Partial<InboxSearchResponse>).total);
+  return { items, total: total === null ? items.length : Math.max(total, items.length) };
+}
+
+/** `{ items: [{ id, name, count }] }` das colunas do Kanban; linha fora do formato é descartada. */
+export function readInboxColumns(body: unknown): InboxColumnOption[] {
+  const items = isObject(body) ? (body as Partial<InboxColumnsResponse>).items : undefined;
+  if (!Array.isArray(items)) throw new Error('Resposta inválida das colunas do Kanban.');
+  return items
+    .filter((c): c is InboxColumnOption => isObject(c) && typeof c.id === 'string' && typeof c.name === 'string')
+    .map((c) => ({ id: c.id, name: c.name, count: readCount(c.count) ?? 0 }));
 }
 
 /** `{ version, total }` do hash. */

@@ -174,6 +174,29 @@ export function brLocalToDate(value: string): Date {
   return new Date(asUtc - brOffsetMinutes(new Date(asUtc)) * 60_000);
 }
 
+const DAY_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Intervalo de dias "YYYY-MM-DD" de Brasília, INCLUSIVO nas duas pontas →
+ * instantes para o banco: `gte` = 00:00 BRT de `fromKey`, `lt` = 00:00 BRT do
+ * dia seguinte a `toKey`. Um dia só: `from` = `to`.
+ *
+ * Sem isto, `new Date('2026-09-01')` é meia-noite UTC (21:00 do dia 31 em
+ * Brasília) e o filtro "Este mês" do inbox pegaria 3 h do mês anterior e
+ * perderia as 3 últimas horas do dia final. Chave inválida lança (quem chama
+ * valida o formato antes; nunca vira "sem filtro" em silêncio).
+ */
+export function brDayRangeToInstants(fromKey: string, toKey: string): { gte: Date; lt: Date } {
+  const a = DAY_KEY_RE.exec(fromKey);
+  const b = DAY_KEY_RE.exec(toKey);
+  if (!a || !b) throw new RangeError(`Dia inválido: ${fromKey} – ${toKey}`);
+  return {
+    gte: brWallToDate(Number(a[1]), Number(a[2]), Number(a[3]), 0),
+    // Date.UTC normaliza o dia 31 + 1 para o dia 1º do mês seguinte.
+    lt: brWallToDate(Number(b[1]), Number(b[2]), Number(b[3]) + 1, 0),
+  };
+}
+
 /** Instante → { day: "YYYY-MM-DD", time: "HH:mm" } no fuso de Brasília. */
 export function brDateTimeParts(
   date: Date | string | number = new Date(),

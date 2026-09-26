@@ -4,6 +4,7 @@ import {
   INBOX_VIEW_STORAGE_KEY,
   OPEN_CONTACT_STORAGE_KEY,
   parseInboxViewState,
+  pruneColumnFilter,
   pruneTagFilter,
   restoreInboxView,
   saveInboxViewState,
@@ -177,5 +178,26 @@ describe("pruneTagFilter", () => {
   it("tags ainda não carregadas não mexem no filtro", () => {
     const filter = ["x"];
     expect(pruneTagFilter(filter, undefined)).toBe(filter);
+  });
+});
+
+describe("pruneColumnFilter (coluna do Kanban pelo id da Label)", () => {
+  const columns = [{ id: "l1", name: "INSS - Perícia" }, { id: "l2", name: "AFASTADOS" }];
+
+  it("id conhecido fica", () => {
+    expect(pruneColumnFilter("l2", columns)).toBe("l2");
+  });
+
+  it("estado salvo com o NOME da coluna (antes de 26/09) vira o id", () => {
+    expect(pruneColumnFilter("INSS - Perícia", columns)).toBe("l1");
+  });
+
+  it("coluna apagada sai do filtro (nada de lista vazia com o chip ligado)", () => {
+    expect(pruneColumnFilter("sumiu", columns)).toBeNull();
+  });
+
+  it("sem filtro ou colunas ainda não carregadas: fica como está", () => {
+    expect(pruneColumnFilter(null, columns)).toBeNull();
+    expect(pruneColumnFilter("INSS - Perícia", undefined)).toBe("INSS - Perícia");
   });
 });
