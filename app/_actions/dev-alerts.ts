@@ -4,6 +4,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { createLog } from '@/app/_shared/lib/log';
+import { requireTeam } from '@/app/_shared/lib/permissions-server';
+import { loadActiveDevAlerts } from '@/app/_shared/lib/header-badges';
+import type { DevAlertDTO } from '@/app/_shared/lib/header-badges-types';
 
 // Alertas do time de DESENVOLVIMENTO para a equipe: pop-up na tela de quem
 // está online (ex.: "dê F5, saiu atualização") ou notificação no sino de
@@ -30,14 +33,6 @@ async function requireDevMember(): Promise<{ id: string; name: string }> {
     throw new Error('Apenas o setor de desenvolvimento pode criar alertas.');
   }
   return { id: user.id, name: user.name ?? 'Dev' };
-}
-
-export interface DevAlertDTO {
-  id: string;
-  title: string | null;
-  message: string;
-  authorName: string;
-  createdAt: string;
 }
 
 export async function createDevAlert(input: {
@@ -93,15 +88,12 @@ export async function createDevAlert(input: {
   return { ok: true, recipients: team.length };
 }
 
-/** Pop-ups ainda válidos — o UserMenu consulta a cada ~30s para quem está online. */
+/**
+ * @deprecated bundle antigo: o UserMenu lê os pop-ups de GET /api/team/badges
+ * (`devAlerts`). Fica por UM deploy para as abas abertas com o bundle antigo;
+ * depois, remover (npx knip). O DTO mora em header-badges-types.ts.
+ */
 export async function getActiveDevAlerts(): Promise<DevAlertDTO[]> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return [];
-  const alerts = await db.devAlert.findMany({
-    where: { expiresAt: { gt: new Date() } },
-    orderBy: { createdAt: 'asc' },
-    take: 10,
-    select: { id: true, title: true, message: true, authorName: true, createdAt: true },
-  });
-  return alerts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() }));
+  await requireTeam();
+  return loadActiveDevAlerts();
 }

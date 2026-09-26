@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
-import { countWhatsAppUnread } from '@/app/_actions/whatsapp/conversations';
 // SÓ tipos (`import type`): inbox-data.ts, ao lado, importa o Prisma e não
 // pode entrar no bundle do navegador.
 import type { InboxVersionResponse, WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
@@ -429,21 +428,6 @@ export function useWaNumberOptions(): WaNumberOption[] | undefined {
   return data;
 }
 
-/**
- * Total de conversas não lidas (badge das abas). Usa a action de CONTAGEM
- * leve (`countUnreadConversations`) em vez de hidratar a lista — o badge
- * montava a query mais pesada do app mesmo com o inbox fechado. Ainda é
- * server action: vai para a rota única dos badges do cabeçalho.
- *
- * Sem recarga no foco (auditoria de 24/09/2026): server actions saem numa
- * fila serial por aba, e voltar à janela enfileirava esta contagem na frente
- * do primeiro clique. O poll de 30 s basta para o badge.
- */
-export function useWhatsAppUnread() {
-  const { data } = useSWR<number>(
-    'whatsapp-unread-count',
-    () => countWhatsAppUnread(),
-    { refreshInterval: 30_000, revalidateOnFocus: false, shouldRetryOnError: false },
-  );
-  return data ?? 0;
-}
+// O badge de não lidas das abas não mora mais aqui: vem de GET
+// /api/team/badges (`whatsappUnread`, hook use-header-badges.ts), junto com os
+// outros avisos do cabeçalho, numa ida só a cada 30 s.

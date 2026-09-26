@@ -74,11 +74,11 @@ async function requireTeamMember(): Promise<{ id: string; name: string }> {
 // Ficam por UM deploy só para as abas abertas com o bundle antigo (que ainda
 // chamam estas actions pelo id); o bundle novo lê pelas rotas GET
 // (/api/whatsapp/inbox/{conversations,version,search}). No deploy seguinte,
-// remover as que ficarem sem uso (npx knip). `countWhatsAppUnread` ainda é o
-// badge das abas (useWhatsAppUnread) até ele ir para a rota dos badges.
+// remover as que ficarem sem uso (npx knip). O badge de não lidas das abas
+// também saiu daqui: vem de GET /api/team/badges (`whatsappUnread`).
 // ---------------------------------------------------------------------------
 
-/** Badge de não lidas das abas (só não encerradas). Regra em `countUnreadConversations`. */
+/** @deprecated bundle antigo: o badge das abas vem de GET /api/team/badges. Regra em `countUnreadConversations`. */
 export async function countWhatsAppUnread(): Promise<number> {
   await requireTeam();
   return countUnreadConversations();

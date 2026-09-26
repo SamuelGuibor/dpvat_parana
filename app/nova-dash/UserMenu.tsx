@@ -24,7 +24,10 @@ import { Textarea } from '@/app/_shared/ui/textarea';
 import { toast } from 'sonner';
 import { ProfileDialog } from './ProfileDialog';
 import { getMyProfile } from '@/app/_actions/users/update-profile';
-import { createDevAlert, getActiveDevAlerts, type DevAlertDTO } from '@/app/_actions/dev-alerts';
+import { createDevAlert } from '@/app/_actions/dev-alerts';
+import type { DevAlertDTO } from '@/app/_shared/lib/header-badges-types';
+import { useHeaderBadges } from '@/app/_shared/hooks/use-header-badges';
+import { unseenDevAlerts } from '@/app/_shared/utils/header-badges';
 
 interface Profile {
   id: string; name: string; email: string; telefone: string;
@@ -43,39 +46,38 @@ function isDevSector(sectorName?: string | null) {
 // aviso é do tipo "dê F5", vale por sessão de tela).
 const SEEN_KEY = 'dev-alerts-seen';
 function getSeenIds(): string[] {
-  try { return JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]'); } catch { return []; }
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch { return []; }
 }
 function markSeen(id: string) {
   const seen = [id, ...getSeenIds()].slice(0, 50);
-  localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+  // Storage bloqueado (janela privada, cota): o pop-up só volta no próximo poll.
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* noop */ }
 }
 
 /**
- * Listener global dos pop-ups do dev: consulta os alertas ativos a cada 30s
- * e mostra o primeiro ainda não visto como modal. Montado junto do UserMenu,
- * então cobre toda a área logada da equipe.
+ * Listener global dos pop-ups do dev: mostra o primeiro alerta ativo ainda não
+ * visto como modal. Montado junto do UserMenu, então cobre toda a área logada
+ * da equipe.
+ *
+ * A lista vem dos badges do cabeçalho (`devAlerts` de GET /api/team/badges,
+ * poll de 30 s do dono em page.tsx, que pula aba oculta): sem timer nem server
+ * action próprios — antes era uma action a cada 30 s na fila serial da aba.
+ * Falha na busca mantém a fila que já estava na tela.
  */
 function DevAlertPopup() {
+  const { badges } = useHeaderBadges();
+  const alerts = badges?.devAlerts;
   const [queue, setQueue] = useState<DevAlertDTO[]>([]);
 
+  // Cada leitura nova da rota refaz a fila, tirando o que já foi fechado
+  // neste navegador (a rota devolve os ativos de todo mundo).
   useEffect(() => {
-    let alive = true;
-    async function poll() {
-      try {
-        const alerts = await getActiveDevAlerts();
-        if (!alive) return;
-        const seen = getSeenIds();
-        setQueue(alerts.filter((a) => !seen.includes(a.id)));
-      } catch {}
-    }
-    poll();
-    // Aba em background não consulta (alerta aparece quando a pessoa voltar).
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      poll();
-    }, 30_000);
-    return () => { alive = false; clearInterval(interval); };
-  }, []);
+    if (!alerts) return;
+    setQueue(unseenDevAlerts(alerts, getSeenIds()));
+  }, [alerts]);
 
   const current = queue[0] ?? null;
   function dismiss() {

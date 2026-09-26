@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { brLocalToDate } from '@/app/_shared/utils/date-br';
+import { requireTeam } from '@/app/_shared/lib/permissions-server';
+import { countUpcomingEvents } from '@/app/_shared/lib/header-badges';
 
 // Agenda de EVENTOS da equipe (27/08/2026) — o "Eventos" do Discord aplicado
 // ao escritório: horário em que um cliente virá, uma perícia, uma audiência.
@@ -112,20 +114,13 @@ export async function listPastEvents(): Promise<EventDTO[]> {
 }
 
 /**
- * Contador do ícone do cabeçalho: quantos eventos começam nas próximas 24h
- * (incluindo os que estão acontecendo agora).
+ * @deprecated bundle antigo: o contador do ícone do cabeçalho lê `eventsSoon`
+ * de GET /api/team/badges (regra em `countUpcomingEvents`). Fica por UM deploy
+ * para as abas abertas com o bundle antigo; depois, remover (npx knip).
  */
 export async function countEventsSoon(): Promise<number> {
-  await requireTeamMember();
-  const now = Date.now();
-  return db.event.count({
-    where: {
-      startsAt: {
-        gte: new Date(now - 3 * 60 * 60 * 1000),
-        lte: new Date(now + 24 * 60 * 60 * 1000),
-      },
-    },
-  });
+  await requireTeam();
+  return countUpcomingEvents();
 }
 
 function sanitizeInput(input: EventInput) {

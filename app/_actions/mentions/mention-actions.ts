@@ -3,7 +3,8 @@
 import { db } from '@/app/_shared/lib/prisma';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { getServerSession } from 'next-auth';
-import { requirePermission } from '@/app/_shared/lib/permissions-server';
+import { requirePermission, requireTeam } from '@/app/_shared/lib/permissions-server';
+import { countPendingMentionsFor } from '@/app/_shared/lib/header-badges';
 
 export type MentionStatus = 'PENDING' | 'ACK' | 'DONE';
 
@@ -157,14 +158,14 @@ async function enrich(rows: MentionRow[]): Promise<MentionDTO[]> {
   });
 }
 
-/** Quantas menções ainda estão pendentes (badge da aba). */
+/**
+ * @deprecated bundle antigo: o badge da aba lê `mentionsPending` de GET
+ * /api/team/badges. Fica por UM deploy para as abas abertas com o bundle
+ * antigo; depois, remover (npx knip).
+ */
 export async function countPendingMentions(): Promise<number> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return 0;
-
-  return db.mention.count({
-    where: { recipientId: session.user.id, status: 'PENDING' },
-  });
+  const ctx = await requireTeam();
+  return countPendingMentionsFor(ctx.userId);
 }
 
 /**

@@ -12,6 +12,7 @@ import { NumbersPanel } from './numbers/NumbersPanel';
 import { SecurityPanel } from './security/SecurityPanel';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
+import { TEAM_CHAT_ENABLED } from './chat/chat-flags';
 import { isManager } from '@/app/_shared/lib/managers';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { StrategicDashboard } from '../StrategicDashboard';
@@ -26,7 +27,8 @@ export function Workspace() {
   // enquanto carrega, cai no fallback por e-mail para não piscar o menu.
   const { perms, loading: permsLoading } = usePermissions();
   const manager = permsLoading ? isManager(session?.user?.email) : perms.manager_dashboard;
-  const { unread } = useUnread();
+  // Chat geral desligado: sem poll de /api/chat/read (key null).
+  const { unread } = useUnread(TEAM_CHAT_ENABLED);
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
 
   const canReviewAi = !permsLoading && perms.review_ai;
@@ -84,6 +86,7 @@ export function Workspace() {
   // Guarda extra: sem a permissão, cair numa seção restrita volta para o início.
   const effective: WorkspaceSection =
     (section === 'gestao' && !manager)
+    || (section === 'chat' && !TEAM_CHAT_ENABLED)
     || (section === 'revisao-ia' && !canReviewAi)
     || (section === 'custos' && !canViewCosts)
     || (section === 'numeros' && !canManageNumbers)

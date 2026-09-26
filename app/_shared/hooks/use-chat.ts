@@ -72,10 +72,18 @@ export function useChannelMessages(channelId: string | null) {
   return { messages: data?.messages ?? [], mutate, isLoading };
 }
 
-/** Contagem de não-lidas por canal (badges da sidebar/lista). */
-export function useUnread() {
+/**
+ * Contagem de não-lidas por canal (badges da sidebar/lista).
+ *
+ * `enabled` é obrigatório (passe `TEAM_CHAT_ENABLED`, de
+ * app/nova-dash/workspace/chat/chat-flags.ts): com o chat geral desligado a
+ * key fica null e nada é buscado — antes o GET /api/chat/read rodava a cada
+ * 20 s em toda aba da nova-dash (~15 por minuto no banco) para um badge que
+ * não aparece.
+ */
+export function useUnread(enabled: boolean) {
   const { data, mutate } = useSWR<{ unread: Record<string, number> }>(
-    '/api/chat/read',
+    enabled ? '/api/chat/read' : null,
     fetcher,
     { refreshInterval: 20_000, revalidateOnFocus: true },
   );

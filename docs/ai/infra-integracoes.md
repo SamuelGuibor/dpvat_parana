@@ -180,7 +180,7 @@
   - `signature-{pdf,seed,templates,flow-seed}.smoke.test.ts`: `describe.skipIf`, rodam só via `npm run sign:*` ou env `SIGNATURE_*=1`.
   - `ttl-cache.test.ts` e `background.test.ts`: prazo/cache negativo do `createTtlCache` e `runAfterResponse` (waitUntil mockado; erro vira `[BG]` e nunca propaga).
   - `inbox-unread-sql.smoke.test.ts`: `describe.skipIf`, roda só via `npm run inbox:sql-smoke` ou `INBOX_SQL_SMOKE=1`; só leitura (transação READ ONLY) no banco do `.env`.
-  - `route-guards.test.ts` e `fetch-json.test.ts`: 403 × 500 do `teamRoute`, `isSameOrigin` e o `jsonFetcher`/`postJson` com fetch mockado (`vi.stubGlobal`); `inbox-api.test.ts`: URLs das rotas GET do inbox e leitura das respostas.
+  - `route-guards.test.ts` e `fetch-json.test.ts`: 403 × 500 do `teamRoute`, `isSameOrigin` e o `jsonFetcher`/`postJson` com fetch mockado (`vi.stubGlobal`); `inbox-api.test.ts`: URLs das rotas GET do inbox e leitura das respostas; `header-badges.test.ts`: leitura da resposta de `/api/team/badges` e as regras do badge de menções e dos pop-ups do dev.
 - **Lacuna:** não há teste de `middleware.ts`, das rotas de cron, do webhook (HMAC) nem dos clientes externos. Valide à mão:
   - Cron: `curl` com Bearer e sem cookie (ver Receitas). Em produção, aba Cron Jobs da Vercel.
   - Webhook: `GET /api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123` tem que devolver `123`. POST sem assinatura válida tem que dar 401.

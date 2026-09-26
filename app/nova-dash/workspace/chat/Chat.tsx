@@ -28,6 +28,7 @@ const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥
 import { GENERAL_CHANNEL, dmChannelId } from '@/app/_shared/utils/chat';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { MessageComposer } from './MessageComposer';
+import { TEAM_CHAT_ENABLED } from './chat-flags';
 import { NewChannelDialog } from './NewChannelDialog';
 import { ChannelInfoDialog } from './ChannelInfoDialog';
 import { renderMentionSuggestion } from './mention-suggestion';
@@ -77,7 +78,7 @@ export function Chat() {
   const { data: session } = useSession();
   const meId = session?.user?.id ?? '';
   const { members } = usePresence();
-  const { unread, refreshUnread } = useUnread();
+  const { unread, refreshUnread } = useUnread(TEAM_CHAT_ENABLED);
   const { channels, refreshChannels, isLoading: channelsLoading } = useMyChannels();
 
   const [activeChannel, setActiveChannel] = useState<string>(GENERAL_CHANNEL);
