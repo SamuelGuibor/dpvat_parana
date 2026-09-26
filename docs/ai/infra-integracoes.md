@@ -1,5 +1,5 @@
 # Infra, deploy, crons, CI e integrações externas — mapa para IA
-> Verificado em 2026-09-26 · Escopo: `package.json`, `next.config.mjs`, `vercel.json`, `vercel/pro-checklist.md`, `railway/chat-relay.md`, `.github/workflows/ci.yml`, `vitest.config.mts`, `tests/**`, `scripts/**`, `knip.json`, `.eslintrc.json`, `tsconfig.json`, `.env.example`, `whatsapp-cron.cmd`, `middleware.ts` (allowlists de API), `app/api/**` (convenções), clientes externos em `app/_shared/lib/**`
+> Verificado em 2026-09-26 · Escopo: `package.json`, `next.config.mjs`, `vercel.json`, `vercel/pro-checklist.md`, `railway/chat-relay.md`, `.github/workflows/ci.yml`, `vitest.config.mts`, `tests/**`, `scripts/**`, `knip.json`, `.eslintrc.json`, `tsconfig.json`, `.env.example`, `whatsapp-cron.cmd`, `middleware.ts` (allowlists de API), `app/api/**` (convenções), clientes externos em `app/_shared/lib/**`, `app/_shared/hooks/use-chat.ts` (EventSource do relay), `D:\chat_site\index.js` (relay, só leitura)
 
 ## TL;DR
 - Next 14.2 (App Router) na **Vercel Pro**. Banco Postgres no **Neon** via Prisma 6. Três serviços satélites no **Railway**, cada um com deploy próprio: o cérebro do bot (`CHATBOT_URL`, repo `D:\Chatbot_whatsapp`), o `docx-converter` (`DOCX_CONVERTER_URL`, `D:\docx-converter`) e o relay SSE do chat (`CHAT_RELAY_URL`, `D:\chat_site`).
@@ -30,6 +30,7 @@
 | `app/_shared/lib/prisma.ts` | PrismaClient (singleton global em dev) | `db` |
 | `app/_shared/lib/whatsapp/{client,numbers,crypto}.ts` | Graph API da Meta, multi-número, token cifrado AES-GCM | `sendText`, `sendTemplate`, `downloadMediaToS3`, `getCreds`, `getCredsByPhoneNumberId`, `activeNumberConversationWhere`, `invalidateNumberCache`, `encryptSecret`, `decryptSecret` |
 | `app/_shared/lib/chat-relay.ts` + `app/api/chat/token/route.ts` | Relay SSE (token HMAC de 60s, broadcast best-effort com teto de 1,5 s; loga HTTP não-2xx e "entregue a 0 conexões" no máximo 1 vez/min por instância, nunca o corpo) | `isRelayConfigured`, `signRelayToken`, `broadcastToRelay` |
+| `app/_shared/hooks/use-chat.ts` + `app/_shared/utils/sse-reconnect.ts` | EventSource do relay no navegador (token → `/events`); reconecta com espera que dobra a cada falha seguida (3 s → 60 s) e zera quando a conexão abre | `useChatStream`, `sseReconnectDelayMs` |
 | `app/_shared/lib/background.ts` + `app/_shared/utils/ttl-cache.ts` | Trabalho depois da resposta (`waitUntil` do `@vercel/functions`, no-op fora da Vercel) e cache em memória com prazo, por instância | `runAfterResponse`, `createTtlCache` |
 | `app/_shared/lib/{cost-sync,cost-providers,costs}.ts` | Painel de custos: fetch por provedor e snapshot diário | `runCostSync`, `fetchAllProviders`, `fetchUsdBrl`, `COST_SERVICES`, `COST_PROVIDER_INFO` |
 | `app/_shared/lib/report-error.ts`, `app/_shared/utils/critical-error.ts` | Sink único de erro crítico: `console.error` + Log `critical_error` (com `contactId` quando há contato; o mesmo erro no máximo 1× a cada 10 min por instância); resumo puro do erro | `reportCriticalError`, `CriticalErrorExtra`, `describeError`, `criticalErrorKey` |
@@ -165,6 +166,14 @@
 - **Disparar cron à mão em dev.** Use `whatsapp-cron.cmd` (roda as 3 fases) com `CRON_SECRET` no ambiente, ou `curl "<url>?secret=..."` para as rotas que passam no middleware.
 - **Rodar smoke de assinatura.** Use `npm run sign:pdf`, `sign:seed`, `sign:templates` ou `sign:flow`. Cuidado: eles tocam docx-converter, S3, Meta e banco **reais**, e `sign:templates` cria templates na Meta de verdade.
 - **Caçar código morto.** Rode `npx knip`. `app/_bot/` é o bot legado do Discord (`discord.js` nem está nas dependências) e `app/api/migrate-hospitals/route.ts` foi uso único.
+- **Diagnosticar o tempo real (relay SSE) que não entrega.** Sintoma: mensagem nova só aparece no delta de 15 s do inbox. Pré-condição para religar: a guarda do `onStream` (`WhatsAppInbox.tsx`: lista só por delta no coalescer, thread só com a aba visível) continua no lugar; sem ela cada evento recarrega a lista em toda aba aberta. O lado do CRM já loga em `broadcastToRelay`: `[CHAT RELAY] /broadcast HTTP <status> <canal>` e `[CHAT RELAY] entregue a 0 conexões <canal> <nº de destinatários>` (1×/min por instância), nunca o corpo. Do passo 2 em diante é painel e navegador, sem código:
+  1. Vercel, logs `[CHAT RELAY]` por 1 dia útil. HTTP 403 = `CHAT_RELAY_SECRET` diferente entre Vercel e Railway (ou vazio no relay). "Falha ao notificar" (teto de 1,5 s) ou 5xx = relay fora ou travado. "Entregue a 0" sempre = ninguém conectado ou ids que não batem (passo 4).
+  2. Vercel, `GET /api/chat/token` por usuário. Normal: 1 por aba ao abrir o inbox e 1 por queda. Pedidos repetidos com intervalo crescendo até 60 s (`sseReconnectDelayMs`) = o EventSource falha em loop (CORS, 401 ou relay fora).
+  3. Railway, envs do relay: `ALLOWED_ORIGIN` exatamente igual à origem que a equipe usa (apex, www ou vercel.app). O relay aceita UMA origem e, sem a env, aceita qualquer uma: CORS só é a causa se a env existir e estiver errada. `CHAT_RELAY_SECRET` igual ao da Vercel. Réplicas = 1: as conexões ficam num mapa em memória, e com 2 réplicas o broadcast cai na que não tem a aba.
+  4. Railway, logs do relay: cada `conectou <userId>` tem que trazer um User.id da equipe (role ADMIN*, a lista de `whatsappRecipients`). O token leva o `session.user.id` do JWT, que é o User.id por causa do PrismaAdapter. "Conectou" seguido de "entregue a 0" = ids diferentes. `GET /health` do relay devolve usersOnline (usuários distintos conectados, não abas).
+  5. No navegador de quem reclama: DevTools → Network → `events?token=`. 200 pendente com a aba EventStream = conectado; 401 = token vencido (vale 60 s) ou segredo diferente; erro de CORS no Console = `ALLOWED_ORIGIN`.
+  6. Consertou: mensagem de um número de TESTE aparece na lista em 1-3 s, o Railway mostra "entregue a N" com N ≥ abas abertas e a Vercel para de mostrar `[CHAT RELAY] /broadcast HTTP`. Causa estrutural (réplicas, proxy): o usuário decide entre manter o SSE ou ficar só com o delta; registre a decisão neste mapa.
+  - Cuidado: o relay (`D:\chat_site\index.js`, POST /broadcast) grava nos logs do Railway o texto de toda mensagem (o `body` do evento, inclusive de cliente do WhatsApp), apesar do comentário "sem dados sensíveis" do próprio arquivo. Esse log foi pedido de propósito: tirar o texto (ou logar só o tamanho) é decisão do usuário e deploy no Railway, não mudança no CRM.
 
 ## Testes e validação
 - **Validar local** (é o mesmo que o CI faz): `npx prisma generate && npx tsc --noEmit && npm run lint && npm test`.
@@ -179,12 +188,13 @@
   - `whatsapp-template-text.test.ts` e `whatsapp-wa-format.test.ts`: texto de template e markup.
   - `signature-{pdf,seed,templates,flow-seed}.smoke.test.ts`: `describe.skipIf`, rodam só via `npm run sign:*` ou env `SIGNATURE_*=1`.
   - `ttl-cache.test.ts` e `background.test.ts`: prazo/cache negativo do `createTtlCache` e `runAfterResponse` (waitUntil mockado; erro vira `[BG]` e nunca propaga).
+  - `sse-reconnect.test.ts`: espera de reconexão do EventSource do relay (3 s dobrando até 60 s).
   - `inbox-unread-sql.smoke.test.ts`: `describe.skipIf`, roda só via `npm run inbox:sql-smoke` ou `INBOX_SQL_SMOKE=1`; só leitura (transação READ ONLY) no banco do `.env`.
   - `route-guards.test.ts` e `fetch-json.test.ts`: 403 × 500 do `teamRoute`, `isSameOrigin` e o `jsonFetcher`/`postJson` com fetch mockado (`vi.stubGlobal`); `inbox-api.test.ts` e `copilot-api.test.ts`: URLs das rotas GET do inbox (lista, versão, busca, Copiloto) e leitura das respostas; `assist-api.test.ts` e `assist-errors.test.ts`: rota POST da IA do Copiloto (corpo, leitura, code → status); `header-badges.test.ts`: leitura da resposta de `/api/team/badges` e as regras do badge de menções e dos pop-ups do dev.
 - **Lacuna:** não há teste de `middleware.ts`, das rotas de cron, do webhook (HMAC) nem dos clientes externos. Valide à mão:
   - Cron: `curl` com Bearer e sem cookie (ver Receitas). Em produção, aba Cron Jobs da Vercel.
   - Webhook: `GET /api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123` tem que devolver `123`. POST sem assinatura válida tem que dar 401.
-  - Relay: `GET /api/chat/token` logado devolve `{url,token}`, ou `{url:null}` quando o relay não está configurado.
+  - Relay: `GET /api/chat/token` logado devolve `{url,token}`, ou `{url:null}` quando o relay não está configurado. Tempo real que não entrega: roteiro em Receitas.
   - Rota da equipe (`teamRoute`): `curl` sem cookie → 401 "Não autenticado" (middleware); logado como cliente de teste (CPF) → 403.
   - Custos: `app_settings.cost_sync_status` e `cost_snapshots.fetchedAt`.
 

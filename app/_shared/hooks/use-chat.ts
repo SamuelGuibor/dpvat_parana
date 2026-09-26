@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { listMyChannels, type ChannelDTO } from '@/app/_actions/chat/channels';
+import { sseReconnectDelayMs } from '@/app/_shared/utils/sse-reconnect';
 
 export interface Reaction {
   emoji: string;
@@ -129,7 +130,8 @@ export async function sendTyping(channelId: string) {
 /**
  * Conexão SSE única com o relay (Railway). Chama `onMessage` a cada mensagem
  * recebida. Se o relay não estiver configurado, simplesmente não faz nada — o
- * chat segue funcionando pelo polling. Reconecta com backoff em caso de queda.
+ * chat segue funcionando pelo polling. Reconecta em caso de queda, com espera
+ * que dobra a cada falha seguida (sseReconnectDelayMs, 3 s → 60 s).
  */
 export function useChatStream(onMessage: (e: ChatStreamEvent) => void) {
   const handlerRef = useRef(onMessage);
@@ -139,6 +141,16 @@ export function useChatStream(onMessage: (e: ChatStreamEvent) => void) {
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
+    // Falhas seguidas sem a conexão abrir. Com CORS, segredo ou relay errado o
+    // EventSource cai de novo na hora; o retry fixo de 3 s fazia cada aba pedir
+    // /api/chat/token ~20 vezes por minuto. Zera quando a conexão abre.
+    let failures = 0;
+
+    function scheduleRetry() {
+      if (closed) return;
+      failures += 1;
+      retry = setTimeout(connect, sseReconnectDelayMs(failures));
+    }
 
     async function connect() {
       if (closed) return;
@@ -148,6 +160,7 @@ export function useChatStream(onMessage: (e: ChatStreamEvent) => void) {
         if (!url || !token || closed) return; // relay off -> só polling
 
         es = new EventSource(`${url}/events?token=${encodeURIComponent(token)}`);
+        es.onopen = () => { failures = 0; };
 
         es.addEventListener('message', (ev) => {
           try {
@@ -162,10 +175,10 @@ export function useChatStream(onMessage: (e: ChatStreamEvent) => void) {
         es.onerror = () => {
           es?.close();
           es = null;
-          if (!closed) retry = setTimeout(connect, 3_000);
+          scheduleRetry();
         };
       } catch {
-        if (!closed) retry = setTimeout(connect, 5_000);
+        scheduleRetry();
       }
     }
 
