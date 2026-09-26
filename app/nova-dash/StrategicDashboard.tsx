@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/app/_shared/ui/button';
 import { Loader2, RotateCcw, Phone } from 'lucide-react';
@@ -9,22 +9,28 @@ import { MiniKanban } from '@/app/nova-dash/minikanban'
 import { LeadsTable } from './form-leads';
 import { CalendarTab } from './CalendarTab';
 import { DateFilter, getDefaultDateRange, type DateRange } from './DateFilter';
-import {
-  getStrategicDashboardData,
-  type StrategicDashboardData,
-} from '@/app/_actions/analytics/get-strategic-dashboard';
+import { getStrategicDashboardData } from '@/app/_actions/analytics/get-strategic-dashboard';
 import {
   getBotFunnelAndLeads, setMonthlyHiredGoal,
-  type BotFunnelData, type BotKanbanLead,
+  type BotKanbanLead,
 } from '@/app/_actions/analytics/bot-funnel';
 import { useWaNumberOptions, type WaNumberOption } from '@/app/_shared/hooks/use-whatsapp';
+import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
+import {
+  DEFAULT_STRATEGIC_TAB, STRATEGIC_TAB_STORAGE_KEY,
+  browserViewStorage, parseStrategicTab, readViewValue, visibleStrategicTab, writeViewValue,
+  type StrategicTab,
+} from '@/app/_shared/utils/dashboard-view-state';
 import { KanbanFlowPanel } from './KanbanFlowPanel';
 import { ChatbotPanel } from './workspace/chatbot/ChatbotPanel';
 import { BotFunnelSection } from './workspace/manager/BotFunnelSection';
 import { LeadOriginSection } from './workspace/manager/LeadOriginSection';
+import { StaleDataVeil } from './workspace/manager/StaleDataVeil';
 
 const NO_NUMBERS: WaNumberOption[] = [];
 const NO_LEADS: BotKanbanLead[] = [];
+
+type FunnelAndLeads = Awaited<ReturnType<typeof getBotFunnelAndLeads>>;
 
 // Reforma de 17/08/2026 (pós-migração BotConversa): os KPIs antigos (tabela
 // botconversa) deram lugar ao Funil do bot, contado 100% pelo nosso banco, e o
@@ -39,11 +45,16 @@ const NO_LEADS: BotKanbanLead[] = [];
 // cargas: o funil + leads (uma coorte só, por número e período), a única
 // (Analytics/Fluxo do Kanban + permissão da aba Chatbot) e, para a allowlist,
 // a Origem dos leads. A aba Chatbot busca as próprias métricas só ao ser aberta.
+//
+// Cache curto e abas controladas (PAINEL-4): as cargas passam pelo
+// `usePanelSWR` (chave com strings ISO, keepPreviousData, 60 s de deduping).
+// Trocar o período mantém a aba e os números antigos sob um véu até os novos
+// chegarem, e voltar do Kanban mostra o dashboard na hora, revalidando em
+// segundo plano. A aba escolhida fica no sessionStorage ('strategic-tab').
 export const StrategicDashboard: React.FC = () => {
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
-  const [data, setData] = useState<StrategicDashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
+  const fromISO = dateRange.from.toISOString();
+  const toISO = dateRange.to.toISOString();
 
   // Seletor GLOBAL de número (null = todos) — vale para a página inteira. As
   // linhas vêm do cache SWR 'wa-number-options', o mesmo do inbox: voltar a
@@ -54,79 +65,67 @@ export const StrategicDashboard: React.FC = () => {
 
   // Funil do bot + leads do NOSSO sistema no Fluxo de Eventos Rápidos: uma
   // chamada por (número, período), com a MESMA coorte — as barras do Funil e
-  // as colunas do Fluxo batem por construção.
-  const [funnel, setFunnel] = useState<BotFunnelData | null>(null);
-  const [systemLeads, setSystemLeads] = useState<BotKanbanLead[]>(NO_LEADS);
-  const [funnelLoading, setFunnelLoading] = useState(true);
-  const [funnelError, setFunnelError] = useState(false);
-  // "Tentar novamente" do funil só incrementa isto para o efeito rodar de novo.
-  const [funnelReload, setFunnelReload] = useState(0);
-  // Efeito declarado ANTES da carga única: as actions saem em fila, e o funil
-  // é o primeiro bloco da tela.
-  useEffect(() => {
-    let alive = true;
-    setFunnelLoading(true);
-    setFunnelError(false);
-    getBotFunnelAndLeads(numberId, dateRange.from.toISOString(), dateRange.to.toISOString())
-      .then((r) => {
-        if (!alive) return;
-        setFunnel(r.funnel);
-        setSystemLeads(r.leads);
-      })
-      .catch((err) => {
-        // Erro de server action chega mascarado em produção: o texto real
-        // fica no console e o bloco mostra a própria mensagem.
-        console.error('[DASHBOARD] Falha ao carregar o funil:', err);
-        if (!alive) return;
-        setFunnel(null);
-        setSystemLeads(NO_LEADS);
-        setFunnelError(true);
-      })
-      .finally(() => { if (alive) setFunnelLoading(false); });
-    return () => { alive = false; };
-  }, [numberId, dateRange, funnelReload]);
+  // as colunas do Fluxo batem por construção. Declarado ANTES da carga única:
+  // as actions saem em fila, e o funil é o primeiro bloco da tela.
+  const funnelQ = usePanelSWR<FunnelAndLeads>(
+    ['bot-funnel', numberId, fromISO, toISO],
+    () => getBotFunnelAndLeads(numberId, fromISO, toISO),
+    'DASHBOARD funil',
+  );
+  const funnel = funnelQ.data?.funnel ?? null;
+  // Com erro, o `data` do keepPreviousData ainda é o do período anterior e
+  // não fica sob véu (isLoading já é false): o MiniKanban não pode usá-lo.
+  const systemLeads = (!funnelQ.error && funnelQ.data?.leads) || NO_LEADS;
+  const mutateFunnel = funnelQ.mutate;
 
-  // Meta do mês: aparece na hora; se o servidor recusar (sem
-  // manager_dashboard, rede), volta ao valor anterior com aviso.
+  // Meta do mês: aparece na hora (direto no cache do funil); se o servidor
+  // recusar (sem manager_dashboard, rede), volta ao valor anterior com aviso.
   const handleGoalChange = async (goal: number) => {
-    const prev = funnel?.monthGoal;
-    if (prev == null) return;
-    setFunnel((f) => (f ? { ...f, monthGoal: goal } : f));
+    const current = funnelQ.data;
+    // Sob o véu (ou com erro) o `data` pode ser o do período anterior, com o
+    // cache da chave atual vazio: gravar ali copiaria o funil antigo no novo.
+    if (!current || funnelQ.stale || funnelQ.error) return;
+    const prev = current.funnel.monthGoal;
+    // Só troca se a meta no cache ainda é a esperada (outra edição no meio).
+    const swapGoal = (from: number, to: number) => (d: FunnelAndLeads | undefined) =>
+      d && d.funnel.monthGoal === from ? { ...d, funnel: { ...d.funnel, monthGoal: to } } : d;
+    void mutateFunnel(swapGoal(prev, goal), { revalidate: false });
     try {
       await setMonthlyHiredGoal(goal);
     } catch (err) {
       console.error('[DASHBOARD] Falha ao salvar a meta do mês:', err);
-      // Só desfaz se a meta na tela ainda é a desta tentativa.
-      setFunnel((f) => (f && f.monthGoal === goal ? { ...f, monthGoal: prev } : f));
+      void mutateFunnel(swapGoal(goal, prev), { revalidate: false });
       toast.error('Não foi possível salvar a meta do mês.');
     }
   };
 
-  // Resposta de um período antigo (troca rápida no calendário) é descartada.
-  const loadSeq = useRef(0);
-  const fetchAllData = useCallback(async (range: DateRange) => {
-    const seq = ++loadSeq.current;
-    setLoading(true);
-    setLoadError(false);
-    try {
-      const payload = await getStrategicDashboardData(
-        range.from.toISOString(),
-        range.to.toISOString(),
-      );
-      if (seq === loadSeq.current) setData(payload);
-    } catch (err) {
-      // Uma falha aqui nunca vira KPI zerado "de verdade" — a página mostra o
-      // erro com opção de tentar de novo.
-      console.error('[DASHBOARD] Falha ao carregar métricas:', err);
-      if (seq === loadSeq.current) setLoadError(true);
-    } finally {
-      if (seq === loadSeq.current) setLoading(false);
-    }
-  }, []);
+  // Carga única (Analytics/Fluxo do Kanban + permissão da aba Chatbot). Uma
+  // falha aqui nunca vira KPI zerado "de verdade": a página mostra o erro com
+  // opção de tentar de novo (o texto real fica no console).
+  const dashQ = usePanelSWR(
+    ['strategic', fromISO, toISO],
+    () => getStrategicDashboardData(fromISO, toISO),
+    'DASHBOARD métricas',
+  );
+  const data = dashQ.data ?? null;
 
+  // Aba controlada: restaurada no mount (NUNCA no useState inicial: o SSR não
+  // tem sessionStorage) e gravada a cada troca. As abas só aparecem depois
+  // da restauração, para a aba padrão não montar (e buscar) à toa.
+  const [tab, setTab] = useState<StrategicTab>(DEFAULT_STRATEGIC_TAB);
+  const [tabRestored, setTabRestored] = useState(false);
   useEffect(() => {
-    fetchAllData(dateRange);
-  }, [dateRange, fetchAllData]);
+    const saved = parseStrategicTab(readViewValue(browserViewStorage(), STRATEGIC_TAB_STORAGE_KEY));
+    if (saved) setTab(saved);
+    setTabRestored(true);
+  }, []);
+  useEffect(() => {
+    if (tabRestored) writeViewValue(browserViewStorage(), STRATEGIC_TAB_STORAGE_KEY, tab);
+  }, [tab, tabRestored]);
+  const handleTabChange = useCallback((value: string) => {
+    const next = parseStrategicTab(value);
+    if (next) setTab(next);
+  }, []);
 
   const handleDateChange = useCallback((range: DateRange) => {
     setDateRange(range);
@@ -162,7 +161,7 @@ export const StrategicDashboard: React.FC = () => {
     </div>
   );
 
-  const rangeISO = { from: dateRange.from.toISOString(), to: dateRange.to.toISOString() };
+  const rangeISO = { from: fromISO, to: toISO };
 
   return (
     <div className="p-6 space-y-6">
@@ -173,29 +172,29 @@ export const StrategicDashboard: React.FC = () => {
           espera a carga única: tem a própria chamada e o próprio spinner. */}
       <BotFunnelSection
         data={funnel}
-        loading={funnelLoading}
-        error={funnelError}
-        onRetry={() => setFunnelReload((k) => k + 1)}
+        loading={!funnel}
+        error={!!funnelQ.error}
+        stale={funnelQ.stale}
+        onRetry={funnelQ.retry}
         onGoalChange={handleGoalChange}
       />
 
-      {/* Abas: enquanto a carga única não termina, só o spinner. */}
-      {loading || !data ? (
-        loadError ? (
-          <div className="flex h-[40vh] flex-col items-center justify-center gap-4 text-sm text-gray-500">
-            <p>Não foi possível carregar as métricas do dashboard.</p>
-            <Button size="sm" variant="outline" onClick={() => fetchAllData(dateRange)}>
-              <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
-            </Button>
-          </div>
-        ) : (
-          <div className="flex h-[40vh] flex-col items-center justify-center gap-3 text-gray-400">
-            <Loader2 className="h-8 w-8 animate-spin" />
-            <p className="text-sm">Carregando os dados do dashboard…</p>
-          </div>
-        )
+      {/* Abas: spinner só na 1ª carga. Trocar o período mantém a árvore (e a
+          aba) com os números antigos sob o véu; erro troca pelo aviso. */}
+      {dashQ.error ? (
+        <div className="flex h-[40vh] flex-col items-center justify-center gap-4 text-sm text-gray-500">
+          <p>Não foi possível carregar as métricas do dashboard.</p>
+          <Button size="sm" variant="outline" disabled={dashQ.busy} onClick={dashQ.retry}>
+            <RotateCcw className={`mr-1 h-4 w-4 ${dashQ.busy ? 'animate-spin' : ''}`} /> Tentar novamente
+          </Button>
+        </div>
+      ) : !data || !tabRestored ? (
+        <div className="flex h-[40vh] flex-col items-center justify-center gap-3 text-gray-400">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p className="text-sm">Carregando os dados do dashboard…</p>
+        </div>
       ) : (
-      <Tabs defaultValue="analytics" className="space-y-4">
+      <Tabs value={visibleStrategicTab(tab, data.canViewChatbot)} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo do Kanban</TabsTrigger>
@@ -208,8 +207,12 @@ export const StrategicDashboard: React.FC = () => {
           {/* Legado BotConversa: o servidor já manda só os contratados do
               período (a parcela que a meta e o card "Contratados" somam). A
               referência só muda com `data` novo, e o MiniKanban recopia a
-              lista a cada troca dela. */}
-          <MiniKanban data={data.kanban} systemItems={systemLeads} />
+              lista a cada troca dela. Véu enquanto o legado (carga única) ou
+              os leads do sistema (funil) ainda são do período anterior. */}
+          <div className="relative">
+            <MiniKanban data={data.kanban} systemItems={systemLeads} />
+            <StaleDataVeil show={dashQ.stale || funnelQ.stale} />
+          </div>
           {/* Origem dos leads usa getLeadOrigins (allowlist do painel do
               chatbot). Fora da allowlist a seção nem monta, em vez de mostrar
               a caixa de erro na aba padrão. A UI só esconde: o guard continua
@@ -221,11 +224,14 @@ export const StrategicDashboard: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="fluxo" className="space-y-4">
-          <KanbanFlowPanel
-            data={data.kanbanFlow}
-            from={rangeISO.from}
-            to={rangeISO.to}
-          />
+          <div className="relative">
+            <KanbanFlowPanel
+              data={data.kanbanFlow}
+              from={rangeISO.from}
+              to={rangeISO.to}
+            />
+            <StaleDataVeil show={dashQ.stale} />
+          </div>
         </TabsContent>
 
         {/* Radix só monta a aba ativa: getChatbotAnalytics roda quando o
@@ -240,6 +246,8 @@ export const StrategicDashboard: React.FC = () => {
           <LeadsTable />
         </TabsContent>
 
+        {/* Calendário: ainda escondido (sem gatilho na barra, e a aba salva
+            no sessionStorage nunca volta como 'calendario'). */}
         <TabsContent value="calendario">
           <CalendarTab />
         </TabsContent>

@@ -9,6 +9,7 @@ import {
 import { Button } from '@/app/_shared/ui/button';
 import type { BotFunnelData } from '@/app/_actions/analytics/bot-funnel';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import { StaleDataVeil } from './StaleDataVeil';
 
 // Funil do bot da IA — layout 50/50 aprovado em 17/08/2026: à esquerda os 8
 // KPIs compactos, à direita o mesmo funil como gráfico com toggle
@@ -17,7 +18,8 @@ import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider'
 // Só apresentação: os dados chegam do StrategicDashboard, que busca funil e
 // leads do Fluxo de Eventos Rápidos numa chamada só (getBotFunnelAndLeads) —
 // antes esta seção rodava a própria coorte, a 2ª da mesma abertura. Salvar a
-// meta também é do pai (otimista, com rollback e aviso se falhar).
+// meta também é do pai (otimista, com rollback e aviso se falhar). Na troca de
+// período/número o pai manda os números antigos com `stale` (véu por cima).
 
 function Kpi({ label, value, className, hint }: { label: string; value: number; className?: string; hint?: string }) {
   return (
@@ -31,10 +33,12 @@ function Kpi({ label, value, className, hint }: { label: string; value: number; 
   );
 }
 
-export function BotFunnelSection({ data, loading, error, onRetry, onGoalChange }: {
+export function BotFunnelSection({ data, loading, error, stale = false, onRetry, onGoalChange }: {
   data: BotFunnelData | null;
   loading: boolean;
   error: boolean;
+  /** `data` ainda é do período/número anterior (o novo está carregando). */
+  stale?: boolean;
   onRetry?: () => void;
   /** Meta nova (inteiro ≥ 1): o pai aplica na hora, grava e desfaz se falhar. */
   onGoalChange: (goal: number) => void;
@@ -97,7 +101,8 @@ export function BotFunnelSection({ data, loading, error, onRetry, onGoalChange }
       ) : loading || !data ? (
         <div className="grid h-56 place-items-center text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="relative grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <StaleDataVeil show={stale} />
           {/* Esquerda: 8 KPIs compactos */}
           <div className="grid grid-cols-2 content-start gap-2">
             <Kpi label="Total no período" value={data.started} />

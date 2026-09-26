@@ -10,6 +10,8 @@ import {
   getLeadOrigins, getAdLeadOutcomes,
   type LeadOriginsData, type AdLeadOutcome,
 } from '@/app/_actions/analytics/get-chatbot-analytics';
+import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
+import { StaleDataVeil } from './StaleDataVeil';
 
 // "Origem dos leads" — extraída do Desempenho do Chatbot para a aba Analytics
 // do dashboard (17/08/2026). Mesmo conteúdo: placar de desfechos, ranking
@@ -53,11 +55,6 @@ export function LeadOriginSection({
 }) {
   // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
-  const [data, setData] = useState<LeadOriginsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
-  const [reloadKey, setReloadKey] = useState(0);
 
   const useRange = period === 'range' && !!range;
   const periodDays = period === 'range' ? 30 : period;
@@ -78,23 +75,17 @@ export function LeadOriginSection({
     return () => { alive = false; };
   }, [leadModal, periodDays, numberId, rangeFrom, rangeTo]);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    // Só a origem dos leads (contatos + desfechos), sem tocar em logs: antes
-    // esta seção chamava o getChatbotAnalytics inteiro (todos os logs wa_* do
-    // período) só para usar o bloco de anúncios.
-    getLeadOrigins(periodDays, numberId, rangeFrom, rangeTo)
-      .then((d) => { if (alive) { setData(d); setError(false); } })
-      .catch((e) => {
-        // Em produção o erro de server action chega mascarado: o texto real
-        // fica só no console e a tela mostra uma mensagem própria.
-        console.error('[ORIGEM DOS LEADS] Falha ao carregar:', e);
-        if (alive) setError(true);
-      })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [periodDays, numberId, rangeFrom, rangeTo, reloadKey]);
+  // Só a origem dos leads (contatos + desfechos), sem tocar em logs: antes
+  // esta seção chamava o getChatbotAnalytics inteiro (todos os logs wa_* do
+  // período) só para usar o bloco de anúncios.
+  // Cache curto (usePanelSWR): a chave leva o botão 7/30/90/Calendário além do
+  // calendário do topo; trocar de período mantém a seção sob o véu (o placar
+  // do cabeçalho some até os números novos chegarem).
+  const { data, error, stale, busy, retry } = usePanelSWR<LeadOriginsData>(
+    ['lead-origins', period, numberId, rangeFrom ?? null, rangeTo ?? null],
+    () => getLeadOrigins(periodDays, numberId, rangeFrom, rangeTo),
+    'ORIGEM DOS LEADS',
+  );
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -111,7 +102,7 @@ export function LeadOriginSection({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {data && !loading && (() => {
+          {data && !stale && (() => {
             // Placar geral do período: quanto do funil virou cliente.
             const totals = Object.values(data.adOrigins.outcomesByPlatform ?? {}).reduce(
               (acc, o) => ({
@@ -159,14 +150,16 @@ export function LeadOriginSection({
       {error ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
           <p>Não foi possível carregar a origem dos leads.</p>
-          <Button size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
-            <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+          <Button size="sm" variant="outline" disabled={busy} onClick={retry}>
+            <RotateCcw className={`mr-1 h-4 w-4 ${busy ? 'animate-spin' : ''}`} /> Tentar novamente
           </Button>
         </div>
-      ) : loading || !data ? (
+      ) : !data ? (
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <>
+        <div className="relative">
+          {/* Números do período anterior enquanto o novo carrega. */}
+          <StaleDataVeil show={stale} />
           {/* Orgânico também tem desfecho — clicável como os anúncios. */}
           {(data.adOrigins.outcomesByPlatform?.organic?.qualified
             || data.adOrigins.outcomesByPlatform?.organic?.disqualified
@@ -482,7 +475,7 @@ export function LeadOriginSection({
               })()}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Modal do drill-down: cada lead da campanha, com desfecho e motivo. */}

@@ -2,8 +2,11 @@
 'use client';
 
 import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck } from 'lucide-react';
+import type { WorkspaceSectionKey } from '@/app/_shared/utils/dashboard-view-state';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros' | 'seguranca';
+// A lista mora em dashboard-view-state.ts (WORKSPACE_SECTIONS) porque a seção
+// é restaurada do sessionStorage: seção nova entra lá, senão não volta no F5.
+export type WorkspaceSection = WorkspaceSectionKey;
 
 interface Props {
   active: WorkspaceSection;

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Bot, Loader2, BadgeCheck, XCircle, AlertTriangle,
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
@@ -12,6 +12,8 @@ import {
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
+import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
+import { StaleDataVeil } from './StaleDataVeil';
 // import { SystemMap } from './SystemMap';
 import { AiCorner } from './AiCorner';
 import { formatDistanceToNow } from 'date-fns';
@@ -119,35 +121,23 @@ export function ChatbotDashboard({ numberId = null, range }: {
 } = {}) {
   // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
-  // Sem dado inicial vindo de fora: o painel busca ao montar (a aba Chatbot só
-  // monta quando o gestor a abre), já com o número e o período certos. O
-  // initialData antigo era sempre de "Todos os números" e mostrava a soma de
-  // todas as linhas com um número escolhido no topo.
-  const [data, setData] = useState<ChatbotAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
-  const [reloadKey, setReloadKey] = useState(0);
-
   const useRange = period === 'range' && !!range;
   const periodDays = period === 'range' ? 30 : period;
   const rangeFrom = useRange ? range!.from : undefined;
   const rangeTo = useRange ? range!.to : undefined;
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
-      .then((d) => { if (alive) { setData(d); setError(false); } })
-      .catch((e) => {
-        // Em produção o erro de server action chega mascarado: o texto real
-        // fica só no console e a tela mostra uma mensagem própria.
-        console.error('[CHATBOT] Falha ao carregar métricas:', e);
-        if (alive) setError(true);
-      })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [periodDays, numberId, rangeFrom, rangeTo, reloadKey]);
+  // Sem dado inicial vindo de fora: o painel busca ao montar (a aba Chatbot só
+  // monta quando o gestor a abre), já com o número e o período certos. O
+  // initialData antigo era sempre de "Todos os números" e mostrava a soma de
+  // todas as linhas com um número escolhido no topo.
+  // Cache curto (usePanelSWR): a chave leva o botão 7/30/90/Calendário além do
+  // calendário do topo; trocar de período mantém o painel sob o véu, e reabrir
+  // a aba em até 60 s não refaz a análise.
+  const { data, error, stale, busy, retry } = usePanelSWR<ChatbotAnalytics>(
+    ['chatbot-analytics', period, numberId, rangeFrom ?? null, rangeTo ?? null],
+    () => getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo),
+    'CHATBOT',
+  );
 
   return (
     <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
@@ -167,14 +157,16 @@ export function ChatbotDashboard({ numberId = null, range }: {
       {error ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
           <p>Não foi possível carregar as métricas do chatbot.</p>
-          <Button size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
-            <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+          <Button size="sm" variant="outline" disabled={busy} onClick={retry}>
+            <RotateCcw className={`mr-1 h-4 w-4 ${busy ? 'animate-spin' : ''}`} /> Tentar novamente
           </Button>
         </div>
-      ) : loading || !data ? (
+      ) : !data ? (
         <div className="flex items-center justify-center py-20 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <>
+        <div className="relative">
+          {/* Números do período anterior enquanto o novo carrega. */}
+          <StaleDataVeil show={stale} />
           {/* Canto da IA: custo por operação + qualidade do bot num bloco só.
               (Qualificados/Não qualificados moraram aqui; agora vivem na
               Origem dos leads, por campanha — onde a pergunta é feita.) */}
@@ -365,7 +357,7 @@ export function ChatbotDashboard({ numberId = null, range }: {
               )}
             </section>
           </div>
-        </>
+        </div>
       )}
       {/* <SystemMap /> */}
     </div>

@@ -1,5 +1,5 @@
 # Espaço de trabalho da equipe (chat, menções, setores, ponto, tickets) — mapa para IA
-> Verificado em 2026-09-25 · Escopo: `app/nova-dash/workspace/{Workspace,WorkspaceSidebar,SectorDashboard}.tsx`, `app/nova-dash/workspace/chat/**`, `app/nova-dash/{mentions,tickets,_components}/**`, `app/nova-dash/{MySpace,TeamPresence,UserMenu,ProfileDialog}.tsx`, `app/_actions/{chat,mentions,sectors,events,dev-tickets}/**`, `app/_actions/dev-alerts.ts`, `app/api/{chat,presence,work-session,ponto-adjustments,notification,onboarding,avatar,dev-tickets}/**`, `app/_shared/lib/{chat-relay,chat-access,mention-inbox,sector-tasks,sector-admin,ponto,ponto-access,dev-activity,log,report-error}.ts`, `app/_shared/hooks/**`, `railway/chat-relay.md`
+> Verificado em 2026-09-26 · Escopo: `app/nova-dash/workspace/{Workspace,WorkspaceSidebar,SectorDashboard}.tsx`, `app/nova-dash/workspace/chat/**`, `app/nova-dash/{mentions,tickets,_components}/**`, `app/nova-dash/{MySpace,TeamPresence,UserMenu,ProfileDialog}.tsx`, `app/_actions/{chat,mentions,sectors,events,dev-tickets}/**`, `app/_actions/dev-alerts.ts`, `app/api/{chat,presence,work-session,ponto-adjustments,notification,onboarding,avatar,dev-tickets}/**`, `app/_shared/lib/{chat-relay,chat-access,mention-inbox,sector-tasks,sector-admin,ponto,ponto-access,dev-activity,log,report-error}.ts`, `app/_shared/hooks/**`, `railway/chat-relay.md`
 
 ## TL;DR
 - A aba de topo `meu-espaco` ("Espaço de Trabalho") renderiza `Workspace` (sidebar de seções: Meu Espaço, Dashboard, Gestor, Custos, Números, Segurança, Revisão da IA). As abas-irmãs do header são deste domínio também: **Menções e Tarefas** (`MentionsInbox`), **Tickets Dev** (`TicketsBoard`), **Controle de Ponto** (`WorkSessionPanel`), além dos widgets do cabeçalho (Eventos, presença, sino, menu do usuário/alertas do dev, tour).
@@ -12,7 +12,7 @@
 | Arquivo | Responsabilidade | Símbolos-chave |
 |---|---|---|
 | `app/nova-dash/page.tsx` | Shell de abas; listeners globais de navegação; badges (chat, menções, WhatsApp, eventos) | default `Page` (`PageInner` interno) |
-| `app/nova-dash/workspace/Workspace.tsx` | Seções do Espaço de Trabalho + guarda de seção por permissão | `Workspace` |
+| `app/nova-dash/workspace/Workspace.tsx` | Seções do Espaço de Trabalho + guarda de seção por permissão; restaura a última seção do sessionStorage (`workspace-section`, via `app/_shared/utils/dashboard-view-state.ts`) | `Workspace` |
 | `app/nova-dash/workspace/WorkspaceSidebar.tsx` | Sidebar desktop / barra mobile; liga/desliga o chat | `WorkspaceSidebar`, `WorkspaceSection`, `CHAT_ENABLED` (const local) |
 | `app/nova-dash/MySpace.tsx` | "Meu Espaço": atividade pessoal (Logs) + perfil + setor | `MySpace` (usa `getMyActivity`, `getMyProfile`) |
 | `app/nova-dash/ProfileDialog.tsx` | Editar perfil/senha/foto; propaga pro JWT via `updateSession` | `ProfileDialog` |
@@ -120,7 +120,7 @@
 - **Nova ação de batida ou campo na correção** → `POST`/`PATCH` em `app/api/work-session/route.ts` usando `derived()`; UI em `MyPonto.tsx`/`EditSessionDialog.tsx` · cuidado: `closeStale` antes de ler; dia via `brDayKey`.
 - **Novo campo de evento** → model `Event` (migration segura) + `EventInput`/`sanitizeInput`/`toDTO` em `event-actions.ts` + form em `EventsDialog.tsx` · cuidado: datas via `brLocalToDate`.
 - **Novo tipo/fase de ticket** → `TICKET_TYPES`/`TICKET_STATUSES` em `ticket-actions.ts` **e** `TYPE_META`/`STATUS_META`/`TICKET_STATUS_FLOW`/`NEXT_STATUS` em `tickets/constants.ts`.
-- **Nova seção no Espaço de Trabalho** → `WorkspaceSection` + item no grupo em `WorkspaceSidebar.tsx`, render e guarda `effective` em `Workspace.tsx`, permissão via `usePermissions()` + checagem no servidor.
+- **Nova seção no Espaço de Trabalho** → `WORKSPACE_SECTIONS` em `app/_shared/utils/dashboard-view-state.ts` (o `WorkspaceSection` deriva dela; fora da lista a seção não volta no F5) + item no grupo em `WorkspaceSidebar.tsx`, render e guarda `effective` em `Workspace.tsx`, permissão via `usePermissions()` + checagem no servidor.
 - **Nova ação de log** → adicionar ao union `LogAction` em `log.ts` + meta de render em `app/_shared/utils/action-meta.tsx` · cuidado: se for operacional de WhatsApp e puder expirar, avaliar `PURGEABLE_LOG_ACTIONS`.
 
 ## Testes e validação

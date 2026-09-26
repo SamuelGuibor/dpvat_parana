@@ -13,7 +13,7 @@ UI compartilhada (shadcn): `app/_shared/ui/` (button, dialog, select, checkbox, 
 
 ## Regras gerais da pasta
 - Server action nova: `requireTeam()`/`requirePermission(key)`, nunca só `getServerSession` (cliente logado passa e a trava de IP é pulada). Na UI, esconda com `usePermissions()` — mas a UI só esconde; o guard é o do servidor.
-- Troca de aba: grave o `sessionStorage` (`kanban-open-card`, `wa-open-contact`, `chat-open-channel`) ANTES de disparar o `CustomEvent`; board e inbox ficam desmontados nas outras abas (o inbox guarda conversa, pasta, busca e filtros em `wa-inbox-view` e restaura no mount; o `wa-open-contact` vence).
+- Troca de aba: grave o `sessionStorage` (`kanban-open-card`, `wa-open-contact`, `chat-open-channel`) ANTES de disparar o `CustomEvent`; board e inbox ficam desmontados nas outras abas (o inbox guarda conversa, pasta, busca e filtros em `wa-inbox-view` e restaura no mount; o `wa-open-contact` vence). O Espaço de Trabalho guarda a seção em `workspace-section` e a Gestão Estratégica a aba em `strategic-tab` (`dashboard-view-state.ts`).
 - Arquivo grande (`KanbanBoard`, `AutomationsPanel`, `KanbanFlowPanel`, `FilesTab`, `ScriptTab`, `workspace/whatsapp/*`): leia só a seção em `docs/ai/hotspots.md`.
 
 ## Kanban e cards

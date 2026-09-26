@@ -15,6 +15,10 @@ import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { isManager } from '@/app/_shared/lib/managers';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { StrategicDashboard } from '../StrategicDashboard';
+import {
+  DEFAULT_WORKSPACE_SECTION, WORKSPACE_SECTION_STORAGE_KEY,
+  browserViewStorage, parseWorkspaceSection, readViewValue, writeViewValue,
+} from '@/app/_shared/utils/dashboard-view-state';
 
 export function Workspace() {
   const { data: session } = useSession();
@@ -32,7 +36,21 @@ export function Workspace() {
 
   // A aba Chatbot do dashboard resolve a própria allowlist na carga única
   // (get-strategic-dashboard) — nada a pré-buscar aqui.
-  const [section, setSection] = useState<WorkspaceSection>('meu-espaco');
+  const [section, setSection] = useState<WorkspaceSection>(DEFAULT_WORKSPACE_SECTION);
+  // A nova-dash desmonta o Espaço de Trabalho a cada troca de aba, e voltar do
+  // Kanban reabria "Meu Espaço" (PAINEL-4: mais um clique para chegar de novo
+  // ao Dashboard). A seção fica no sessionStorage: restaurada no mount (nunca
+  // no useState inicial, que também roda no SSR) e gravada a cada troca. O
+  // conteúdo só monta depois da restauração, para "Meu Espaço" não buscar à toa.
+  const [sectionRestored, setSectionRestored] = useState(false);
+  useEffect(() => {
+    const saved = parseWorkspaceSection(readViewValue(browserViewStorage(), WORKSPACE_SECTION_STORAGE_KEY));
+    if (saved) setSection(saved);
+    setSectionRestored(true);
+  }, []);
+  useEffect(() => {
+    if (sectionRestored) writeViewValue(browserViewStorage(), WORKSPACE_SECTION_STORAGE_KEY, section);
+  }, [section, sectionRestored]);
 
   // Badge da Revisão da IA: contagem leve, só para quem tem a permissão.
   // Sem polling agressivo — a fila só cresce quando um atendimento encerra.
@@ -72,20 +90,27 @@ export function Workspace() {
     || (section === 'seguranca' && !canManageSecurity)
       ? 'meu-espaco'
       : section;
+  // Seção restrita restaurada enquanto as permissões carregam: espera em vez
+  // de montar "Meu Espaço" por um instante (e disparar as buscas dele).
+  const showContent = sectionRestored && !(permsLoading && effective !== section);
 
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} canManageSecurity={canManageSecurity} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
-        {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
-        {effective === 'revisao-ia' && <div className="h-full p-2 sm:p-4"><AIReview /></div>}
-        {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
-        {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
-        {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
-        {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
-        {effective === 'seguranca' && <div className="h-full overflow-y-auto"><SecurityPanel /></div>}
+        {showContent && (
+          <>
+            {effective === 'meu-espaco' && <div className="h-full overflow-y-auto"><MySpace /></div>}
+            {effective === 'chat' && <div className="h-full p-1.5 sm:p-4"><Chat /></div>}
+            {effective === 'revisao-ia' && <div className="h-full p-2 sm:p-4"><AIReview /></div>}
+            {effective === 'dashboard' && <div className="h-full overflow-y-auto"><StrategicDashboard /></div>}
+            {effective === 'gestao' && <div className="h-full overflow-y-auto"><ManagerDashboard /></div>}
+            {effective === 'custos' && <div className="h-full overflow-y-auto"><CostsPanel /></div>}
+            {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
+            {effective === 'seguranca' && <div className="h-full overflow-y-auto"><SecurityPanel /></div>}
+          </>
+        )}
       </div>
     </div>
   );
