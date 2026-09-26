@@ -7,7 +7,7 @@ import {
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
   UserRound, Undo2, StickyNote, ShieldAlert, ShieldCheck,
   Info, Facebook, Instagram, Megaphone, Globe, Send, CheckCircle2, BellRing,
-  Tag as TagIcon, Users, RotateCcw,
+  Tag as TagIcon, RotateCcw,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
@@ -245,43 +245,10 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
             )}
           </section>
 
-          {/* Desempenho do atendimento humano */}
-          {/* {data.team.attendants.length > 0 && (
-            <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-1 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
-                <Users className="h-4 w-4 text-emerald-500" /> Desempenho da equipe
-              </h2>
-              <p className="mb-4 text-xs text-gray-400">
-                Conversas assumidas, encerradas, mensagens enviadas e tempo médio até a primeira resposta após assumir.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400 dark:border-zinc-800">
-                      <th className="pb-2 pr-4 font-semibold">Atendente</th>
-                      <th className="pb-2 pr-4 font-semibold">Assumidas</th>
-                      <th className="pb-2 pr-4 font-semibold">Encerradas</th>
-                      <th className="pb-2 pr-4 font-semibold">Mensagens</th>
-                      <th className="pb-2 font-semibold">1ª resposta (média)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.team.attendants.map((a) => (
-                      <tr key={a.name} className="border-b border-gray-50 last:border-0 dark:border-zinc-800/50">
-                        <td className="py-2 pr-4 font-semibold text-gray-800 dark:text-zinc-100">{a.name}</td>
-                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.assumed}</td>
-                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.closed}</td>
-                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.messages}</td>
-                        <td className="py-2 tabular-nums text-gray-600 dark:text-zinc-300">
-                          {a.avgFirstResponseMin != null ? `${a.avgFirstResponseMin} min` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )} */}
+          {/* O bloco 'Desempenho da equipe' (assumidas/encerradas/1ª resposta por
+              atendente) saiu do getChatbotAnalytics junto com a agregação em
+              SQL: ninguém o exibia e a 1ª resposta varria whatsapp_messages.
+              Métrica por atendente, se voltar, vem das métricas de eficácia. */}
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-6">
             {/* Avisos automáticos ao cliente: entregas × falhas (auditoria) */}

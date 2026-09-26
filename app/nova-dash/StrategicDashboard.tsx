@@ -162,7 +162,7 @@ export const StrategicDashboard: React.FC = () => {
               As outras etapas legadas (em conversa, não qualificado...) não
               existem no Funil e só inflavam as colunas. */}
           <MiniKanban data={kanban.filter((k) => k.evento === 'contratado')} systemItems={systemLeads} />
-          {/* Origem dos leads usa getChatbotAnalytics (allowlist do painel do
+          {/* Origem dos leads usa getLeadOrigins (allowlist do painel do
               chatbot). `chatbot` só vem preenchido para quem está na
               allowlist; fora dela a seção nem monta, em vez de mostrar a
               caixa de erro na aba padrão. A UI só esconde: o guard continua

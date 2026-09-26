@@ -7,8 +7,8 @@ import {
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
 import {
-  getChatbotAnalytics, getAdLeadOutcomes,
-  type ChatbotAnalytics, type AdLeadOutcome,
+  getLeadOrigins, getAdLeadOutcomes,
+  type LeadOriginsData, type AdLeadOutcome,
 } from '@/app/_actions/analytics/get-chatbot-analytics';
 
 // "Origem dos leads" — extraída do Desempenho do Chatbot para a aba Analytics
@@ -53,7 +53,7 @@ export function LeadOriginSection({
 }) {
   // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
-  const [data, setData] = useState<ChatbotAnalytics | null>(null);
+  const [data, setData] = useState<LeadOriginsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   // "Tentar novamente" só incrementa isto para o efeito rodar de novo.
@@ -81,7 +81,10 @@ export function LeadOriginSection({
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
+    // Só a origem dos leads (contatos + desfechos), sem tocar em logs: antes
+    // esta seção chamava o getChatbotAnalytics inteiro (todos os logs wa_* do
+    // período) só para usar o bloco de anúncios.
+    getLeadOrigins(periodDays, numberId, rangeFrom, rangeTo)
       .then((d) => { if (alive) { setData(d); setError(false); } })
       .catch((e) => {
         // Em produção o erro de server action chega mascarado: o texto real

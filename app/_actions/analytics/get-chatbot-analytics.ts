@@ -1,19 +1,33 @@
 'use server';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
+import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import { fetchAdNames } from '@/app/_shared/lib/whatsapp/meta-ad-names';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { brDayKey, brDayKeySeries, brLabelFromKey, brStartOfDay, brStartOfDaysAgo } from '@/app/_shared/utils/date-br';
+import {
+  AUTO_NOTIFY_FAIL_HINTS, accountEventSeverity, aggregateBotRows, foldAutoNotifyRows,
+  medianMsToMinutes, normalizeAutoNotifyFailReason,
+  type AutoNotifyRow, type BotAggregate, type BotOutcomeRow,
+} from '@/app/_shared/utils/chatbot-agg';
 
-// Métricas do chatbot para o dashboard (abaixo da Visão do Gestor). Deriva
-// tudo dos logs de WhatsApp (action começando com "wa_"):
+// Métricas do chatbot para o dashboard (aba Chatbot). Deriva tudo dos logs de
+// WhatsApp (action começando com "wa_"):
 //   - wa_bot: decisões da IA (qualify/disqualify/handoff/continue/erro), com
 //     intent, understood, confidence e durationMs no metadata.
-//   - demais wa_*: ações dos atendentes (atribuir, enviar doc/fluxo/texto...).
+//   - wa_* com metadata.automated: avisos automáticos ao cliente.
+//   - wa_account: avisos oficiais da Meta (saúde da conta).
+//   - demais wa_*: feed de atividade dos atendentes.
+// Desde 25/09/2026 tudo é AGREGADO no Postgres (antes o findMany trazia todos
+// os logs wa_* do período — ~33 mil linhas / ~15 MB por abertura — para contar
+// em JS). A regra de cada número é a do laço antigo; ver chatbot-agg.ts.
+// A Origem dos leads (contatos novos por anúncio) saiu para getLeadOrigins,
+// que não toca em logs.
 
 export interface ChatbotActivityItem {
   id: string;
@@ -36,65 +50,14 @@ export interface MetaAccountEvent {
 
 export interface ChatbotAnalytics {
   periodDays: number;
-  bot: {
-    totalDecisions: number;      // decisões da IA no período (fora erros)
-    qualify: number;             // qualificados
-    disqualify: number;          // não qualificados
-    handoff: number;             // transferidos para humano
-    continueCount: number;       // seguiu a conversa
-    error: number;               // erros da IA
-    doubts: number;              // mensagens com intenção "dúvida"
-    understoodRate: number;      // % de mensagens entendidas (0..100)
-    successRate: number;         // % de decisões sem erro (acertos)
-    avgConfidence: number;       // confiança média (0..100)
+  bot: BotAggregate & {
     // Mediana do tempo entre o início da conversa e a qualificação (mediana
     // porque conversas reabertas dias depois distorcem a média).
     avgQualifyMinutes: number | null;
-    intents: Record<string, number>;
-    emotions: Record<string, number>;
-  };
-  // Como os assuntos foram encerrados no período (perguntas, qualificado, etc.).
-  closeCategories: Record<string, number>;
-  // Desempenho do atendimento HUMANO no período: quem assumiu/encerrou/enviou
-  // e o tempo médio até a primeira resposta depois de assumir.
-  team: {
-    attendants: {
-      name: string;
-      assumed: number;              // conversas assumidas (inclui reaberturas)
-      closed: number;               // atendimentos encerrados
-      messages: number;             // mensagens/mídias enviadas ao cliente
-      avgFirstResponseMin: number | null; // média assumir → 1ª resposta (min)
-    }[];
-  };
-  // Atribuição de origem dos leads (Click-to-WhatsApp): contatos novos no
-  // período agrupados por plataforma e por anúncio. "organic" = chegou sem
-  // referral (link direto, indicação, busca...).
-  adOrigins: {
-    byPlatform: Record<string, number>; // facebook | instagram | meta | organic
-    // campaignName/adsetName/adName vêm da Marketing API (META_ADS_TOKEN com
-    // ads_read); sem token válido ficam null e a UI cai no headline + id.
-    byAd: {
-      platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number;
-      // Quebra por plataforma DENTRO do anúncio (o mesmo anúncio roda no
-      // Facebook e no Instagram — antes só o ícone da 1ª origem aparecia).
-      platforms: Record<string, number>;
-      adName: string | null; adsetName: string | null; campaignName: string | null;
-      // Desfecho dos leads deste anúncio — qual campanha CONVERTE, não só traz volume.
-      qualified: number; disqualified: number; other: number; pending: number;
-    }[];
-    // Desfecho agregado por plataforma (inclui o orgânico, que não tem anúncio).
-    outcomesByPlatform: Record<string, { qualified: number; disqualified: number; other: number; pending: number }>;
-    // Leads novos por DIA no período, quebrados por plataforma — mostra se a
-    // campanha está crescendo ou perdendo tração.
-    daily: {
-      date: string; label: string; total: number;
-      facebook: number; instagram: number; meta: number; organic: number;
-    }[];
-    totalNewContacts: number;
   };
   // Avisos AUTOMÁTICOS ao cliente (progresso do card + automações): entregas
-  // e falhas no período. Ficam FORA da atividade/estatística da equipe — o
-  // "autor" do log é só quem moveu o card, não quem mandou mensagem.
+  // e falhas no período. Ficam FORA da atividade da equipe — o "autor" do log
+  // é só quem moveu o card, não quem mandou mensagem.
   autoNotify: {
     sent: number;
     failed: number;
@@ -108,11 +71,38 @@ export interface ChatbotAnalytics {
   accountEvents: MetaAccountEvent[];
 }
 
-const INTENT_LABELS: Record<string, string> = {
-  novo_lead: 'Novo lead', cliente_existente: 'Cliente existente', duvida: 'Dúvida',
-  financeiro: 'Financeiro', suporte: 'Suporte', documentos: 'Documentos',
-  reclamacao: 'Reclamação', outro: 'Outro',
-};
+// Atribuição de origem dos leads (Click-to-WhatsApp): contatos novos no
+// período agrupados por plataforma e por anúncio. "organic" = chegou sem
+// referral (link direto, indicação, busca...).
+export interface AdOriginsData {
+  byPlatform: Record<string, number>; // facebook | instagram | meta | organic
+  // campaignName/adsetName/adName vêm da Marketing API (META_ADS_TOKEN com
+  // ads_read); sem token válido ficam null e a UI cai no headline + id.
+  byAd: {
+    platform: string; headline: string | null; sourceId: string | null; sourceUrl: string | null; count: number;
+    // Quebra por plataforma DENTRO do anúncio (o mesmo anúncio roda no
+    // Facebook e no Instagram — antes só o ícone da 1ª origem aparecia).
+    platforms: Record<string, number>;
+    adName: string | null; adsetName: string | null; campaignName: string | null;
+    // Desfecho dos leads deste anúncio — qual campanha CONVERTE, não só traz volume.
+    qualified: number; disqualified: number; other: number; pending: number;
+  }[];
+  // Desfecho agregado por plataforma (inclui o orgânico, que não tem anúncio).
+  outcomesByPlatform: Record<string, { qualified: number; disqualified: number; other: number; pending: number }>;
+  // Leads novos por DIA no período, quebrados por plataforma — mostra se a
+  // campanha está crescendo ou perdendo tração.
+  daily: {
+    date: string; label: string; total: number;
+    facebook: number; instagram: number; meta: number; organic: number;
+  }[];
+  totalNewContacts: number;
+}
+
+/** Retorno de getLeadOrigins (seção "Origem dos leads" da aba Analytics). */
+export interface LeadOriginsData {
+  periodDays: number;
+  adOrigins: AdOriginsData;
+}
 
 /** A UI usa isto pra decidir se mostra a seção "Desempenho do Chatbot". */
 export async function getChatbotDashboardAccess(): Promise<boolean> {
@@ -120,24 +110,25 @@ export async function getChatbotDashboardAccess(): Promise<boolean> {
   return !!session?.user?.id && canViewChatbotDashboard(session.user.email);
 }
 
-export async function getChatbotAnalytics(
-  periodDays: 7 | 30 | 90 = 7,
-  numberId: string | null = null,
-  fromISO?: string,
-  toISO?: string,
-): Promise<ChatbotAnalytics> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error('Não autenticado.');
-  if (!canViewChatbotDashboard(session.user.email)) {
+/**
+ * Trava das métricas do chatbot: equipe lendo o banco (requireTeam: role
+ * atual + trava de IP) E allowlist por e-mail do painel. Antes era só
+ * getServerSession + allowlist — sem a trava de IP.
+ */
+async function requireChatbotDashboard(): Promise<void> {
+  const ctx = await requireTeam();
+  if (!canViewChatbotDashboard(ctx.email)) {
     throw new Error('Acesso restrito: você não está autorizado a ver o Desempenho do Chatbot.');
   }
+}
 
-  // Todo corte de dia é no fuso de Brasília: em produção o Node roda em UTC e
-  // das 21h em diante o servidor já virava o dia (o gráfico abria um bucket de
-  // amanhã enquanto aqui ainda era hoje).
-  //
-  // from/to (ISO) têm prioridade sobre periodDays — o calendário do dashboard
-  // manda o intervalo livre; os botões 7/30/90 continuam funcionando.
+/**
+ * Janela do período. Todo corte de dia é no fuso de Brasília: em produção o
+ * Node roda em UTC e das 21h em diante o servidor já virava o dia.
+ * from/to (ISO) têm prioridade sobre periodDays — o calendário do dashboard
+ * manda o intervalo livre; os botões 7/30/90 continuam funcionando.
+ */
+function resolveWindow(periodDays: 7 | 30 | 90, fromISO?: string, toISO?: string) {
   let since = brStartOfDaysAgo(periodDays - 1);
   let until: Date | null = null;
   let seriesDays: number = periodDays;
@@ -155,52 +146,198 @@ export async function getChatbotAnalytics(
       );
     }
   }
-  const createdIn = until ? { gte: since, lte: until } : { gte: since };
+  return { since, until, seriesDays, seriesUntil };
+}
 
-  // Filtro MULTI-NÚMERO: null = visão agregada (todos os números, como sempre
-  // foi). Mensagens/contatos filtram direto pela coluna numberId (indexada);
-  // os LOGS não têm a coluna — são filtrados abaixo resolvendo o numberId do
-  // contactId que cada log carrega no metadata.
-  const numberFilter = numberId ? { numberId } : {};
+export async function getChatbotAnalytics(
+  periodDays: 7 | 30 | 90 = 7,
+  numberId: string | null = null,
+  fromISO?: string,
+  toISO?: string,
+): Promise<ChatbotAnalytics> {
+  await requireChatbotDashboard();
+  const { since, until, seriesDays } = resolveWindow(periodDays, fromISO, toISO);
 
-  const [rawLogs, humanMessages, newContacts] = await Promise.all([
-    db.log.findMany({
-      where: { action: { startsWith: 'wa_' }, createdAt: createdIn },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, action: true, message: true, authorId: true, authorName: true, metadata: true, createdAt: true },
-    }),
-    // Mensagens humanas do período — alimenta a 1ª resposta após assumir.
-    db.whatsAppMessage.findMany({
-      where: { direction: 'out', sentByBot: false, internal: false, createdAt: createdIn, authorId: { not: null }, ...numberFilter },
-      orderBy: { createdAt: 'asc' },
-      select: { contactId: true, authorId: true, createdAt: true },
-    }),
-    // Contatos novos do período — base da atribuição de origem (CTWA ads).
-    // Só contatos que MANDARAM mensagem (optInSource=inbound): os avisos de
-    // progresso do kanban criam contatos "fantasma" a partir do telefone do
-    // card, e esses não são leads (o cliente nunca escreveu).
-    db.whatsAppContact.findMany({
-      where: { createdAt: createdIn, optInSource: 'inbound', ...numberFilter },
-      select: { id: true, adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
-    }),
+  // Período dos logs (instantes absolutos; o corte de dia já veio de date-br).
+  const inPeriod = until
+    ? Prisma.sql`l."createdAt" >= ${since} AND l."createdAt" <= ${until}`
+    : Prisma.sql`l."createdAt" >= ${since}`;
+  // Filtro MULTI-NÚMERO: logs não têm coluna numberId — o metadata carrega o
+  // contactId, e o JOIN mantém só os logs de contatos do número pedido. Log
+  // sem contactId (evento administrativo da conta) some da visão por número.
+  // null = visão agregada (todos os números).
+  const byNumber = numberId
+    ? Prisma.sql`JOIN whatsapp_contacts ct ON ct.id = l.metadata->>'contactId' AND ct."numberId" = ${numberId}`
+    : Prisma.empty;
+  // Prefixo "wa_" por left(): no LIKE o "_" é curinga ('wa_%' casaria "waX...").
+  // Não usa o índice [action, createdAt] (seq scan em logs), mas só trafegam
+  // as linhas agregadas/limitadas — era o findMany sem teto que pesava.
+  // wa_account/wa_media_fail/wa_bot têm bloco próprio (ou nenhum), como no
+  // laço antigo.
+  const otherWaLogs = Prisma.sql`left(l.action, 3) = 'wa_' AND l.action NOT IN ('wa_account', 'wa_media_fail', 'wa_bot')`;
+  // Aviso automático = metadata.automated === true (boolean). `->` compara
+  // jsonb: string "true" não conta, e metadata sem a chave dá NULL — por isso
+  // a exclusão usa IS DISTINCT FROM (NOT (NULL = …) descartaria a linha).
+  const isAutomated = Prisma.sql`l.metadata->'automated' = 'true'::jsonb`;
+  const notAutomated = Prisma.sql`(l.metadata->'automated') IS DISTINCT FROM 'true'::jsonb`;
+  // Precedência do laço antigo: silêncio > falha (skipped=true) > entregue.
+  const isSilence = Prisma.sql`jsonb_typeof(l.metadata->'unansweredCount') = 'number'`;
+  const isFailed = Prisma.sql`jsonb_typeof(l.metadata->'unansweredCount') IS DISTINCT FROM 'number' AND l.metadata->'skipped' = 'true'::jsonb`;
+
+  const [botRows, qualifyRows, autoRows, failureRows, activityRows, accountRows] = await Promise.all([
+    // Q1 — decisões da IA por outcome. action = 'wa_bot' (igualdade) usa o
+    // índice [action, createdAt]. Todo cast de metadata é protegido por
+    // jsonb_typeof: um valor de tipo inesperado não derruba a query.
+    db.$queryRaw<BotOutcomeRow[]>`
+      SELECT COALESCE(l.metadata->>'outcome', 'continue') AS outcome,
+             count(*)::int AS n,
+             count(*) FILTER (WHERE l.metadata->>'intent' = 'duvida')::int AS doubts,
+             count(*) FILTER (WHERE jsonb_typeof(l.metadata->'understood') = 'boolean')::int AS "understoodTotal",
+             count(*) FILTER (WHERE l.metadata->'understood' = 'true'::jsonb)::int AS "understoodYes",
+             COALESCE(sum(CASE WHEN jsonb_typeof(l.metadata->'confidence') = 'number'
+                               THEN (l.metadata->>'confidence')::float8 END), 0)::float8 AS "confSum",
+             count(*) FILTER (WHERE jsonb_typeof(l.metadata->'confidence') = 'number')::int AS "confN"
+      FROM logs l
+      ${byNumber}
+      WHERE l.action = 'wa_bot' AND ${inPeriod}
+      GROUP BY 1
+    `,
+    // Q2 — mediana até qualificar. O CASE guarda o cast (num AND do WHERE o
+    // Postgres não garante a ordem de avaliação e o ::float8 poderia explodir).
+    db.$queryRaw<{ median: number | null }[]>`
+      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY d)::float8 AS median
+      FROM (
+        SELECT CASE WHEN jsonb_typeof(l.metadata->'durationMs') = 'number'
+                    THEN (l.metadata->>'durationMs')::float8 END AS d
+        FROM logs l
+        ${byNumber}
+        WHERE l.action = 'wa_bot' AND l.metadata->>'outcome' = 'qualify' AND ${inPeriod}
+      ) q
+      WHERE d > 0
+    `,
+    // Q3 — avisos automáticos: contadores + motivos das falhas num GROUP BY
+    // só. O motivo é normalizado no JS (foldAutoNotifyRows) com os mesmos
+    // trechos de mensagem dos logs antigos.
+    db.$queryRaw<AutoNotifyRow[]>`
+      SELECT s.kind,
+             CASE WHEN s.kind = 'failed' THEN s.reason END AS reason,
+             CASE WHEN s.kind = 'failed' THEN strpos(s.message, ${AUTO_NOTIFY_FAIL_HINTS.optIn}) > 0 END AS "optIn",
+             CASE WHEN s.kind = 'failed' THEN strpos(s.message, ${AUTO_NOTIFY_FAIL_HINTS.cooldown}) > 0 END AS cooldown,
+             CASE WHEN s.kind = 'failed' THEN strpos(s.message, ${AUTO_NOTIFY_FAIL_HINTS.noTemplate}) > 0 END AS "noTemplate",
+             count(*)::int AS n
+      FROM (
+        SELECT CASE WHEN ${isSilence} THEN 'silence'
+                    WHEN l.metadata->'skipped' = 'true'::jsonb THEN 'failed'
+                    ELSE 'sent' END AS kind,
+               l.metadata->>'reason' AS reason,
+               l.message
+        FROM logs l
+        ${byNumber}
+        WHERE ${otherWaLogs} AND ${isAutomated} AND ${inPeriod}
+      ) s
+      GROUP BY 1, 2, 3, 4, 5
+    `,
+    // Q3c — as 100 falhas mais recentes (tabela de auditoria da UI).
+    db.$queryRaw<{
+      id: string; at: Date; authorName: string; message: string;
+      reason: string | null; contactName: string | null; source: string;
+    }[]>`
+      SELECT l.id, l."createdAt" AS at, l."authorName", l.message,
+             l.metadata->>'reason' AS reason,
+             l.metadata->>'contactName' AS "contactName",
+             COALESCE(l.metadata->>'source', '') AS source
+      FROM logs l
+      ${byNumber}
+      WHERE ${otherWaLogs} AND ${isAutomated} AND ${isFailed} AND ${inPeriod}
+      ORDER BY l."createdAt" DESC
+      LIMIT 100
+    `,
+    // Q4 — feed de atividade dos atendentes (a UI rola; teto de 500).
+    db.$queryRaw<{
+      id: string; at: Date; authorName: string; action: string; message: string; contactName: string | null;
+    }[]>`
+      SELECT l.id, l."createdAt" AS at, l."authorName", l.action, l.message,
+             l.metadata->>'contactName' AS "contactName"
+      FROM logs l
+      ${byNumber}
+      WHERE ${otherWaLogs} AND ${notAutomated} AND ${inPeriod}
+      ORDER BY l."createdAt" DESC
+      LIMIT 500
+    `,
+    // Q5 — saúde da conta. Log wa_account não tem contactId: na visão por
+    // número ele sempre ficou de fora, então nem consulta.
+    numberId
+      ? Promise.resolve([] as { id: string; at: Date; message: string; field: string; severity: string }[])
+      : db.$queryRaw<{ id: string; at: Date; message: string; field: string; severity: string }[]>`
+          SELECT l.id, l."createdAt" AS at, l.message,
+                 COALESCE(l.metadata->>'field', '') AS field,
+                 COALESCE(l.metadata->>'severity', '') AS severity
+          FROM logs l
+          WHERE l.action = 'wa_account' AND ${inPeriod}
+          ORDER BY l."createdAt" DESC
+          LIMIT 100
+        `,
   ]);
 
-  // Logs por número: o metadata carrega o contactId; resolve o numberId de
-  // cada contato citado e mantém só os do número pedido. Logs sem contactId
-  // (eventos administrativos da conta) ficam de fora da visão por número.
-  let logs = rawLogs;
-  if (numberId) {
-    const logContactIds = Array.from(new Set(
-      rawLogs.map((l) => (l.metadata as any)?.contactId).filter((id): id is string => typeof id === 'string'),
-    ));
-    const owned = new Set(
-      (await db.whatsAppContact.findMany({
-        where: { id: { in: logContactIds }, numberId },
-        select: { id: true },
-      })).map((c) => c.id),
-    );
-    logs = rawLogs.filter((l) => owned.has((l.metadata as any)?.contactId));
-  }
+  const bot = { ...aggregateBotRows(botRows), avgQualifyMinutes: medianMsToMinutes(qualifyRows[0]?.median) };
+
+  const autoNotify: ChatbotAnalytics['autoNotify'] = {
+    ...foldAutoNotifyRows(autoRows),
+    failures: failureRows.map((r) => ({
+      id: r.id,
+      at: r.at.toISOString(),
+      contactName: r.contactName,
+      authorName: r.authorName,
+      reason: normalizeAutoNotifyFailReason(r.reason, r.message),
+      source: r.source,
+    })),
+  };
+
+  const activity: ChatbotActivityItem[] = activityRows.map((r) => ({
+    id: r.id,
+    at: r.at.toISOString(),
+    authorName: r.authorName,
+    action: r.action,
+    message: r.message,
+    contactName: r.contactName,
+  }));
+
+  const accountEvents: MetaAccountEvent[] = accountRows.map((r) => ({
+    id: r.id,
+    at: r.at.toISOString(),
+    message: r.message,
+    field: r.field,
+    severity: accountEventSeverity(r.severity),
+  }));
+
+  return { periodDays: seriesDays, bot, autoNotify, activity, accountEvents };
+}
+
+/**
+ * Origem dos leads (Click-to-WhatsApp): contatos novos do período por
+ * plataforma e por anúncio, com o desfecho de cada lead e a série diária.
+ * Separada do getChatbotAnalytics em 25/09/2026 — não toca em logs.
+ */
+export async function getLeadOrigins(
+  periodDays: 7 | 30 | 90 = 7,
+  numberId: string | null = null,
+  fromISO?: string,
+  toISO?: string,
+): Promise<LeadOriginsData> {
+  await requireChatbotDashboard();
+  const { since, until, seriesDays, seriesUntil } = resolveWindow(periodDays, fromISO, toISO);
+  const createdIn = until ? { gte: since, lte: until } : { gte: since };
+  // Contatos têm numberId (indexado); null = todos os números.
+  const numberFilter = numberId ? { numberId } : {};
+
+  // Contatos novos do período — base da atribuição de origem (CTWA ads).
+  // Só contatos que MANDARAM mensagem (optInSource=inbound): os avisos de
+  // progresso do kanban criam contatos "fantasma" a partir do telefone do
+  // card, e esses não são leads (o cliente nunca escreveu).
+  const newContacts = await db.whatsAppContact.findMany({
+    where: { createdAt: createdIn, optInSource: 'inbound', ...numberFilter },
+    select: { id: true, adPlatform: true, adHeadline: true, adSourceId: true, adSourceUrl: true, createdAt: true },
+  });
 
   // Desfecho de cada lead novo (qualificado / não qualificado / em andamento)
   // — é o que liga a campanha ao RESULTADO, não só ao volume.
@@ -228,7 +365,7 @@ export async function getChatbotAnalytics(
   // Agrupa origem dos leads: por plataforma e por anúncio individual.
   // Série diária: um ponto por dia do período (dias sem lead entram zerados,
   // senão o gráfico "pula" a data e a queda fica invisível).
-  const dailyMap = new Map<string, ChatbotAnalytics['adOrigins']['daily'][number]>();
+  const dailyMap = new Map<string, AdOriginsData['daily'][number]>();
   for (const key of brDayKeySeries(seriesDays, seriesUntil)) {
     dailyMap.set(key, {
       date: key,
@@ -237,14 +374,14 @@ export async function getChatbotAnalytics(
     });
   }
 
-  const adOrigins = {
-    byPlatform: {} as Record<string, number>,
-    byAd: [] as ChatbotAnalytics['adOrigins']['byAd'],
-    outcomesByPlatform: {} as ChatbotAnalytics['adOrigins']['outcomesByPlatform'],
-    daily: [] as ChatbotAnalytics['adOrigins']['daily'],
+  const adOrigins: AdOriginsData = {
+    byPlatform: {},
+    byAd: [],
+    outcomesByPlatform: {},
+    daily: [],
     totalNewContacts: newContacts.length,
   };
-  const adKeyMap = new Map<string, (typeof adOrigins.byAd)[number]>();
+  const adKeyMap = new Map<string, AdOriginsData['byAd'][number]>();
   for (const c of newContacts) {
     const platform = c.adPlatform ?? 'organic';
     adOrigins.byPlatform[platform] = (adOrigins.byPlatform[platform] ?? 0) + 1;
@@ -301,236 +438,7 @@ export async function getChatbotAnalytics(
     }
   }
 
-  // Índice authorId:contactId → timestamps das mensagens (já em ordem asc).
-  const msgTimes = new Map<string, number[]>();
-  for (const m of humanMessages) {
-    const k = `${m.authorId}:${m.contactId}`;
-    const arr = msgTimes.get(k) ?? [];
-    arr.push(m.createdAt.getTime());
-    msgTimes.set(k, arr);
-  }
-
-  const bot = {
-    totalDecisions: 0, qualify: 0, disqualify: 0, handoff: 0, continueCount: 0,
-    error: 0, doubts: 0, understoodRate: 0, successRate: 0, avgConfidence: 0,
-    avgQualifyMinutes: null as number | null,
-    intents: {} as Record<string, number>,
-    emotions: {} as Record<string, number>,
-  };
-
-  let understoodTotal = 0;
-  let understoodYes = 0;
-  let confSum = 0;
-  let confCount = 0;
-  const qualifyDurations: number[] = [];
-
-  const activity: ChatbotActivityItem[] = [];
-  const accountEvents: MetaAccountEvent[] = [];
-
-  // Desfechos por CONVERSA, pela data real de encerramento (closedAt) — a
-  // mesma régua das pastas do inbox. Antes contava eventos de log (wa_bot /
-  // wa_close): uma conversa reclassificada ou reaberta e fechada de novo
-  // entrava duas vezes e os totais nunca batiam com o inbox (14/09/2026).
-  const closeCategories: Record<string, number> = {};
-  const closedGroups = await db.whatsAppConversation.groupBy({
-    by: ['closeCategory'],
-    where: { status: 'closed', closedAt: createdIn, ...numberFilter },
-    _count: { _all: true },
-  });
-  for (const g of closedGroups) {
-    closeCategories[g.closeCategory ?? 'sem_categoria'] = g._count._all;
-  }
-
-  const autoNotify = {
-    sent: 0,
-    failed: 0,
-    silenceAlerts: 0,
-    byReason: {} as Record<string, number>,
-    failures: [] as { id: string; at: string; contactName: string | null; authorName: string; reason: string; source: string }[],
-  };
-  // Normaliza o motivo da falha: logs novos têm metadata.reason; os antigos
-  // (antes do reason existir em todos os casos) caem no parse da mensagem.
-  function failReasonOf(meta: any, message: string): string {
-    const raw = String(meta.reason ?? '');
-    if (raw === 'sem opt-in') return 'sem-opt-in';
-    if (raw === 'cooldown') return 'cooldown';
-    if (raw === 'sem template') return 'sem-template';
-    if (raw === 'opt-out') return 'opt-out';
-    if (raw === 'meta rejeitou') return 'meta-rejeitou';
-    if (message.includes('sem opt-in')) return 'sem-opt-in';
-    if (message.includes('intervalo mínimo')) return 'cooldown';
-    if (message.includes('nenhum template')) return 'sem-template';
-    return 'outro';
-  }
-
-  // Desempenho por atendente (chaveado por authorId).
-  const teamStats = new Map<string, {
-    name: string; assumed: number; closed: number; messages: number; firstResponses: number[];
-  }>();
-  function attendantOf(authorId: string | null, authorName: string) {
-    const key = authorId ?? authorName;
-    let s = teamStats.get(key);
-    if (!s) { s = { name: authorName, assumed: 0, closed: 0, messages: 0, firstResponses: [] }; teamStats.set(key, s); }
-    return s;
-  }
-
-  for (const l of logs) {
-    const meta = (l.metadata ?? {}) as any;
-
-    // Métricas/atividade respeitam o filtro de período ativo.
-    if (l.createdAt < since || (until && l.createdAt > until)) continue;
-
-    // Avisos da Meta (webhook administrativo) → seção "Saúde da conta".
-    // Não entram na atividade da equipe nem nas estatísticas de atendente.
-    if (l.action === 'wa_account') {
-      if (accountEvents.length < 100) {
-        const sev = String(meta.severity ?? '');
-        accountEvents.push({
-          id: l.id,
-          at: l.createdAt.toISOString(),
-          message: l.message,
-          field: String(meta.field ?? ''),
-          severity: sev === 'critical' || sev === 'warning' || sev === 'ok' ? sev : 'info',
-        });
-      }
-      continue;
-    }
-
-    // Anexo recebido que não foi salvo (download da Meta falhou): o autor é o
-    // sistema, não um atendente. Fora do feed e das estatísticas da equipe,
-    // senão "Sistema (webhook WhatsApp)" aparece como atendente no ranking.
-    if (l.action === 'wa_media_fail') continue;
-
-    if (l.action === 'wa_bot') {
-      const outcome: string = meta.outcome ?? 'continue';
-      if (outcome === 'error') {
-        bot.error += 1;
-      } else {
-        bot.totalDecisions += 1;
-        if (outcome === 'qualify') bot.qualify += 1;
-        else if (outcome === 'disqualify') bot.disqualify += 1;
-        else if (outcome === 'handoff') bot.handoff += 1;
-        else bot.continueCount += 1;
-
-        const intent = String(meta.intent ?? 'outro');
-        bot.intents[intent] = (bot.intents[intent] ?? 0) + 1;
-        if (intent === 'duvida') bot.doubts += 1;
-
-        const emotion = String(meta.emotion ?? 'neutro');
-        bot.emotions[emotion] = (bot.emotions[emotion] ?? 0) + 1;
-
-        if (typeof meta.understood === 'boolean') {
-          understoodTotal += 1;
-          if (meta.understood) understoodYes += 1;
-        }
-        if (typeof meta.confidence === 'number') {
-          confSum += meta.confidence;
-          confCount += 1;
-        }
-        if (outcome === 'qualify' && typeof meta.durationMs === 'number' && meta.durationMs > 0) {
-          qualifyDurations.push(meta.durationMs);
-        }
-      }
-    } else if (meta.automated === true) {
-      // Aviso AUTOMÁTICO (progresso do card/automação): não é ação do
-      // atendente — o authorName é só quem moveu o card. Vai pro painel
-      // próprio de entregas/falhas, fora do feed e das estatísticas da equipe.
-      if (typeof meta.unansweredCount === 'number') {
-        autoNotify.silenceAlerts += 1;
-      } else if (meta.skipped === true) {
-        autoNotify.failed += 1;
-        const reason = failReasonOf(meta, l.message);
-        autoNotify.byReason[reason] = (autoNotify.byReason[reason] ?? 0) + 1;
-        if (autoNotify.failures.length < 100) {
-          autoNotify.failures.push({
-            id: l.id,
-            at: l.createdAt.toISOString(),
-            contactName: meta.contactName ?? null,
-            authorName: l.authorName,
-            reason,
-            source: String(meta.source ?? ''),
-          });
-        }
-      } else {
-        autoNotify.sent += 1;
-      }
-    } else {
-      // Ações de atendentes → feed com todos os logs do filtro ativo (a UI rola).
-      if (activity.length < 500) {
-        activity.push({
-          id: l.id,
-          at: l.createdAt.toISOString(),
-          authorName: l.authorName,
-          action: l.action,
-          message: l.message,
-          contactName: meta.contactName ?? null,
-        });
-      }
-
-      // Tag da conversa: fica no feed (quem pôs/tirou), mas não é atendimento —
-      // sem isto quem só classificou conversas aparecia no ranking com zeros.
-      if (l.action === 'wa_tag_add' || l.action === 'wa_tag_remove') continue;
-
-      // Estatísticas por atendente.
-      const s = attendantOf(l.authorId, l.authorName);
-      if (l.action === 'wa_assign' || l.action === 'wa_reopen') {
-        s.assumed += 1;
-        // 1ª resposta: primeira mensagem DESSE atendente PRA ESSE contato
-        // depois do assumir (janela de até 24h pra descartar outliers).
-        const contactId = meta.contactId as string | undefined;
-        if (l.authorId && contactId) {
-          const times = msgTimes.get(`${l.authorId}:${contactId}`) ?? [];
-          const t0 = l.createdAt.getTime();
-          const first = times.find((t) => t > t0);
-          if (first && first - t0 < 24 * 60 * 60_000) s.firstResponses.push(first - t0);
-        }
-      } else if (l.action === 'wa_close') {
-        s.closed += 1;
-      } else if (['wa_text', 'wa_media', 'wa_document', 'wa_template'].includes(l.action)) {
-        s.messages += 1;
-      }
-    }
-  }
-
-  const totalDecisionsAndErrors = bot.totalDecisions + bot.error;
-  bot.understoodRate = understoodTotal ? Math.round((understoodYes / understoodTotal) * 100) : 0;
-  bot.successRate = totalDecisionsAndErrors ? Math.round((bot.totalDecisions / totalDecisionsAndErrors) * 100) : 0;
-  bot.avgConfidence = confCount ? Math.round((confSum / confCount) * 100) : 0;
-  // MEDIANA, não média: `durationMs` conta desde a criação do registro da
-  // conversa, então um contato que voltou no dia seguinte entra com 20h+ e
-  // arrastava a média toda para cima (era o "1416 min" do painel).
-  if (qualifyDurations.length) {
-    const sorted = [...qualifyDurations].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    const medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-    bot.avgQualifyMinutes = Math.round(medianMs / 60000);
-  } else {
-    bot.avgQualifyMinutes = null;
-  }
-
-  // Ordena intents pelos rótulos amigáveis (mantém as chaves brutas, o front
-  // traduz — mas já reescrevemos as chaves conhecidas para o rótulo).
-  const intentsLabeled: Record<string, number> = {};
-  for (const [k, v] of Object.entries(bot.intents)) {
-    intentsLabeled[INTENT_LABELS[k] ?? k] = v;
-  }
-  bot.intents = intentsLabeled;
-
-
-  const attendants = [...teamStats.values()]
-    .map((s) => ({
-      name: s.name,
-      assumed: s.assumed,
-      closed: s.closed,
-      messages: s.messages,
-      avgFirstResponseMin: s.firstResponses.length
-        ? Math.round(s.firstResponses.reduce((a, b) => a + b, 0) / s.firstResponses.length / 60_000)
-        : null,
-    }))
-    .filter((s) => s.assumed || s.closed || s.messages)
-    .sort((a, b) => b.messages - a.messages);
-
-  return { periodDays: seriesDays, bot, closeCategories, team: { attendants }, adOrigins, autoNotify, activity, accountEvents };
+  return { periodDays: seriesDays, adOrigins };
 }
 
 // ─── Funil de leads por período: tags aplicadas + desfechos do bot ──────────
@@ -570,11 +478,7 @@ export async function getLeadFunnel(
   range: LeadFunnelRange,
   numberId: string | null = null,
 ): Promise<LeadFunnelData> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error('Não autenticado.');
-  if (!canViewChatbotDashboard(session.user.email)) {
-    throw new Error('Acesso restrito.');
-  }
+  await requireChatbotDashboard();
 
   const { since, until } = leadFunnelWindow(range);
   const createdAt = until ? { gte: since, lt: until } : { gte: since };
@@ -607,7 +511,8 @@ export async function getLeadFunnel(
   for (const t of tagApplications) countByTag.set(t.tagId, (countByTag.get(t.tagId) ?? 0) + 1);
 
   // Filtro por número nos logs do bot: resolve o dono de cada contactId citado
-  // (os logs não têm coluna numberId — mesmo esquema do getChatbotAnalytics).
+  // (os logs não têm coluna numberId — mesma regra do JOIN por contactId do
+  // getChatbotAnalytics; este funil não tem uso na UI e segue em JS).
   let logs = botLogs;
   if (numberId) {
     const ids = Array.from(new Set(
@@ -695,11 +600,7 @@ export async function getAdLeadOutcomes(
   fromISO?: string,
   toISO?: string,
 ): Promise<AdLeadOutcome[]> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error('Não autenticado.');
-  if (!canViewChatbotDashboard(session.user.email)) {
-    throw new Error('Acesso restrito.');
-  }
+  await requireChatbotDashboard();
 
   // from/to (ISO) têm prioridade sobre periodDays (calendário do dashboard).
   let createdAt: { gte: Date; lte?: Date } = { gte: brStartOfDaysAgo(periodDays - 1) };
