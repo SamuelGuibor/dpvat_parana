@@ -12,6 +12,7 @@ import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 // da assinatura, que importa daqui, entra por import DINÂMICO no handler).
 import { signUrlFor } from "@/app/_shared/lib/signature/tokens";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
+import { clientDocumentMediaWhere, docsReceivedSince } from "@/app/_shared/utils/wa-media";
 import {
   broadcastWhatsAppEvent,
   whatsappChannelId,
@@ -922,7 +923,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   try {
     const conversation = await db.whatsAppConversation.findUnique({
       where: { contactId },
-      select: { id: true, status: true, createdAt: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true },
+      select: { id: true, status: true, createdAt: true, closedAt: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true },
     });
 
     // Durante o debounce um atendente pode ter assumido/encerrado a conversa —
@@ -1079,9 +1080,20 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     // agora são CONTEXTO: o cérebro é quem decide se um cliente cadastrado ou
     // uma conversa que recebeu documentos pode ser "resolvida" ou tem que ir
     // pra equipe (instruções: nesses dois casos, handoff).
+    // docsReceived (25/09/2026): só foto/PDF (sem áudio nem figurinha), fora da
+    // lixeira e do atendimento ATUAL (desde o último encerramento). Antes era a
+    // vida inteira do contato com qualquer anexo, e o cérebro transferia dúvida
+    // simples de quem só tinha mandado áudio num atendimento antigo.
     const docsReceived = conversation
       ? await db.whatsAppMessage.count({
-          where: { contactId, direction: "in", mediaKey: { not: null }, createdAt: { gte: conversation.createdAt } },
+          where: {
+            contactId,
+            direction: "in",
+            deletedAt: null,
+            mediaKey: { not: null },
+            createdAt: { gte: docsReceivedSince(conversation) },
+            ...clientDocumentMediaWhere(),
+          },
         })
       : 0;
 
@@ -1138,8 +1150,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       // Sinais da conversa atual que mudam o desfecho correto (ver instruções:
       // ENCERRAMENTO CONTEXTUAL / CATEGORIAS DE ENCERRAMENTO).
       conversationFacts: {
-        // Documentos (foto/PDF/áudio com arquivo) que o cliente mandou NESTE
-        // atendimento — se houver, "resolver" deixa o caso sem andamento.
+        // Fotos/PDFs que o cliente mandou NESTE atendimento (desde o último
+        // encerramento; áudio e figurinha não contam) — se houver, "resolver"
+        // deixa o caso sem andamento.
         docsReceived,
         // O número está vinculado a um cadastro no Kanban (cliente da casa).
         registeredClient: !!card,
@@ -1285,6 +1298,7 @@ ${emptyNote}`,
         metadata: {
           outcome: "disqualify", optOut: true, intent: decision.intent,
           closeCategory: "nao_qualificado", usage: decision.usage ?? undefined,
+          facts: basePayload.conversationFacts,
         },
       });
       return;
@@ -1461,6 +1475,10 @@ ${emptyNote}`,
         // Quantas vezes a rede de segurança de vazamento de raciocínio pegou
         // algo — dá pra medir se o campo `rationale` resolveu de fato.
         leaked: decision.leaked ? true : undefined,
+        // Fatos que o cérebro recebeu neste turno: sem eles não dá para
+        // conferir em produção se a decisão (resolver × transferir) seguiu o
+        // docsReceived/registeredClient certo.
+        facts: basePayload.conversationFacts,
       },
     });
 
