@@ -1,7 +1,7 @@
 // Rascunho de documentos da ficha do WhatsApp (whatsapp_contacts.draftDocuments)
 // → Document do card. Regras puras (sem banco) para o dedupe ser testável; a
 // transação que reivindica o rascunho fica em migrateDraftDocuments
-// (app/_actions/whatsapp/client-info.ts).
+// (app/_shared/lib/whatsapp/copilot-data.ts).
 
 import { fileNameFromKey } from "./s3-keys";
 

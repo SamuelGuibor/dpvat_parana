@@ -2,7 +2,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import useSWR from 'swr';
 import {
   Sparkles, Loader2, StickyNote, FileText, Download, Paperclip, Bot,
   ExternalLink, Lock, Check, RefreshCw, Image as ImageIcon, Video, Mic,
@@ -15,15 +14,15 @@ import { mentionsStyles } from '@/app/nova-dash/card-dialog/constants';
 import { renderMentionSuggestion } from '@/app/nova-dash/workspace/chat/mention-suggestion';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { suggestWhatsAppReply, summarizeWhatsAppConversation, fillClientInfoWithAI } from '@/app/_actions/whatsapp/assist';
+import { saveClientInfo, addClientFromConversation } from '@/app/_actions/whatsapp/client-info';
 import {
-  saveClientInfo, addClientFromConversation, getClientInfo,
-  type ClientInfoResult, type ClientInfoFields,
-} from '@/app/_actions/whatsapp/client-info';
-import {
-  listClientDocuments, attachConversationMediaToCard, getClientDocumentUploadUrl,
+  attachConversationMediaToCard, getClientDocumentUploadUrl,
   confirmClientDocumentUpload, deleteClientDocument, renameClientDocument,
-  type ClientDocumentDTO,
 } from '@/app/_actions/whatsapp/client-documents';
+// Só tipos: copilot-data.ts importa o Prisma e não pode entrar no bundle.
+import type { ClientDocumentDTO, ClientInfoFields, ClientInfoResult } from '@/app/_shared/lib/whatsapp/copilot-types';
+import { useCopilot } from '@/app/_shared/hooks/use-copilot';
+import { describeFetchError } from '@/app/_shared/utils/fetch-json';
 import { sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
@@ -68,8 +67,6 @@ function timeStamp(iso: string): string {
 interface Props {
   conversation: WhatsAppConversationDTO;
   messages: WhatsAppThreadMessage[];
-  clientInfo: ClientInfoResult | null;
-  onClientInfoChanged: (info: ClientInfoResult) => void;
   /** Abre o CardDialog do cliente vinculado (só chega aqui se registered). */
   onOpenCard: () => void;
   onRefreshMessages: () => Promise<unknown>;
@@ -79,7 +76,7 @@ interface Props {
 }
 
 export function CopilotPanel({
-  conversation, messages, clientInfo, onClientInfoChanged, onOpenCard, onRefreshMessages, focusFicha,
+  conversation, messages, onOpenCard, onRefreshMessages, focusFicha,
 }: Props) {
   const contactId = conversation.contactId;
   const [tab, setTab] = useState<CopilotTab>('copiloto');
@@ -93,22 +90,16 @@ export function CopilotPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusFicha]);
 
-  // Documentos da ficha: alimenta o checklist do Copiloto e o "✓ no card"
-  // da aba Arquivos.
-  const { data: docs, mutate: mutateDocs } = useSWR<ClientDocumentDTO[]>(
-    ['wa-client-docs', contactId],
-    () => listClientDocuments(contactId),
-    { revalidateOnFocus: false },
-  );
+  // Ficha + documentos numa ida só (GET, a MESMA key que o inbox lê para o
+  // "Card #N"): alimenta as abas Ficha e Arquivos, o checklist do Copiloto e
+  // o "✓ no card". As mutações que já devolvem a lista ou a ficha trocam a
+  // entrada no cache pela key do contato (sem buscar de novo); o "Anexar no
+  // card" do menu da mídia, na thread, faz o mesmo pelo inbox.
+  const {
+    clientInfo, documents: docs, error: copilotError,
+    reloadCopilot, setCopilotDocuments, setCopilotClientInfo,
+  } = useCopilot(contactId);
   const attachedKeys = useMemo(() => new Set((docs ?? []).map((d) => d.key)), [docs]);
-
-  // "Anexar no card" feito pelo menu da mídia (na thread) avisa por evento —
-  // atualiza a lista de documentos sem esperar o próximo revalidate.
-  useEffect(() => {
-    const refresh = () => { mutateDocs(); };
-    window.addEventListener('wa-docs-changed', refresh);
-    return () => window.removeEventListener('wa-docs-changed', refresh);
-  }, [mutateDocs]);
 
   /* ---------------- aba Copiloto ---------------- */
 
@@ -178,7 +169,7 @@ export function CopilotPanel({
       // O hospital citado também muda a ficha (vira a dica embaixo do select),
       // mesmo quando nenhum campo foi preenchido.
       if (result.filled.length || result.hospitalHint) {
-        onClientInfoChanged(await getClientInfo(contactId));
+        await reloadCopilot(contactId);
       }
       if (result.filled.length) {
         toast.success(`IA preencheu: ${result.filled.join(', ')}.`);
@@ -250,7 +241,7 @@ export function CopilotPanel({
     setAttachingId(msg.id);
     try {
       const updated = await attachConversationMediaToCard(msg.id);
-      mutateDocs(updated, { revalidate: false });
+      void setCopilotDocuments(msg.contactId, updated);
       toast.success(clientInfo?.registered
         ? `Anexado no card${clientInfo.cardNumber ? ` #${clientInfo.cardNumber}` : ''}.`
         : 'Anexado na ficha (migra pro card quando o cliente for cadastrado).');
@@ -485,10 +476,14 @@ export function CopilotPanel({
           <FichaTab
             contactId={contactId}
             clientInfo={clientInfo}
-            onSaved={(info) => { onClientInfoChanged(info); mutateDocs(); }}
+            loadError={copilotError}
+            onRetry={() => { void reloadCopilot(contactId); }}
+            // A ficha salva aparece na hora; a busca em seguida traz os
+            // documentos que o "Adicionar cliente" moveu do rascunho pro card.
+            onSaved={(info) => { void setCopilotClientInfo(contactId, info, { revalidate: true }); }}
             onOpenCard={onOpenCard}
             docs={docs ?? []}
-            onDocsChanged={(updated) => mutateDocs(updated, { revalidate: false })}
+            onDocsChanged={(updated) => { void setCopilotDocuments(contactId, updated); }}
             onOpenArquivos={() => setTab('arquivos')}
           />
         )}
@@ -550,7 +545,7 @@ export function CopilotPanel({
           <ArquivosTab
             contactId={contactId}
             docs={docs ?? []}
-            onDocsChanged={(updated) => mutateDocs(updated, { revalidate: false })}
+            onDocsChanged={(updated) => { void setCopilotDocuments(contactId, updated); }}
             unattachedMedia={mediaMessages.filter((m) => !attachedKeys.has(m.mediaKey as string))}
             attachingId={attachingId}
             onAttach={handleAttach}
@@ -564,10 +559,13 @@ export function CopilotPanel({
 /* ---------------- Ficha (padrão do dialog do card) ---------------- */
 
 function FichaTab({
-  contactId, clientInfo, onSaved, onOpenCard, docs, onDocsChanged, onOpenArquivos,
+  contactId, clientInfo, loadError, onRetry, onSaved, onOpenCard, docs, onDocsChanged, onOpenArquivos,
 }: {
   contactId: string;
   clientInfo: ClientInfoResult | null;
+  /** Falha do GET da ficha (403 da trava de IP, 500, rede): aviso em vez de "Carregando…" eterno. */
+  loadError: unknown;
+  onRetry: () => void;
   onSaved: (info: ClientInfoResult) => void;
   onOpenCard: () => void;
   docs: ClientDocumentDTO[];
@@ -681,9 +679,24 @@ function FichaTab({
 
   return (
     <div className="flex flex-col gap-3">
-      {!clientInfo && (
+      {!clientInfo && !loadError && (
         <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-400">
           <Loader2 className="h-4 w-4 animate-spin" /> Carregando ficha…
+        </div>
+      )}
+      {/* Sem ficha e com erro: o motivo real (a rota devolve o texto) e uma
+          nova tentativa. Com ficha na tela e erro numa nova busca, a ficha
+          fica como está. */}
+      {!clientInfo && !!loadError && (
+        <div className="flex flex-col items-center gap-2 py-6 text-center text-sm text-gray-500">
+          <p className="font-bold text-gray-600">A ficha não carregou</p>
+          <p>{describeFetchError(loadError)}</p>
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-100"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Tentar de novo
+          </button>
         </div>
       )}
       {clientInfo && (

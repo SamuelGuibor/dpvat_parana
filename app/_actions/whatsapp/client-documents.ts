@@ -5,9 +5,11 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
+import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { inferCategory } from '@/app/_shared/lib/document-categories';
 import { updateDocumentName } from '@/app/_actions/documents/update-name-doc';
-import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
+import { loadClientDocuments } from '@/app/_shared/lib/whatsapp/copilot-data';
+import type { ClientDocumentDTO } from '@/app/_shared/lib/whatsapp/copilot-types';
 
 // Documentos pessoais anexados na ficha do cliente (dentro do atendimento de
 // WhatsApp). Se o contato já tem User vinculado, viram Document de verdade
@@ -15,7 +17,12 @@ import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
 // pessoal, não de um processo específico). Sem vínculo ainda, ficam como
 // rascunho em whatsapp_contacts.draftDocuments e migram pro User quando o
 // contato for vinculado a um card (pelo telefone ao abrir a conversa ou pelo
-// "Adicionar cliente" — migrateDraftDocuments em client-info.ts).
+// "Adicionar cliente" — migrateDraftDocuments em copilot-data.ts).
+//
+// A LISTA sai de `loadClientDocuments` (app/_shared/lib/whatsapp/copilot-data.ts,
+// URL de leitura já assinada): o inbox a recebe junto com a ficha por GET
+// /api/whatsapp/inbox/copilot/<contactId>, e cada mutação daqui devolve a
+// lista nova para o Copiloto trocar no cache sem buscar de novo.
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -34,46 +41,17 @@ async function requireTeamMember(): Promise<void> {
   if (!me || !TEAM_ROLES.includes(me.role)) throw new Error('Sem permissão para o atendimento de WhatsApp.');
 }
 
-export interface ClientDocumentDTO {
-  id: string; // id do Document (registrado) ou key (rascunho)
-  key: string;
-  name: string;
-  uploadedAt: string;
-  // URL de leitura (inline, com o NOME do documento) assinada em lote aqui no
-  // servidor: a aba Arquivos mostra miniatura e áudio sem uma action por
-  // linha. null = key fora da allowlist (documento antigo): a linha cai no
-  // fallback do media-url-cache (downloadFileFromS3 consulta a tabela).
-  url?: string | null;
-  urlExpiresAt?: string | null;
-}
-
 interface DraftDoc { key: string; name: string; uploadedAt: string }
 
-type UnsignedDoc = Omit<ClientDocumentDTO, 'url' | 'urlExpiresAt'>;
-
-/** Assina todos de uma vez (HMAC local, sem ida à rede): 1 action no lugar de N. */
-async function withSignedUrls(docs: UnsignedDoc[]): Promise<ClientDocumentDTO[]> {
-  const signed = await Promise.all(docs.map((d) => trySignGetUrl(d.key, { inline: true, fileName: d.name })));
-  return docs.map((d, i) => ({ ...d, url: signed[i]?.url ?? null, urlExpiresAt: signed[i]?.expiresAt ?? null }));
-}
-
+/**
+ * @deprecated bundle antigo: os documentos vêm junto com a ficha de GET
+ * /api/whatsapp/inbox/copilot/<contactId>. Fica por UM deploy só para as abas
+ * abertas com o bundle antigo; no deploy seguinte, remover se ficar sem uso
+ * (npx knip).
+ */
 export async function listClientDocuments(contactId: string): Promise<ClientDocumentDTO[]> {
-  await requireTeamMember();
-  const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
-  if (!contact) throw new Error('Contato não encontrado.');
-
-  if (contact.userId) {
-    const docs = await db.document.findMany({
-      where: { userId: contact.userId, processId: null, deletedAt: null },
-      orderBy: { createdAt: 'asc' },
-    });
-    return withSignedUrls(
-      docs.map((d) => ({ id: d.id, key: d.key, name: d.name, uploadedAt: d.uploadedAt.toISOString() })),
-    );
-  }
-
-  const drafts = (contact.draftDocuments as unknown as DraftDoc[]) ?? [];
-  return withSignedUrls(drafts.map((d) => ({ id: d.key, key: d.key, name: d.name, uploadedAt: d.uploadedAt })));
+  await requireTeam();
+  return loadClientDocuments(contactId);
 }
 
 /** Presigned PUT pro navegador subir o documento direto ao S3. */
@@ -116,7 +94,7 @@ export async function confirmClientDocumentUpload(contactId: string, key: string
     await db.whatsAppContact.update({ where: { id: contactId }, data: { draftDocuments: drafts as unknown as object } });
   }
 
-  return listClientDocuments(contactId);
+  return loadClientDocuments(contactId);
 }
 
 /**
@@ -166,7 +144,7 @@ export async function attachConversationMediaToCard(messageId: string): Promise<
     }
   }
 
-  return listClientDocuments(msg.contactId);
+  return loadClientDocuments(msg.contactId);
 }
 
 /**
@@ -193,7 +171,7 @@ export async function renameClientDocument(contactId: string, docId: string, new
     await db.whatsAppContact.update({ where: { id: contactId }, data: { draftDocuments: drafts as unknown as object } });
   }
 
-  return listClientDocuments(contactId);
+  return loadClientDocuments(contactId);
 }
 
 export async function deleteClientDocument(contactId: string, ref: string): Promise<ClientDocumentDTO[]> {
@@ -216,5 +194,5 @@ export async function deleteClientDocument(contactId: string, ref: string): Prom
     await db.whatsAppContact.update({ where: { id: contactId }, data: { draftDocuments: filtered as unknown as object } });
   }
 
-  return listClientDocuments(contactId);
+  return loadClientDocuments(contactId);
 }

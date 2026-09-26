@@ -6,13 +6,13 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 | # | Arquivo | Linhas | Mapa de domínio |
 |---|---|---|---|
-| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 3377 | whatsapp-bot |
+| 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 3368 | whatsapp-bot |
 | 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
 | 5 | `app/_shared/lib/whatsapp/bot.ts` | 1970 | whatsapp-bot |
 | 6 | `app/nova-dash/KanbanFlowPanel.tsx` | 1263 | analytics-custos |
-| 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1253 | whatsapp-bot |
+| 7 | `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` | 1266 | whatsapp-bot |
 | 8 | `app/_shared/lib/whatsapp/cron-tasks.ts` | 1475 | whatsapp-bot |
 | 9 | `app/nova-dash/card-dialog/ScriptTab.tsx` | 893 | documentos-ia |
 | 10 | `app/nova-dash/mentions/MentionsInbox.tsx` | 878 | workspace-equipe |
@@ -21,28 +21,28 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 
 ---
 
-## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 3377 linhas
+## 1. `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` — 3368 linhas
 Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com envio otimista/mídia/reações, coluna Copiloto e CardDialog do cliente.
 
-- **L1-82** imports (DTO da lista por `import type` de `app/_shared/lib/whatsapp/inbox-types.ts`; `fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`readPatch`/`manualUnreadPatch`/`assumePatch`/`returnToBotPatch`/`closePatch`/`sentMessagePatch`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`; `toThreadMessage` de `app/_shared/utils/thread-window.ts`; `decideThreadScroll`/`tailAdvanced`/`countNewBelow` de `app/_shared/utils/thread-scroll.ts`; `restoreInboxView`/`saveInboxViewState`/`pruneTagFilter` de `app/_shared/utils/inbox-view-state.ts`; `closedFolderOf` de `app/_shared/utils/inbox-folders.ts`; `useWaNumberOptions`/`fetchInboxSearch`/`fetchInboxConversation` de `use-whatsapp.ts`; `flushSync` de `react-dom`).
+- **L1-82** imports (DTO da lista por `import type` de `app/_shared/lib/whatsapp/inbox-types.ts`; `fileNameFromKey` vem de `app/_shared/utils/s3-keys.ts`; URL de mídia de `media-url-cache.ts`; `withTag`/`patchConversationList`/`readPatch`/`manualUnreadPatch`/`assumePatch`/`returnToBotPatch`/`closePatch`/`sentMessagePatch`/`inboxListState` de `app/_shared/utils/whatsapp-inbox.ts`; `toThreadMessage` de `app/_shared/utils/thread-window.ts`; `decideThreadScroll`/`tailAdvanced`/`countNewBelow` de `app/_shared/utils/thread-scroll.ts`; `restoreInboxView`/`saveInboxViewState`/`pruneTagFilter` de `app/_shared/utils/inbox-view-state.ts`; `closedFolderOf` de `app/_shared/utils/inbox-folders.ts`; `useWaNumberOptions`/`fetchInboxSearch`/`fetchInboxConversation` de `use-whatsapp.ts`; `useCopilot` de `use-copilot.ts`; `flushSync` de `react-dom`).
 - **L83-192** helpers de módulo: `WINDOW_24H_MS`, `INBOX_SUPPORT_SWR` (opções SWR de tags/total da agenda), `INBOX_VIEW_SAVE_DEBOUNCE_MS`, `NO_WA_NUMBERS`, `CLOSE_MENU_META`, `initials`/`timeShort`/`dayLabel`/`formatPhone`, `STATUS_LABEL`/`STATUS_CHIP`, classes `chipCls`/`pillCls`, `NumberBadgeContext`, `RecoveryCapContext`, `attendantBadgeColor`.
-- **L195-2375 `WhatsAppInbox()`** (componente principal):
+- **L195-2366 `WhatsAppInbox()`** (componente principal):
   - L195-378 estado + filtros (`me` = id/nome dos patches locais): `loaded`/`isLoading`/`error`/`syncError`/`retrySync` da lista, tags por SWR `wa-tags` (`allTags` undefined = carregando, `tagsFailed`, `reloadTags` = `mutateTags`, `pruneTagFilter`), busca no servidor por GET (`fetchInboxSearch` + `searchSeq`), data de entrada (`applyDatePreset`, `applyCustomRange`), leitura/fila (`changeReadFilter`), número (`useWaNumberOptions`, restauração do `wa-number-filter`, `changeNumberFilter`, `numberBadges`, `recoveryCapOf`), `closeMenuOptions`.
   - L379-471 larguras redimensionáveis (`startResize`), pastas do rail (`RailFolder`, `ACTIVE_FOLDERS`, `CLOSED_FOLDERS` com `satisfies`, inclusive Churn; `FOLDER_TITLE`, `FOLDER_ACCENT`), pasta Contatos (total por SWR `wa-directory-total`).
-  - L469-669 conversa aberta: `jumpToMessage`, restauração da navegação + notificação→abre conversa (`viewRestoredRef`, `restoredContactIdRef`, `viewReady`), gravação com debounce + flush no unmount (`pendingViewRef`), `listActive`/`active` (hidratação sob demanda por GET, `fetchInboxConversation`; conversa restaurada que sumiu é solta; `openingActive` = "Abrindo conversa…"), ficha por SWR (`getClientInfo`; `justLinked`/`migratedDrafts` disparam `wa-docs-changed`), `cardStub`, SSE `onStream`, `displayMessages`.
-  - L670-808 rolagem da thread: refs `scrollSessionRef`/`distanceRef`/`followRef`/`tailRef`/`prependRef`, chip `newBelow`, `useLayoutEffect` com `decideThreadScroll` (jump/restore/smooth/chip), reancorar no fim quando foto/vídeo carrega, `handleThreadScroll`, `stopFollowingThread`, `scrollThreadToEnd`, `handleLoadOlder`.
-  - L815-964 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups` (encerradas por `closedFolderOf`, com `outros`), `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `listState` (esqueleto/erro/vazia), `windowExpired`.
-  - L965-1327 handlers: `runAction` (`opts.base` + otimista, patch devolvido pela action por cima via `confirmedPatch`, rollback e `errorMsg` próprio, sem recarga), `patchConversation` (patch local na lista + busca + `fetchedActive`), leitura ao abrir (`readKeyRef` + `readPatch`, um `markConversationRead` por inbound novo, sem recarga), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `commitSent` = upsert no cache da thread + tira o pending no mesmo render, `handleSendText`, `handleSendMedia` com `sentMessagePatch` na lista, `handleSentOutside` para fluxo/template, `retryPending`), `handleEditSubmit`, `handleAttachMedia`, `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
-  - L1328-1898 JSX da **lista**: rail (L1341), busca + novo contato (L1391), pills de leitura (L1416), data de entrada (L1456), número (L1509), coluna do Kanban (L1550), tags (L1597), equipe (L1640), aviso "Lista sem atualizar" (L1726: `syncError` + `describeFetchError`, a lista fica), área rolável (L1743: agenda com abertura imediata / esqueleto / erro com o motivo e "Tentar novamente" / "Nenhuma conversa ainda" / seções por pasta + "Outros desfechos" com busca/tag), alça de resize (L1892).
-  - L1899-2315 JSX da **thread**: "Abrindo conversa…" ou vazio, cabeçalho (L1901: voltar, atalho "Card #N" L1938, menu de tags L1953 com spinner por item, Assumir/Devolver otimistas, Encerrar/Alterar desfecho L2018, Reabrir, toggle Copiloto, mais ações L2087 com lida/não lida otimistas), aviso de falha do poll da thread (L2164: `messagesError` + `describeFetchError`, mensagens antigas ficam, "Tentar de novo"), área rolável com `onScroll` (L2183) + carregar histórico + spinner da 1ª carga (L2190), chip "Nova mensagem ↓" (L2252), composer (`onRefreshThread`/`onSent`) / número desativado somente leitura (L2266).
-  - L2316-2375 coluna Copiloto (`<CopilotPanel>`) + CardDialog do cliente vinculado.
-- **L2377-2440** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
-- **L2441-2614** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
-- **L2615-2664** estados de carga: `ConversationListSkeleton` (8 linhas `animate-pulse`), `TagMenuStatus` (carregando / erro com "Tentar novamente" / nenhuma tag, nos dois menus de tag).
-- **L2665-2837** `ConversationGroup` (item/seção da lista).
-- **L2838-3043** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
-- **L3044-3353** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
-- **L3354-3377** `MsgAction`, `HeaderButton`.
+  - L469-660 conversa aberta: `jumpToMessage`, restauração da navegação + notificação→abre conversa (`viewRestoredRef`, `restoredContactIdRef`, `viewReady`), gravação com debounce + flush no unmount (`pendingViewRef`), `listActive`/`active` (hidratação sob demanda por GET, `fetchInboxConversation`; conversa restaurada que sumiu é solta; `openingActive` = "Abrindo conversa…"), ficha + documentos por GET (`useCopilot`, a mesma key do Copiloto; `reloadCopilot` no `onUpdate` do CardDialog), `cardStub`, SSE `onStream`, `displayMessages`.
+  - L661-799 rolagem da thread: refs `scrollSessionRef`/`distanceRef`/`followRef`/`tailRef`/`prependRef`, chip `newBelow`, `useLayoutEffect` com `decideThreadScroll` (jump/restore/smooth/chip), reancorar no fim quando foto/vídeo carrega, `handleThreadScroll`, `stopFollowingThread`, `scrollThreadToEnd`, `handleLoadOlder`.
+  - L806-955 derivação da lista: `inDateRange`, `searchUniverse`, `filtered`, contadores (`dateCount`, `readCounts`, `numberCounts`), `kanbanColumns`, `groups` (encerradas por `closedFolderOf`, com `outros`), `humanFilter`, `ativasItems`/`todosItems`, `teamLoad`, `FOLDER_ITEMS`, `visibleItems`, `listState` (esqueleto/erro/vazia), `windowExpired`.
+  - L956-1320 handlers: `runAction` (`opts.base` + otimista, patch devolvido pela action por cima via `confirmedPatch`, rollback e `errorMsg` próprio, sem recarga), `patchConversation` (patch local na lista + busca + `fetchedActive`), leitura ao abrir (`readKeyRef` + `readPatch`, um `markConversationRead` por inbound novo, sem recarga), tag otimista (`pendingTags` por conversa, `handleSetTag`), envio otimista (`makePending`, `patchPending`, `removePending`, `commitSent` = upsert no cache da thread + tira o pending no mesmo render, `handleSendText`, `handleSendMedia` com `sentMessagePatch` na lista, `handleSentOutside` para fluxo/template, `retryPending`), `handleEditSubmit`, `handleAttachMedia` (lista nova no cache do Copiloto pela key do contato da mensagem, `setCopilotDocuments`), `handleDelete`, `handleReact`, `handleBlockContact`, `handleDeleteContact`.
+  - L1321-1891 JSX da **lista**: rail (L1334), busca + novo contato (L1384), pills de leitura (L1409), data de entrada (L1449), número (L1502), coluna do Kanban (L1543), tags (L1590), equipe (L1633), aviso "Lista sem atualizar" (L1719: `syncError` + `describeFetchError`, a lista fica), área rolável (L1736: agenda com abertura imediata / esqueleto / erro com o motivo e "Tentar novamente" / "Nenhuma conversa ainda" / seções por pasta + "Outros desfechos" com busca/tag), alça de resize (L1885).
+  - L1892-2308 JSX da **thread**: "Abrindo conversa…" ou vazio, cabeçalho (L1894: voltar, atalho "Card #N" L1931, menu de tags L1946 com spinner por item, Assumir/Devolver otimistas, Encerrar/Alterar desfecho L2011, Reabrir, toggle Copiloto, mais ações L2080 com lida/não lida otimistas), aviso de falha do poll da thread (L2157: `messagesError` + `describeFetchError`, mensagens antigas ficam, "Tentar de novo"), área rolável com `onScroll` (L2176) + carregar histórico + spinner da 1ª carga (L2183), chip "Nova mensagem ↓" (L2245), composer (`onRefreshThread`/`onSent`) / número desativado somente leitura (L2266).
+  - L2309-2366 coluna Copiloto (`<CopilotPanel>`, que lê a ficha e os documentos pelo próprio `useCopilot`) + CardDialog do cliente vinculado.
+- **L2368-2431** `GROUP_ACCENT`, `windowPill`, `mediaKindIcon`, `SourceBadge`.
+- **L2432-2605** diálogos: `CloseReasonsModal` (motivos de não qualificada), `AddContactDialog`, `RailButton`.
+- **L2606-2655** estados de carga: `ConversationListSkeleton` (8 linhas `animate-pulse`), `TagMenuStatus` (carregando / erro com "Tentar novamente" / nenhuma tag, nos dois menus de tag).
+- **L2656-2828** `ConversationGroup` (item/seção da lista).
+- **L2829-3034** bolha de mensagem: `StatusTicks`, `parseReactionBody`, `WA_REACTION_EMOJIS`, `ThreadMessageRow`.
+- **L3035-3344** mídia: `WaMediaBubble` (`useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`).
+- **L3345-3368** `MsgAction`, `HeaderButton`.
 
 ## 2. `app/nova-dash/KanbanBoard.tsx` — 2407 linhas
 Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, CRUD de etiquetas, arquivar/mover/excluir.
@@ -120,15 +120,15 @@ Dashboard "Fluxo do Kanban": 7 visões (tempo, destino, retrabalho, descarte, ci
 - **L893-1208** `buildView` (analytics → dados do painel): `tempo` L929, `destino` L969, `retrabalho` L998, `descarte` L1046, `ciclo` L1083, `throughput` L1131, `hospital` L1162; `deltaSub` L911.
 - **L1209-1263** `HospitalTable`.
 
-## 7. `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` — 1253 linhas
+## 7. `app/nova-dash/workspace/whatsapp/CopilotPanel.tsx` — 1266 linhas
 Coluna direita do inbox: abas Copiloto (resumo/sugestão IA, checklist), Ficha (dados do cliente editáveis + IA), Notas internas com @menção e Arquivos da ficha.
 
-- **L1-80** imports (`fileNameFromKey` de `s3-keys.ts`; `useMediaUrl`/`seedMediaUrl`/`getMediaUrl` de `media-url-cache.ts`), `CopilotTab`, `mediaIcon`, `previewKind`, `timeStamp`, `Props`.
-- **L81-563 `CopilotPanel`** (export): documentos da ficha, `handleSummarize`, `handleSuggest`, `useSuggestionInComposer`, `handoffNote`, `handleFillFichaAI`, checklist, notas + `handleSaveNote`, `mediaMessages`, `handleAttach`; JSX por aba — copiloto L293, ficha L484, notas L497, arquivos L549.
-- **L564-829** `FichaTab`: `handleUploadDocs`, `setField`, selo IA (`byAi`), `handleCepChange` (ViaCEP), validação de CPF, `handleSave`, `handleCreateCard`, render L682.
-- **L830-977** `ArquivosTab`: `handlePreview` (URL assinada da lista, action só sem ela), `handleDownload`, `handleRename`, `handleDelete`.
-- **L978-1122** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
-- **L1123-1253** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
+- **L1-77** imports (tipos da ficha por `import type` de `copilot-types.ts`; `useCopilot` de `use-copilot.ts`; `fileNameFromKey` de `s3-keys.ts`; `useMediaUrl`/`seedMediaUrl`/`getMediaUrl` de `media-url-cache.ts`), `CopilotTab`, `mediaIcon`, `previewKind`, `timeStamp`, `Props`.
+- **L78-558 `CopilotPanel`** (export): ficha + documentos por `useCopilot` (escrita por `setCopilotDocuments`/`setCopilotClientInfo` com o contactId explícito), `handleSummarize`, `handleSuggest`, `useSuggestionInComposer`, `handoffNote`, `handleFillFichaAI`, checklist, notas + `handleSaveNote`, `mediaMessages`, `handleAttach`; JSX por aba — copiloto L284, ficha L475, notas L492, arquivos L544.
+- **L559-842** `FichaTab`: `handleUploadDocs`, `setField`, selo IA (`byAi`), `handleCepChange` (ViaCEP), validação de CPF, `handleSave`, `handleCreateCard`, render L680 ("Carregando ficha…" ou, com `loadError`, o motivo + "Tentar de novo").
+- **L843-990** `ArquivosTab`: `handlePreview` (URL assinada da lista, action só sem ela), `handleDownload`, `handleRename`, `handleDelete`.
+- **L991-1135** `DocRow`, `AudioDocRow` (URL de `doc.url` via `useMediaUrl`; `onError` → "Arquivo indisponível").
+- **L1136-1266** peças de UI: `CopilotCard`, `InfoRow`, `FichaSection`, `partialDate`, `AiTag`, `FField`, `FSelect`, `FTextArea`.
 
 ## 8. `app/_shared/lib/whatsapp/cron-tasks.ts` — 1475 linhas
 Crons do WhatsApp em 3 fases: nudge/encerramento por silêncio, recuperação standby e SLA (fila, humano, entrega travada, cards estourados, assinatura).

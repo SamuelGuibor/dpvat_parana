@@ -7,7 +7,7 @@ import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
 // Cache ÚNICO de URLs de leitura de mídia do inbox (bolhas da thread e aba
 // Arquivos do Copiloto).
 //
-// A URL chega pronta do servidor (rota da thread / listClientDocuments),
+// A URL chega pronta do servidor (rota da thread / rota do Copiloto),
 // assinada numa janela estável de 30 min — o servidor devolve a MESMA URL a
 // cada poll. A server action (downloadFileFromS3) ficou só como fallback:
 // mensagem sem URL (key fora da allowlist) ou aba parada além da validade.

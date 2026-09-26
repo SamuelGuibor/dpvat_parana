@@ -22,14 +22,14 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - Template só sai por `sendTemplate` (onde vale `templatesPaused`). Exija `status === "APPROVED"`.
 - Opt-out só por regex (`opt-out.ts`). A IA nunca marca `optedOut`. Mantenha o "de" obrigatório em "para de ...".
 - Não use `distinct` do Prisma com `orderBy` em `whatsapp_messages`; use SQL `LATERAL`/`DISTINCT ON`.
-- `inbox-data.ts` (lista, hash, busca do inbox) não tem guarda: só atrás de `teamRoute`/`requireTeam`. O cliente importa o DTO de `inbox-types.ts` com `import type` (valor de `inbox-data.ts` põe o Prisma no bundle).
+- `inbox-data.ts` (lista, hash, busca do inbox) e `copilot-data.ts` (ficha + documentos do Copiloto) não têm guarda: só atrás de `teamRoute`/`requireTeam`. O cliente importa os DTOs de `inbox-types.ts`/`copilot-types.ts` com `import type` (valor dos `*-data.ts` põe o Prisma no bundle).
 - Cortes de dia/mês/hora vêm de `app/_shared/utils/date-br.ts` (servidor em UTC), inclusive o horário comercial dos crons (7h–21h BRT: `isBrBusinessHour`/`nextBrBusinessSlot`). Mensagem proativa nova de cron respeita essa janela.
 - Toda chamada de IA nova grava `metadata.usage` no log. Resposta do cérebro descartada vai em `wa_bot_discarded` (nunca `wa_bot`); usage do Gemini (transcrição) nunca soma no do Claude.
 - Evento novo no canal `whatsapp:<contactId>` sai por `broadcastWhatsAppEvent` (relay depois da resposta), não por `await broadcastToRelay`. Log `wa_*` sem IA pode ir por `runAfterResponse` com `at`; log de IA fica com await (só vai para depois da resposta junto com a chamada de IA inteira, como o resumo de vínculo).
 - Aviso novo no sino (Notification do `whatsapp-bot`) vai para `waAlertRecipients` com audiência (dono → setor da Fila → equipe → gestores; política em `alert-policy.ts`), nunca `whatsappRecipients()` direto: a equipe toda em todo aviso eram ~1.890/dia e afogavam o LEAD QUALIFICADO (`WA_QUALIFIED_MARK`).
 - Mudou teto/cadência da recuperação → `recovery-caps.ts` (o inbox lê o mesmo mapa). Não afrouxe cooldown, tetos nem marcapasso sem pedido: as duas WABAs já levaram aviso de spam da Meta.
 - Schema Prisma: nunca `prisma migrate dev`; use `migrate diff` + `db execute` + `migrate resolve`.
-- Campo novo na ficha: `AI_FIELDS`/`FIELD_LABELS` (ficha-ai.ts), `CLIENT_FIELDS` (`app/_actions/whatsapp/client-info.ts`) e `FichaTab` (CopilotPanel) mudam juntos. A ficha grava no `User` com o mesmo nome de coluna: coluna `String?` (nunca data/número; `currentFields` faz `.trim()`) e migration ANTES do deploy. Receita no mapa.
+- Campo novo na ficha: `AI_FIELDS`/`FIELD_LABELS` (ficha-ai.ts), `CLIENT_FIELDS` (`copilot-data.ts`) e `FichaTab` (CopilotPanel) mudam juntos. A ficha grava no `User` com o mesmo nome de coluna: coluna `String?` (nunca data/número; `currentFields` faz `.trim()`) e migration ANTES do deploy. Receita no mapa.
 - `autoFillClientInfo` só pula a IA com TODOS os `AI_FIELDS` cheios, inclusive os opcionais: na prática roda a cada rajada (`afterMessage` + debounce no webhook). Campo novo ali custa IA. Toda chamada à IA grava o log com usage, inclusive a que não achou nada (`noop`).
 - O cérebro não recebe a ficha (`dados_cadastro` devolve só o nome): campo de ficha não exige deploy do micro. Edição pelo Copiloto (`saveClientInfo`) não gera log no card.
 

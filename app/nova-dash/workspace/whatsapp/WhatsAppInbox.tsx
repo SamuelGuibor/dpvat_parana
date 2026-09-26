@@ -64,7 +64,7 @@ import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { attachConversationMediaToCard } from '@/app/_actions/whatsapp/client-documents';
-import { getClientInfo } from '@/app/_actions/whatsapp/client-info';
+import { useCopilot } from '@/app/_shared/hooks/use-copilot';
 import { CardDialog } from '@/app/nova-dash/CardDialog';
 import type { ExtendedKanbanCard } from '@/app/nova-dash/card-dialog/types';
 import { WhatsAppComposer } from './WhatsAppComposer';
@@ -610,22 +610,13 @@ export function WhatsAppInbox() {
   // sob demanda responde — contato inexistente volta ao estado vazio.
   const openingActive = !!activeContactId && !active && activeLookupDone !== activeContactId;
 
-  // Ficha do cliente da conversa aberta: alimenta o Copiloto (aba Ficha /
-  // checklist) e o atalho "Card #N" do cabeçalho.
-  const { data: clientInfo, mutate: mutateClientInfo } = useSWR(
-    activeContactId ? ['wa-client-info', activeContactId] : null,
-    () => getClientInfo(activeContactId!),
-    { revalidateOnFocus: false },
-  );
-
-  // Vínculo pelo telefone feito agora ou rascunho de documento que virou
-  // arquivo do card: a aba Arquivos do Copiloto pode ter carregado antes
-  // (ainda como rascunho) e ficaria sem os documentos do card até recarregar.
-  useEffect(() => {
-    if (clientInfo?.justLinked || clientInfo?.migratedDrafts) {
-      window.dispatchEvent(new Event('wa-docs-changed'));
-    }
-  }, [clientInfo]);
+  // Ficha + documentos do cliente da conversa aberta numa ida só (GET
+  // /api/whatsapp/inbox/copilot/<id>, fora da fila serial de actions). A
+  // MESMA key alimenta o Copiloto (abas Ficha, Arquivos e checklist); aqui ela
+  // serve ao atalho "Card #N" do cabeçalho e ao CardDialog. O vínculo pelo
+  // telefone acontece nessa leitura e os documentos já vêm lidos depois dele:
+  // não há mais evento para a aba Arquivos recarregar.
+  const { clientInfo, reloadCopilot, setCopilotDocuments } = useCopilot(activeContactId);
 
   useEffect(() => { setCardDialogOpen(false); }, [activeContactId]);
 
@@ -1237,11 +1228,13 @@ export function WhatsAppInbox() {
   }
 
   // "Anexar no card": a mídia da mensagem vira documento da ficha do cliente
-  // (idempotente no servidor). O Copiloto escuta o evento e atualiza a lista.
+  // (idempotente no servidor). A action devolve a lista nova, que entra no
+  // cache do Copiloto pela key do contato DA MENSAGEM (se o atendente trocou
+  // de conversa no meio, a lista não cai na ficha de outro cliente).
   async function handleAttachMedia(msg: WhatsAppThreadMessage) {
     try {
-      await attachConversationMediaToCard(msg.id);
-      window.dispatchEvent(new Event('wa-docs-changed'));
+      const updated = await attachConversationMediaToCard(msg.id);
+      void setCopilotDocuments(msg.contactId, updated);
       toast.success(clientInfo?.registered
         ? `Anexado no card${clientInfo.cardNumber ? ` #${clientInfo.cardNumber}` : ''}.`
         : 'Anexado na ficha (migra pro card quando o cliente for cadastrado).');
@@ -2324,8 +2317,6 @@ export function WhatsAppInbox() {
           <CopilotPanel
             conversation={active}
             messages={displayMessages}
-            clientInfo={clientInfo ?? null}
-            onClientInfoChanged={(info) => { mutateClientInfo(info, { revalidate: false }); }}
             onOpenCard={() => setCardDialogOpen(true)}
             onRefreshMessages={async () => { await mutateMessages(); }}
             focusFicha={fichaFocusToken}
@@ -2340,7 +2331,7 @@ export function WhatsAppInbox() {
           card={cardStub}
           open={cardDialogOpen}
           onClose={() => setCardDialogOpen(false)}
-          onUpdate={() => { mutateClientInfo(); }}
+          onUpdate={() => { if (activeContactId) void reloadCopilot(activeContactId); }}
           cardId={clientInfo.userId}
           isProcess={false}
           ownerId={clientInfo.userId}
