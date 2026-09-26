@@ -59,6 +59,11 @@ export interface WhatsAppThreadMessage {
   // fora da allowlist: a bolha cai no fallback do media-url-cache.
   mediaUrl?: string | null;
   mediaUrlExpiresAt?: string | null;
+  // SÓ no cliente, na bolha otimista de mídia (nunca vêm do servidor): object
+  // URL do File local para o preview da imagem enquanto sobe (revogado quando
+  // a bolha sai) e o nome do arquivo anexado.
+  localPreviewUrl?: string;
+  fileName?: string;
 }
 
 // Toda leitura por URL daqui passa por `jsonFetcher` (fetch-json.ts): status
@@ -430,6 +435,19 @@ type ThreadData = { messages: WhatsAppThreadMessage[]; hasMore?: boolean };
 /** Key do SWR das recentes de uma conversa (o upsert do envio mira a mesma entrada). */
 function threadKey(contactId: string): string {
   return `/api/whatsapp/messages?contactId=${encodeURIComponent(contactId)}&limit=${RECENT_LIMIT}`;
+}
+
+/**
+ * As recentes de uma conversa lidas NA HORA, lançando se a leitura falhar.
+ * Existe para o "tentar de novo" da mídia: antes de reenviar é preciso saber
+ * com certeza se o anexo já entrou (a Meta pode ter aceitado e só a resposta
+ * da action ter se perdido). O `mutate` do SWR não serve: ele engole o erro da
+ * busca e devolve o cache velho, e aí a foto iria duas vezes ao cliente.
+ */
+export async function fetchThreadRecent(contactId: string): Promise<WhatsAppThreadMessage[]> {
+  const json = await jsonFetcher<Partial<ThreadData>>(threadKey(contactId));
+  if (!Array.isArray(json.messages)) throw new Error('resposta da thread fora do formato');
+  return json.messages;
 }
 
 /**

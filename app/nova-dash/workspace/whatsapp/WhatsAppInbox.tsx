@@ -25,7 +25,7 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
-  fetchInboxConversation, fetchInboxFilter, useInboxColumns,
+  fetchInboxConversation, fetchInboxFilter, fetchThreadRecent, useInboxColumns,
   useWaNumberOptions, useWhatsAppConversations, useWhatsAppMessages,
   type WaNumberOption, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
@@ -87,6 +87,9 @@ import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
+import {
+  RETRY_CHECK_FAILED_TEXT, RETRY_WINDOW_CLOSED_TEXT, findSentMedia, mediaSendFailedText, pendingPreviewKind,
+} from '@/app/_shared/utils/pending-media';
 import { brDayKey, brLabelFromKey } from '@/app/_shared/utils/date-br';
 import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 import { getMediaUrl, useMediaUrl } from './media-url-cache';
@@ -95,6 +98,23 @@ import { ptBR } from 'date-fns/locale';
 
 // Janela de resposta da Meta: 24h desde a última mensagem RECEBIDA do cliente.
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Anexo de uma bolha pendente, guardado FORA do estado (por tempId, em
+ * `pendingMediaRef`) para o "tentar de novo" não pedir para anexar de novo.
+ * Liberado só quando a bolha sai (`removePending`: enviou ou descartou) e no
+ * unmount do inbox, nunca na troca de conversa.
+ */
+interface PendingMedia {
+  file: File;
+  mime: string;
+  caption?: string;
+  replyToId: string | null;
+  /** Key do S3 depois do PUT: o retry pula o upload e confere se a mensagem já entrou. */
+  uploadedKey?: string;
+  /** Object URL do preview (só imagem); revogado junto com a bolha. */
+  previewUrl?: string;
+}
 
 // Dados de apoio (tags, total da agenda) pelo cache global do SWR: a nova-dash
 // desmonta o inbox a cada troca de aba, e voltar ao WhatsApp mostra tudo na
@@ -622,7 +642,20 @@ export function WhatsAppInbox() {
 
   // Envio otimista: a mensagem entra na thread como "sending" na hora e o
   // input fica livre; quando a action confirma, o registro real substitui.
+  // O pending é POR CONTATO (a thread filtra pelo `contactId` em
+  // `displayMessages`) e sobrevive à troca de conversa: a bolha que falhou
+  // continua lá na volta, com o anexo em `pendingMediaRef` para o retry.
   const [pending, setPending] = useState<WhatsAppThreadMessage[]>([]);
+  const pendingMediaRef = useRef(new Map<string, PendingMedia>());
+  // Unmount (troca de aba da nova-dash): os previews saem da memória. Envio
+  // ainda em voo segue com o File que já capturou.
+  useEffect(() => {
+    const media = pendingMediaRef.current;
+    return () => {
+      media.forEach((m) => { if (m.previewUrl) URL.revokeObjectURL(m.previewUrl); });
+      media.clear();
+    };
+  }, []);
   const [replyTo, setReplyTo] = useState<WhatsAppThreadMessage | null>(null);
   const [editTarget, setEditTarget] = useState<WhatsAppThreadMessage | null>(null);
 
@@ -638,8 +671,10 @@ export function WhatsAppInbox() {
     setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1500);
   }
 
+  // Sem `setPending([])` aqui: zerar na troca de conversa sumia com a bolha
+  // que falhou (e o anexo dela ficaria órfão no ref, sem retry possível).
   useEffect(() => {
-    setPending([]); setReplyTo(null); setEditTarget(null);
+    setReplyTo(null); setEditTarget(null);
   }, [activeContactId]);
 
   // Navegação que sobrevive à troca de aba (THR-4/LISTA-9): a nova-dash
@@ -1321,7 +1356,14 @@ export function WhatsAppInbox() {
   function patchPending(id: string, patch: Partial<WhatsAppThreadMessage>) {
     setPending((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }
+  // A bolha saiu (enviou ou foi descartada): o anexo e o preview saem junto.
+  // Fora do updater do setState (o StrictMode o roda 2x).
   function removePending(id: string) {
+    const media = pendingMediaRef.current.get(id);
+    if (media) {
+      if (media.previewUrl) URL.revokeObjectURL(media.previewUrl);
+      pendingMediaRef.current.delete(id);
+    }
     setPending((prev) => prev.filter((p) => p.id !== id));
   }
 
@@ -1382,41 +1424,72 @@ export function WhatsAppInbox() {
     const rt = replyTo;
     setReplyTo(null);
 
-    const temps = files.map((file, i) => makePending({
-      body: i === 0 && caption ? caption : null,
-      mediaType: resolveMimeType(file),
-      replyToId: i === 0 ? rt?.id ?? null : null,
-      replyToBody: i === 0 && rt ? rt.body ?? '📎 Anexo' : null,
-      replyToDirection: i === 0 ? rt?.direction ?? null : null,
-    }));
-    setPending((prev) => [...prev, ...temps]);
+    // Cada arquivo vira uma bolha com o que está sendo mandado (a foto pelo
+    // object URL do File local, ou o nome), e o anexo fica guardado por tempId
+    // para o "tentar de novo". Só imagem ganha object URL: é o único preview.
+    const batch = files.map((file, i) => {
+      const mime = resolveMimeType(file);
+      const previewUrl = pendingPreviewKind(mime) === 'image' ? URL.createObjectURL(file) : undefined;
+      const temp = makePending({
+        body: i === 0 && caption ? caption : null,
+        mediaType: mime,
+        localPreviewUrl: previewUrl,
+        fileName: file.name,
+        replyToId: i === 0 ? rt?.id ?? null : null,
+        replyToBody: i === 0 && rt ? rt.body ?? '📎 Anexo' : null,
+        replyToDirection: i === 0 ? rt?.direction ?? null : null,
+      });
+      const item: PendingMedia = {
+        file,
+        mime,
+        caption: i === 0 ? caption || undefined : undefined,
+        replyToId: i === 0 ? rt?.id ?? null : null,
+        previewUrl,
+      };
+      pendingMediaRef.current.set(temp.id, item);
+      return { temp, item };
+    });
+    setPending((prev) => [...prev, ...batch.map((b) => b.temp)]);
 
     (async () => {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const temp = temps[i];
-        try {
-          const mime = resolveMimeType(file);
-          const { url, key } = await getWhatsAppUploadUrl(contactId, file.name, mime);
-          const put = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } });
-          if (!put.ok) throw new Error(`Falha ao subir "${file.name}".`);
-          const dto = await sendWhatsAppMedia({
-            contactId, key, mimeType: mime, fileName: file.name,
-            caption: i === 0 ? caption || undefined : undefined,
-            replyToId: i === 0 ? rt?.id ?? null : null,
-          });
-          commitSent(contactId, temp.id, dto, temp.authorName);
-          // Patch por arquivo: a prévia da lista acompanha o último enviado.
-          patchConversation(contactId, sentMessagePatch(dto, me));
-        } catch (e) {
-          patchPending(temp.id, { status: 'failed' });
-          toast.error(e instanceof Error ? e.message : `Falha ao enviar "${file.name}".`);
-        }
-      }
+      // Em série: os arquivos chegam ao cliente na ordem em que foram anexados.
+      for (const { temp, item } of batch) await sendOneMedia(contactId, temp.id, item, temp.authorName);
       // Revalidação de fundo (uma para o lote): completa os campos que o DTO
       // não traz; a bolha já está no lugar. A lista não recarrega.
       void revalidateThread(contactId);
     })();
+  }
+
+  /**
+   * Sobe (se ainda não subiu) e envia UM anexo de bolha pendente. O `item` vem
+   * capturado, não relido do ref: sair do inbox no meio do lote (unmount limpa
+   * o ref) não pode cortar os arquivos seguintes, que o atendente já mandou.
+   * A `uploadedKey` fica gravada logo depois do PUT: o retry não sobe de novo.
+   * Nunca lança: a falha vira bolha "Falhou." + toast com texto próprio.
+   */
+  async function sendOneMedia(contactId: string, tempId: string, item: PendingMedia, authorName: string | null) {
+    const { file, mime } = item;
+    let stage: 'upload' | 'send' = 'upload';
+    try {
+      let key = item.uploadedKey;
+      if (!key) {
+        const upload = await getWhatsAppUploadUrl(contactId, file.name, mime);
+        const put = await fetch(upload.url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } });
+        if (!put.ok) throw new Error(`PUT do anexo respondeu ${put.status}`);
+        key = upload.key;
+        item.uploadedKey = key;
+      }
+      stage = 'send';
+      const dto = await sendWhatsAppMedia({
+        contactId, key, mimeType: mime, fileName: file.name, caption: item.caption, replyToId: item.replyToId,
+      });
+      commitSent(contactId, tempId, dto, authorName);
+      // Patch por arquivo: a prévia da lista acompanha o último enviado.
+      patchConversation(contactId, sentMessagePatch(dto, me));
+    } catch {
+      patchPending(tempId, { status: 'failed' });
+      toast.error(mediaSendFailedText(file.name, stage));
+    }
   }
 
   // Envio que não passa pela bolha otimista (passo de fluxo, template): a
@@ -1429,9 +1502,56 @@ export function WhatsAppInbox() {
     patchConversation(dto.contactId, sentMessagePatch(dto, me));
   }
 
+  // "tentar de novo" só existe na conversa ABERTA (a bolha pendente só aparece
+  // nela), então `windowExpired` é o da conversa da bolha. Com a janela de
+  // 24 h fechada a Meta recusaria de novo, e o motivo chegaria mascarado.
   function retryPending(msg: WhatsAppThreadMessage) {
+    if (msg.status !== 'failed') return;
+    if (windowExpired) {
+      toast.error(RETRY_WINDOW_CLOSED_TEXT);
+      return;
+    }
+    if (msg.mediaType) {
+      const item = pendingMediaRef.current.get(msg.id);
+      if (item) void retryPendingMedia(msg, item);
+      return;
+    }
     removePending(msg.id);
-    if (msg.body && !msg.mediaType) handleSendText(msg.body);
+    if (msg.body) handleSendText(msg.body);
+  }
+
+  /**
+   * Retry de mídia sem reanexar. Se o arquivo já tinha subido, antes de
+   * reenviar confere na thread se a mensagem já entrou: a Meta pode ter aceitado
+   * e só a resposta da action ter se perdido, e reenviar mandaria a mesma foto
+   * duas vezes ao cliente (WABA com aviso de spam). Sem conseguir conferir, não
+   * reenvia.
+   */
+  async function retryPendingMedia(msg: WhatsAppThreadMessage, item: PendingMedia) {
+    const { id: tempId, contactId } = msg;
+    patchPending(tempId, { status: 'sending' });
+    if (item.uploadedKey) {
+      let recent: WhatsAppThreadMessage[];
+      try {
+        recent = await fetchThreadRecent(contactId);
+      } catch {
+        patchPending(tempId, { status: 'failed' });
+        toast.error(RETRY_CHECK_FAILED_TEXT);
+        return;
+      }
+      const sent = findSentMedia(recent, item.uploadedKey);
+      if (sent) {
+        // Já foi: a real entra no cache e a bolha sai no MESMO render (como no
+        // commitSent). A prévia da lista chega pelo delta.
+        flushSync(() => {
+          upsertThreadMessage(contactId, sent);
+          removePending(tempId);
+        });
+        return;
+      }
+    }
+    await sendOneMedia(contactId, tempId, item, msg.authorName);
+    void revalidateThread(contactId);
   }
 
   async function handleEditSubmit(id: string, text: string) {
@@ -2512,6 +2632,7 @@ export function WhatsAppInbox() {
                       onEdit={() => { setReplyTo(null); setEditTarget(msg); }}
                       onDelete={() => handleDelete(msg)}
                       onRetry={() => retryPending(msg)}
+                      canRetryMedia={!!msg.mediaType && pendingMediaRef.current.has(msg.id)}
                       onDiscard={() => removePending(msg.id)}
                       onJumpToReply={() => jumpToMessage(msg.replyToId)}
                       onAttachToCard={() => handleAttachMedia(msg)}
@@ -3139,12 +3260,14 @@ function parseReactionBody(body: string | null): { emoji: string | null; removed
 const WA_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
 
 function ThreadMessageRow({
-  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard, onReact, contactName,
+  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, canRetryMedia, onDiscard, onJumpToReply, onAttachToCard, onReact, contactName,
 }: {
   msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean; contactName?: string | null;
   setRowRef: (el: HTMLDivElement | null) => void;
   onReply: () => void; onEdit: () => void; onDelete: () => void;
-  onRetry: () => void; onDiscard: () => void; onJumpToReply: () => void;
+  // canRetryMedia: a bolha de mídia que falhou ainda tem o anexo guardado
+  // (`pendingMediaRef`), então dá para tentar de novo sem reanexar.
+  onRetry: () => void; canRetryMedia: boolean; onDiscard: () => void; onJumpToReply: () => void;
   onAttachToCard: () => void;
   onReact: (emoji: string) => void;
 }) {
@@ -3240,11 +3363,7 @@ function ThreadMessageRow({
             </button>
           )}
           {msg.mediaKey && <WaMediaBubble msg={msg} mine={mine} onAttachToCard={onAttachToCard} />}
-          {!msg.mediaKey && msg.mediaType && (
-            <span className={`mb-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold ${mine ? 'bg-white/15' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
-              <Paperclip className="h-3.5 w-3.5" /> Enviando anexo...
-            </span>
-          )}
+          {!msg.mediaKey && msg.mediaType && <PendingMediaPreview msg={msg} mine={mine} />}
           {msg.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{formatWaText(msg.body)}</p>}
           <span className={`ml-2 mt-0.5 flex items-center justify-end gap-1 text-xs ${mine ? 'text-white/70' : 'text-gray-400'}`}>
             {msg.editedAt && <span className="italic">editada ·</span>}
@@ -3268,7 +3387,7 @@ function ThreadMessageRow({
         {msg.status === 'failed' && isTemp && (
           <span className="mt-0.5 flex items-center gap-2 px-1 text-sm text-red-500">
             Falhou.
-            {msg.body && !msg.mediaType && (
+            {((msg.body && !msg.mediaType) || canRetryMedia) && (
               <button onClick={onRetry} className="font-semibold underline">tentar de novo</button>
             )}
             <button onClick={onDiscard} className="underline">descartar</button>
@@ -3307,6 +3426,52 @@ function ThreadMessageRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Anexo da bolha otimista: o atendente vê O QUE está mandando (a foto, ou o
+ * nome do arquivo) enquanto sobe e envia. Antes era um "Enviando anexo..." que
+ * continuava lá até depois da falha. A foto vem do object URL do File local
+ * (sem ida à rede), translúcida e com spinner enquanto envia; formato que o
+ * navegador não desenha (HEIC) cai no nome.
+ */
+function PendingMediaPreview({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const sending = msg.status === 'sending';
+  const name = msg.fileName?.trim() || 'Anexo';
+
+  if (msg.localPreviewUrl && pendingPreviewKind(msg.mediaType) === 'image' && !imgFailed) {
+    return (
+      <div className="relative mb-1 overflow-hidden rounded-xl border border-black/5 shadow-sm">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={msg.localPreviewUrl}
+          alt={name}
+          onError={() => setImgFailed(true)}
+          className={`max-h-72 max-w-full object-cover ${sending ? 'opacity-50' : 'opacity-80'}`}
+        />
+        {sending && (
+          <span role="status" aria-label={`Enviando ${name}`} className="absolute inset-0 flex items-center justify-center">
+            <span className="rounded-full bg-black/45 p-2">
+              <Loader2 className="h-5 w-5 animate-spin text-white" />
+            </span>
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <span
+      title={name}
+      className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold ${mine ? 'bg-white/15' : 'bg-gray-100'}`}
+    >
+      {sending
+        ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-label="Enviando" />
+        : <Paperclip className="h-3.5 w-3.5 shrink-0" />}
+      <span className="truncate">{name}</span>
+    </span>
   );
 }
 
