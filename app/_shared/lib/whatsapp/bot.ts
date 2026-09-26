@@ -17,7 +17,8 @@ import { isTerminalBotAction, shouldAbortSend, type SendGuardVerdict } from "@/a
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
 import { findConversationOwner, type ConversationOwner } from "./ownership";
 import { waAlertRecipients } from "./alert-recipients";
-import { WA_QUALIFIED_MARK } from "./close-categories";
+import { QUALIFIED_TAG_NAME, WA_QUALIFIED_MARK } from "./close-categories";
+import { syncCloseTag } from "./close-tags";
 import {
   broadcastWhatsAppEvent,
   whatsappChannelId,
@@ -136,7 +137,6 @@ const BOT_TIMEOUT_MS = 45_000;
 // direto pra fila, sem reprocessar.
 const BOT_MAX_ATTEMPTS = 3;
 const BOT_RETRY_DELAY_MS = 1_000;
-const QUALIFIED_TAG_NAME = "Qualificada";
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -713,7 +713,7 @@ async function disqualifyAndClose(contactId: string, category?: string | null): 
     closeCategory,
     qualified: false,
   });
-  await db.whatsAppConversation.update({
+  const conv = await db.whatsAppConversation.update({
     where: { contactId },
     // A ficha (botMemory/botState) é PRESERVADA de propósito (25/07/2026): se o
     // cliente mandar um "obrigado"/"Bgdooo" logo depois, a reabertura vem com
@@ -721,7 +721,11 @@ async function disqualifyAndClose(contactId: string, category?: string | null): 
     // (caso Luiz: 4 ciclos de saudação→triagem→despedida na mesma tarde). A
     // limpeza acontece na REABERTURA, se a conversa estiver velha (service.ts).
     data: { status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+    select: { id: true },
   });
+  // Tag do motivo ("Não qualificada — Acidente muito antigo"), como no
+  // encerramento manual: sem ela o filtro por motivo não trazia o bot.
+  await syncCloseTag(conv.id, closeCategory);
   void reportLeadStageToMeta(contactId, "nao_qualificado");
 }
 
@@ -746,7 +750,7 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
     closeCategory: category,
     qualified: keepContext ? true : null,
   });
-  await db.whatsAppConversation.update({
+  const conv = await db.whatsAppConversation.update({
     where: { contactId },
     data: {
       status: "closed", closedAt: new Date(), assignedToId: null,
@@ -758,7 +762,11 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
       // Desfecho real → ciclo de recuperação zerado.
       recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
     },
+    select: { id: true },
   });
+  // "Perguntas / dúvidas" etc. A "Qualificada" de quem já era qualificado
+  // fica (só desqualificação a tira: close-tag-plan.ts).
+  await syncCloseTag(conv.id, category);
 }
 
 /**
@@ -1392,14 +1400,16 @@ ${emptyNote}`,
         closeCategory: "nao_qualificado",
         qualified: false,
       });
-      await db.whatsAppConversation.update({
+      const closedConv = await db.whatsAppConversation.update({
         where: { contactId },
         data: {
           status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", qualified: false,
           botFailCount: 0, queuedAt: null, queueAlertAt: null,
           recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
         },
+        select: { id: true },
       });
+      await syncCloseTag(closedConv.id, "nao_qualificado");
       await logWhatsAppEvent({
         action: "wa_bot",
         message: "IA: possível descadastro — confirmação com comando SAIR enviada (optedOut NÃO marcado)",

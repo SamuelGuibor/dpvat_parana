@@ -13,7 +13,7 @@ import {
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
   UserCheck, Columns3, Users, Phone, BookUser, Smile,
-  Lock, ArrowDown,
+  Lock, ArrowDown, UserX,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -32,6 +32,7 @@ import {
   OPEN_CONTACT_STORAGE_KEY, browserSessionStorage, pruneTagFilter, restoreInboxView, saveInboxViewState,
   type InboxFolderKey, type InboxViewState,
 } from '@/app/_shared/utils/inbox-view-state';
+import { closedFolderOf, type ClosedFolderKey } from '@/app/_shared/utils/inbox-folders';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
   searchWhatsAppConversations, getWhatsAppConversationByContact,
@@ -433,6 +434,9 @@ export function WhatsAppInbox() {
     { key: 'novo_acidente', label: 'Novo acid.', title: CLOSE_CATEGORY_LABELS.novo_acidente, icon: AlertTriangle },
     { key: 'transferido', label: 'Transf.', title: CLOSE_CATEGORY_LABELS.transferido, icon: Headset },
     { key: 'descartado', label: 'Descart.', title: CLOSE_CATEGORY_LABELS.descartado, icon: Trash2 },
+    // Churn (contratou e foi perdido) não tinha pasta: sumia da lista e só
+    // aparecia pela pasta Todos.
+    { key: 'churn', label: 'Churn', title: CLOSE_CATEGORY_LABELS.contratado_perdido, icon: UserX },
   ] as const satisfies readonly RailFolder[];
   const ALL_FOLDERS = [...ACTIVE_FOLDERS, ...CLOSED_FOLDERS];
   type FolderKey = (typeof ALL_FOLDERS)[number]['key'];
@@ -444,7 +448,7 @@ export function WhatsAppInbox() {
   const FOLDER_ACCENT: Record<FolderKey, keyof typeof GROUP_ACCENT | undefined> = {
     todos: 'ativas', ativas: 'ativas', bot: 'bot', standby: 'recup',
     qualified: undefined, unqualified: undefined, sem_resposta: undefined,
-    perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined,
+    perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined, churn: undefined,
   };
   const [activeFolder, setActiveFolder] = useState<FolderKey>('todos');
 
@@ -863,10 +867,18 @@ export function WhatsAppInbox() {
   }, [conversations]);
 
   const groups = useMemo(() => {
-    const closed = filtered.filter((c) => c.status === 'closed');
-    // Conversas encerradas ANTES desta feature não têm closeCategory — caem
-    // no fallback pelo `qualified` antigo (true→qualificada, senão→não qualificada).
-    const byCategory = (cat: string) => closed.filter((c) => c.closeCategory === cat);
+    // Encerradas: uma pasta por desfecho pela regra pura closedFolderOf
+    // (inclui o fallback pelo `qualified` antigo e os sub-motivos nq_*).
+    // 'outros' é a rede de segurança para categoria sem pasta: não tem ícone
+    // no rail, mas aparece nas seções da busca/tag para a lista bater com o
+    // contador "N resultados".
+    const closed: Record<ClosedFolderKey, WhatsAppConversationDTO[]> = {
+      qualified: [], unqualified: [], churn: [], sem_resposta: [], perguntas: [],
+      novo_acidente: [], transferido: [], descartado: [], outros: [],
+    };
+    for (const c of filtered) {
+      if (c.status === 'closed') closed[closedFolderOf(c)].push(c);
+    }
     return {
       queued: filtered.filter((c) => c.status === 'queued'),
       // Todas as conversas em atendimento humano, de qualquer atendente — o
@@ -874,14 +886,7 @@ export function WhatsAppInbox() {
       ativas: filtered.filter((c) => c.status === 'human'),
       bot: filtered.filter((c) => c.status === 'bot'),
       standby: filtered.filter((c) => c.status === 'standby'),
-      sem_resposta: byCategory('sem_resposta'),
-      qualified: closed.filter((c) => c.closeCategory === 'qualificado' || (!c.closeCategory && c.qualified === true)),
-      // Inclui os sub-motivos dinâmicos (nq_*) — tudo que é "não qualificado".
-      unqualified: closed.filter((c) => c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_') || (!c.closeCategory && c.qualified !== true)),
-      perguntas: byCategory('perguntas'),
-      novo_acidente: byCategory('novo_acidente'),
-      transferido: byCategory('transferido'),
-      descartado: byCategory('descartado'),
+      ...closed,
     };
   }, [filtered]);
 
@@ -919,7 +924,7 @@ export function WhatsAppInbox() {
     todos: todosItems, ativas: ativasItems, bot: groups.bot, standby: groups.standby,
     qualified: groups.qualified, unqualified: groups.unqualified, sem_resposta: groups.sem_resposta,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
-    descartado: groups.descartado,
+    descartado: groups.descartado, churn: groups.churn,
   };
   const unreadInFolder = (key: FolderKey) => FOLDER_ITEMS[key].filter((c) => c.unread).length;
 
@@ -1771,8 +1776,8 @@ export function WhatsAppInbox() {
             {/* Com tag/busca ativa: mostra cada pasta em sua própria seção
                 (sem a "Todos", que duplicaria tudo) — os resultados aparecem
                 sem precisar entrar em pasta nenhuma. */}
-            {tagFilterActive ? (
-              ALL_FOLDERS.filter((f) => f.key !== 'todos').map((f) => (
+            {tagFilterActive ? (<>
+              {ALL_FOLDERS.filter((f) => f.key !== 'todos').map((f) => (
                 <ConversationGroup
                   key={f.key}
                   title={f.title}
@@ -1783,8 +1788,17 @@ export function WhatsAppInbox() {
                   meId={meId}
                   meName={session?.user?.name ?? ''}
                 />
-              ))
-            ) : activeFolder === 'unqualified' ? (
+              ))}
+              {/* Encerradas com desfecho sem pasta no rail (categoria nova). */}
+              <ConversationGroup
+                title="Outros desfechos"
+                items={groups.outros}
+                activeContactId={activeContactId}
+                onSelect={setActiveContactId}
+                meId={meId}
+                meName={session?.user?.name ?? ''}
+              />
+            </>) : activeFolder === 'unqualified' ? (
               // Não qualificadas agrupadas POR MOTIVO de descarte — identifica
               // de cara por que cada lead não fechou.
               (() => {

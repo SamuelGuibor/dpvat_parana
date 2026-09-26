@@ -5,6 +5,8 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { requirePermission } from '@/app/_shared/lib/permissions-server';
+import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
+import { syncCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -176,21 +178,31 @@ export async function openContactConversation(contactId: string): Promise<{ cont
  */
 export async function blockWhatsAppContact(contactId: string): Promise<void> {
   const me = await requirePermission('manage_wa_contacts');
-  const contact = await db.whatsAppContact.findUnique({
-    where: { id: contactId },
-    select: { name: true, phone: true, optedOut: true },
-  });
+  const [contact, conversation] = await Promise.all([
+    db.whatsAppContact.findUnique({
+      where: { id: contactId },
+      select: { name: true, phone: true, optedOut: true },
+    }),
+    db.whatsAppConversation.findUnique({ where: { contactId }, select: { id: true, status: true } }),
+  ]);
   if (!contact) throw new Error('Contato não encontrado.');
 
   await db.whatsAppContact.update({ where: { id: contactId }, data: { optedOut: true } });
-  await db.whatsAppConversation.updateMany({
-    where: { contactId, status: { not: 'closed' } },
-    data: {
-      status: 'closed', closedAt: new Date(), assignedToId: null, closeCategory: 'descartado', qualified: null,
-      botFailCount: 0, queuedAt: null, queueAlertAt: null,
-      recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
-    },
-  });
+  if (conversation && conversation.status !== 'closed') {
+    // Cérebro: snapshot ANTES do update que encerra, como em todo
+    // encerramento (o bloqueio era o único caminho sem review na fila).
+    await captureConversation(contactId, 'manual', { closeCategory: 'descartado', qualified: null });
+    const { count } = await db.whatsAppConversation.updateMany({
+      where: { contactId, status: { not: 'closed' } },
+      data: {
+        status: 'closed', closedAt: new Date(), assignedToId: null, closeCategory: 'descartado', qualified: null,
+        botFailCount: 0, queuedAt: null, queueAlertAt: null,
+        recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
+      },
+    });
+    // Tag "Descartados", como nos outros encerramentos (close-tags.ts).
+    if (count > 0) await syncCloseTag(conversation.id, 'descartado');
+  }
   await logWhatsAppEvent({
     action: 'wa_contact',
     message: `Contato BLOQUEADO (opt-out manual): ${contact.name ?? contact.phone}`,

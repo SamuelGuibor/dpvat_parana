@@ -1,6 +1,7 @@
 import { db } from '@/app/_shared/lib/prisma';
 import { handoffToQueue, sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
+import { syncCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
@@ -543,7 +544,14 @@ async function finalizeClose(
       ...(opts.recoveryOutcome ? { recoveryOutcome: opts.recoveryOutcome } : {}),
     },
   });
-  return count > 0;
+  if (count === 0) return false;
+  // Tag do desfecho ("Sem resposta (não recuperado)", "Transferidos ao
+  // atendente"...), igual ao encerramento manual: sem ela o filtro por tag
+  // não trazia nenhum encerramento do cron. Só depois do UPDATE que fechou de
+  // fato (guard acima). A "Qualificada" de lead qualificado encerrado por
+  // silêncio fica (close-tag-plan.ts). Nunca lança.
+  if (opts.closeCategory) await syncCloseTag(conv.id, opts.closeCategory);
+  return true;
 }
 
 /**

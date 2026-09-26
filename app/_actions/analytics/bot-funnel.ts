@@ -3,6 +3,7 @@
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam, requirePermission } from '@/app/_shared/lib/permissions-server';
 import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey } from '@/app/_shared/utils/date-br';
+import { HIRED_TAG_NAME, QUALIFIED_TAG_NAME } from '@/app/_shared/lib/whatsapp/close-categories';
 
 // Funil do bot da IA (substitui o Funil de leads antigo, que contava pelo
 // BotConversa). Tudo aqui sai do NOSSO banco — conversas, mensagens e tags do
@@ -31,9 +32,6 @@ import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey 
 // Fingerprint da mensagem de coleta de documentos (bot e fluxo manual usam o
 // mesmo texto). Se o texto do bot mudar, atualizar aqui junto.
 const DOCS_FINGERPRINT = 'RG ou da sua CNH';
-
-const QUALIFIED_TAG = 'Qualificada';
-const HIRED_TAG = 'Contratados';
 
 const GOAL_KEY = 'monthly_hired_goal';
 const GOAL_DEFAULT = 60;
@@ -126,7 +124,7 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
         ...byNumber,
         OR: [
           { createdAt: createdIn },
-          { tags: { some: { createdAt: createdIn, tag: { name: HIRED_TAG } } } },
+          { tags: { some: { createdAt: createdIn, tag: { name: HIRED_TAG_NAME } } } },
         ],
       },
       orderBy: { lastMessageAt: 'desc' },
@@ -159,15 +157,15 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
   let qualified = 0;
   const leads = convs.map((c): BotKanbanLead => {
     const tagNames = c.tags.map((t) => t.tag.name);
-    if (tagNames.includes(QUALIFIED_TAG)) qualified++;
+    if (tagNames.includes(QUALIFIED_TAG_NAME)) qualified++;
     const closed = c.status === 'closed';
     // Contratado só se a etiqueta foi aplicada DENTRO do período.
-    const hiredInRange = c.tags.some((t) => t.tag.name === HIRED_TAG && inRange(t.createdAt));
+    const hiredInRange = c.tags.some((t) => t.tag.name === HIRED_TAG_NAME && inRange(t.createdAt));
     let evento: BotStage;
     if (hiredInRange) evento = 'contratado';
     else if (closed && (c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_'))) evento = 'nao_qualificado';
     else if (closed && c.closeCategory === 'sem_resposta') evento = 'nao_contratado';
-    else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG)) evento = 'enviou_documentos';
+    else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG_NAME)) evento = 'enviou_documentos';
     else if (!closed && !c.botState) evento = 'iniciado';
     else if (!closed) evento = 'em_conversa';
     else evento = 'outros';
@@ -222,7 +220,7 @@ export async function getBotFunnel(
       db.whatsAppConversationTag.count({
         where: {
           createdAt: inGoalMonth,
-          tag: { name: HIRED_TAG },
+          tag: { name: HIRED_TAG_NAME },
           ...(numberId ? { conversation: { numberId } } : {}),
         },
       }),
@@ -237,7 +235,7 @@ export async function getBotFunnel(
       db.whatsAppConversationTag.findMany({
         where: {
           createdAt: inRefYear,
-          tag: { name: HIRED_TAG },
+          tag: { name: HIRED_TAG_NAME },
           ...(numberId ? { conversation: { numberId } } : {}),
         },
         select: { createdAt: true },

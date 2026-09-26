@@ -10,7 +10,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - `sanitizeDecision`/`looksLikeReasoning`/`SCRIPT_STATES` do bot.ts espelham o bot.js: mude nos dois.
 - Não crie trava de negócio no código (qualificar, transferir, resolver). Mande o fato no payload e deixe o cérebro decidir; o código só tem rede de segurança.
 - Nenhuma falha pode virar mensagem de erro ao cliente: use `handoffToQueue` com o motivo real. Dentro do fluxo do bot, `handoffToQueue`/`qualifyToQueue` vão sempre com `{ onlyIfStatus: "bot" }` e o envio de blocos passa por `shouldAbortSend`: sem isso o bot rouba ou atropela a conversa que o atendente assumiu. Erro engolido vai por `reportCriticalError(contexto, err, { contactId })`.
-- Chame `captureConversation` ANTES de qualquer update que encerre a conversa, passando `outcome`.
+- Chame `captureConversation` ANTES de qualquer update que encerre a conversa, passando `outcome`, e `syncCloseTag` (`close-tags.ts`) DEPOIS dele: todo encerramento leva a tag do desfecho, e só desqualificação tira a "Qualificada".
 - Encerramento/standby pelo cron só por `finalizeClose`/`enterStandby` (UPDATE com guard de status + `botNudge30At`): mensagem nova do cliente derruba o encerramento. Órfã = pergunta do cliente sem log `wa_bot` depois (`isBotDecisionLog`), nunca "o bot ficou calado"; turno novo do bot que termina sem gravar `wa_bot` vira órfã na Fila.
 - Dono pegajoso (`ownership.ts`, env `WA_HUMAN_HOLD_DAYS`): devolver, reabrir e ir à fila guardam o último atendente, mas a conversa reabre em `bot` e quem decide é o cérebro. Última fala humana: o cron segura com `botNudge30At` NO FUTURO e, passada a janela, encerra sem standby (nada de template MARKETING a contato frio).
 - Não ponha nada volátil (timestamp, ordem instável) em `renderInstructions`, `getBrainExamples` ou `/api/whatsapp/brain-prompt`: isso quebra o cache de prompt.
@@ -34,6 +34,6 @@ Mapa completo: docs/ai/whatsapp-bot.md
 
 ## Validação
 - `npx tsc --noEmit` · `npm run lint` · `npm test` (o `next build` local morre por OOM; o build fica com a Vercel).
-- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`, `tests/bot-timing.test.ts`, `tests/critical-error.test.ts`, `tests/wa-silence.test.ts`, `tests/ownership.test.ts`, `tests/alert-policy.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
+- Testes do domínio: `tests/whatsapp-template-text.test.ts`, `tests/whatsapp-wa-format.test.ts`, `tests/whatsapp-media-download.test.ts`, `tests/bot-timing.test.ts`, `tests/critical-error.test.ts`, `tests/wa-silence.test.ts`, `tests/ownership.test.ts`, `tests/alert-policy.test.ts`, `tests/close-tag-plan.test.ts`. Não rode `npm run sign:templates` à toa: ele cria templates reais na Meta.
 - Bot ponta a ponta: número em `WHATSAPP_TEST_NUMBERS` → cérebro de `CHATBOT_URL_STAGING`; confira o log `wa_bot` (`outcome`, `leaked`, `usage`).
 - Cron manual: de preferência a fase isolada (`GET /api/whatsapp/cron/nudge` etc.) com `CRON_SECRET`, logo depois de uma rodada agendada concluída (roda para todos os clientes); veja `[WHATSAPP CRON]` nos logs.

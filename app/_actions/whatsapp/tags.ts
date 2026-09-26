@@ -5,6 +5,7 @@ import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam, type SessionPermissions } from '@/app/_shared/lib/permissions-server';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
+import { HIRED_TAG_NAME } from '@/app/_shared/lib/whatsapp/close-categories';
 
 // Tags livres pra organizar conversas de WhatsApp (ex.: "Urgente", "VIP",
 // "Recontato"), independente do status (fila/meus/bot/encerradas).
@@ -141,23 +142,25 @@ async function applyConversationTag(
 // duas: o fluxo normal é qualificar primeiro e contratar depois, então todas
 // as contratadas carregam também a de qualificada.
 //
+// Nome EXATO (HIRED_TAG_NAME, a mesma régua do funil em bot-funnel.ts): o
+// `contains 'contratad'` de antes também contava a tag de churn "Contratado e
+// perdido (churn)", e o card não batia com o funil (auditoria de 24/09/2026).
+//
 // Respeita o filtro de data do dashboard, como os outros KPIs — e como o
 // número do CRM que entra junto na "Meta do mês (contratos)". No filtro
 // padrão (mês corrente) as duas parcelas falam do mesmo período.
 export async function getContratadosTagCount(fromISO?: string, toISO?: string): Promise<number> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error('Não autenticado.');
+  // Guard da equipe lendo o banco (com a trava de IP): só sessão deixava o
+  // cliente logado por CPF chamar a action.
+  await requireTeam();
 
-  const contratadoTags = await db.whatsAppTag.findMany({
-    where: { name: { contains: 'contratad', mode: 'insensitive' } },
-    select: { id: true },
-  });
-  if (contratadoTags.length === 0) return 0;
+  const hired = await db.whatsAppTag.findUnique({ where: { name: HIRED_TAG_NAME }, select: { id: true } });
+  if (!hired) return 0;
 
   const range = fromISO && toISO ? { gte: new Date(fromISO), lte: new Date(toISO) } : undefined;
   return db.whatsAppConversation.count({
     where: {
-      tags: { some: { tagId: { in: contratadoTags.map((t) => t.id) }, ...(range ? { createdAt: range } : {}) } },
+      tags: { some: { tagId: hired.id, ...(range ? { createdAt: range } : {}) } },
     },
   });
 }

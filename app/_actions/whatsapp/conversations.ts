@@ -11,10 +11,12 @@ import { runAfterResponse } from '@/app/_shared/lib/background';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
 import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
 import {
-  LIST_PREVIEW_MAX_CHARS, assumePatch, closePatch, computeUnread, listPreview, mergeCloseTag,
+  LIST_PREVIEW_MAX_CHARS, assumePatch, closePatch, computeUnread, listPreview,
   qualifiedForCategory, returnToBotPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
-import { CLOSE_CATEGORY_LABELS, CLOSE_CATEGORY_OPTIONS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
+import { CLOSE_CATEGORY_LABELS, QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
+import { fallbackCloseLabel } from '@/app/_shared/utils/close-tag-plan';
+import { closeCategoryLabel, prepareCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { STICKY_OWNER_ENABLED } from '@/app/_shared/lib/whatsapp/ownership';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
@@ -367,9 +369,11 @@ async function loadConversations(
   const unreadCountByContact = new Map(readRows.map((r) => [r.contactId, Number(r.cnt)]));
   const reasonLabelByKey = new Map(reasonRows.map((r) => [r.key, r.label]));
   const inactiveNumberIds = new Set(inactiveIds);
+  // Mesma regra do closeCategoryLabel (close-tags.ts): o chip da lista e o
+  // nome da tag de desfecho saem iguais, nunca a chave crua ("nq_engano").
   const closeLabelOf = (cat: string | null): string | null => {
     if (!cat) return null;
-    return CLOSE_CATEGORY_LABELS[cat] ?? reasonLabelByKey.get(cat) ?? cat;
+    return CLOSE_CATEGORY_LABELS[cat] ?? reasonLabelByKey.get(cat) ?? fallbackCloseLabel(cat);
   };
 
   return conversations.map((c) => {
@@ -633,37 +637,51 @@ export async function closeConversation(
   category: string | boolean = 'nao_qualificado',
 ): Promise<Partial<WhatsAppConversationDTO>> {
   const me = await requireTeamMember();
-  const before = await convContact(conversationId);
 
   const cat = typeof category === 'boolean' ? (category ? 'qualificado' : 'nao_qualificado') : category;
   // Motivos dinâmicos criados pela equipe têm prefixo "nq_" — todos contam
-  // como não qualificado; o resto precisa estar no mapa estático.
-  const closeCategory = cat in QUALIFIED_BY_CATEGORY || cat.startsWith('nq_') ? cat : 'nao_qualificado';
+  // como não qualificado; o resto precisa estar no mapa estático (hasOwn: o
+  // `in` aceitava "constructor" e afins, herdados do Object).
+  const closeCategory = Object.prototype.hasOwnProperty.call(QUALIFIED_BY_CATEGORY, cat) || cat.startsWith('nq_')
+    ? cat
+    : 'nao_qualificado';
   const qualified = qualifiedForCategory(closeCategory);
-  const reasonRow = closeCategory.startsWith('nq_')
-    ? await db.whatsAppCloseReason.findUnique({ where: { key: closeCategory } })
-    : null;
-  const label = CLOSE_CATEGORY_LABELS[closeCategory] ?? reasonRow?.label ?? closeCategory;
 
-  // Cérebro: snapshot ANTES do update (que zera botMemory/botState abaixo).
-  if (before) await captureConversation(before.contactId, 'manual', { closeCategory, qualified });
+  // Encerrar levava ~1,25 s no p50 (auditoria de 24/09/2026, DUR-3): contato,
+  // motivo, snapshot, update, 5 queries de tag e o log, tudo em série. Agora
+  // contato e rótulo saem juntos; as leituras da tag correm junto com o
+  // snapshot + update; a gravação da tag, o log e o aviso à Meta vão para
+  // depois da resposta.
+  const [before, label] = await Promise.all([convContact(conversationId), closeCategoryLabel(closeCategory)]);
 
-  await db.whatsAppConversation.update({
-    where: { id: conversationId },
-    // Ticket encerrado: zera a memória/estado do bot para que uma futura
-    // conversa desse cliente comece do zero.
-    // Desfecho real → ciclo de recuperação zerado por completo.
-    data: { status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
-  });
+  const [closeTag] = await Promise.all([
+    // Tag automática = o próprio desfecho ("Não qualificada — sem cobertura
+    // INSS"): as tags de desfecho anteriores saem e as manuais ficam
+    // (close-tags.ts). Só LEITURA aqui; as tags finais voltam no patch. null
+    // = falhou (o encerramento vale assim mesmo) e a tela corrige na próxima
+    // recarga pelo hash.
+    prepareCloseTag(conversationId, closeCategory, label),
+    (async () => {
+      // Cérebro: snapshot ANTES do update (que zera botMemory/botState abaixo).
+      // A leitura do snapshot precisa ficar antes do update, por isso ele não
+      // vai para depois da resposta.
+      if (before) await captureConversation(before.contactId, 'manual', { closeCategory, qualified });
+      await db.whatsAppConversation.update({
+        where: { id: conversationId },
+        // Ticket encerrado: zera a memória/estado do bot para que uma futura
+        // conversa desse cliente comece do zero.
+        // Desfecho real → ciclo de recuperação zerado por completo.
+        data: { status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+      });
+    })(),
+  ]);
 
-  // Tag automática = o próprio desfecho ("Não qualificada — sem cobertura
-  // INSS"), pra tag e desfecho andarem SEMPRE juntos. Ao mudar o desfecho,
-  // as tags de desfecho anteriores saem — as tags manuais ficam intactas.
-  // As tags finais voltam no patch; null = a tag falhou (o encerramento
-  // vale assim mesmo) e a tela corrige na próxima recarga pelo hash.
-  const tags = await syncCloseTag(conversationId, closeCategory, label);
+  // A gravação da tag só depois do update: encerramento que falha não deixa
+  // tag de desfecho em conversa aberta.
+  if (closeTag) runAfterResponse('tag de desfecho', closeTag.write);
   if (before) {
-    await logWhatsAppEvent({
+    const at = new Date();
+    runAfterResponse('log wa_close', () => logWhatsAppEvent({
       action: 'wa_close',
       message: `encerrou o atendimento de ${before.contact?.name ?? before.contact?.phone} como ${label}`,
       authorId: me.id,
@@ -672,82 +690,14 @@ export async function closeConversation(
       contactName: before.contact?.name,
       contactPhone: before.contact?.phone,
       metadata: { qualified, closeCategory, by: 'atendente' },
-    });
+      at,
+    }));
     // Devolve pra Meta o desfecho decidido pelo atendente (qualificado /
-    // não qualificado). Fire-and-forget; outras categorias são ignoradas.
-    void reportLeadStageToMeta(before.contactId, closeCategory);
+    // não qualificado); outras categorias são ignoradas. Era promise solta,
+    // que a Vercel podia congelar quando a action respondia.
+    runAfterResponse('meta capi wa_close', () => reportLeadStageToMeta(before.contactId, closeCategory));
   }
-  return { ...closePatch(closeCategory, label), ...(tags ? { tags } : {}) };
-}
-
-// Cor da tag automática de desfecho, por família de categoria.
-const CLOSE_TAG_COLORS: Record<string, string> = {
-  qualificado: '#10b981',
-  contratado_perdido: '#f43f5e',
-  perguntas: '#3b82f6',
-  novo_acidente: '#f59e0b',
-  transferido: '#8b5cf6',
-  sem_resposta: '#64748b',
-  descartado: '#6b7280',
-};
-
-/**
- * Mantém a tag da conversa em sincronia com o desfecho: remove as tags de
- * desfecho anteriores (identificadas pelo conjunto de rótulos conhecidos —
- * estáticos + motivos da tabela) e aplica a tag com o rótulo completo atual.
- * Best-effort: falha de tag nunca impede o encerramento.
- *
- * Devolve as tags finais da conversa (para o patch da tela), montadas em
- * memória a partir do que já foi lido — sem query extra. null = falhou.
- */
-async function syncCloseTag(
-  conversationId: string,
-  closeCategory: string,
-  label: string,
-): Promise<{ id: string; name: string; color: string }[] | null> {
-  try {
-    // Todos os rótulos que já foram (ou podem ter sido) tag de desfecho.
-    const reasonLabels = (await db.whatsAppCloseReason.findMany({ select: { label: true } })).map((r) => r.label);
-    const knownLabels = new Set<string>([
-      ...Object.values(CLOSE_CATEGORY_LABELS),
-      ...CLOSE_CATEGORY_OPTIONS.map((o) => o.label),
-      ...reasonLabels,
-    ]);
-    knownLabels.delete(label); // a atual fica
-
-    // Ordem de aplicação e cor: é a lista que volta para a tela, na mesma
-    // ordem de loadConversations.
-    const current = await db.whatsAppConversationTag.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: 'asc' },
-      include: { tag: { select: { id: true, name: true, color: true } } },
-    });
-    const toRemove = current.filter((ct) => knownLabels.has(ct.tag.name)).map((ct) => ct.tagId);
-    if (toRemove.length) {
-      await db.whatsAppConversationTag.deleteMany({ where: { conversationId, tagId: { in: toRemove } } });
-    }
-
-    const color = CLOSE_TAG_COLORS[closeCategory]
-      ?? (closeCategory.startsWith('nq_') || closeCategory === 'nao_qualificado' ? '#e05252' : '#6b7280');
-    const tag = await db.whatsAppTag.upsert({
-      where: { name: label },
-      update: {},
-      create: { name: label, color },
-    });
-    await db.whatsAppConversationTag.upsert({
-      where: { conversationId_tagId: { conversationId, tagId: tag.id } },
-      update: {},
-      create: { conversationId, tagId: tag.id },
-    });
-    return mergeCloseTag(
-      current.map((ct) => ct.tag),
-      new Set(toRemove),
-      { id: tag.id, name: tag.name, color: tag.color },
-    );
-  } catch (err) {
-    console.error('[WA] Falha ao sincronizar a tag de desfecho:', err);
-    return null;
-  }
+  return { ...closePatch(closeCategory, label), ...(closeTag ? { tags: closeTag.tags } : {}) };
 }
 
 /**

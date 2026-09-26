@@ -7,6 +7,7 @@ import { sameBrDay } from "@/app/_shared/utils/alert-policy";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
+import { syncCloseTag } from "./close-tags";
 import { recordRecoveryEvent } from "./rule-events";
 import { resolveConversationOwner } from "./ownership";
 import { waAlertRecipients, whatsappRecipients } from "./alert-recipients";
@@ -491,6 +492,8 @@ export async function ingestIncomingMessage(
       where: { id: conversation.id },
       data: { status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
     });
+    // Tag do desfecho, como nos outros encerramentos (close-tags.ts). Nunca lança.
+    await syncCloseTag(conversation.id, "nao_qualificado");
     return { contactId: contact.id, numberId: contact.numberId, conversationStatus: "closed", message: dto, isNew: true };
   }
 

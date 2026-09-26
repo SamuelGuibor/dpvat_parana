@@ -27,7 +27,7 @@ export const OPEN_CONTACT_STORAGE_KEY = 'wa-open-contact';
  */
 export const INBOX_FOLDER_KEYS = [
   'todos', 'ativas', 'bot', 'standby',
-  'qualified', 'unqualified', 'sem_resposta', 'perguntas', 'novo_acidente', 'transferido', 'descartado',
+  'qualified', 'unqualified', 'sem_resposta', 'perguntas', 'novo_acidente', 'transferido', 'descartado', 'churn',
 ] as const;
 export type InboxFolderKey = (typeof INBOX_FOLDER_KEYS)[number];
 export const DEFAULT_INBOX_FOLDER: InboxFolderKey = 'todos';
