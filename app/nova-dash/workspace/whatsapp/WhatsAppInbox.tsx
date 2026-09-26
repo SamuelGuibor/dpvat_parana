@@ -60,7 +60,13 @@ import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReaso
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
-import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
+import { describeAssistError, requestAssistText } from '@/app/_shared/utils/assist-api';
+// SÓ POR 1 DEPLOY: a UI chama a IA do Copiloto por fetch, mas a aba aberta com
+// o bundle antigo ainda chama as actions de assist.ts pelo id. No Next 14 a
+// action só entra no manifesto se o arquivo for alcançável pelos imports da
+// página; sem esta linha, os 4 botões de IA da aba antiga dariam "Failed to
+// find Server Action" até o F5. Remover no deploy seguinte, junto com o arquivo.
+import '@/app/_actions/whatsapp/assist';
 import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
@@ -3290,15 +3296,17 @@ function WaAudioBubble({ msg, mine, url, onMediaError }: {
     a.currentTime = frac * duration;
   }
 
+  // POST /api/whatsapp/assist/transcribe (fora da fila de actions: enviar e
+  // tag não esperam a transcrição). O texto fica salvo na mensagem.
   async function handleTranscribe() {
     if (transcribing) return;
     setTranscribing(true);
     try {
-      const text = await transcribeWhatsAppAudio(msg.id);
+      const text = await requestAssistText('transcribe', msg.id);
       setTranscript(text);
       setShowTranscript(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao transcrever o áudio.');
+      toast.error(describeAssistError(e, 'Falha ao transcrever o áudio.'));
     } finally {
       setTranscribing(false);
     }

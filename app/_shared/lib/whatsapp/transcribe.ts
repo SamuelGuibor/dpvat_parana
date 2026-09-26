@@ -2,6 +2,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { AssistError } from "@/app/_shared/utils/assist-errors";
 
 // Transcrição do áudio de uma mensagem do WhatsApp pelo micro (/transcribe,
 // Gemini). Chamada ÚNICA para os dois caminhos (26/09/2026):
@@ -13,7 +14,9 @@ import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 //     e cada áudio somava ~3-7 s na resposta.
 // O resultado fica em WhatsAppMessage.transcript (o 2º pedido é grátis) e o
 // custo vai no log wa_transcribe com metadata.usage (micro antigo não manda
-// usage: o log sai sem custo, como antes).
+// usage: o log sai sem custo, como antes) e metadata.durationMs (tempo só da
+// chamada ao micro). Falhas saem como `AssistError` com `code`: a rota
+// POST /api/whatsapp/assist/transcribe devolve a mensagem com o status certo.
 //
 // Não importa bot.ts nem assist.ts: bot.ts importa daqui, e assist.ts importa
 // bot.ts (evita ciclo de módulos).
@@ -48,7 +51,7 @@ async function callTranscribe(
   signal?: AbortSignal,
 ): Promise<{ transcript?: string; usage?: object | null }> {
   if (!baseUrl || !CHATBOT_SECRET) {
-    throw new Error("Serviço de IA não configurado (CHATBOT_URL/CHATBOT_SECRET).");
+    throw new AssistError("not_configured", "Serviço de IA não configurado (CHATBOT_URL/CHATBOT_SECRET).");
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TRANSCRIBE_TIMEOUT_MS);
@@ -71,12 +74,23 @@ async function callTranscribe(
       // casos reais: o micro fora do ar e a resposta que estourou o tempo.
       console.error(`[WHATSAPP TRANSCRIBE] Falha ao chamar ${baseUrl}/transcribe:`, err);
       if (err instanceof Error && err.name === "AbortError") {
-        throw new Error("A IA demorou demais para responder. Tente de novo.");
+        throw new AssistError("timeout", "A IA demorou demais para responder. Tente de novo.");
       }
-      throw new Error("Serviço de IA fora do ar — não consegui falar com o chatbot. Tente de novo em instantes.");
+      throw new AssistError(
+        "offline",
+        "Serviço de IA fora do ar — não consegui falar com o chatbot. Tente de novo em instantes.",
+      );
     }
-    if (!res.ok) throw new Error(`IA respondeu HTTP ${res.status}`);
-    return (await res.json()) as { transcript?: string; usage?: object | null };
+    // 504 = o micro desistiu pelo próprio prazo: para o atendente é "demorou".
+    if (res.status === 504) {
+      throw new AssistError("timeout", "A IA demorou demais para responder. Tente de novo.");
+    }
+    if (!res.ok) throw new AssistError("upstream", `IA respondeu HTTP ${res.status}. Tente de novo.`);
+    try {
+      return (await res.json()) as { transcript?: string; usage?: object | null };
+    } catch {
+      throw new AssistError("upstream", "A IA devolveu uma resposta ilegível. Tente de novo.");
+    }
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
@@ -104,10 +118,10 @@ export async function transcribeStoredAudio(
       contact: { select: { name: true, phone: true, numberId: true } },
     },
   });
-  if (!message) throw new Error("Mensagem não encontrada.");
+  if (!message) throw new AssistError("not_found", "Mensagem não encontrada.");
   if (message.transcript) return message.transcript; // já transcrito
   if (!message.mediaKey || !isAudio(message.mediaType)) {
-    throw new Error("Esta mensagem não tem áudio para transcrever.");
+    throw new AssistError("bad_input", "Esta mensagem não tem áudio para transcrever.");
   }
 
   const url = await getSignedUrl(
@@ -117,13 +131,15 @@ export async function transcribeStoredAudio(
   );
 
   // `usage` (Gemini, modelo com sufixo "-audio") só vem do micro novo.
+  const t0 = Date.now();
   const out = await callTranscribe(
     opts.baseUrl || CHATBOT_URL,
     { url, mimeType: message.mediaType! },
     opts.signal,
   );
+  const durationMs = Date.now() - t0;
   const transcript = out.transcript?.trim();
-  if (!transcript) throw new Error("A IA não conseguiu transcrever este áudio.");
+  if (!transcript) throw new AssistError("upstream", "A IA não conseguiu transcrever este áudio.");
 
   await db.whatsAppMessage.update({ where: { id: messageId }, data: { transcript } });
 
@@ -141,8 +157,8 @@ export async function transcribeStoredAudio(
     // bySystem: fora do feed de atividade e das métricas por atendente do
     // painel Chatbot (o custo continua no Canto da IA).
     metadata: agent
-      ? { usage: out.usage ?? undefined }
-      : { usage: out.usage ?? undefined, bySystem: true, audios: 1, early: true },
+      ? { usage: out.usage ?? undefined, durationMs }
+      : { usage: out.usage ?? undefined, durationMs, bySystem: true, audios: 1, early: true },
   });
 
   return transcript;

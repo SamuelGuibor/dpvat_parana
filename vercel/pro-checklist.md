@@ -75,6 +75,10 @@ Notas:
 - Os PRs que deixam trabalho para depois da resposta (`waitUntil`, PR22/PR44)
   dependem de saber o estado do Fluid: sem ele, esse trabalho fica preso ao
   `maxDuration` da função e cobra tempo de parede.
+- Tetos declarados no código, que valem com ou sem Fluid: `app/nova-dash/page.tsx`
+  = 300 (todas as server actions da nova-dash; o Next 14.2 lê o `maxDuration`
+  só do arquivo da página, não do layout), rota do Copiloto e rota da IA do
+  Copiloto (`/api/whatsapp/assist/<op>`) = 60.
 
 ### 2.3 Memória
 

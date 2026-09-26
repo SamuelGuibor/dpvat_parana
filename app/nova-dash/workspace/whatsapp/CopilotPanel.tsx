@@ -13,7 +13,7 @@ import { MentionsInput, Mention } from 'react-mentions';
 import { mentionsStyles } from '@/app/nova-dash/card-dialog/constants';
 import { renderMentionSuggestion } from '@/app/nova-dash/workspace/chat/mention-suggestion';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
-import { suggestWhatsAppReply, summarizeWhatsAppConversation, fillClientInfoWithAI } from '@/app/_actions/whatsapp/assist';
+import { describeAssistError, requestAssistText, requestFichaAI } from '@/app/_shared/utils/assist-api';
 import { saveClientInfo, addClientFromConversation } from '@/app/_actions/whatsapp/client-info';
 import {
   attachConversationMediaToCard, getClientDocumentUploadUrl,
@@ -110,7 +110,14 @@ export function CopilotPanel({
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [suggesting, setSuggesting] = useState(false);
 
+  // Conversa aberta AGORA. A IA do Copiloto vai por fetch (POST
+  // /api/whatsapp/assist/<op>), fora da fila de actions: o atendente pode
+  // trocar de conversa durante os 2-4 s, e a resposta que chega depois não
+  // pode aparecer na conversa nova.
+  const activeContactRef = useRef(contactId);
+
   useEffect(() => {
+    activeContactRef.current = contactId;
     setSummary(summaryCache.current.get(contactId) ?? null);
     setSuggestion(null);
     setTab('copiloto');
@@ -118,13 +125,15 @@ export function CopilotPanel({
 
   async function handleSummarize() {
     if (summarizing) return;
+    const requested = contactId;
     setSummarizing(true);
     try {
-      const text = await summarizeWhatsAppConversation(contactId);
-      summaryCache.current.set(contactId, text);
-      setSummary(text);
+      const text = await requestAssistText('summary', requested);
+      // Guarda no cache do contato pedido (voltar a ele mostra o resumo).
+      summaryCache.current.set(requested, text);
+      if (activeContactRef.current === requested) setSummary(text);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao gerar o resumo.');
+      toast.error(describeAssistError(e, 'Falha ao gerar o resumo.'));
     } finally {
       setSummarizing(false);
     }
@@ -132,11 +141,13 @@ export function CopilotPanel({
 
   async function handleSuggest() {
     if (suggesting) return;
+    const requested = contactId;
     setSuggesting(true);
     try {
-      setSuggestion(await suggestWhatsAppReply(contactId));
+      const text = await requestAssistText('suggest', requested);
+      if (activeContactRef.current === requested) setSuggestion(text);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
+      toast.error(describeAssistError(e, 'Falha ao gerar a sugestão.'));
     } finally {
       setSuggesting(false);
     }
@@ -163,13 +174,15 @@ export function CopilotPanel({
 
   async function handleFillFichaAI() {
     if (fillingFicha) return;
+    const requested = contactId;
     setFillingFicha(true);
     try {
-      const result = await fillClientInfoWithAI(contactId);
+      const result = await requestFichaAI(requested);
       // O hospital citado também muda a ficha (vira a dica embaixo do select),
-      // mesmo quando nenhum campo foi preenchido.
+      // mesmo quando nenhum campo foi preenchido. Recarrega pela key do
+      // contato PEDIDO, mesmo que o atendente já esteja em outra conversa.
       if (result.filled.length || result.hospitalHint) {
-        await reloadCopilot(contactId);
+        await reloadCopilot(requested);
       }
       if (result.filled.length) {
         toast.success(`IA preencheu: ${result.filled.join(', ')}.`);
@@ -177,7 +190,7 @@ export function CopilotPanel({
         toast.info(result.reason ?? 'A IA não encontrou dados novos na conversa.');
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao preencher a ficha com IA.');
+      toast.error(describeAssistError(e, 'Falha ao preencher a ficha com IA.'));
     } finally {
       setFillingFicha(false);
     }

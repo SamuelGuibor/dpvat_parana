@@ -1,5 +1,6 @@
 import { db } from "@/app/_shared/lib/prisma";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { AssistError } from "@/app/_shared/utils/assist-errors";
 import { findLinkedCard } from "./bot";
 import { transcribeStoredAudio } from "./transcribe";
 
@@ -9,10 +10,20 @@ import { transcribeStoredAudio } from "./transcribe";
 //   - summarizeConversation   → resumo curto do histórico (vira comentário no card)
 //   - transcribeMessageAudio  → transcreve um áudio da thread (persiste na mensagem)
 // O gasto de tokens vai pro log (wa_suggest / wa_summary / wa_transcribe) e
-// entra na conta do Canto da IA.
+// entra na conta do Canto da IA. O log leva também `durationMs` = tempo SÓ da
+// chamada à IA (sem as leituras do banco), para o gestor ver quanto o Copiloto
+// demora. Não confundir com o `durationMs` dos logs wa_bot antigos, que era a
+// idade da conversa (hoje `conversationAgeMs`): nenhum painel soma os dois.
+//
+// Falhas saem como `AssistError` com `code` (assist-errors.ts): a rota
+// POST /api/whatsapp/assist/<op> devolve a mensagem PT-BR com o status do
+// code, em vez do erro mascarado das server actions.
 
 const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, "") ?? "";
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? "";
+// 30 s: desde que a IA do Copiloto saiu da fila de server actions (rota
+// POST, 26/09/2026) a espera não congela mais a aba, só o botão fica girando.
+// A rota tem maxDuration 60, com folga para as leituras do banco.
 const ASSIST_TIMEOUT_MS = 30_000;
 
 function assistConfigured(): boolean {
@@ -20,7 +31,9 @@ function assistConfigured(): boolean {
 }
 
 async function callAssist<T>(path: string, body: object): Promise<T> {
-  if (!assistConfigured()) throw new Error("Serviço de IA não configurado (CHATBOT_URL/CHATBOT_SECRET).");
+  if (!assistConfigured()) {
+    throw new AssistError("not_configured", "Serviço de IA não configurado (CHATBOT_URL/CHATBOT_SECRET).");
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ASSIST_TIMEOUT_MS);
   try {
@@ -39,17 +52,32 @@ async function callAssist<T>(path: string, body: object): Promise<T> {
       // rodando, ou Railway caído) e a resposta que estourou o tempo.
       console.error(`[WHATSAPP ASSIST] Falha ao chamar ${CHATBOT_URL}${path}:`, err);
       if (err instanceof Error && err.name === "AbortError") {
-        throw new Error("A IA demorou demais para responder. Tente de novo.");
+        throw new AssistError("timeout", "A IA demorou demais para responder. Tente de novo.");
       }
-      throw new Error(
+      throw new AssistError(
+        "offline",
         "Serviço de IA fora do ar — não consegui falar com o chatbot. Tente de novo em instantes.",
       );
     }
-    if (!res.ok) throw new Error(`IA respondeu HTTP ${res.status}`);
-    return (await res.json()) as T;
+    // 504 = o micro desistiu pelo próprio prazo: para o atendente é "demorou".
+    if (res.status === 504) {
+      throw new AssistError("timeout", "A IA demorou demais para responder. Tente de novo.");
+    }
+    if (!res.ok) throw new AssistError("upstream", `IA respondeu HTTP ${res.status}. Tente de novo.`);
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new AssistError("upstream", "A IA devolveu uma resposta ilegível. Tente de novo.");
+    }
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Texto que o micro devolveu, ou `AssistError("upstream")` se veio vazio/fora do formato. */
+function requireText(value: unknown, emptyMessage: string): string {
+  if (typeof value === "string" && value.trim()) return value;
+  throw new AssistError("upstream", emptyMessage);
 }
 
 interface HistoryTurn {
@@ -96,7 +124,7 @@ export async function suggestReplyForContact(
     where: { id: contactId },
     select: { name: true, phone: true },
   });
-  if (!contact) throw new Error("Contato não encontrado.");
+  if (!contact) throw new AssistError("not_found", "Contato não encontrado.");
 
   const [history, conversation, card] = await Promise.all([
     loadHistory(contactId),
@@ -104,14 +132,17 @@ export async function suggestReplyForContact(
     findLinkedCard(contactId).catch(() => null),
   ]);
 
-  const out = await callAssist<{ suggestion: string; usage?: object | null }>("/suggest", {
+  const t0 = Date.now();
+  const out = await callAssist<{ suggestion?: unknown; usage?: object | null }>("/suggest", {
     contact: { name: contact.name, phone: contact.phone },
     processInfo: card ? { name: card.name, etapa: card.etapa, service: card.service } : null,
     history,
     memory: conversation?.botMemory ?? null,
     agentName: agent.name,
   });
+  const durationMs = Date.now() - t0;
 
+  // Log ANTES de conferir o texto: a IA já cobrou mesmo se veio vazio.
   await logWhatsAppEvent({
     action: "wa_suggest",
     message: "pediu sugestão de resposta à IA",
@@ -120,10 +151,10 @@ export async function suggestReplyForContact(
     contactId,
     contactName: contact.name,
     contactPhone: contact.phone,
-    metadata: { usage: out.usage ?? undefined },
+    metadata: { usage: out.usage ?? undefined, durationMs },
   });
 
-  return out.suggestion;
+  return requireText(out.suggestion, "A IA não devolveu uma sugestão. Tente de novo.");
 }
 
 // ---------------------------------------------------------------------------
@@ -138,19 +169,21 @@ export async function summarizeConversationForAgent(
     where: { id: contactId },
     select: { name: true, phone: true },
   });
-  if (!contact) throw new Error("Contato não encontrado.");
+  if (!contact) throw new AssistError("not_found", "Contato não encontrado.");
 
   const [history, conversation] = await Promise.all([
     loadHistory(contactId, 60),
     db.whatsAppConversation.findUnique({ where: { contactId }, select: { botMemory: true } }),
   ]);
-  if (!history.length) throw new Error("Ainda não há conversa para resumir.");
+  if (!history.length) throw new AssistError("bad_input", "Ainda não há conversa para resumir.");
 
-  const out = await callAssist<{ summary: string; usage?: object | null }>("/summarize", {
+  const t0 = Date.now();
+  const out = await callAssist<{ summary?: unknown; usage?: object | null }>("/summarize", {
     contact: { name: contact.name, phone: contact.phone },
     history,
     memory: conversation?.botMemory ?? null,
   });
+  const durationMs = Date.now() - t0;
 
   await logWhatsAppEvent({
     action: "wa_summary",
@@ -160,10 +193,10 @@ export async function summarizeConversationForAgent(
     contactId,
     contactName: contact.name,
     contactPhone: contact.phone,
-    metadata: { usage: out.usage ?? undefined },
+    metadata: { usage: out.usage ?? undefined, durationMs },
   });
 
-  return out.summary;
+  return requireText(out.summary, "A IA não devolveu o resumo. Tente de novo.");
 }
 
 // ---------------------------------------------------------------------------
@@ -196,11 +229,13 @@ export async function summarizeConversationToCard(
       ? (await db.user.findUnique({ where: { id: target.userId }, select: { name: true } }))?.name
       : (await db.process.findUnique({ where: { id: target.processId! }, select: { name: true } }))?.name;
 
+    const t0 = Date.now();
     const out = await callAssist<{ summary: string; usage?: object | null }>("/summarize", {
       contact: { name: contact.name, phone: contact.phone },
       history,
       memory: conversation?.botMemory ?? null,
     });
+    const durationMs = Date.now() - t0;
 
     await db.comment.create({
       data: {
@@ -220,7 +255,7 @@ export async function summarizeConversationToCard(
       contactId,
       contactName: contact.name,
       contactPhone: contact.phone,
-      metadata: { usage: out.usage ?? undefined, userId: target.userId, processId: target.processId },
+      metadata: { usage: out.usage ?? undefined, durationMs, userId: target.userId, processId: target.processId },
     });
   } catch (err) {
     console.error("[WHATSAPP ASSIST] Falha ao resumir conversa pro card:", contactId, err);

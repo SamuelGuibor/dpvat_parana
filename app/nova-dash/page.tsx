@@ -38,6 +38,15 @@ import { isTeamRole } from '@/app/_shared/lib/permissions';
 import { DashboardTour, START_DASH_TOUR_EVENT } from '@/app/nova-dash/_components/DashboardTour';
 import { EventsDialog, EventsButton } from '@/app/nova-dash/_components/EventsDialog';
 export const dynamic = "force-dynamic";
+// Teto das server actions desta página (todas rodam na função de /nova-dash).
+// Tem que ficar AQUI, não no layout: no Next 14.2 a Vercel lê o maxDuration só
+// do arquivo da página (getPageStaticInfo → functions-config-manifest). O
+// resumo de vínculo do "Adicionar cliente" roda depois da resposta
+// (runAfterResponse/waitUntil) e morre no teto da função; 300 = o padrão do
+// Pro com Fluid, então nada que já funciona fica mais curto (a Auditoria IA
+// manual, com ~160 mil tokens de entrada, pode passar de 60 s), e sem Fluid
+// o teto deixa de ser os 15 s padrão.
+export const maxDuration = 300;
 
 // Abas do topo (20/08/2026): estilo "underline nav" — texto discreto, hover
 // suave e a aba ativa marcada por texto esmeralda + barra embaixo, alinhada à

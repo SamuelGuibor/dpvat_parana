@@ -153,11 +153,14 @@ function usageOf(response: Anthropic.Message): Record<string, unknown> | undefin
  * Toda chamada à IA grava wa_ficha_ai com o usage, inclusive a recusa e o
  * "nenhum dado novo" (metadata.noop, fora do feed do painel Chatbot): antes só
  * o preenchimento gravava, e o gasto das outras rodadas sumia do Canto da IA.
+ * O mesmo log leva `durationMs`: tempo SÓ da chamada ao Haiku (sem baixar os
+ * anexos do S3 nem gravar no banco), para medir quanto a ficha por IA demora.
  */
 export async function autoFillClientInfo(contactId: string, opts: FichaAiOptions = {}): Promise<FichaAiResult> {
-  // Gasto da chamada à IA, calculado logo depois do create: todo retorno e o
-  // catch dali em diante gravam o log com ele.
+  // Gasto e tempo da chamada à IA, calculados logo depois do create: todo
+  // retorno e o catch dali em diante gravam o log com eles.
   let usage: Record<string, unknown> | undefined;
+  let durationMs: number | undefined;
   try {
     if (!process.env.CLAUDE_API_KEY) {
       return { filled: [], reason: "CLAUDE_API_KEY não configurada no servidor." };
@@ -268,6 +271,7 @@ Responda APENAS com JSON válido:
     content.push({ type: "text", text: prompt });
 
     const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    const t0 = Date.now();
     const response = await client.messages.create({
       // Haiku: roda a cada lote de mensagens — leitura de documento + extração
       // simples não justifica modelo maior.
@@ -275,6 +279,7 @@ Responda APENAS com JSON válido:
       max_tokens: 1000,
       messages: [{ role: "user", content }],
     });
+    durationMs = Date.now() - t0;
     usage = usageOf(response);
     const logNoop = (message: string, extra: Record<string, unknown> = {}) =>
       logWhatsAppEvent({
@@ -285,7 +290,7 @@ Responda APENAS com JSON válido:
         contactId,
         contactName: contact.name,
         contactPhone: contact.phone,
-        metadata: { usage, filled: [], noop: true, ...extra },
+        metadata: { usage, durationMs, filled: [], noop: true, ...extra },
       });
     if (response.stop_reason === "refusal") {
       await logNoop("IA recusou a análise da conversa para a ficha", { refusal: true });
@@ -382,7 +387,7 @@ Responda APENAS com JSON válido:
       contactId,
       contactName: updates.name ?? contact.name,
       contactPhone: contact.phone,
-      metadata: { fields: updates, usage },
+      metadata: { fields: updates, usage, durationMs },
     });
 
     return { filled: Object.keys(updates) };
@@ -399,7 +404,7 @@ Responda APENAS com JSON válido:
         authorName: "🤖 Bot WhatsApp",
         contactId,
         // Falha depois da chamada (JSON inválido, banco): a IA já cobrou.
-        metadata: { error: detail, usage },
+        metadata: { error: detail, usage, durationMs },
       });
     } catch { /* log é best-effort */ }
     return { filled: [], reason: detail };

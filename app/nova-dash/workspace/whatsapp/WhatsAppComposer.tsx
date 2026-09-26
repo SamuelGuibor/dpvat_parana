@@ -20,7 +20,7 @@ import {
 import { sendWhatsAppMessage, sendWhatsAppMedia, sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppFlows, logFlowDispatched, type WhatsAppFlowDTO, type WhatsAppFlowStep } from '@/app/_actions/whatsapp/flows';
 import { listWhatsAppQuickReplies, type WhatsAppQuickReplyDTO } from '@/app/_actions/whatsapp/quick-replies';
-import { suggestWhatsAppReply } from '@/app/_actions/whatsapp/assist';
+import { describeAssistError, requestAssistText } from '@/app/_shared/utils/assist-api';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { WhatsAppFlowsModal } from './WhatsAppFlowsModal';
@@ -131,7 +131,12 @@ export function WhatsAppComposer({
   }, []);
 
   // Sugestão de resposta pela IA: preenche o input; o humano revisa e envia.
+  // Vai por POST /api/whatsapp/assist/suggest, fora da fila de actions: dá
+  // para trocar de conversa durante a espera, e a sugestão que chega depois
+  // não pode cair no campo da conversa nova (o composer não remonta por contato).
   const [suggesting, setSuggesting] = useState(false);
+  const activeContactRef = useRef(contactId);
+  useEffect(() => { activeContactRef.current = contactId; }, [contactId]);
 
   // Gravação de áudio (ogg/opus → chega como mensagem de voz no cliente).
   const voice = useVoiceRecorder({ onFinish: (file) => onSendMedia([file], '') });
@@ -646,14 +651,19 @@ export function WhatsAppComposer({
         <button
           onClick={async () => {
             if (suggesting) return;
+            const requested = contactId;
             setSuggesting(true);
             try {
-              const suggestion = await suggestWhatsAppReply(contactId);
+              const suggestion = await requestAssistText('suggest', requested);
+              if (activeContactRef.current !== requested) {
+                toast.info('A sugestão chegou depois que você trocou de conversa e foi descartada.');
+                return;
+              }
               setValue(suggestion);
               textareaRef.current?.focus();
               toast.success('Sugestão pronta — revise antes de enviar.');
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
+              toast.error(describeAssistError(e, 'Falha ao gerar a sugestão.'));
             } finally {
               setSuggesting(false);
             }
