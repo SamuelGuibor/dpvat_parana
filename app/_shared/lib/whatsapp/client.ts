@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getCreds, type WaCreds } from "./numbers";
+import { reportCriticalError } from "@/app/_shared/lib/report-error";
 
 // Cliente da WhatsApp Cloud API (Meta oficial).
 //
@@ -607,11 +608,22 @@ export async function deleteMetaTemplate(name: string, numberId?: string | null)
   }
 }
 
+// Tetos do download de mídia recebida. O download roda DENTRO do webhook
+// (maxDuration 120, com o bot inline logo depois): sem teto, uma Meta lenta
+// segurava a função até ela morrer e levava o bot junto numa rajada de
+// arquivos. 10 s bastam para a consulta de metadata (JSON pequeno); 30 s cobrem
+// o binário, e o sinal também aborta a leitura do corpo (arrayBuffer). Pior
+// caso por mídia: 40 s. Documento enorme em rede lenta pode estourar e a
+// mensagem fica sem anexo (raro: ~1 falha em 6 mil mídias em 30 dias).
+const MEDIA_METADATA_TIMEOUT_MS = 10_000;
+const MEDIA_BINARY_TIMEOUT_MS = 30_000;
+
 /**
  * Baixa uma mídia recebida (imagem/áudio/documento) e sobe pro S3 no mesmo
  * bucket dos documentos. A URL da Meta expira em ~5 min, por isso o download
- * acontece na hora do webhook. Retorna a chave no S3 ou null em caso de erro
- * (a mensagem é gravada mesmo assim, só sem o anexo).
+ * acontece na hora do webhook (não dá para jogar para depois do bot). Retorna
+ * a chave no S3 ou null em caso de erro ou timeout (a mensagem é gravada mesmo
+ * assim, só sem o anexo; quem chama registra o log `wa_media_fail`).
  */
 export async function downloadMediaToS3(
   mediaId: string,
@@ -626,6 +638,7 @@ export async function downloadMediaToS3(
     const metaRes = await fetch(`${graphBase(c)}/${mediaId}`, {
       headers: { Authorization: `Bearer ${c.token}` },
       cache: "no-store",
+      signal: AbortSignal.timeout(MEDIA_METADATA_TIMEOUT_MS),
     });
     if (!metaRes.ok) throw new Error(`metadata HTTP ${metaRes.status}`);
     const meta = await metaRes.json();
@@ -635,6 +648,7 @@ export async function downloadMediaToS3(
     const binRes = await fetch(meta.url, {
       headers: { Authorization: `Bearer ${c.token}` },
       cache: "no-store",
+      signal: AbortSignal.timeout(MEDIA_BINARY_TIMEOUT_MS),
     });
     if (!binRes.ok) throw new Error(`download HTTP ${binRes.status}`);
     const buf = Buffer.from(await binRes.arrayBuffer());
@@ -659,7 +673,9 @@ export async function downloadMediaToS3(
 
     return { key, mimeType };
   } catch (err) {
-    console.error(`[WHATSAPP] Falha ao baixar mídia ${mediaId}:`, err);
+    // Timeout chega aqui como TimeoutError (AbortSignal). Registro central de
+    // erro engolido de propósito: a mensagem ainda é gravada, só sem anexo.
+    await reportCriticalError(`whatsapp.downloadMediaToS3 ${mediaId}`, err, { contactId });
     return null;
   }
 }

@@ -44,6 +44,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/afastamentos/check", // GET: CRON_SECRET; POST: sessão (validados na rota)
   "/api/documents/trash/purge", // CRON_SECRET (validado na rota)
   "/api/botconversa/contratado", // shared secret (validado na rota)
+  "/api/costs/sync", // CRON_SECRET (validado na rota) — Vercel Cron chega sem cookie
 ];
 
 /** GETs consumidos pela área do cliente sem login (consulta de status). */

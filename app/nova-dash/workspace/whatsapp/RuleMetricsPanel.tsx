@@ -44,6 +44,9 @@ const ACTION_LABELS: Record<string, string> = {
   recovered: 'cliente voltou',
   exhausted: 'esgotou sem resposta',
   opt_out: 'pediu pra sair',
+  // Intervenções de código (cron de silêncio)
+  recuperacao_bloqueada: 'recuperação bloqueada',
+  orfa_para_fila: 'órfã → Fila (bot não respondeu)',
 };
 
 function StatCard({ icon: Icon, label, value, hint, tone = 'indigo' }: {

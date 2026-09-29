@@ -4,18 +4,25 @@ import { getServerSession } from 'next-auth';
 import { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { inferCategory } from '@/app/_shared/lib/document-categories';
+import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { createLog } from '@/app/_shared/lib/log';
 import { summarizeConversationToCard } from '@/app/_shared/lib/whatsapp/assist';
 import { hashPassword } from '@/app/_shared/lib/password';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
+import { runAfterResponse } from '@/app/_shared/lib/background';
+import {
+  CLIENT_FIELDS, findUserByPhone, loadClientInfo, migrateDraftDocuments,
+} from '@/app/_shared/lib/whatsapp/copilot-data';
+import type { ClientInfoFields, ClientInfoResult } from '@/app/_shared/lib/whatsapp/copilot-types';
 
-// Ficha do cliente dentro do atendimento de WhatsApp.
+// Ficha do cliente dentro do atendimento de WhatsApp: as MUTAÇÕES (salvar a
+// ficha, "Adicionar cliente") e o atalho "Abrir conversa" do card.
 //
-// O vínculo contato ↔ cliente é pelo telefone: se já existe um User com o
-// mesmo número, a ficha lê/edita direto o cadastro. Se não existe, os campos
-// ficam salvos como rascunho na conversa (whatsapp_contacts.clientDraft) até
-// alguém clicar em "Adicionar cliente", que cria o User de verdade.
+// A LEITURA da ficha (com o vínculo pelo telefone, o resumo no card e a
+// migração dos rascunhos de documento) mora em
+// app/_shared/lib/whatsapp/copilot-data.ts, e o inbox a lê junto com os
+// documentos por GET /api/whatsapp/inbox/copilot/<contactId>, fora da fila
+// serial de server actions. Os tipos moram em copilot-types.ts.
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -30,71 +37,6 @@ async function requireTeamMember(): Promise<{ id: string; name: string }> {
     throw new Error('Sem permissão para o atendimento de WhatsApp.');
   }
   return { id: me.id, name: me.name ?? 'Atendente' };
-}
-
-// Campos editáveis pela ficha (subset do User relevante pro atendimento).
-const CLIENT_FIELDS = [
-  'name', 'cpf', 'rg', 'email', 'data_nasc', 'data_acidente',
-  'estado_civil', 'profissao', 'nome_mae', 'cidade', 'estado',
-  'rua', 'bairro', 'numero', 'cep', 'hospital', 'lesoes', 'obs',
-  // Preenchidos só quando o cliente informa por conta própria (o bot não pede).
-  'telefone_secundario', 'rede_social',
-] as const;
-
-export type ClientInfoFields = Partial<Record<(typeof CLIENT_FIELDS)[number], string | null>>;
-
-function sanitizeFields(input: ClientInfoFields): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
-  for (const key of CLIENT_FIELDS) {
-    if (!(key in input)) continue;
-    const v = input[key];
-    out[key] = typeof v === 'string' && v.trim() ? v.trim() : null;
-  }
-  return out;
-}
-
-export interface ClientInfoResult {
-  registered: boolean;
-  userId: string | null;
-  phone: string;
-  cardNumber: number | null;
-  fields: ClientInfoFields;
-  /** Campos preenchidos pela IA (ganham selo na ficha até alguém editar). */
-  aiFields: string[];
-  /** Hospital citado pelo cliente — a IA nunca preenche o select. */
-  hospitalHint: string | null;
-}
-
-/**
- * Procura um User pelo telefone do contato (últimos 8 dígitos + conferência
- * de DDD em JS) — cobre diferenças de máscara e o 9º dígito do celular.
- */
-async function findUserByPhone(phone: string): Promise<{ id: string } | null> {
-  const digits = phone.replace(/\D/g, '');
-  const last8 = digits.slice(-8);
-  if (last8.length < 8) return null;
-
-  const rows = await db.$queryRaw<{ id: string; telefone: string | null; telefone_secundario: string | null }[]>(
-    Prisma.sql`
-      SELECT id, telefone, telefone_secundario FROM "User"
-      WHERE right(regexp_replace(coalesce(telefone, ''), '\\D', '', 'g'), 8) = ${last8}
-         OR right(regexp_replace(coalesce(telefone_secundario, ''), '\\D', '', 'g'), 8) = ${last8}
-      LIMIT 5
-    `,
-  );
-  if (!rows.length) return null;
-
-  // DDD do contato (formato Meta: 55 + DDD + número). Se algum candidato
-  // bater o DDD também, prefere ele; senão fica com o primeiro dos 8 dígitos.
-  const ddd = digits.startsWith('55') ? digits.slice(2, 4) : digits.slice(0, 2);
-  const withDdd = rows.find((r) =>
-    [r.telefone, r.telefone_secundario].some((t) => {
-      const d = (t ?? '').replace(/\D/g, '');
-      const dd = d.startsWith('55') ? d.slice(2, 4) : d.slice(0, 2);
-      return d.slice(-8) === last8 && dd === ddd;
-    }),
-  );
-  return withDdd ?? rows[0];
 }
 
 /**
@@ -131,74 +73,25 @@ export async function findWhatsAppContactForCard(userId: string): Promise<string
   return null;
 }
 
-/** Carrega a ficha: do User vinculado (cadastrado) ou do rascunho da conversa. */
+/**
+ * @deprecated bundle antigo: a ficha vem junto com os documentos de GET
+ * /api/whatsapp/inbox/copilot/<contactId>. Fica por UM deploy só para as abas
+ * abertas com o bundle antigo (que ainda chamam esta action pelo id); no
+ * deploy seguinte, remover se ficar sem uso (npx knip).
+ */
 export async function getClientInfo(contactId: string): Promise<ClientInfoResult> {
-  await requireTeamMember();
-
-  const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
-  if (!contact) throw new Error('Contato não encontrado.');
-
-  // Resolve o vínculo: userId já salvo ou match por telefone (e memoriza).
-  let userId = contact.userId;
-  if (!userId) {
-    const found = await findUserByPhone(contact.phone);
-    if (found) {
-      userId = found.id;
-      await db.whatsAppContact.update({ where: { id: contactId }, data: { userId } });
-      // Acabou de VINCULAR a conversa a um card → resumo automático do
-      // histórico vira comentário no card (best-effort, nunca quebra a ficha).
-      const me = await requireTeamMember();
-      await summarizeConversationToCard(contactId, { userId }, me);
-    }
-  }
-
-  if (userId) {
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: Object.fromEntries([...CLIENT_FIELDS, 'cardNumber'].map((f) => [f, true])) as Record<string, true>,
-    });
-    if (user) {
-      const u = user as unknown as Record<string, string | null> & { cardNumber?: number | null };
-      const fields: ClientInfoFields = {};
-      for (const key of CLIENT_FIELDS) fields[key] = u[key] ?? null;
-      // Contato vinculado a um card → o nome do cadastro é o nome oficial. O
-      // contato nasce com o apelido do perfil do WhatsApp, que é o que o bot e
-      // a lista do inbox usam; alinha aqui para o cliente parar de ser chamado
-      // pelo apelido depois de a equipe ter corrigido o nome no card.
-      const cardName = u.name?.trim();
-      if (cardName && cardName !== contact.name) {
-        await db.whatsAppContact.update({ where: { id: contactId }, data: { name: cardName } });
-      }
-      return {
-        registered: true,
-        userId,
-        phone: contact.phone,
-        cardNumber: u.cardNumber ?? null,
-        fields,
-        aiFields: aiFieldList(contact.aiFilledFields),
-        hospitalHint: contact.hospitalHint ?? null,
-      };
-    }
-    // User apontado não existe mais → limpa o vínculo e cai pro rascunho.
-    await db.whatsAppContact.update({ where: { id: contactId }, data: { userId: null } });
-  }
-
-  const draft = (contact.clientDraft ?? {}) as ClientInfoFields;
-  return {
-    registered: false,
-    userId: null,
-    phone: contact.phone,
-    cardNumber: null,
-    fields: { name: contact.name ?? null, ...draft },
-    aiFields: aiFieldList(contact.aiFilledFields),
-    hospitalHint: contact.hospitalHint ?? null,
-  };
+  const ctx = await requireTeam();
+  return loadClientInfo(contactId, { id: ctx.userId, name: ctx.name ?? 'Atendente' });
 }
 
-/** Lista de campos marcados como preenchidos pela IA (whatsapp_contacts). */
-function aiFieldList(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
-  return Object.keys(raw as Record<string, unknown>);
+function sanitizeFields(input: ClientInfoFields): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const key of CLIENT_FIELDS) {
+    if (!(key in input)) continue;
+    const v = input[key];
+    out[key] = typeof v === 'string' && v.trim() ? v.trim() : null;
+  }
+  return out;
 }
 
 /**
@@ -206,7 +99,7 @@ function aiFieldList(raw: unknown): string[] {
  * senão guarda como rascunho da conversa.
  */
 export async function saveClientInfo(contactId: string, input: ClientInfoFields): Promise<ClientInfoResult> {
-  await requireTeamMember();
+  const me = await requireTeamMember();
 
   const contact = await db.whatsAppContact.findUnique({ where: { id: contactId } });
   if (!contact) throw new Error('Contato não encontrado.');
@@ -259,7 +152,7 @@ export async function saveClientInfo(contactId: string, input: ClientInfoFields)
     });
   }
 
-  return getClientInfo(contactId);
+  return loadClientInfo(contactId, me);
 }
 
 /**
@@ -280,13 +173,20 @@ export async function addClientFromConversation(contactId: string, input: Client
   // Evita duplicar: se apareceu um cadastro com esse telefone, só vincula.
   const existing = await findUserByPhone(contact.phone);
   if (existing) {
-    await migrateDraftDocuments(contact, existing.id);
-    await db.whatsAppContact.update({
-      where: { id: contactId },
+    // Mesmo vínculo atômico da leitura da ficha (copilot-data.ts): se outra
+    // aba vinculou pelo telefone no meio, ela já migrou os rascunhos e pediu
+    // o resumo.
+    const link = await db.whatsAppContact.updateMany({
+      where: { id: contactId, userId: null },
       data: { userId: existing.id, clientDraft: Prisma.DbNull },
     });
-    // Vinculou ao cadastro existente → resumo da conversa no card.
-    await summarizeConversationToCard(contactId, { userId: existing.id }, me);
+    if (link.count === 1) {
+      await migrateDraftDocuments(contactId, existing.id);
+      // Vinculou ao cadastro existente → resumo da conversa no card, depois
+      // da resposta (mesmo motivo da leitura da ficha: a IA segurava a fila).
+      runAfterResponse('resumo de vínculo', () =>
+        summarizeConversationToCard(contactId, { userId: existing.id }, me));
+    }
     // Vincular a um card também conta como lead qualificado pra Meta.
     void reportLeadStageToMeta(contactId, 'qualificado');
     return saveClientInfo(contactId, input);
@@ -322,7 +222,7 @@ export async function addClientFromConversation(contactId: string, input: Client
     },
   });
 
-  await migrateDraftDocuments(contact, user.id);
+  await migrateDraftDocuments(contactId, user.id);
 
   // Criação de card pela ficha do WhatsApp também conta em "Criações".
   await createLog({
@@ -339,25 +239,14 @@ export async function addClientFromConversation(contactId: string, input: Client
   });
 
   // Card recém-criado a partir da conversa → resumo automático do histórico
-  // como primeiro comentário (best-effort).
-  await summarizeConversationToCard(contactId, { userId: user.id }, me);
+  // como primeiro comentário (best-effort, depois da resposta: o card e a
+  // ficha aparecem sem esperar a IA).
+  runAfterResponse('resumo de vínculo', () =>
+    summarizeConversationToCard(contactId, { userId: user.id }, me));
 
   // Entrou no kanban = lead qualificado de fato → devolve pra Meta (API de
   // Conversões). O dedupe evita duplicar se a IA/atendente já reportou.
   void reportLeadStageToMeta(contactId, 'qualificado');
 
-  return getClientInfo(contactId);
-}
-
-/** Move os documentos anexados como rascunho na conversa pro cadastro real do cliente. */
-async function migrateDraftDocuments(
-  contact: { id: string; draftDocuments: unknown },
-  userId: string,
-): Promise<void> {
-  const drafts = (contact.draftDocuments as { key: string; name: string }[]) ?? [];
-  if (!drafts.length) return;
-  await db.document.createMany({
-    data: drafts.map((d) => ({ userId, key: d.key, name: d.name, category: inferCategory(d.name) })),
-  });
-  await db.whatsAppContact.update({ where: { id: contact.id }, data: { draftDocuments: Prisma.DbNull } });
+  return loadClientInfo(contactId, me);
 }

@@ -5,16 +5,19 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { broadcastToRelay } from '@/app/_shared/lib/chat-relay';
 import { sendText, sendMedia, sendVoiceNote, sendReaction } from '@/app/_shared/lib/whatsapp/client';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { extractMentions } from '@/app/_shared/utils/mentions';
 import { recordMentions } from '@/app/_shared/lib/mention-inbox';
 import {
+  broadcastWhatsAppEvent,
   whatsappChannelId,
   whatsappRecipients,
   type WhatsAppMessageDTO,
 } from '@/app/_shared/lib/whatsapp/service';
+import { runAfterResponse } from '@/app/_shared/lib/background';
+import { trySignGetUrl } from '@/app/_shared/lib/s3-presign';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -107,8 +110,9 @@ async function persistOutbound(params: {
     replyToDirection: message.replyToDirection,
   };
 
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  // Destinatários + ida ao relay depois da resposta: o envio não espera o
+  // Railway (a bolha do próprio atendente vem do DTO devolvido, não do SSE).
+  broadcastWhatsAppEvent(dto);
 
   return dto;
 }
@@ -138,6 +142,7 @@ interface SendInput {
  * 24h tiver expirado, a Graph API rejeita e o erro chega legível ao usuário.
  */
 export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendInput): Promise<WhatsAppMessageDTO> {
+  const startedAt = Date.now();
   const me = await requireTeamMember();
 
   const text = body.trim();
@@ -163,7 +168,12 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
     replyTo,
   });
 
-  await logWhatsAppEvent({
+  // Log de auditoria (sem IA) depois da resposta, com o instante da ação
+  // capturado aqui. serverMs = tempo de servidor do envio até este ponto
+  // (Meta + banco): o create→log da auditoria deixou de medir latência
+  // quando o log saiu do caminho da resposta, e esta é a métrica que o substitui.
+  const at = new Date();
+  runAfterResponse('log wa_text', () => logWhatsAppEvent({
     action: 'wa_text',
     message: `enviou uma mensagem de texto para ${contact.name ?? contact.phone}`,
     authorId: me.id,
@@ -171,8 +181,9 @@ export async function sendWhatsAppMessage({ contactId, body, replyToId }: SendIn
     contactId,
     contactName: contact.name,
     contactPhone: contact.phone,
-    metadata: { preview: text.slice(0, 120) },
-  });
+    metadata: { preview: text.slice(0, 120), serverMs: at.getTime() - startedAt },
+    at,
+  }));
 
   return dto;
 }
@@ -213,20 +224,16 @@ export async function reactToWhatsAppMessage({
 
   // Broadcast leve: qualquer evento no canal já força o refetch da thread
   // aberta nos outros atendentes (o inbox só olha o channelId).
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({
+  broadcastWhatsAppEvent({
+    type: 'wa_reaction',
     channelId: whatsappChannelId(msg.contactId),
-    recipients,
-    message: {
-      type: 'wa_reaction',
-      channelId: whatsappChannelId(msg.contactId),
-      contactId: msg.contactId,
-      messageId: msg.id,
-      reaction: next,
-    },
+    contactId: msg.contactId,
+    messageId: msg.id,
+    reaction: next,
   });
 
-  await logWhatsAppEvent({
+  const at = new Date();
+  runAfterResponse('log wa_reaction', () => logWhatsAppEvent({
     action: 'wa_reaction',
     message: next
       ? `reagiu com ${next} a uma mensagem de ${contact.name ?? contact.phone}`
@@ -237,7 +244,8 @@ export async function reactToWhatsAppMessage({
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { messageId: msg.id, emoji: next },
-  });
+    at,
+  }));
 
   return { reaction: next };
 }
@@ -268,9 +276,15 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     },
   });
 
-  // Broadcast pro relay: colegas com a thread aberta veem a nota na hora.
   // Não mexe em lastMessageAt — nota interna não deve reordenar a lista nem
-  // marcar a conversa como "não lida" pro cliente ter respondido.
+  // marcar a conversa como "não lida" pro cliente ter respondido. Mas TOCA o
+  // updatedAt, DEPOIS de gravar a nota: a lista do inbox sincroniza por delta
+  // (loadConversationsSince), e a prévia da lista mostra a nota — sem o toque
+  // ela só chegaria às outras abas na lista completa de 10 min (antes quem
+  // pegava era o max(createdAt) de mensagens no hash).
+  await db.whatsAppConversation.updateMany({ where: { contactId }, data: { updatedAt: new Date() } });
+
+  // Broadcast pro relay: colegas com a thread aberta veem a nota na hora.
   const dto: WhatsAppMessageDTO = {
     id: message.id,
     channelId: whatsappChannelId(contactId),
@@ -287,14 +301,15 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     contactPhone: contact.phone,
     conversationStatus: 'human',
   };
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 
   // @menções na nota: sino + caixa de menções pro colega citado. Nunca pode
   // derrubar o salvamento da nota — erro é logado e engolido.
   try {
     const mentions = extractMentions(text);
     if (mentions.length > 0) {
+      // @everyone = a equipe inteira (mesma lista do broadcast, em cache).
+      const recipients = mentions.some((m) => m.id === 'everyone') ? await whatsappRecipients() : [];
       const targetIds = new Set<string>();
       const sectorIds = mentions.filter((m) => m.id.startsWith('sector:')).map((m) => m.id.slice(7));
       if (sectorIds.length > 0) {
@@ -337,7 +352,8 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     console.error('[WA NOTE] Falha ao processar menções da nota interna:', err);
   }
 
-  await logWhatsAppEvent({
+  const at = new Date();
+  runAfterResponse('log wa_note', () => logWhatsAppEvent({
     action: 'wa_note',
     message: `registrou uma nota interna na conversa de ${contact.name ?? contact.phone}`,
     authorId: me.id,
@@ -346,7 +362,8 @@ export async function sendWhatsAppInternalNote({ contactId, body }: { contactId:
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { preview: text.slice(0, 120) },
-  });
+    at,
+  }));
 }
 
 /**
@@ -386,7 +403,9 @@ interface SendMediaInput {
  * pra Meta baixar. Mesma regra do texto — só persiste se a Meta aceitou.
  * Áudio .ogg (opus) chega como mensagem de voz no celular do cliente.
  */
-export async function sendWhatsAppMedia({ contactId, key, mimeType, fileName, caption, replyToId }: SendMediaInput): Promise<WhatsAppMessageDTO> {
+export async function sendWhatsAppMedia({
+  contactId, key, mimeType, fileName, caption, replyToId,
+}: SendMediaInput): Promise<WhatsAppMessageDTO & { mediaUrl?: string | null; mediaUrlExpiresAt?: string | null }> {
   const me = await requireTeamMember();
   const contact = await requireContact(contactId);
 
@@ -429,8 +448,10 @@ export async function sendWhatsAppMedia({ contactId, key, mimeType, fileName, ca
 
   const isFlowMedia = key.startsWith('whatsapp/flows/');
   const label = fileName ?? key.split('/').pop() ?? 'arquivo';
-  await logWhatsAppEvent({
-    action: kind === 'document' ? 'wa_document' : 'wa_media',
+  const logAction = kind === 'document' ? 'wa_document' : 'wa_media';
+  const at = new Date();
+  runAfterResponse(`log ${logAction}`, () => logWhatsAppEvent({
+    action: logAction,
     message: kind === 'document'
       ? `enviou o documento "${label}" para ${contact.name ?? contact.phone}`
       : `enviou ${kind === 'image' ? 'uma imagem' : kind === 'video' ? 'um vídeo' : 'um áudio'} para ${contact.name ?? contact.phone}`,
@@ -440,9 +461,19 @@ export async function sendWhatsAppMedia({ contactId, key, mimeType, fileName, ca
     contactName: contact.name,
     contactPhone: contact.phone,
     metadata: { fileName: label, mimeType, kind, fromFlow: isFlowMedia },
-  });
+    at,
+  }));
 
-  return dto;
+  // A bolha que substitui a otimista já nasce com o link, assinado IGUAL à
+  // rota da thread (inline + mediaDisplayName com o createdAt gravado, janela
+  // estável de 30 min): sem isto ela cairia no fallback (uma server action por
+  // anexo) e trocaria de src quando o poll trouxesse a URL da rota. HMAC
+  // local, sem ida à rede.
+  const signed = await trySignGetUrl(key, {
+    inline: true,
+    fileName: mediaDisplayName({ key, mediaType: mimeType, createdAt: dto.createdAt }),
+  });
+  return { ...dto, mediaUrl: signed?.url ?? null, mediaUrlExpiresAt: signed?.expiresAt ?? null };
 }
 
 /**

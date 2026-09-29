@@ -10,6 +10,7 @@ import {
   type PermissionMap,
 } from "./permissions";
 import { checkDashboardIpAccess } from "./ip-access";
+import { AccessError } from "@/app/_shared/utils/route-guards";
 
 export interface SessionPermissions {
   userId: string;
@@ -76,13 +77,18 @@ export async function getSessionPermissions(): Promise<SessionPermissions | null
  * Também aplica a trava de IP da dashboard: fora dos IPs liberados, só quem
  * tem bypass_ip_lock (a página /nova-dash tem o mesmo gate no layout — aqui
  * é a defesa em profundidade que cobre todas as server actions e APIs).
+ *
+ * A recusa é `AccessError` (subclasse de Error, então as actions seguem
+ * iguais): o `teamRoute` a transforma em 403, e qualquer OUTRO erro daqui
+ * (banco fora do ar, timeout do pool) em 500 — senão a UI diria "sem acesso"
+ * quando o problema é o Neon.
  */
 export async function requireTeam(): Promise<SessionPermissions> {
   const ctx = await getSessionPermissions();
-  if (!ctx) throw new Error("Acesso restrito à equipe.");
+  if (!ctx) throw new AccessError("Acesso restrito à equipe.");
   const ipCheck = await checkDashboardIpAccess(ctx.permissions.bypass_ip_lock);
   if (!ipCheck.allowed) {
-    throw new Error("Acesso à dashboard permitido apenas pela internet do escritório.");
+    throw new AccessError("Acesso à dashboard permitido apenas pela internet do escritório.");
   }
   return ctx;
 }
@@ -91,7 +97,7 @@ export async function requireTeam(): Promise<SessionPermissions> {
 export async function requirePermission(key: PermissionKey): Promise<SessionPermissions> {
   const ctx = await requireTeam();
   if (!ctx.permissions[key]) {
-    throw new Error("Você não tem permissão para esta ação.");
+    throw new AccessError("Você não tem permissão para esta ação.");
   }
   return ctx;
 }

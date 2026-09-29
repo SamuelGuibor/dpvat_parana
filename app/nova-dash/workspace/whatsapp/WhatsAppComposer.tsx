@@ -20,8 +20,9 @@ import {
 import { sendWhatsAppMessage, sendWhatsAppMedia, sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppFlows, logFlowDispatched, type WhatsAppFlowDTO, type WhatsAppFlowStep } from '@/app/_actions/whatsapp/flows';
 import { listWhatsAppQuickReplies, type WhatsAppQuickReplyDTO } from '@/app/_actions/whatsapp/quick-replies';
-import { suggestWhatsAppReply } from '@/app/_actions/whatsapp/assist';
+import { describeAssistError, requestAssistText } from '@/app/_shared/utils/assist-api';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
+import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { WhatsAppFlowsModal } from './WhatsAppFlowsModal';
 import { WhatsAppQuickRepliesModal } from './WhatsAppQuickRepliesModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
@@ -54,7 +55,15 @@ interface Props {
   onSendText: (text: string) => void;
   onSendMedia: (files: File[], caption: string) => void;
   onEditSubmit: (id: string, text: string) => Promise<void>;
-  onRefresh: () => Promise<void>;
+  /**
+   * Revalida SÓ a thread (GET /api/whatsapp/messages, fora da fila serial de
+   * server actions). A lista não recarrega por envio (auditoria de
+   * 24/09/2026): cada passo de fluxo esperava a recarga das 1.000 conversas,
+   * ~4 s além do delay. Ninguém espera por ela: chame com `void`.
+   */
+  onRefreshThread: () => Promise<unknown>;
+  /** Mensagem enviada por fluxo ou template: o Inbox aplica o patch local da conversa. */
+  onSent: (dto: WhatsAppMessageDTO) => void;
 }
 
 /**
@@ -64,7 +73,7 @@ interface Props {
  */
 export function WhatsAppComposer({
   contactId, disabled, placeholder, replyTo, onCancelReply,
-  editTarget, onCancelEdit, onSendText, onSendMedia, onEditSubmit, onRefresh,
+  editTarget, onCancelEdit, onSendText, onSendMedia, onEditSubmit, onRefreshThread, onSent,
 }: Props) {
   const [value, setValue] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
@@ -122,7 +131,12 @@ export function WhatsAppComposer({
   }, []);
 
   // Sugestão de resposta pela IA: preenche o input; o humano revisa e envia.
+  // Vai por POST /api/whatsapp/assist/suggest, fora da fila de actions: dá
+  // para trocar de conversa durante a espera, e a sugestão que chega depois
+  // não pode cair no campo da conversa nova (o composer não remonta por contato).
   const [suggesting, setSuggesting] = useState(false);
+  const activeContactRef = useRef(contactId);
+  useEffect(() => { activeContactRef.current = contactId; }, [contactId]);
 
   // Gravação de áudio (ogg/opus → chega como mensagem de voz no cliente).
   const voice = useVoiceRecorder({ onFinish: (file) => onSendMedia([file], '') });
@@ -211,7 +225,10 @@ export function WhatsAppComposer({
       try {
         await sendWhatsAppInternalNote({ contactId, body: text });
         setValue('');
-        await onRefresh();
+        // Só a thread. A prévia "Você: <nota>" da lista chega no próximo delta
+        // (≤15 s): a action toca o updatedAt da conversa, e não vale uma
+        // recarga das 1.000 conversas por ela.
+        void onRefreshThread();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Falha ao salvar a nota.');
       } finally {
@@ -274,10 +291,11 @@ export function WhatsAppComposer({
           await new Promise((r) => setTimeout(r, step.delayMs));
         }
         if (cancelFlowRef.current) break;
+        let sent: WhatsAppMessageDTO | null = null;
         if (step.kind === 'text') {
-          await sendWhatsAppMessage({ contactId, body: step.body });
+          sent = await sendWhatsAppMessage({ contactId, body: step.body });
         } else if (step.mediaKey) {
-          await sendWhatsAppMedia({
+          sent = await sendWhatsAppMedia({
             contactId,
             key: step.mediaKey,
             mimeType: step.mediaType ?? 'application/octet-stream',
@@ -285,12 +303,16 @@ export function WhatsAppComposer({
             caption: step.body || undefined,
           });
         }
-        await onRefresh();
+        // Sem await e sem recarregar a lista: o próximo passo sai logo depois
+        // do delay, e não ~4 s depois (a recarga da lista entrava na fila de
+        // actions na frente do envio seguinte).
+        if (sent) onSent(sent);
+        void onRefreshThread();
       }
       if (!cancelFlowRef.current) toast.success(`Fluxo "${flow.name}" enviado.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : `Falha no fluxo "${flow.name}".`);
-      await onRefresh();
+      void onRefreshThread();
     } finally {
       setRunningFlow(null);
       flowBusyRef.current = false;
@@ -629,14 +651,19 @@ export function WhatsAppComposer({
         <button
           onClick={async () => {
             if (suggesting) return;
+            const requested = contactId;
             setSuggesting(true);
             try {
-              const suggestion = await suggestWhatsAppReply(contactId);
+              const suggestion = await requestAssistText('suggest', requested);
+              if (activeContactRef.current !== requested) {
+                toast.info('A sugestão chegou depois que você trocou de conversa e foi descartada.');
+                return;
+              }
               setValue(suggestion);
               textareaRef.current?.focus();
               toast.success('Sugestão pronta — revise antes de enviar.');
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
+              toast.error(describeAssistError(e, 'Falha ao gerar a sugestão.'));
             } finally {
               setSuggesting(false);
             }
@@ -679,7 +706,7 @@ export function WhatsAppComposer({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         contactId={contactId}
-        onSent={onRefresh}
+        onSent={(dto) => { onSent(dto); void onRefreshThread(); }}
       />
     </div>
   );

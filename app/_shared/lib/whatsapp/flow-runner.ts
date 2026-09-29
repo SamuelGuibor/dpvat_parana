@@ -1,11 +1,10 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
-import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendText, sendMedia, sendVoiceNote } from "./client";
 import { applyFlowTagsToContact } from "./flow-tags";
-import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
+import { broadcastWhatsAppEvent, whatsappChannelId, type WhatsAppMessageDTO } from "./service";
 
 // Execução de um fluxo pré-setado (WhatsAppFlow) do lado do SERVIDOR — usada
 // pelo bot de IA quando ele decide que um fluxo cadastrado se encaixa na
@@ -89,8 +88,7 @@ async function persistAndBroadcast(
     contactPhone: contact.phone,
     conversationStatus: conversation.status,
   };
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 }
 
 /**

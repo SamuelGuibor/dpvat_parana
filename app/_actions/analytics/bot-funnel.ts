@@ -2,7 +2,8 @@
 
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam, requirePermission } from '@/app/_shared/lib/permissions-server';
-import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey } from '@/app/_shared/utils/date-br';
+import { brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey } from '@/app/_shared/utils/date-br';
+import { HIRED_TAG_NAME, QUALIFIED_TAG_NAME } from '@/app/_shared/lib/whatsapp/close-categories';
 
 // Funil do bot da IA (substitui o Funil de leads antigo, que contava pelo
 // BotConversa). Tudo aqui sai do NOSSO banco — conversas, mensagens e tags do
@@ -15,8 +16,15 @@ import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey 
 // conversas de qualquer idade e com sobreposição entre etapas, enquanto o
 // Fluxo mostrava só as criadas no período — os dois nunca batiam.
 //
+// Contratado conta no mês em que o lead ENTROU (29/09/2026): lead que chegou
+// em 29/09 e só recebeu a etiqueta em 01/10 é contratado de setembro. Antes
+// (14/09) a régua era a data em que a etiqueta foi aplicada, e o card dava 222
+// enquanto o filtro do inbox (data de entrada + tag) dava 181 no mesmo mês.
+// Consequência aceita: o número de um mês fechado ainda sobe enquanto os
+// leads dele vão sendo contratados.
+//
 // Etapas (uma por conversa, nesta ordem de prioridade):
-// - Contratado: tem a tag "Contratados".
+// - Contratado: tem a tag "Contratados" (aplicada em qualquer data).
 // - Não qualificado: encerrada como nao_qualificado / nq_*.
 // - Não contratado: encerrada como sem_resposta (sumiu após a recuperação).
 // - Lista docs: recebeu a lista de documentos, ou tem a tag "Qualificada".
@@ -31,9 +39,6 @@ import { brStartOfDaysAgo, brStartOfMonth, brMonthIndex, brStartOfDay, brDayKey 
 // Fingerprint da mensagem de coleta de documentos (bot e fluxo manual usam o
 // mesmo texto). Se o texto do bot mudar, atualizar aqui junto.
 const DOCS_FINGERPRINT = 'RG ou da sua CNH';
-
-const QUALIFIED_TAG = 'Qualificada';
-const HIRED_TAG = 'Contratados';
 
 const GOAL_KEY = 'monthly_hired_goal';
 const GOAL_DEFAULT = 60;
@@ -58,10 +63,10 @@ export interface BotFunnelData {
   disqualified: number;
   qualified: number;
   /**
-   * Contratados no período = etiquetas "Contratados" APLICADAS no período
-   * (+ legado BotConversa na visão "todos os números"). Mesma definição da
-   * Meta do mês (14/09/2026) — antes o card contava conversas CRIADAS no
-   * período que tinham a tag hoje, e os dois números nunca batiam.
+   * Contratados no período = conversas CRIADAS no período que têm a etiqueta
+   * "Contratados", aplicada em qualquer data (+ legado BotConversa, pela data
+   * de entrada do lead, na visão "todos os números"). Mesma régua da Meta do
+   * mês, do gráfico Mensal e do filtro do inbox (data de entrada + tag).
    */
   hired: number;
   hiredBot: number;
@@ -77,7 +82,7 @@ export interface BotFunnelData {
   monthHiredLegacy: number;
   // Série do ano corrente pro gráfico "Mensal" (mesma leitura do antigo
   // Processos por Mês, agora contada pelo nosso banco): aprovados = tag
-  // Contratados; indeferidos = encerradas nq_*/nao_qualificado/sem_resposta
+  // Contratados, pelo mês de entrada do lead; indeferidos = encerradas nq_*/nao_qualificado/sem_resposta
   // (pela data real de encerramento); emAndamento = conversas AINDA abertas,
   // pelo mês de criação.
   monthly: { month: string; aprovados: number; indeferidos: number; emAndamento: number }[];
@@ -96,8 +101,6 @@ export interface BotKanbanLead {
   numberLabel: string | null;
 }
 
-const KANBAN_WINDOW_DAYS = 90;
-
 function parseRange(fromISO?: string, toISO?: string): { from: Date; to: Date } | null {
   if (!fromISO || !toISO) return null;
   const f = new Date(fromISO);
@@ -113,45 +116,44 @@ function parseRange(fromISO?: string, toISO?: string): { from: Date; to: Date } 
 async function loadCohort(numberId: string | null, from: Date, to: Date | null) {
   const createdIn = to ? { gte: from, lte: to } : { gte: from };
   const byNumber = numberId ? { numberId } : {};
-  const inRange = (d: Date) => d >= from && (!to || d <= to);
 
-  const [convs, docsRows, numbers] = await Promise.all([
+  const [convs, numbers] = await Promise.all([
     // Sem teto: o kanban é virtualizado e o funil precisa da coorte inteira.
-    // Coorte (14/09/2026) = conversas CRIADAS no período OU que receberam a
-    // etiqueta "Contratados" no período (contratação é um EVENTO datado pela
-    // etiqueta — mesma régua da Meta do mês; a conversa pode ter nascido
-    // antes).
+    // Só conversas CRIADAS no período (29/09/2026): a que nasceu antes e foi
+    // etiquetada Contratados agora conta no mês de entrada dela, não neste.
     db.whatsAppConversation.findMany({
-      where: {
-        ...byNumber,
-        OR: [
-          { createdAt: createdIn },
-          { tags: { some: { createdAt: createdIn, tag: { name: HIRED_TAG } } } },
-        ],
-      },
+      where: { ...byNumber, createdAt: createdIn },
       orderBy: { lastMessageAt: 'desc' },
       select: {
         id: true, status: true, closeCategory: true, botState: true, numberId: true,
         createdAt: true, updatedAt: true,
         contact: { select: { id: true, name: true, phone: true } },
-        tags: { select: { createdAt: true, tag: { select: { name: true } } } },
+        tags: { select: { tag: { select: { name: true } } } },
       },
-    }),
-    // A lista de documentos pode ter saído DEPOIS do fim do período (coorte
-    // antiga) — o que importa é ter saído desde a criação da conversa.
-    db.whatsAppMessage.findMany({
-      where: {
-        ...byNumber,
-        direction: 'out',
-        internal: false,
-        createdAt: { gte: from },
-        body: { contains: DOCS_FINGERPRINT, mode: 'insensitive' },
-      },
-      select: { contactId: true },
-      distinct: ['contactId'],
     }),
     db.whatsAppNumber.findMany({ select: { id: true, label: true } }),
   ]);
+
+  // "Lista docs" só dos contatos da coorte (auditoria de 25/09/2026): antes o
+  // ILIKE varria as mensagens de saída de TODOS os contatos desde `from` (seq
+  // scan em whatsapp_messages) e o `distinct` do Prisma deduplicava em
+  // memória. Com a coorte em mãos, o índice [contactId, createdAt] restringe
+  // às mensagens dela. O filtro por número fica implícito no conjunto de
+  // contatos — por isso um contato legado adotado por outra linha (mensagens
+  // antigas com numberId NULL) agora entra, como deveria.
+  // A lista pode ter saído DEPOIS do fim do período (coorte antiga): o que
+  // importa é ter saído desde o início dele.
+  const contactIds = Array.from(new Set(convs.map((c) => c.contact.id)));
+  const docsRows = contactIds.length
+    ? await db.$queryRaw<{ contactId: string }[]>`
+        SELECT DISTINCT m."contactId"
+        FROM whatsapp_messages m
+        WHERE m."contactId" = ANY(${contactIds}::text[])
+          AND m.direction = 'out'
+          AND m.internal = false
+          AND m."createdAt" >= ${from}
+          AND m.body ILIKE ${'%' + DOCS_FINGERPRINT + '%'}`
+    : [];
 
   const docsSet = new Set(docsRows.map((r) => r.contactId));
   const labelOf = new Map(numbers.map((n) => [n.id, n.label]));
@@ -159,15 +161,13 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
   let qualified = 0;
   const leads = convs.map((c): BotKanbanLead => {
     const tagNames = c.tags.map((t) => t.tag.name);
-    if (tagNames.includes(QUALIFIED_TAG)) qualified++;
+    if (tagNames.includes(QUALIFIED_TAG_NAME)) qualified++;
     const closed = c.status === 'closed';
-    // Contratado só se a etiqueta foi aplicada DENTRO do período.
-    const hiredInRange = c.tags.some((t) => t.tag.name === HIRED_TAG && inRange(t.createdAt));
     let evento: BotStage;
-    if (hiredInRange) evento = 'contratado';
+    if (tagNames.includes(HIRED_TAG_NAME)) evento = 'contratado';
     else if (closed && (c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_'))) evento = 'nao_qualificado';
     else if (closed && c.closeCategory === 'sem_resposta') evento = 'nao_contratado';
-    else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG)) evento = 'enviou_documentos';
+    else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG_NAME)) evento = 'enviou_documentos';
     else if (!closed && !c.botState) evento = 'iniciado';
     else if (!closed) evento = 'em_conversa';
     else evento = 'outros';
@@ -185,28 +185,27 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
   return { leads, qualified };
 }
 
-/**
- * from/to (ISO) têm prioridade sobre periodDays — o dashboard geral filtra por
- * intervalo livre; a aba do chatbot continua mandando 7/30/90 dias.
- */
-export async function getBotFunnel(
-  periodDays: number,
-  numberId: string | null,
-  fromISO?: string,
-  toISO?: string,
-): Promise<BotFunnelData> {
-  await requireTeam();
-  const days = Math.min(Math.max(Math.round(periodDays) || 7, 1), 365);
-  const range = parseRange(fromISO, toISO);
-  const since = range?.from ?? brStartOfDaysAgo(days - 1);
-  const until = range?.to ?? null;
+type Cohort = Awaited<ReturnType<typeof loadCohort>>;
+
+/** O que o Funil soma além da coorte: meta e série "Mensal" + legado do período. */
+interface FunnelTotals {
+  monthHiredBot: number;
+  monthHiredLegacy: number;
+  monthGoal: number;
+  hiredLegacy: number;
+  yearHiredAt: Date[];
+  yearRejectedAt: Date[];
+  yearOpenAt: Date[];
+}
+
+async function loadFunnelTotals(numberId: string | null, since: Date, until: Date): Promise<FunnelTotals> {
   const byNumber = numberId ? { numberId } : {};
 
   // "Meta do mês" e a série "Mensal" acompanham o calendário: a referência é
   // o FIM do período selecionado (antes eram sempre o mês/ano correntes,
   // ignorando o filtro). Selecionou março → meta de março + série do ano de
   // março.
-  const ref = until ?? new Date();
+  const ref = until;
   const monthStart = brStartOfMonth(ref);
   const monthEnd = brStartOfMonth(new Date(monthStart.getTime() + 40 * 86_400_000));
   const inGoalMonth = { gte: monthStart, lt: monthEnd };
@@ -215,31 +214,27 @@ export async function getBotFunnel(
   const yearEnd = brStartOfDay(new Date(Date.UTC(refYear + 1, 0, 1, 12)));
   const inRefYear = { gte: yearStart, lt: yearEnd };
 
-  const periodRange = until ? { gte: since, lte: until } : { gte: since };
-  const [cohort, monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen, hiredLegacy] =
+  const periodRange = { gte: since, lte: until };
+  // Contratado = conversa com a etiqueta, datada pela ENTRADA do lead
+  // (createdAt da conversa), não pelo dia em que a etiqueta foi aplicada.
+  const hasHiredTag = { tags: { some: { tag: { name: HIRED_TAG_NAME } } } };
+  const [monthHiredBot, goalRow, monthHiredLegacy, yearHiredConvs, yearRejected, yearOpen, hiredLegacy] =
     await Promise.all([
-      loadCohort(numberId, since, until),
-      db.whatsAppConversationTag.count({
-        where: {
-          createdAt: inGoalMonth,
-          tag: { name: HIRED_TAG },
-          ...(numberId ? { conversation: { numberId } } : {}),
-        },
+      db.whatsAppConversation.count({
+        where: { ...byNumber, createdAt: inGoalMonth, ...hasHiredTag },
       }),
       db.appSetting.findUnique({ where: { key: GOAL_KEY } }),
       // Meta do mês (transição 08/2026): soma os contratados que AINDA
       // entraram pelo webhook do BotConversa neste mês. Com o número migrado,
       // o webhook antigo para de gravar e esta parcela zera sozinha. Só na
       // visão "todos os números" — filtro por número é só do sistema novo.
+      // Pelo createdAt da linha (1º evento do telefone = entrada do lead), a
+      // mesma régua do sistema e do legado no MiniKanban.
       numberId
         ? Promise.resolve(0)
-        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: inGoalMonth } }),
-      db.whatsAppConversationTag.findMany({
-        where: {
-          createdAt: inRefYear,
-          tag: { name: HIRED_TAG },
-          ...(numberId ? { conversation: { numberId } } : {}),
-        },
+        : db.botconversa.count({ where: { evento: 'contratado', createdAt: inGoalMonth } }),
+      db.whatsAppConversation.findMany({
+        where: { ...byNumber, createdAt: inRefYear, ...hasHiredTag },
         select: { createdAt: true },
       }),
       db.whatsAppConversation.findMany({
@@ -262,13 +257,26 @@ export async function getBotFunnel(
       // Legado BotConversa no PERÍODO (mesma parcela que entra na meta).
       numberId
         ? Promise.resolve(0)
-        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: periodRange } }),
+        : db.botconversa.count({ where: { evento: 'contratado', createdAt: periodRange } }),
     ]);
 
+  return {
+    monthHiredBot,
+    monthHiredLegacy,
+    monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
+    hiredLegacy,
+    yearHiredAt: yearHiredConvs.map((c) => c.createdAt),
+    yearRejectedAt: yearRejected.flatMap((c) => (c.closedAt ? [c.closedAt] : [])),
+    yearOpenAt: yearOpen.map((c) => c.createdAt),
+  };
+}
+
+/** Parte pura do Funil: etapas da coorte + totais já buscados. */
+function computeFunnel(cohort: Cohort, totals: FunnelTotals): BotFunnelData {
   const monthly = MONTHS.map((month) => ({ month, aprovados: 0, indeferidos: 0, emAndamento: 0 }));
-  for (const t of yearHiredTags) monthly[brMonthIndex(t.createdAt)].aprovados++;
-  for (const c of yearRejected) if (c.closedAt) monthly[brMonthIndex(c.closedAt)].indeferidos++;
-  for (const c of yearOpen) monthly[brMonthIndex(c.createdAt)].emAndamento++;
+  for (const at of totals.yearHiredAt) monthly[brMonthIndex(at)].aprovados++;
+  for (const at of totals.yearRejectedAt) monthly[brMonthIndex(at)].indeferidos++;
+  for (const at of totals.yearOpenAt) monthly[brMonthIndex(at)].emAndamento++;
 
   const count: Record<BotStage, number> = {
     iniciado: 0, em_conversa: 0, enviou_documentos: 0, nao_contratado: 0,
@@ -276,18 +284,9 @@ export async function getBotFunnel(
   };
   for (const l of cohort.leads) count[l.evento]++;
 
-  // "Total no período" = conversas CRIADAS no período (a coorte também traz
-  // conversas antigas etiquetadas Contratados no período — elas contam na
-  // etapa Contratado, não no total de novas).
-  const sinceMs = since.getTime();
-  const untilMs = until ? until.getTime() : Number.POSITIVE_INFINITY;
-  const createdInPeriod = cohort.leads.filter((l) => {
-    const t = l.createdAt ? new Date(l.createdAt).getTime() : 0;
-    return t >= sinceMs && t <= untilMs;
-  }).length;
-
   return {
-    started: createdInPeriod,
+    // "Total no período" = a coorte inteira (só conversas criadas no período).
+    started: cohort.leads.length,
     // Iniciado e Em conversa separados (14/09/2026): o card somava os dois e
     // dava 302 enquanto a coluna "Em Conversa" do Fluxo mostrava 297.
     initiated: count.iniciado,
@@ -296,40 +295,45 @@ export async function getBotFunnel(
     notHired: count.nao_contratado,
     disqualified: count.nao_qualificado,
     qualified: cohort.qualified,
-    hired: count.contratado + hiredLegacy,
+    hired: count.contratado + totals.hiredLegacy,
     hiredBot: count.contratado,
-    hiredLegacy,
+    hiredLegacy: totals.hiredLegacy,
     others: count.outros,
-    monthHired: monthHiredBot + monthHiredLegacy,
-    monthHiredBot,
-    monthHiredLegacy,
-    monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
+    monthHired: totals.monthHiredBot + totals.monthHiredLegacy,
+    monthHiredBot: totals.monthHiredBot,
+    monthHiredLegacy: totals.monthHiredLegacy,
+    monthGoal: totals.monthGoal,
     monthly,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Leads do NOSSO sistema no "Fluxo de Eventos Rápidos" (MiniKanban): cada
-// conversa da coorte vira um card na etapa derivada do estado real, com a
-// etiqueta do número que atendeu (Principal, Paraná DPVAT...). Os cards do
-// sistema são somente-leitura — a etapa muda sozinha conforme o atendimento
-// anda. Mesma classificação do Funil (loadCohort) — os dois batem por
-// construção.
+// Funil + leads do NOSSO sistema no "Fluxo de Eventos Rápidos" (MiniKanban)
+// numa chamada só: cada conversa da coorte vira um card na etapa derivada do
+// estado real, com a etiqueta do número que atendeu (Principal, Paraná
+// DPVAT...). Os cards do sistema são somente-leitura — a etapa muda sozinha
+// conforme o atendimento anda.
+//
+// Uma coorte só (auditoria de 25/09/2026): antes o Funil (getBotFunnel) e o
+// MiniKanban (getBotKanbanLeads) chamavam loadCohort cada um, e a Gestão
+// Estratégica rodava a coorte 2 a 3 vezes por abertura — duas actions pesadas
+// na fila serial do navegador. Agora os dois leem a MESMA classificação e
+// batem por construção.
 
-/** from/to (ISO) seguem o calendário do dashboard; sem eles, 90 dias fixos. */
-export async function getBotKanbanLeads(
+/** from/to (ISO) = calendário do dashboard (DateFilter). */
+export async function getBotFunnelAndLeads(
   numberId: string | null,
-  fromISO?: string,
-  toISO?: string,
-): Promise<BotKanbanLead[]> {
+  fromISO: string,
+  toISO: string,
+): Promise<{ funnel: BotFunnelData; leads: BotKanbanLead[] }> {
   await requireTeam();
   const range = parseRange(fromISO, toISO);
-  const { leads } = await loadCohort(
-    numberId,
-    range?.from ?? brStartOfDaysAgo(KANBAN_WINDOW_DAYS - 1),
-    range?.to ?? null,
-  );
-  return leads;
+  if (!range) throw new Error('Período inválido.');
+  const [cohort, totals] = await Promise.all([
+    loadCohort(numberId, range.from, range.to),
+    loadFunnelTotals(numberId, range.from, range.to),
+  ]);
+  return { funnel: computeFunnel(cohort, totals), leads: cohort.leads };
 }
 
 /** Ajusta a meta mensal de contratados (Visão do Gestor). */

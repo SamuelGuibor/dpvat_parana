@@ -2,79 +2,37 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import useSWR from 'swr';
 import {
-  Sparkles, Loader2, StickyNote, FileText, Download, Paperclip, Bot,
-  ExternalLink, Lock, Check, RefreshCw, Image as ImageIcon, Video, Mic,
-  UserRound, SquareArrowOutUpRight, Pencil, Trash2, Plus,
-  ChevronDown, ChevronUp, Eye,
+  Sparkles, Loader2, StickyNote, FileText, Bot,
+  ExternalLink, Lock, Check, RefreshCw,
+  UserRound, SquareArrowOutUpRight, Plus, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { MentionsInput, Mention } from 'react-mentions';
 import { mentionsStyles } from '@/app/nova-dash/card-dialog/constants';
 import { renderMentionSuggestion } from '@/app/nova-dash/workspace/chat/mention-suggestion';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
-import { suggestWhatsAppReply, summarizeWhatsAppConversation, fillClientInfoWithAI } from '@/app/_actions/whatsapp/assist';
-import {
-  saveClientInfo, addClientFromConversation, getClientInfo,
-  type ClientInfoResult, type ClientInfoFields,
-} from '@/app/_actions/whatsapp/client-info';
-import {
-  listClientDocuments, attachConversationMediaToCard, getClientDocumentUploadUrl,
-  confirmClientDocumentUpload, deleteClientDocument, renameClientDocument,
-  type ClientDocumentDTO,
-} from '@/app/_actions/whatsapp/client-documents';
+import { describeAssistError, requestAssistText, requestFichaAI } from '@/app/_shared/utils/assist-api';
+import { saveClientInfo, addClientFromConversation } from '@/app/_actions/whatsapp/client-info';
+import { getClientDocumentUploadUrl, confirmClientDocumentUpload } from '@/app/_actions/whatsapp/client-documents';
+// Só tipos: copilot-data.ts importa o Prisma e não pode entrar no bundle.
+import type { ClientDocumentDTO, ClientInfoFields, ClientInfoResult } from '@/app/_shared/lib/whatsapp/copilot-types';
+import { useCopilot } from '@/app/_shared/hooks/use-copilot';
+import { useWhatsAppContactFiles } from '@/app/_shared/hooks/use-whatsapp';
+import { describeFetchError } from '@/app/_shared/utils/fetch-json';
+import { latestBotNote, latestMediaMessageId, mergeNotes } from '@/app/_shared/utils/contact-files';
 import { sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
-import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
+import { ArquivosTab } from './ArquivosTab';
 import { maskCpf, isValidCpf, maskCep, formatPhone } from '@/app/_shared/utils/format';
 import { HospitalCombobox } from '@/app/nova-dash/card-dialog/HospitalCombobox';
 import { ESTADOS, ESTADO_CIVIL } from '@/app/nova-dash/card-dialog/constants';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/app/_shared/ui/dialog';
-import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
-import type { WhatsAppConversationDTO } from '@/app/_actions/whatsapp/conversations';
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import type { WhatsAppThreadMessage } from '@/app/_shared/hooks/use-whatsapp';
 
 // Coluna direita do inbox (redesign aprovado): Copiloto (IA) + Ficha no padrão
-// do card do kanban + Notas internas + Arquivos da conversa.
+// do card do kanban + Notas internas + Arquivos da conversa (ArquivosTab.tsx).
 
 type CopilotTab = 'copiloto' | 'ficha' | 'notas' | 'arquivos';
-
-// Cache local de URLs pré-assinadas (mesmo padrão do WhatsAppInbox).
-const mediaUrlCache = new Map<string, { url: string; expiresAt: number }>();
-async function getMediaUrl(key: string): Promise<string | null> {
-  const cached = mediaUrlCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-  const fileName = key.split('/').pop() ?? 'anexo';
-  const res = await downloadFileFromS3(key, fileName, true);
-  if (!res.success || !res.presignedUrl) return null;
-  mediaUrlCache.set(key, { url: res.presignedUrl, expiresAt: Date.now() + 55 * 60_000 });
-  return res.presignedUrl;
-}
-
-function fileNameFromKey(key: string): string {
-  const raw = key.split('/').pop() ?? 'arquivo';
-  const noTimestamp = raw.replace(/^\d{10,}-/, '');
-  try { return decodeURIComponent(noTimestamp); } catch { return noTimestamp; }
-}
-
-function mediaIcon(mediaType: string | null): React.ElementType {
-  if (mediaType?.startsWith('image/')) return ImageIcon;
-  if (mediaType?.startsWith('video/')) return Video;
-  if (mediaType?.startsWith('audio/')) return Mic;
-  return FileText;
-}
-
-const AUDIO_EXT = /\.(ogg|opus|mp3|m4a|wav|aac|weba)$/i;
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic)$/i;
-const PDF_EXT = /\.pdf$/i;
-
-/** Tipo de arquivo pelo nome — os documentos do cliente não guardam mediaType. */
-function previewKind(name: string): 'audio' | 'image' | 'pdf' | 'other' {
-  if (AUDIO_EXT.test(name)) return 'audio';
-  if (IMAGE_EXT.test(name)) return 'image';
-  if (PDF_EXT.test(name)) return 'pdf';
-  return 'other';
-}
 
 function timeStamp(iso: string): string {
   const d = new Date(iso);
@@ -84,8 +42,6 @@ function timeStamp(iso: string): string {
 interface Props {
   conversation: WhatsAppConversationDTO;
   messages: WhatsAppThreadMessage[];
-  clientInfo: ClientInfoResult | null;
-  onClientInfoChanged: (info: ClientInfoResult) => void;
   /** Abre o CardDialog do cliente vinculado (só chega aqui se registered). */
   onOpenCard: () => void;
   onRefreshMessages: () => Promise<unknown>;
@@ -95,7 +51,7 @@ interface Props {
 }
 
 export function CopilotPanel({
-  conversation, messages, clientInfo, onClientInfoChanged, onOpenCard, onRefreshMessages, focusFicha,
+  conversation, messages, onOpenCard, onRefreshMessages, focusFicha,
 }: Props) {
   const contactId = conversation.contactId;
   const [tab, setTab] = useState<CopilotTab>('copiloto');
@@ -109,22 +65,15 @@ export function CopilotPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusFicha]);
 
-  // Documentos da ficha: alimenta o checklist do Copiloto e o "✓ no card"
-  // da aba Arquivos.
-  const { data: docs, mutate: mutateDocs } = useSWR<ClientDocumentDTO[]>(
-    ['wa-client-docs', contactId],
-    () => listClientDocuments(contactId),
-    { revalidateOnFocus: false },
-  );
-  const attachedKeys = useMemo(() => new Set((docs ?? []).map((d) => d.key)), [docs]);
-
-  // "Anexar no card" feito pelo menu da mídia (na thread) avisa por evento —
-  // atualiza a lista de documentos sem esperar o próximo revalidate.
-  useEffect(() => {
-    const refresh = () => { mutateDocs(); };
-    window.addEventListener('wa-docs-changed', refresh);
-    return () => window.removeEventListener('wa-docs-changed', refresh);
-  }, [mutateDocs]);
+  // Ficha + documentos numa ida só (GET, a MESMA key que o inbox lê para o
+  // "Card #N"): alimenta as abas Ficha e Arquivos, o checklist do Copiloto e
+  // o "✓ no card". As mutações que já devolvem a lista ou a ficha trocam a
+  // entrada no cache pela key do contato (sem buscar de novo); o "Anexar no
+  // card" do menu da mídia, na thread, faz o mesmo pelo inbox.
+  const {
+    clientInfo, documents: docs, error: copilotError,
+    reloadCopilot, setCopilotDocuments, setCopilotClientInfo,
+  } = useCopilot(contactId);
 
   /* ---------------- aba Copiloto ---------------- */
 
@@ -135,7 +84,14 @@ export function CopilotPanel({
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [suggesting, setSuggesting] = useState(false);
 
+  // Conversa aberta AGORA. A IA do Copiloto vai por fetch (POST
+  // /api/whatsapp/assist/<op>), fora da fila de actions: o atendente pode
+  // trocar de conversa durante os 2-4 s, e a resposta que chega depois não
+  // pode aparecer na conversa nova.
+  const activeContactRef = useRef(contactId);
+
   useEffect(() => {
+    activeContactRef.current = contactId;
     setSummary(summaryCache.current.get(contactId) ?? null);
     setSuggestion(null);
     setTab('copiloto');
@@ -143,13 +99,15 @@ export function CopilotPanel({
 
   async function handleSummarize() {
     if (summarizing) return;
+    const requested = contactId;
     setSummarizing(true);
     try {
-      const text = await summarizeWhatsAppConversation(contactId);
-      summaryCache.current.set(contactId, text);
-      setSummary(text);
+      const text = await requestAssistText('summary', requested);
+      // Guarda no cache do contato pedido (voltar a ele mostra o resumo).
+      summaryCache.current.set(requested, text);
+      if (activeContactRef.current === requested) setSummary(text);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao gerar o resumo.');
+      toast.error(describeAssistError(e, 'Falha ao gerar o resumo.'));
     } finally {
       setSummarizing(false);
     }
@@ -157,11 +115,13 @@ export function CopilotPanel({
 
   async function handleSuggest() {
     if (suggesting) return;
+    const requested = contactId;
     setSuggesting(true);
     try {
-      setSuggestion(await suggestWhatsAppReply(contactId));
+      const text = await requestAssistText('suggest', requested);
+      if (activeContactRef.current === requested) setSuggestion(text);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao gerar a sugestão.');
+      toast.error(describeAssistError(e, 'Falha ao gerar a sugestão.'));
     } finally {
       setSuggesting(false);
     }
@@ -173,28 +133,20 @@ export function CopilotPanel({
     toast.success('Sugestão no campo — revise antes de enviar.');
   }
 
-  // "Por que está na fila": a única fonte persistida do handoff é a nota
-  // interna que o bot deixa na thread ao transferir.
-  const handoffNote = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.internal && m.sentByBot && m.body && !m.deletedAt) return m;
-    }
-    return null;
-  }, [messages]);
-
   // Preenchimento da ficha pela IA sob demanda (mesmo pipeline do webhook).
   const [fillingFicha, setFillingFicha] = useState(false);
 
   async function handleFillFichaAI() {
     if (fillingFicha) return;
+    const requested = contactId;
     setFillingFicha(true);
     try {
-      const result = await fillClientInfoWithAI(contactId);
+      const result = await requestFichaAI(requested);
       // O hospital citado também muda a ficha (vira a dica embaixo do select),
-      // mesmo quando nenhum campo foi preenchido.
+      // mesmo quando nenhum campo foi preenchido. Recarrega pela key do
+      // contato PEDIDO, mesmo que o atendente já esteja em outra conversa.
       if (result.filled.length || result.hospitalHint) {
-        onClientInfoChanged(await getClientInfo(contactId));
+        await reloadCopilot(requested);
       }
       if (result.filled.length) {
         toast.success(`IA preencheu: ${result.filled.join(', ')}.`);
@@ -202,7 +154,7 @@ export function CopilotPanel({
         toast.info(result.reason ?? 'A IA não encontrou dados novos na conversa.');
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao preencher a ficha com IA.');
+      toast.error(describeAssistError(e, 'Falha ao preencher a ficha com IA.'));
     } finally {
       setFillingFicha(false);
     }
@@ -221,10 +173,40 @@ export function CopilotPanel({
 
   /* ---------------- aba Notas ---------------- */
 
-  const notes = useMemo(
-    () => messages.filter((m) => m.internal && !m.deletedAt).slice().reverse(),
-    [messages],
-  );
+  // Notas: as da janela da thread (vivas, pelo poll de 8 s) + as do histórico
+  // inteiro (GET contact-files, kind=notes). Só a janela escondia as notas
+  // antigas de conversa longa. O histórico é buscado quando a aba Notas é
+  // aberta (e fica para este contato) ou quando o motivo da fila não está na
+  // janela.
+  // Guardado POR contato: trocar de conversa não busca o histórico da nova
+  // até alguém abrir a aba Notas nela.
+  const [notesWantedFor, setNotesWantedFor] = useState<string | null>(null);
+  const notesWanted = notesWantedFor === contactId;
+  useEffect(() => {
+    if (tab === 'notas') setNotesWantedFor(activeContactRef.current);
+  }, [tab]);
+
+  // "Por que caiu na fila": a nota interna que o bot deixa ao transferir. Vem
+  // da janela da thread (viva: um handoff novo aparece no poll); fora dela, na
+  // Fila o DTO da lista já traz o motivo (handoffReason), e em atendimento vem
+  // do histórico de notas.
+  const windowNotes = useMemo(() => mergeNotes(messages, undefined), [messages]);
+  const windowHandoff = useMemo(() => latestBotNote(windowNotes), [windowNotes]);
+  // Só depois de a janela chegar (thread vazia = ainda carregando): a nota
+  // costuma estar nela e o histórico seria uma ida à toa.
+  const handoffNeedsHistory = messages.length > 0 && !windowHandoff
+    && (conversation.status === 'human' || (conversation.status === 'queued' && !conversation.handoffReason));
+
+  const {
+    items: historyNotes, hasMore: notesHasMore, isLoading: notesLoading, error: notesError,
+    loadMore: loadMoreNotes, loadingMore: loadingMoreNotes, reload: reloadNotes,
+  } = useWhatsAppContactFiles(contactId, { kind: 'notes' }, notesWanted || handoffNeedsHistory);
+
+  const notes = useMemo(() => mergeNotes(messages, historyNotes), [messages, historyNotes]);
+  const handoffText = windowHandoff?.body
+    ?? (conversation.status === 'queued' ? conversation.handoffReason : null)
+    ?? latestBotNote(notes)?.body
+    ?? null;
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
@@ -255,27 +237,10 @@ export function CopilotPanel({
 
   /* ---------------- aba Arquivos ---------------- */
 
-  const mediaMessages = useMemo(
-    () => messages.filter((m) => m.mediaKey && !m.deletedAt && !m.id.startsWith('temp-')).slice().reverse(),
-    [messages],
-  );
-  const [attachingId, setAttachingId] = useState<string | null>(null);
-
-  async function handleAttach(msg: WhatsAppThreadMessage) {
-    if (attachingId) return;
-    setAttachingId(msg.id);
-    try {
-      const updated = await attachConversationMediaToCard(msg.id);
-      mutateDocs(updated, { revalidate: false });
-      toast.success(clientInfo?.registered
-        ? `Anexado no card${clientInfo.cardNumber ? ` #${clientInfo.cardNumber}` : ''}.`
-        : 'Anexado na ficha (migra pro card quando o cliente for cadastrado).');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao anexar no card.');
-    } finally {
-      setAttachingId(null);
-    }
-  }
+  // Gatilhos da grade de mídia (que não tem poll): a mídia mais recente da
+  // janela da thread e as keys dos documentos (null = lista ainda não chegou).
+  const latestMediaId = useMemo(() => latestMediaMessageId(messages), [messages]);
+  const attachedSig = useMemo(() => (docs ? docs.map((d) => d.key).sort().join('|') : null), [docs]);
 
   return (
     <aside className="flex w-full min-w-0 flex-col border-l border-gray-200 bg-gray-50 dark:border-zinc-800">
@@ -298,7 +263,9 @@ export function CopilotPanel({
           >
             {t.label}
             {t.key === 'notas' && notes.length > 0 && (
-              <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">{notes.length}</span>
+              <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">
+                {notes.length}{notesHasMore ? '+' : ''}
+              </span>
             )}
           </button>
         ))}
@@ -402,11 +369,11 @@ export function CopilotPanel({
               )}
             </CopilotCard>
 
-            {handoffNote && (conversation.status === 'queued' || conversation.status === 'human') && (
+            {handoffText && (conversation.status === 'queued' || conversation.status === 'human') && (
               <CopilotCard title="Por que caiu na fila">
                 <p className="flex items-start gap-1.5 text-sm leading-relaxed text-gray-700">
                   <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600" />
-                  <span className="whitespace-pre-wrap">{handoffNote.body}</span>
+                  <span className="whitespace-pre-wrap">{handoffText}</span>
                 </p>
               </CopilotCard>
             )}
@@ -501,10 +468,14 @@ export function CopilotPanel({
           <FichaTab
             contactId={contactId}
             clientInfo={clientInfo}
-            onSaved={(info) => { onClientInfoChanged(info); mutateDocs(); }}
+            loadError={copilotError}
+            onRetry={() => { void reloadCopilot(contactId); }}
+            // A ficha salva aparece na hora; a busca em seguida traz os
+            // documentos que o "Adicionar cliente" moveu do rascunho pro card.
+            onSaved={(info) => { void setCopilotClientInfo(contactId, info, { revalidate: true }); }}
             onOpenCard={onOpenCard}
             docs={docs ?? []}
-            onDocsChanged={(updated) => mutateDocs(updated, { revalidate: false })}
+            onDocsChanged={(updated) => { void setCopilotDocuments(contactId, updated); }}
             onOpenArquivos={() => setTab('arquivos')}
           />
         )}
@@ -540,7 +511,20 @@ export function CopilotPanel({
                 Salvar nota
               </button>
             </div>
-            {notes.length === 0 && (
+            {notesLoading && historyNotes.length === 0 && (
+              <p className="flex items-center gap-1.5 px-1 text-[11px] text-gray-400">
+                <Loader2 className="h-3 w-3 animate-spin" /> Buscando as notas antigas da conversa…
+              </p>
+            )}
+            {!!notesError && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+                <span>Notas antigas sem carregar: {describeFetchError(notesError)}</span>
+                <button onClick={() => { void reloadNotes(); }} className="flex shrink-0 items-center gap-1 font-bold hover:underline">
+                  <RefreshCw className="h-3 w-3" /> Tentar de novo
+                </button>
+              </div>
+            )}
+            {notes.length === 0 && !notesLoading && (
               <p className="px-1 text-sm text-gray-400">Nenhuma nota interna nesta conversa ainda.</p>
             )}
             {notes.map((n) => (
@@ -555,6 +539,16 @@ export function CopilotPanel({
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-zinc-200">{renderFormattedText(n.body ?? '')}</p>
               </div>
             ))}
+            {notesHasMore && (
+              <button
+                onClick={loadMoreNotes}
+                disabled={loadingMoreNotes}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-200 px-2 py-1.5 text-[11px] font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-60"
+              >
+                {loadingMoreNotes ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                Carregar notas anteriores
+              </button>
+            )}
             <p className="px-1 text-[11px] text-gray-400">
               As notas também aparecem em âmbar dentro da conversa, no ponto em que foram criadas.
             </p>
@@ -564,12 +558,14 @@ export function CopilotPanel({
         {/* ================= ARQUIVOS ================= */}
         {tab === 'arquivos' && (
           <ArquivosTab
+            key={contactId}
             contactId={contactId}
             docs={docs ?? []}
-            onDocsChanged={(updated) => mutateDocs(updated, { revalidate: false })}
-            unattachedMedia={mediaMessages.filter((m) => !attachedKeys.has(m.mediaKey as string))}
-            attachingId={attachingId}
-            onAttach={handleAttach}
+            attachedSig={attachedSig}
+            latestMediaId={latestMediaId}
+            registered={!!clientInfo?.registered}
+            cardNumber={clientInfo?.cardNumber ?? null}
+            onDocsChanged={(updated) => { void setCopilotDocuments(contactId, updated); }}
           />
         )}
       </div>
@@ -580,10 +576,13 @@ export function CopilotPanel({
 /* ---------------- Ficha (padrão do dialog do card) ---------------- */
 
 function FichaTab({
-  contactId, clientInfo, onSaved, onOpenCard, docs, onDocsChanged, onOpenArquivos,
+  contactId, clientInfo, loadError, onRetry, onSaved, onOpenCard, docs, onDocsChanged, onOpenArquivos,
 }: {
   contactId: string;
   clientInfo: ClientInfoResult | null;
+  /** Falha do GET da ficha (403 da trava de IP, 500, rede): aviso em vez de "Carregando…" eterno. */
+  loadError: unknown;
+  onRetry: () => void;
   onSaved: (info: ClientInfoResult) => void;
   onOpenCard: () => void;
   docs: ClientDocumentDTO[];
@@ -697,9 +696,24 @@ function FichaTab({
 
   return (
     <div className="flex flex-col gap-3">
-      {!clientInfo && (
+      {!clientInfo && !loadError && (
         <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-400">
           <Loader2 className="h-4 w-4 animate-spin" /> Carregando ficha…
+        </div>
+      )}
+      {/* Sem ficha e com erro: o motivo real (a rota devolve o texto) e uma
+          nova tentativa. Com ficha na tela e erro numa nova busca, a ficha
+          fica como está. */}
+      {!clientInfo && !!loadError && (
+        <div className="flex flex-col items-center gap-2 py-6 text-center text-sm text-gray-500">
+          <p className="font-bold text-gray-600">A ficha não carregou</p>
+          <p>{describeFetchError(loadError)}</p>
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-100"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Tentar de novo
+          </button>
         </div>
       )}
       {clientInfo && (
@@ -838,290 +852,6 @@ function FichaTab({
             )}
           </div>
         </>
-      )}
-    </div>
-  );
-}
-
-/* ---------------- Arquivos (só o que é do cliente desta conversa) ---------------- */
-
-interface PreviewState { doc: ClientDocumentDTO; url: string; kind: 'image' | 'pdf' }
-
-function ArquivosTab({
-  contactId, docs, onDocsChanged, unattachedMedia, attachingId, onAttach,
-}: {
-  contactId: string;
-  docs: ClientDocumentDTO[];
-  onDocsChanged: (docs: ClientDocumentDTO[]) => void;
-  unattachedMedia: WhatsAppThreadMessage[];
-  attachingId: string | null;
-  onAttach: (m: WhatsAppThreadMessage) => void;
-}) {
-  const { confirm, confirmDialog } = useConfirm();
-  const [preview, setPreview] = useState<PreviewState | null>(null);
-  const [showUnattached, setShowUnattached] = useState(false);
-
-  const audioDocs = useMemo(() => docs.filter((d) => previewKind(d.name) === 'audio'), [docs]);
-  const otherDocs = useMemo(() => docs.filter((d) => previewKind(d.name) !== 'audio'), [docs]);
-
-  async function handlePreview(doc: ClientDocumentDTO) {
-    const kind = previewKind(doc.name);
-    if (kind !== 'image' && kind !== 'pdf') return;
-    const url = await getMediaUrl(doc.key);
-    if (!url) { toast.error('Não foi possível abrir o arquivo.'); return; }
-    setPreview({ doc, url, kind });
-  }
-
-  async function handleDownload(doc: ClientDocumentDTO) {
-    const url = await getMediaUrl(doc.key);
-    if (url) window.open(url, '_blank');
-    else toast.error('Não foi possível abrir o arquivo.');
-  }
-
-  async function handleRename(doc: ClientDocumentDTO, newName: string) {
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === doc.name) return;
-    try {
-      onDocsChanged(await renameClientDocument(contactId, doc.id, trimmed));
-      toast.success('Arquivo renomeado.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao renomear.');
-    }
-  }
-
-  async function handleDelete(doc: ClientDocumentDTO) {
-    if (!(await confirm({
-      title: 'Excluir arquivo',
-      description: <>O arquivo <strong>{doc.name}</strong> será removido da ficha do cliente.</>,
-      confirmLabel: 'Excluir',
-    }))) return;
-    try {
-      onDocsChanged(await deleteClientDocument(contactId, doc.id));
-      toast.success('Arquivo excluído.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao excluir.');
-    }
-  }
-
-  return (
-    <>
-      {confirmDialog}
-      {docs.length === 0 && (
-        <p className="px-1 text-sm text-gray-400">Nenhum arquivo do cliente ainda — anexe pela Ficha ou pela conversa.</p>
-      )}
-
-      {otherDocs.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="px-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">Documentos e mídia</span>
-          {otherDocs.map((d) => (
-            <DocRow key={d.id} doc={d} onPreview={handlePreview} onDownload={handleDownload} onRename={handleRename} onDelete={handleDelete} />
-          ))}
-        </div>
-      )}
-
-      {audioDocs.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="px-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">Áudios</span>
-          {audioDocs.map((d) => (
-            <AudioDocRow key={d.id} doc={d} onDownload={handleDownload} onRename={handleRename} onDelete={handleDelete} />
-          ))}
-        </div>
-      )}
-
-      {unattachedMedia.length > 0 && (
-        <div className="flex flex-col gap-1.5 border-t border-dashed border-gray-200 pt-2">
-          <button
-            onClick={() => setShowUnattached((v) => !v)}
-            className="flex items-center justify-between px-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400 hover:text-gray-600"
-          >
-            Mídia da conversa ainda não anexada ({unattachedMedia.length})
-            {showUnattached ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-          {showUnattached && unattachedMedia.map((m) => {
-            const key = m.mediaKey as string;
-            const Icon = mediaIcon(m.mediaType);
-            return (
-              <div key={m.id} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold text-gray-700">{fileNameFromKey(key)}</span>
-                  <span className="block text-[10px] text-gray-400">
-                    {timeStamp(m.createdAt)} · {m.direction === 'in' ? 'do cliente' : 'da equipe'}
-                  </span>
-                </span>
-                <button
-                  onClick={() => onAttach(m)}
-                  disabled={attachingId === m.id}
-                  title="Trazer pra ficha do cliente"
-                  className="flex items-center gap-1 rounded-lg border border-emerald-300 px-2 py-1.5 text-[10px] font-bold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60"
-                >
-                  {attachingId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
-                  anexar
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <Dialog open={!!preview} onOpenChange={(open) => { if (!open) setPreview(null); }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="truncate pr-6 text-sm">{preview?.doc.name}</DialogTitle>
-          </DialogHeader>
-          {preview?.kind === 'image' && (
-            <img src={preview.url} alt={preview.doc.name} className="max-h-[70vh] w-full rounded-lg object-contain" />
-          )}
-          {preview?.kind === 'pdf' && (
-            <iframe src={preview.url} title={preview.doc.name} className="h-[70vh] w-full rounded-lg border border-gray-200" />
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-/** Uma linha de documento/mídia (não-áudio): thumbnail se for imagem, ícone
- * genérico senão. Nome renomeável inline, com preview e download/exclusão. */
-function DocRow({
-  doc, onPreview, onDownload, onRename, onDelete,
-}: {
-  doc: ClientDocumentDTO;
-  onPreview: (doc: ClientDocumentDTO) => void;
-  onDownload: (doc: ClientDocumentDTO) => void;
-  onRename: (doc: ClientDocumentDTO, newName: string) => void;
-  onDelete: (doc: ClientDocumentDTO) => void;
-}) {
-  const kind = previewKind(doc.name);
-  const [thumb, setThumb] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(doc.name);
-
-  useEffect(() => {
-    setName(doc.name);
-    if (kind !== 'image') return;
-    let cancelled = false;
-    getMediaUrl(doc.key).then((url) => { if (!cancelled) setThumb(url); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc.key, doc.name]);
-
-  function commitRename() {
-    setRenaming(false);
-    if (name.trim() && name.trim() !== doc.name) onRename(doc, name.trim());
-    else setName(doc.name);
-  }
-
-  const Icon = kind === 'pdf' ? FileText : mediaIcon(null);
-  const previewable = kind === 'image' || kind === 'pdf';
-
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
-      <button
-        onClick={() => previewable && onPreview(doc)}
-        disabled={!previewable}
-        title={previewable ? 'Pré-visualizar' : undefined}
-        className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-emerald-50 text-emerald-700"
-      >
-        {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : <Icon className="h-4 w-4" />}
-      </button>
-      <span className="min-w-0 flex-1">
-        {renaming ? (
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { setName(doc.name); setRenaming(false); } }}
-            className="w-full rounded border border-emerald-300 px-1 py-0.5 text-xs font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-emerald-400"
-          />
-        ) : (
-          <span className="block truncate text-xs font-semibold text-gray-700">{doc.name}</span>
-        )}
-        <span className="block text-[10px] text-gray-400">{timeStamp(doc.uploadedAt)}</span>
-      </span>
-      <button onClick={() => setRenaming(true)} title="Renomear" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
-      {previewable && (
-        <button onClick={() => onPreview(doc)} title="Pré-visualizar" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-          <Eye className="h-3.5 w-3.5" />
-        </button>
-      )}
-      <button onClick={() => onDownload(doc)} title="Baixar" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-        <Download className="h-3.5 w-3.5" />
-      </button>
-      <button onClick={() => onDelete(doc)} title="Excluir" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500">
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
-
-/** Linha de áudio: player nativo inline (carrega a URL pré-assinada assim
- * que a lista aparece), mesmo padrão de renomear/baixar/excluir do DocRow. */
-function AudioDocRow({
-  doc, onDownload, onRename, onDelete,
-}: {
-  doc: ClientDocumentDTO;
-  onDownload: (doc: ClientDocumentDTO) => void;
-  onRename: (doc: ClientDocumentDTO, newName: string) => void;
-  onDelete: (doc: ClientDocumentDTO) => void;
-}) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(doc.name);
-
-  useEffect(() => {
-    setName(doc.name);
-    let cancelled = false;
-    getMediaUrl(doc.key).then((u) => { if (!cancelled) setUrl(u); });
-    return () => { cancelled = true; };
-  }, [doc.key, doc.name]);
-
-  function commitRename() {
-    setRenaming(false);
-    if (name.trim() && name.trim() !== doc.name) onRename(doc, name.trim());
-    else setName(doc.name);
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-700">
-      <div className="flex items-center gap-2">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
-          <Mic className="h-4 w-4" />
-        </span>
-        <span className="min-w-0 flex-1">
-          {renaming ? (
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { setName(doc.name); setRenaming(false); } }}
-              className="w-full rounded border border-emerald-300 px-1 py-0.5 text-xs font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-emerald-400"
-            />
-          ) : (
-            <span className="block truncate text-xs font-semibold text-gray-700">{doc.name}</span>
-          )}
-          <span className="block text-[10px] text-gray-400">{timeStamp(doc.uploadedAt)}</span>
-        </span>
-        <button onClick={() => setRenaming(true)} title="Renomear" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button onClick={() => onDownload(doc)} title="Baixar" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-          <Download className="h-3.5 w-3.5" />
-        </button>
-        <button onClick={() => onDelete(doc)} title="Excluir" className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500">
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {url ? (
-        <audio controls src={url} className="h-8 w-full" />
-      ) : (
-        <span className="flex items-center gap-1.5 text-[10px] text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> carregando áudio…</span>
       )}
     </div>
   );

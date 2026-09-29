@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from "./prisma";
+import { createTtlCache } from "@/app/_shared/utils/ttl-cache";
 
 export type LogAction =
   | "update"
@@ -29,21 +30,34 @@ export type LogAction =
   | "wa_note"        // registrou uma nota interna na thread (só equipe vê)
   | "wa_reaction"    // reagiu com emoji a uma mensagem da thread
   | "wa_bot"         // decisão da IA (qualify/disqualify/handoff/continue/erro)
+  | "wa_bot_discarded" // resposta do cérebro jogada fora (corrida, atendente assumiu, envio interrompido), com o gasto
   | "wa_suggest"     // IA sugeriu resposta pro atendente (agent-assist)
   | "wa_summary"     // IA resumiu a conversa pro card do kanban
-  | "wa_transcribe"  // IA transcreveu um áudio a pedido do atendente
-  | "wa_ficha_ai"    // IA preencheu campos da ficha do cliente pela conversa
+  | "wa_transcribe"  // IA transcreveu áudio: a pedido do atendente ou no /reply do bot (metadata.bySystem)
+  | "wa_ficha_ai"    // ficha do cliente pela IA: preencheu, não achou nada (metadata.noop) ou falhou
   | "ficha_ai_fill"  // o mesmo preenchimento, registrado no HISTÓRICO do card
   | "roteiro_ai"     // gasto de IA do roteiro (docx-converter → sentinela no stream)
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)
   | "wa_signature"   // ciclo de assinatura eletrônica (geração, envio, assinatura, validação)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)
+  | "wa_media_fail"  // mídia recebida não foi salva no S3 (falha/timeout no download da Meta); autor = sistema
+  | "wa_tag_add"     // aplicou tag na conversa (trilha do KPI de contratados: não purgável)
+  | "wa_tag_remove"  // tirou tag da conversa
+  | "critical_error" // erro engolido de propósito (reportCriticalError): contexto, mensagem, contactId quando há; autor = sistema
   | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
   | "sheets_export"     // automação registrou o card numa planilha do Google
   | "tag_add"           // automação adicionou uma tag ao card
   | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
   | "ai_audit_feedback"; // feedback humano sobre uma auditoria da IA
+
+/**
+ * Logs que NÃO contam como tarefa/atividade do colaborador (Visão do Gestor e
+ * drill-down por pessoa). São cliques utilitários: na transcrição a IA faz o
+ * trabalho; a tag é classificação de um clique e, contada, inflaria "tarefas"
+ * (~10 por dia). Continuam no banco e no feed do painel Chatbot.
+ */
+export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove"];
 
 interface CreateLogInput {
   action: LogAction;
@@ -53,26 +67,56 @@ interface CreateLogInput {
   userId?: string | null;
   processId?: string | null;
   metadata?: any;
+  /**
+   * Instante da ação, capturado ANTES da resposta, quando o log é gravado
+   * depois dela (runAfterResponse): o createdAt continua sendo o do clique e a
+   * sequência wa_assign → wa_text → wa_close do painel Chatbot não se inverte
+   * nem distorce o tempo de primeira resposta. Omitido = agora.
+   */
+  at?: Date;
 }
+
+// Autores que não são User (bot, cron, Meta, roteiro...): nunca têm setor, e
+// perguntar ao banco era 1 query jogada fora a cada log — o bot sozinho grava
+// milhares por semana.
+const SYSTEM_AUTHOR_IDS = new Set([
+  "whatsapp-bot", "whatsapp-client", "whatsapp-meta", "system", "roteiro", "kanban-overdue",
+]);
+
+type SectorSnapshot = Record<string, any> | null;
+
+// 5 min por instância: quem troca de setor carimba o antigo por no máximo 5
+// min. O JWT não serve de fonte (ficaria congelado até 30 dias, e o log é o
+// setor NO MOMENTO da ação); sem cache eram 2 SQL por log (User + Sector,
+// sem relationJoins) em todo envio, assumir, devolver etc.
+const SECTOR_TTL_MS = 5 * 60_000;
+const sectorCache = createTtlCache<string, SectorSnapshot>({ ttlMs: SECTOR_TTL_MS });
 
 /**
  * Snapshot do setor do autor NO MOMENTO da ação. Gravado no metadata de todo
  * log para permitir, no futuro, contabilizar/atribuir ações por setor (mesmo
  * que a pessoa troque de setor depois, o histórico preserva onde ela estava).
  */
-async function authorSectorSnapshot(authorId: string): Promise<Record<string, any> | null> {
+async function authorSectorSnapshot(authorId: string): Promise<SectorSnapshot> {
+  if (SYSTEM_AUTHOR_IDS.has(authorId)) return null;
+  const cached = sectorCache.get(authorId);
+  if (cached !== undefined) return cached;
   try {
     const u = await db.user.findUnique({
       where: { id: authorId },
       select: { sectorId: true, sector: { select: { name: true, slug: true } } },
     });
-    if (!u?.sectorId) return null;
-    return {
-      authorSectorId: u.sectorId,
-      authorSectorName: u.sector?.name ?? null,
-      authorSectorSlug: u.sector?.slug ?? null,
-    };
+    const snap: SectorSnapshot = u?.sectorId
+      ? {
+          authorSectorId: u.sectorId,
+          authorSectorName: u.sector?.name ?? null,
+          authorSectorSlug: u.sector?.slug ?? null,
+        }
+      : null;
+    sectorCache.set(authorId, snap);
+    return snap;
   } catch {
+    // Falha de banco não entra no cache: a próxima ação tenta de novo.
     return null;
   }
 }
@@ -95,6 +139,7 @@ export async function createLog(input: CreateLogInput): Promise<void> {
         userId: input.userId ?? null,
         processId: input.processId ?? null,
         metadata: sector || input.metadata ? { ...(sector ?? {}), ...(input.metadata ?? {}) } : undefined,
+        ...(input.at ? { createdAt: input.at } : {}),
       },
     });
   } catch (err) {
@@ -124,6 +169,8 @@ export async function logWhatsAppEvent(input: {
   /** NOSSO número da conversa (multi-tenant) — permite custo/atividade por número. */
   numberId?: string | null;
   metadata?: Record<string, any>;
+  /** Instante da ação quando o log vai depois da resposta (ver CreateLogInput.at). */
+  at?: Date;
 }): Promise<void> {
   try {
     const sector = await authorSectorSnapshot(input.authorId);
@@ -142,6 +189,7 @@ export async function logWhatsAppEvent(input: {
           ...(sector ?? {}),
           ...(input.metadata ?? {}),
         },
+        ...(input.at ? { createdAt: input.at } : {}),
       },
     });
   } catch (err) {

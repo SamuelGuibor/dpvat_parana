@@ -23,8 +23,15 @@ const nextConfig = {
   // próprio worker por caminho de arquivo. Empacotado pelo webpack ele procura
   // o worker dentro de .next/ e quebra ("Cannot find module pdf.worker.mjs") —
   // externalizado, o Node o resolve direto do node_modules e funciona.
+  //
+  // @vercel/functions (waitUntil do runAfterResponse): o index dele carrega o
+  // módulo de WebSocket, que tem `import("ws")` — dependência opcional que não
+  // instalamos. Empacotado, o webpack do Next falha o build com "Can't resolve
+  // 'ws'" (conferido com o webpack do próprio Next); externalizado, o Node
+  // carrega do node_modules e esse import só rodaria se alguém usasse o
+  // WebSocket, o que não acontece.
   experimental: {
-    serverComponentsExternalPackages: ["pdfjs-dist"],
+    serverComponentsExternalPackages: ["pdfjs-dist", "@vercel/functions"],
     // Os .docx de templates/ são lidos em runtime com nome de arquivo dinâmico
     // (gerarProcuracao) — o file tracing da Vercel não enxerga essa leitura e
     // deixava a pasta fora do bundle das funções: ENOENT em

@@ -22,6 +22,8 @@ export interface WaCreds {
 
 const CACHE_TTL_MS = 60_000;
 let cache: { at: number; rows: WaCreds[] } | null = null;
+// Ids das linhas desativadas (getInactiveNumberIdsCached, só a lista do inbox).
+let inactiveCache: { at: number; ids: string[] } | null = null;
 
 function envCreds(): WaCreds | null {
   const token = process.env.WHATSAPP_TOKEN ?? "";
@@ -77,6 +79,7 @@ export async function listAllCreds(): Promise<WaCreds[]> {
 
 export function invalidateNumberCache() {
   cache = null;
+  inactiveCache = null;
 }
 
 /**
@@ -104,6 +107,21 @@ export async function getCreds(numberId?: string | null): Promise<WaCreds | null
 export async function getInactiveNumberIds(): Promise<string[]> {
   const rows = await db.whatsAppNumber.findMany({ where: { active: false }, select: { id: true } });
   return rows.map((r) => r.id);
+}
+
+/**
+ * Mesma lista de getInactiveNumberIds, com cache de 60s por instância. SÓ
+ * para a lista do inbox (loadConversations), que pede isto a cada recarga só
+ * para pintar o selo `readOnly`. Por até 60s, em outra instância, uma linha
+ * recém-desativada ainda aparece sem o selo — aceitável porque o servidor já
+ * recusa o envio (getCreds devolve null). Crons e activeNumberConversationWhere
+ * continuam na consulta fresca: ali é caminho anti-spam.
+ */
+export async function getInactiveNumberIdsCached(): Promise<string[]> {
+  if (inactiveCache && Date.now() - inactiveCache.at < CACHE_TTL_MS) return inactiveCache.ids;
+  const ids = await getInactiveNumberIds();
+  inactiveCache = { at: Date.now(), ids };
+  return ids;
 }
 
 /**

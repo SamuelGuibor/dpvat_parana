@@ -4,21 +4,19 @@ import { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { ChatbotDashboard } from '../manager/ChatbotDashboard';
 import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
-import type { ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
 
 // "Desempenho do Chatbot" como aba do dashboard, com seletor de número no
 // topo (multi-tenant): uma tela só, N números — a sidebar não cresce quando
 // um número novo é cadastrado. "Todos os números" (null) mantém a visão
 // agregada de sempre.
-// initialAnalytics/numberOptions chegam da carga única do dashboard
-// (get-strategic-dashboard) — só há fetch novo quando o usuário troca o
-// período ou o número.
+// As métricas são buscadas pelo ChatbotDashboard ao montar, ou seja, só
+// quando o gestor abre a aba (Radix não monta aba inativa). A carga única do
+// dashboard deixou de trazê-las (25/09/2026): rodava a análise pesada a cada
+// abertura e ela ainda era refeita com o número escolhido no topo.
 
 interface NumberOption { id: string; label: string; displayPhone: string | null }
 
-export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId: controlledNumberId, range }: {
-  initialAnalytics?: ChatbotAnalytics | null;
-  numberOptions?: NumberOption[];
+export function ChatbotPanel({ numberId: controlledNumberId, range }: {
   /** Número CONTROLADO pelo seletor global do dashboard (17/08/2026). Quando
    *  presente (mesmo null = "todos"), o seletor próprio desta aba some. */
   numberId?: string | null;
@@ -26,14 +24,14 @@ export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId:
   range?: { from: string; to: string };
 }) {
   const isControlled = controlledNumberId !== undefined;
-  const [options, setOptions] = useState<NumberOption[]>(numberOptions ?? []);
+  const [options, setOptions] = useState<NumberOption[]>([]);
   const [localNumberId, setLocalNumberId] = useState<string | null>(null);
   const numberId = isControlled ? controlledNumberId : localNumberId;
 
   useEffect(() => {
-    if (numberOptions || isControlled) return;
+    if (isControlled) return;
     listWaNumberOptions().then(setOptions).catch(() => setOptions([]));
-  }, [numberOptions, isControlled]);
+  }, [isControlled]);
 
   return (
     <div className="p-4">
@@ -56,7 +54,7 @@ export function ChatbotPanel({ initialAnalytics = null, numberOptions, numberId:
           </select>
         )}
       </div>
-      <ChatbotDashboard numberId={numberId} initialData={initialAnalytics} range={range} />
+      <ChatbotDashboard numberId={numberId} range={range} />
     </div>
   );
 }

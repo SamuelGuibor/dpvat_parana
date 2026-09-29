@@ -16,6 +16,7 @@ import { Prisma } from "@prisma/client";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "@/app/_shared/lib/prisma";
 import { createLog, logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { newerInboundWhere } from "@/app/_shared/utils/bot-timing";
 
 /** Ação do log do card quando a IA preenche a ficha (aba Histórico). */
 export const FICHA_AI_ACTION = "ficha_ai_fill";
@@ -120,12 +121,46 @@ export interface FichaAiResult {
   reason?: string;
 }
 
+export interface FichaAiOptions {
+  /**
+   * Última mensagem do cliente que disparou esta rodada (webhook). Se já
+   * chegou outra MAIS NOVA, a rodada desiste sem chamar a IA: a invocação da
+   * mensagem nova lê a conversa inteira. Sem isso a ficha rodava uma vez por
+   * balão de uma rajada (até ~8 mil chamadas em 14 dias). O botão manual do
+   * Copiloto não passa isto e roda sempre.
+   */
+  afterMessage?: { id: string; createdAt: string };
+}
+
+/** Uso de tokens no formato de metadata.usage (Canto da IA). */
+function usageOf(response: Anthropic.Message): Record<string, unknown> | undefined {
+  return response.usage
+    ? {
+        model: response.model,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        cacheReadTokens: (response.usage as any).cache_read_input_tokens ?? 0,
+        cacheWriteTokens: (response.usage as any).cache_creation_input_tokens ?? 0,
+      }
+    : undefined;
+}
+
 /**
  * Extrai da conversa os campos vazios da ficha e persiste. Chamado pelo
  * webhook a cada lote de mensagens novas do cliente (e manualmente pelo botão
  * do Copiloto) — só chama a IA quando ainda existe campo vazio.
+ *
+ * Toda chamada à IA grava wa_ficha_ai com o usage, inclusive a recusa e o
+ * "nenhum dado novo" (metadata.noop, fora do feed do painel Chatbot): antes só
+ * o preenchimento gravava, e o gasto das outras rodadas sumia do Canto da IA.
+ * O mesmo log leva `durationMs`: tempo SÓ da chamada ao Haiku (sem baixar os
+ * anexos do S3 nem gravar no banco), para medir quanto a ficha por IA demora.
  */
-export async function autoFillClientInfo(contactId: string): Promise<FichaAiResult> {
+export async function autoFillClientInfo(contactId: string, opts: FichaAiOptions = {}): Promise<FichaAiResult> {
+  // Gasto e tempo da chamada à IA, calculados logo depois do create: todo
+  // retorno e o catch dali em diante gravam o log com eles.
+  let usage: Record<string, unknown> | undefined;
+  let durationMs: number | undefined;
   try {
     if (!process.env.CLAUDE_API_KEY) {
       return { filled: [], reason: "CLAUDE_API_KEY não configurada no servidor." };
@@ -139,6 +174,15 @@ export async function autoFillClientInfo(contactId: string): Promise<FichaAiResu
       },
     });
     if (!contact) return { filled: [], reason: "Contato não encontrado." };
+
+    // Rajada em andamento: a invocação da mensagem mais nova preenche.
+    if (opts.afterMessage) {
+      const newer = await db.whatsAppMessage.findFirst({
+        where: newerInboundWhere(contactId, opts.afterMessage),
+        select: { id: true },
+      });
+      if (newer) return { filled: [], reason: "lote em andamento" };
+    }
 
     const fields = await currentFields(contact);
     const missing = AI_FIELDS.filter((f) => !fields[f]);
@@ -227,6 +271,7 @@ Responda APENAS com JSON válido:
     content.push({ type: "text", text: prompt });
 
     const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    const t0 = Date.now();
     const response = await client.messages.create({
       // Haiku: roda a cada lote de mensagens — leitura de documento + extração
       // simples não justifica modelo maior.
@@ -234,7 +279,21 @@ Responda APENAS com JSON válido:
       max_tokens: 1000,
       messages: [{ role: "user", content }],
     });
+    durationMs = Date.now() - t0;
+    usage = usageOf(response);
+    const logNoop = (message: string, extra: Record<string, unknown> = {}) =>
+      logWhatsAppEvent({
+        action: "wa_ficha_ai",
+        message,
+        authorId: "whatsapp-bot",
+        authorName: "🤖 Bot WhatsApp",
+        contactId,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        metadata: { usage, durationMs, filled: [], noop: true, ...extra },
+      });
     if (response.stop_reason === "refusal") {
+      await logNoop("IA recusou a análise da conversa para a ficha", { refusal: true });
       return { filled: [], reason: "A IA recusou a análise deste conteúdo." };
     }
     const text = response.content
@@ -262,6 +321,10 @@ Responda APENAS com JSON válido:
     }
 
     if (!Object.keys(updates).length) {
+      await logNoop(
+        "IA não encontrou dados novos para a ficha",
+        hospitalHint ? { hospitalCitado: hospitalHint } : {},
+      );
       return {
         filled: [],
         hospitalHint,
@@ -316,16 +379,6 @@ Responda APENAS com JSON válido:
       });
     }
 
-    const usage = response.usage
-      ? {
-          model: response.model,
-          inputTokens: response.usage.input_tokens,
-          outputTokens: response.usage.output_tokens,
-          cacheReadTokens: (response.usage as any).cache_read_input_tokens ?? 0,
-          cacheWriteTokens: (response.usage as any).cache_creation_input_tokens ?? 0,
-        }
-      : undefined;
-
     await logWhatsAppEvent({
       action: "wa_ficha_ai",
       message: `IA preencheu a ficha: ${Object.keys(updates).join(", ")}`,
@@ -334,7 +387,7 @@ Responda APENAS com JSON válido:
       contactId,
       contactName: updates.name ?? contact.name,
       contactPhone: contact.phone,
-      metadata: { fields: updates, usage },
+      metadata: { fields: updates, usage, durationMs },
     });
 
     return { filled: Object.keys(updates) };
@@ -350,7 +403,8 @@ Responda APENAS com JSON válido:
         authorId: "whatsapp-bot",
         authorName: "🤖 Bot WhatsApp",
         contactId,
-        metadata: { error: detail },
+        // Falha depois da chamada (JSON inválido, banco): a IA já cobrou.
+        metadata: { error: detail, usage, durationMs },
       });
     } catch { /* log é best-effort */ }
     return { filled: [], reason: detail };

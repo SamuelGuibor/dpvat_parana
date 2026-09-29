@@ -1,17 +1,22 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { authOptions } from '@/app/_shared/lib/auth';
+import { noStoreJson, teamRoute } from '@/app/_shared/lib/route-auth';
+import { TEAM_ROLES } from '@/app/_shared/lib/permissions';
 
 // Considera "online" quem enviou heartbeat nos últimos 5 min.
 // O client bate a cada 2 min, então há folga para 2 batidas perdidas.
 const ONLINE_WINDOW_MS = 300_000;
 
-async function buildList(currentUserId?: string) {
+// Sem GET, de propósito: o GET antigo devolvia nome, foto, cargo e último
+// acesso da equipe a QUALQUER sessão (cliente logado por CPF incluso) e não
+// tinha consumidor no app — a lista só sai do heartbeat abaixo, para a equipe.
+
+export const dynamic = 'force-dynamic';
+
+async function buildList(currentUserId: string) {
   // A "equipe" é quem tem role ADMIN* — os mesmos que têm acesso
   // à dashboard (ver a checagem em nova-dash/page.tsx).
   const admins = await db.user.findMany({
-    where: { role: { in: ['ADMIN', 'ADMIN+', 'ADMIN++'] } },
+    where: { role: { in: [...TEAM_ROLES] } },
     select: { id: true, name: true, image: true, role: true, lastSeenAt: true },
   });
 
@@ -40,23 +45,23 @@ async function buildList(currentUserId?: string) {
 }
 
 // Heartbeat: marca o usuário atual como visto agora e devolve a lista atualizada.
+// Só equipe (cargo do banco + trava de IP): o middleware aceita qualquer sessão.
 export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
-  }
+  const auth = await teamRoute();
+  if ('res' in auth) return auth.res;
+  const { ctx } = auth;
 
+  // updateMany (e não update): o update devolve a linha inteira do User — com
+  // o hash da senha — só para ser descartada. Aqui volta só a contagem.
   await db.user
-    .update({ where: { id: session.user.id }, data: { lastSeenAt: new Date() } })
+    .updateMany({ where: { id: ctx.userId }, data: { lastSeenAt: new Date() } })
     .catch((err) => console.error('[PRESENCE] Falha no heartbeat:', err));
 
-  const members = await buildList(session.user.id);
-  return NextResponse.json({ members });
-}
-
-// Apenas leitura da lista (sem marcar presença).
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  const members = await buildList(session?.user?.id);
-  return NextResponse.json({ members });
+  try {
+    const members = await buildList(ctx.userId);
+    return noStoreJson({ members });
+  } catch (err) {
+    console.error('[PRESENCE] Falha ao montar a lista:', err);
+    return noStoreJson({ error: 'Falha ao carregar a presença.' }, { status: 500 });
+  }
 }

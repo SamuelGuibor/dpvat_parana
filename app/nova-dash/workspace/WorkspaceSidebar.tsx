@@ -2,8 +2,12 @@
 'use client';
 
 import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck } from 'lucide-react';
+import type { WorkspaceSectionKey } from '@/app/_shared/utils/dashboard-view-state';
+import { TEAM_CHAT_ENABLED } from './chat/chat-flags';
 
-export type WorkspaceSection = 'meu-espaco' | 'chat' | 'revisao-ia' | 'gestao' | 'dashboard' | 'custos' | 'numeros' | 'seguranca';
+// A lista mora em dashboard-view-state.ts (WORKSPACE_SECTIONS) porque a seção
+// é restaurada do sessionStorage: seção nova entra lá, senão não volta no F5.
+export type WorkspaceSection = WorkspaceSectionKey;
 
 interface Props {
   active: WorkspaceSection;
@@ -33,9 +37,6 @@ interface Group {
   title: string | null;
   items: Item[];
 }
-
-// Chat geral desativado em 14/09/2026 (ver item "Chats" abaixo).
-const CHAT_ENABLED = false;
 
 export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canManageSecurity, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
@@ -78,8 +79,9 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
       items: [
         // Chat geral DESATIVADO (14/09/2026, decisão do escritório): a equipe
         // usa o Discord e o presencial; a aba ficava em desuso. Código
-        // preservado — pra voltar, basta reativar CHAT_ENABLED.
-        ...(CHAT_ENABLED
+        // preservado — pra voltar, basta reativar TEAM_CHAT_ENABLED
+        // (chat/chat-flags.ts, que também liga o poll de não lidas).
+        ...(TEAM_CHAT_ENABLED
           ? [{ key: 'chat' as const, label: 'Chat geral', desc: 'Conversas e canais', icon: MessagesSquare, badge: chatUnread }]
           : []),
         // O WhatsApp virou aba própria no topo da nova-dash.

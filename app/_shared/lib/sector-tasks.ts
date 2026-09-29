@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { db } from "@/app/_shared/lib/prisma";
 import { recordMentions } from "@/app/_shared/lib/mention-inbox";
+import { createTtlCache } from "@/app/_shared/utils/ttl-cache";
 
 /**
  * Tarefas por setor — central de roteamento das tarefas automáticas do sistema
@@ -27,7 +28,61 @@ const SECTOR_TASK_ROUTES: Record<SectorTaskKind, { sectorSlug: string }> = {
   botconversa_contratado: { sectorSlug: "comercial" },
 };
 
+/**
+ * Setor da Fila do WhatsApp: quem faz a triagem dos leads (o mesmo da tarefa de
+ * lead qualificado). Recebe o 1º aviso de transferência/fila sem dono e o de
+ * falha de entrega (app/_shared/lib/whatsapp/alert-recipients.ts).
+ */
+export const WA_QUEUE_SECTOR_SLUG = SECTOR_TASK_ROUTES.wa_lead_qualificado.sectorSlug;
+
 const FALLBACK_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
+
+interface SectorAudience {
+  sector: { id: string; name: string } | null;
+  recipientIds: string[];
+}
+
+// Os avisos do WhatsApp (transferência, fila, falha de entrega) consultam o
+// setor a cada evento; ele muda raramente. 60 s por instância, igual à lista da
+// equipe do relay: quem entra no setor passa a receber em até 1 min.
+const SECTOR_TTL_MS = 60_000;
+const sectorCache = createTtlCache<string, SectorAudience>({ ttlMs: SECTOR_TTL_MS, maxEntries: 50 });
+
+/**
+ * Membros do setor (só equipe, role ADMIN*) ou, se o setor não existir ou
+ * estiver vazio, a equipe inteira: nenhuma tarefa ou aviso se perde por setor
+ * mal configurado.
+ */
+async function loadSectorAudience(slug: string): Promise<SectorAudience> {
+  const cached = sectorCache.get(slug);
+  // Cópia: quem chama pode mexer no array.
+  if (cached) return { sector: cached.sector, recipientIds: [...cached.recipientIds] };
+
+  const sector = await db.sector.findUnique({
+    where: { slug },
+    select: {
+      id: true,
+      name: true,
+      users: { where: { role: { in: FALLBACK_ROLES } }, select: { id: true } },
+    },
+  });
+  let recipientIds = sector?.users.map((u) => u.id) ?? [];
+  if (recipientIds.length === 0) {
+    const team = await db.user.findMany({
+      where: { role: { in: FALLBACK_ROLES } },
+      select: { id: true },
+    });
+    recipientIds = team.map((u) => u.id);
+  }
+  const value: SectorAudience = { sector: sector ? { id: sector.id, name: sector.name } : null, recipientIds };
+  sectorCache.set(slug, value);
+  return { sector: value.sector, recipientIds: [...recipientIds] };
+}
+
+/** Destinatários do setor do slug, com o mesmo fallback para os ADMIN*. */
+export async function sectorRecipientIds(slug: string): Promise<string[]> {
+  return (await loadSectorAudience(slug)).recipientIds;
+}
 
 interface SectorTaskInput {
   kind: SectorTaskKind;
@@ -54,19 +109,7 @@ export async function recordSectorTask({
 }: SectorTaskInput): Promise<void> {
   try {
     const { sectorSlug } = SECTOR_TASK_ROUTES[kind];
-    const sector = await db.sector.findUnique({
-      where: { slug: sectorSlug },
-      select: { id: true, name: true, users: { select: { id: true } } },
-    });
-
-    let recipientIds = sector?.users.map((u) => u.id) ?? [];
-    if (recipientIds.length === 0) {
-      const team = await db.user.findMany({
-        where: { role: { in: FALLBACK_ROLES } },
-        select: { id: true },
-      });
-      recipientIds = team.map((u) => u.id);
-    }
+    const { sector, recipientIds } = await loadSectorAudience(sectorSlug);
 
     await recordMentions({
       recipientIds,

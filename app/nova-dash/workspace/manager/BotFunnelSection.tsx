@@ -1,16 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Loader2, Filter as FunnelIcon, Pencil, Check, X } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, Filter as FunnelIcon, Pencil, Check, X, RotateCcw } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
   PieChart, Pie, Legend, CartesianGrid,
 } from 'recharts';
-import { getBotFunnel, setMonthlyHiredGoal, type BotFunnelData } from '@/app/_actions/analytics/bot-funnel';
+import { Button } from '@/app/_shared/ui/button';
+import type { BotFunnelData } from '@/app/_actions/analytics/bot-funnel';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import { StaleDataVeil } from './StaleDataVeil';
 
 // Funil do bot da IA — layout 50/50 aprovado em 17/08/2026: à esquerda os 8
 // KPIs compactos, à direita o mesmo funil como gráfico com toggle
-// Barras/Pizza. Tudo contado pelo nosso banco (nada do BotConversa
+// Barras/Pizza. Tudo contado pelo nosso banco (nada do BotConversa).
+//
+// Só apresentação: os dados chegam do StrategicDashboard, que busca funil e
+// leads do Fluxo de Eventos Rápidos numa chamada só (getBotFunnelAndLeads) —
+// antes esta seção rodava a própria coorte, a 2ª da mesma abertura. Salvar a
+// meta também é do pai (otimista, com rollback e aviso se falhar). Na troca de
+// período/número o pai manda os números antigos com `stale` (véu por cima).
 
 function Kpi({ label, value, className, hint }: { label: string; value: number; className?: string; hint?: string }) {
   return (
@@ -24,39 +33,31 @@ function Kpi({ label, value, className, hint }: { label: string; value: number; 
   );
 }
 
-export function BotFunnelSection({ period = 30, numberId, range }: {
-  period?: number;
-  numberId: string | null;
-  /** Intervalo livre (dashboard geral) — tem prioridade sobre `period`. */
-  range?: { from: string; to: string };
+export function BotFunnelSection({ data, loading, error, stale = false, onRetry, onGoalChange }: {
+  data: BotFunnelData | null;
+  loading: boolean;
+  error: boolean;
+  /** `data` ainda é do período/número anterior (o novo está carregando). */
+  stale?: boolean;
+  onRetry?: () => void;
+  /** Meta nova (inteiro ≥ 1): o pai aplica na hora, grava e desfaz se falhar. */
+  onGoalChange: (goal: number) => void;
 }) {
-  const [data, setData] = useState<BotFunnelData | null>(null);
-  const [error, setError] = useState(false);
   const [chart, setChart] = useState<'bar' | 'pie' | 'month'>('bar');
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState('');
+  // setMonthlyHiredGoal exige manager_dashboard: sem ela o lápis nem aparece
+  // (antes aparecia para todos, e salvar "voltava sozinho" sem aviso).
+  const { perms } = usePermissions();
+  const canEditGoal = perms.manager_dashboard;
 
-  useEffect(() => {
-    let alive = true;
-    setData(null);
-    setError(false);
-    getBotFunnel(period, numberId, range?.from, range?.to)
-      .then((d) => { if (alive) setData(d); })
-      .catch(() => { if (alive) setError(true); });
-    return () => { alive = false; };
-  }, [period, numberId, range?.from, range?.to]);
-
-  const saveGoal = async () => {
-    const n = Math.round(Number(goalDraft));
+  const saveGoal = () => {
+    // Mesmo teto do servidor (setMonthlyHiredGoal), para a tela não mostrar
+    // um valor diferente do gravado.
+    const n = Math.min(Math.round(Number(goalDraft)), 100_000);
     setEditingGoal(false);
-    if (!data || !Number.isFinite(n) || n < 1) return;
-    const prev = data.monthGoal;
-    setData({ ...data, monthGoal: n });
-    try {
-      await setMonthlyHiredGoal(n);
-    } catch {
-      setData((d) => (d ? { ...d, monthGoal: prev } : d));
-    }
+    if (!data || !Number.isFinite(n) || n < 1 || n === data.monthGoal) return;
+    onGoalChange(n);
   };
 
   // Etapas EXCLUSIVAS da coorte (cada conversa em uma só) — somam exatamente
@@ -84,16 +85,24 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
         </span>
         Funil do bot
         <span className="text-xs font-semibold text-gray-400">
-          conversas criadas no período{range ? '' : ` · ${period} dias`}
+          conversas criadas no período
         </span>
       </h2>
 
       {error ? (
-        <p className="text-sm text-red-600">Não foi possível carregar o funil.</p>
-      ) : !data ? (
+        <div className="flex flex-col items-center gap-3 py-6 text-center text-sm text-gray-500">
+          <p className="text-red-600">Não foi possível carregar o funil.</p>
+          {onRetry && (
+            <Button size="sm" variant="outline" onClick={onRetry}>
+              <RotateCcw className="mr-1 h-4 w-4" /> Tentar novamente
+            </Button>
+          )}
+        </div>
+      ) : loading || !data ? (
         <div className="grid h-56 place-items-center text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="relative grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <StaleDataVeil show={stale} />
           {/* Esquerda: 8 KPIs compactos */}
           <div className="grid grid-cols-2 content-start gap-2">
             <Kpi label="Total no período" value={data.started} />
@@ -108,15 +117,15 @@ export function BotFunnelSection({ period = 30, numberId, range }: {
               value={data.hired}
               className="text-emerald-600"
               hint={data.hiredLegacy > 0
-                ? `${data.hiredBot} do sistema + ${data.hiredLegacy} do BotConversa · etiquetas no período`
-                : 'etiquetas "Contratados" aplicadas no período'}
+                ? `${data.hiredBot} do sistema + ${data.hiredLegacy} do BotConversa · pela data de entrada`
+                : 'leads do período com a etiqueta "Contratados"'}
             />
             <Kpi label="Outros desfechos" value={data.others} />
             {/* Meta do mês com barra embutida (clique no lápis para editar) */}
             <div className="rounded-xl border border-gray-100 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="flex items-center justify-between text-[11px] font-semibold text-gray-400">
                 Meta do mês
-                {!editingGoal && (
+                {canEditGoal && !editingGoal && (
                   <button
                     onClick={() => { setGoalDraft(String(data.monthGoal)); setEditingGoal(true); }}
                     className="text-gray-300 transition-colors hover:text-gray-500"

@@ -1,7 +1,8 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import useSWR from 'swr';
 import {
@@ -12,7 +13,7 @@ import {
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
   UserCheck, Columns3, Users, Phone, BookUser, Smile,
-  Lock,
+  Lock, ArrowDown, UserX,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -24,29 +25,57 @@ import {
 } from '@/app/_shared/ui/dropdown-menu';
 import { useChatStream, type ChatStreamEvent } from '@/app/_shared/hooks/use-chat';
 import {
-  useWhatsAppConversations, useWhatsAppConversationsTotal, useWhatsAppMessages, type WhatsAppThreadMessage,
+  fetchInboxConversation, fetchInboxFilter, fetchThreadRecent, useInboxColumns,
+  useWaNumberOptions, useWhatsAppConversations, useWhatsAppMessages,
+  type WaNumberOption, type WhatsAppThreadMessage,
 } from '@/app/_shared/hooks/use-whatsapp';
 import {
+  OPEN_CONTACT_STORAGE_KEY, browserSessionStorage, pruneColumnFilter, pruneTagFilter, restoreInboxView,
+  saveInboxViewState, type InboxFolderKey, type InboxViewState,
+} from '@/app/_shared/utils/inbox-view-state';
+import {
+  INBOX_FILTER_PAGE, appendFilterPage, filterResultChanged, hasServerFilter, inboxFilterQuery, matchesInboxFilter,
+  mergeLiveIntoFiltered, mergeRefreshedFirstPage, type InboxServerFilter,
+} from '@/app/_shared/utils/inbox-filter';
+import { closedFolderOf, type ClosedFolderKey } from '@/app/_shared/utils/inbox-folders';
+import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
-  searchWhatsAppConversations, getWhatsAppConversationByContact,
-  type WhatsAppConversationDTO,
 } from '@/app/_actions/whatsapp/conversations';
+// Só tipo: o módulo de dados (inbox-data.ts) importa o Prisma e não pode
+// entrar no bundle do navegador.
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import {
   sendWhatsAppMessage, sendWhatsAppMedia, getWhatsAppUploadUrl,
   editWhatsAppMessage, deleteWhatsAppMessage, reactToWhatsAppMessage,
 } from '@/app/_actions/whatsapp/send-message';
-import { listWhatsAppTags, toggleConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
-import { listWaNumberOptions } from '@/app/_actions/whatsapp/numbers';
+import { listWhatsAppTags, setConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
+import {
+  assumePatch, closePatch, inboxListState, manualUnreadPatch, patchConversationList, patchConversationRow, readPatch,
+  returnToBotPatch, revertPatch, sameTags, sentMessagePatch, withTag, type ConversationPatch,
+} from '@/app/_shared/utils/whatsapp-inbox';
+import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
+import { toThreadMessage, type SentMessageDTO } from '@/app/_shared/utils/thread-window';
+import { HttpError, describeFetchError } from '@/app/_shared/utils/fetch-json';
+import { mergeConversationDelta } from '@/app/_shared/utils/inbox-delta';
+import {
+  NEAR_BOTTOM_PX, countNewBelow, decideThreadScroll, isOwnThreadMessage, tailAdvanced, threadTail, type ThreadTail,
+} from '@/app/_shared/utils/thread-scroll';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
-import { transcribeWhatsAppAudio } from '@/app/_actions/whatsapp/assist';
+import { describeAssistError, requestAssistText } from '@/app/_shared/utils/assist-api';
+// SÓ POR 1 DEPLOY: a UI chama a IA do Copiloto por fetch, mas a aba aberta com
+// o bundle antigo ainda chama as actions de assist.ts pelo id. No Next 14 a
+// action só entra no manifesto se o arquivo for alcançável pelos imports da
+// página; sem esta linha, os 4 botões de IA da aba antiga dariam "Failed to
+// find Server Action" até o F5. Remover no deploy seguinte, junto com o arquivo.
+import '@/app/_actions/whatsapp/assist';
 import { CLOSE_CATEGORY_OPTIONS, CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import { downloadFileFromS3 } from '@/app/_actions/documents/download-s3';
 import { attachConversationMediaToCard } from '@/app/_actions/whatsapp/client-documents';
-import { getClientInfo } from '@/app/_actions/whatsapp/client-info';
+import { useCopilot } from '@/app/_shared/hooks/use-copilot';
 import { CardDialog } from '@/app/nova-dash/CardDialog';
 import type { ExtendedKanbanCard } from '@/app/nova-dash/card-dialog/types';
 import { WhatsAppComposer } from './WhatsAppComposer';
@@ -58,34 +87,51 @@ import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
-import { brDayKey } from '@/app/_shared/utils/date-br';
+import {
+  RETRY_CHECK_FAILED_TEXT, RETRY_WINDOW_CLOSED_TEXT, findSentMedia, mediaSendFailedText, pendingPreviewKind,
+} from '@/app/_shared/utils/pending-media';
+import { brDayKey, brLabelFromKey } from '@/app/_shared/utils/date-br';
+import { mediaDisplayName } from '@/app/_shared/utils/media-name';
+import { getMediaUrl, useMediaUrl } from './media-url-cache';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Nome amigável do arquivo a partir da chave S3. As chaves de mídia recebida
-// têm o formato ".../{timestamp}-{nome}", então tiramos o prefixo numérico e
-// decodificamos. Ex.: "whatsapp/abc/1720000000000-contrato.pdf" → "contrato.pdf".
-function fileNameFromKey(key: string): string {
-  const raw = key.split('/').pop() ?? 'arquivo';
-  const noTimestamp = raw.replace(/^\d{10,}-/, '');
-  try { return decodeURIComponent(noTimestamp); } catch { return noTimestamp; }
-}
-
-// Cache de URLs pré-assinadas em memória (por chave S3) — evita gerar uma nova
-// a cada re-render da thread (polling/SSE). Expira 5 min antes do real (1h).
-const mediaUrlCache = new Map<string, { url: string; expiresAt: number }>();
-async function getMediaUrl(key: string): Promise<string | null> {
-  const cached = mediaUrlCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-  const fileName = key.split('/').pop() ?? 'anexo';
-  const res = await downloadFileFromS3(key, fileName, true);
-  if (!res.success || !res.presignedUrl) return null;
-  mediaUrlCache.set(key, { url: res.presignedUrl, expiresAt: Date.now() + 55 * 60_000 });
-  return res.presignedUrl;
-}
-
 // Janela de resposta da Meta: 24h desde a última mensagem RECEBIDA do cliente.
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Anexo de uma bolha pendente, guardado FORA do estado (por tempId, em
+ * `pendingMediaRef`) para o "tentar de novo" não pedir para anexar de novo.
+ * Liberado só quando a bolha sai (`removePending`: enviou ou descartou) e no
+ * unmount do inbox, nunca na troca de conversa.
+ */
+interface PendingMedia {
+  file: File;
+  mime: string;
+  caption?: string;
+  replyToId: string | null;
+  /** Key do S3 depois do PUT: o retry pula o upload e confere se a mensagem já entrou. */
+  uploadedKey?: string;
+  /** Object URL do preview (só imagem); revogado junto com a bolha. */
+  previewUrl?: string;
+}
+
+// Dados de apoio (tags, total da agenda) pelo cache global do SWR: a nova-dash
+// desmonta o inbox a cada troca de aba, e voltar ao WhatsApp mostra tudo na
+// hora. Remontar dentro de 60 s não busca de novo (cada busca é uma server
+// action na fila serial, na frente do 1º clique); sem retry automático, como
+// antes (as tags têm "Tentar novamente").
+const INBOX_SUPPORT_SWR = { revalidateOnFocus: false, dedupingInterval: 60_000, shouldRetryOnError: false } as const;
+// Uma gravação da navegação (conversa, pasta, busca, filtros) por pausa de
+// digitação na busca; o desmontar grava na hora o que estiver pendente.
+const INBOX_VIEW_SAVE_DEBOUNCE_MS = 300;
+// Filtros no banco: uma busca por pausa de digitação/cliques (cada troca de
+// filtro é um GET) e, com o filtro ligado, no máximo uma rebusca a cada 30 s
+// quando o delta mostra conversa entrando ou saindo do resultado.
+const FILTER_DEBOUNCE_MS = 350;
+const FILTER_REFRESH_MIN_MS = 30_000;
+// Referência estável para "linhas ainda não chegaram" (deps dos useMemo).
+const NO_WA_NUMBERS: WaNumberOption[] = [];
 
 // Ícone/cor de cada categoria no menu manual de "Encerrar".
 const CLOSE_MENU_META: Record<string, { Icon: React.ElementType; color: string }> = {
@@ -185,38 +231,34 @@ function attendantBadgeColor(name: string) {
 export function WhatsAppInbox() {
   const { data: session } = useSession();
   const meId = session?.user?.id ?? '';
+  // Quem sou eu nos patches locais (assumir, enviar): mesmo fallback do
+  // servidor ('Atendente') para a linha não trocar de nome na recarga.
+  const meName = session?.user?.name ?? 'Atendente';
+  const me = useMemo(() => ({ id: meId, name: meName }), [meId, meName]);
 
-  const { conversations, refreshConversations } = useWhatsAppConversations();
-  // Total REAL no banco (a lista acima é capada em 200 pelo servidor).
-  const conversationsTotal = useWhatsAppConversationsTotal();
+  // Delta da lista também nas cópias fora do SWR (resultados da busca no
+  // servidor e conversa hidratada fora do topo): sem isso, a conversa aberta
+  // pela busca ou pela agenda nunca recebia a tag ou o encerramento feitos em
+  // outra aba. Preenchido mais abaixo, junto desses estados.
+  const deltaListenerRef = useRef<((items: WhatsAppConversationDTO[]) => void) | null>(null);
+  // `conversationsTotal` = total REAL no banco (a lista é capada em 1.000 pelo
+  // servidor), vindo com a lista e com cada delta, sem poll próprio.
+  const {
+    conversations, refreshConversations, reloadAll: reloadAllConversations, scheduleConversationsRefresh,
+    patchConversations, holdConversation, total: conversationsTotal,
+    loaded: conversationsLoaded, isLoading: conversationsLoading, error: conversationsError,
+    syncError: conversationsSyncError, retrySync: retryConversationsSync,
+  } = useWhatsAppConversations({ onDelta: (items) => deltaListenerRef.current?.(items) });
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
-  const { messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder } = useWhatsAppMessages(activeContactId);
+  const {
+    messages, mutate: mutateMessages, loadOlder, hasMore, loadingOlder, isLoading: messagesLoading,
+    error: messagesError, upsertThreadMessage, revalidateThread,
+  } = useWhatsAppMessages(activeContactId);
 
+  // Busca por nome ou celular. Com 2+ caracteres ela vai ao banco inteiro
+  // junto com os outros filtros de servidor (ver "FILTROS NO BANCO" abaixo);
+  // com 1, filtra só as conversas carregadas.
   const [search, setSearch] = useState('');
-  // BUSCA NO SERVIDOR (27/08/2026): a lista carregada é só o TOPO (as mais
-  // recentes). Filtrar só ela fazia conversas antigas "sumirem" do inbox —
-  // pesquisar um nome não achava nada e a conversa parecia ter evaporado.
-  // Agora o termo também vai ao banco e o resultado é fundido na lista.
-  const [remoteResults, setRemoteResults] = useState<WhatsAppConversationDTO[]>([]);
-  const [searchingServer, setSearchingServer] = useState(false);
-  const searchSeq = useRef(0);
-  useEffect(() => {
-    const term = search.trim();
-    const seq = ++searchSeq.current;
-    if (term.length < 2) {
-      setRemoteResults([]);
-      setSearchingServer(false);
-      return;
-    }
-    setSearchingServer(true);
-    const t = setTimeout(() => {
-      searchWhatsAppConversations(term)
-        .then((rows) => { if (searchSeq.current === seq) setRemoteResults(rows); })
-        .catch(() => { if (searchSeq.current === seq) setRemoteResults([]); })
-        .finally(() => { if (searchSeq.current === seq) setSearchingServer(false); });
-    }, 350);
-    return () => clearTimeout(t);
-  }, [search]);
   // Coluna Copiloto (lg+) e CardDialog do cliente vinculado.
   const [copilotOpen, setCopilotOpen] = useState(true);
   const [cardDialogOpen, setCardDialogOpen] = useState(false);
@@ -224,9 +266,26 @@ export function WhatsAppInbox() {
   // Ficha — incrementar o token é o sinal que o CopilotPanel escuta.
   const [fichaFocusToken, setFichaFocusToken] = useState(0);
 
-  // Tags livres pra organizar/filtrar conversas.
-  const [allTags, setAllTags] = useState<WhatsAppTagDTO[]>([]);
+  // Tags livres pra organizar/filtrar conversas. `undefined` = ainda não
+  // chegaram (começava em [] e o menu dizia "Nenhuma tag criada ainda" durante
+  // a carga); `tagsFailed` tira o "Carregando tags…" quando a busca falha (e
+  // volta a "Carregando…" durante o "Tentar novamente"). Falha com a lista já
+  // carregada (ex.: depois de editar no modal) mantém a lista antiga: o SWR
+  // guarda o último `data`.
+  const {
+    data: allTags, error: tagsError, isValidating: tagsValidating, mutate: mutateTags,
+  } = useSWR<WhatsAppTagDTO[]>('wa-tags', () => listWhatsAppTags(), INBOX_SUPPORT_SWR);
+  const tagsFailed = !!tagsError && !tagsValidating;
+  // Retry do menu e "tags mudaram" do modal: busca de novo, ignorando o dedupe.
+  const reloadTags = useCallback(() => { void mutateTags(); }, [mutateTags]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // Tag apagada (no modal ou em outra aba) sai do filtro, inclusive do filtro
+  // restaurado da troca de aba: senão ficaria "Tags (1)" com a lista vazia.
+  // Depende do filtro também porque, no remount, as tags já vêm do cache e a
+  // restauração chega depois. Sem laço: nada a tirar devolve a mesma lista.
+  useEffect(() => {
+    if (allTags) setTagFilter((prev) => pruneTagFilter(prev, allTags));
+  }, [allTags, tagFilter]);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
   // "Só minhas": em Ativas, esconde o atendimento humano de outros atendentes
@@ -239,8 +298,8 @@ export function WhatsAppInbox() {
   // "Coluna do Kanban" = estágio do card do cliente vinculado.
   // Filtro por DATA DE ENTRADA do lead (21/09/2026, estilo BotConversa):
   // substitui o antigo chip "Hoje" — presets + intervalo livre. Dias em
-  // "YYYY-MM-DD" (Brasília), inclusivos. Filtra só as conversas carregadas
-  // (as 1.000 mais recentes); a busca por nome é que vai ao banco inteiro.
+  // "YYYY-MM-DD" (Brasília), inclusivos. Vai ao banco inteiro (createdAt da
+  // conversa via brDayRangeToInstants), não só às 1.000 carregadas.
   const [dateRange, setDateRange] = useState<{ from: string; to: string; label: string } | null>(null);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -262,7 +321,16 @@ export function WhatsAppInbox() {
     const fmt = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
     setDateRange({ from, to, label: from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}` });
   };
+  // Coluna do Kanban = ID da Label do card (a coluna de verdade; o nome em
+  // `role` diverge quando a coluna é renomeada). Opções com a contagem real
+  // por GET /api/whatsapp/inbox/columns. Estado salvo com o NOME (antes de
+  // 26/09/2026) ou coluna apagada: `pruneColumnFilter` converte ou tira.
   const [columnFilter, setColumnFilter] = useState<string | null>(null);
+  const { columns: inboxColumns, failed: columnsFailed, reload: reloadColumns } = useInboxColumns();
+  useEffect(() => {
+    if (inboxColumns) setColumnFilter((prev) => pruneColumnFilter(prev, inboxColumns));
+  }, [inboxColumns, columnFilter]);
+  const columnName = columnFilter ? inboxColumns?.find((c) => c.id === columnFilter)?.name ?? null : null;
 
   // Estado de leitura/fila (19/08/2026): triagem rápida do que ainda não foi
   // visto, do que já foi, ou de quem espera atendente na fila — sem precisar
@@ -283,21 +351,28 @@ export function WhatsAppInbox() {
 
   // Multi-número (17/08/2026): filtrar por linha da empresa, com a preferência
   // salva por usuário no navegador. Só aparece com 2+ números cadastrados.
-  const [waNumbers, setWaNumbers] = useState<{ id: string; label: string; isDefault: boolean; recoveryMax: number }[]>([]);
+  // As linhas vêm do cache SWR 'wa-number-options' (compartilhado com os
+  // outros seletores de número); falha = sem linhas, como antes.
+  const numberOptions = useWaNumberOptions();
+  const waNumbers = numberOptions ?? NO_WA_NUMBERS;
   const [numberFilter, setNumberFilter] = useState<string | null>(null);
+  // O filtro salvo volta quando as linhas chegam (no remount já estão no
+  // cache) e só se a linha ainda existir. Uma vez por montagem: depois disso
+  // quem manda é o seletor.
+  const numberFilterRestored = useRef(false);
   useEffect(() => {
-    listWaNumberOptions()
-      .then((opts) => {
-        setWaNumbers(opts.map((o) => ({ id: o.id, label: o.label, isDefault: o.isDefault, recoveryMax: o.recoveryMax })));
-        const saved = localStorage.getItem('wa-number-filter');
-        if (saved && opts.some((o) => o.id === saved)) setNumberFilter(saved);
-      })
-      .catch(() => setWaNumbers([]));
-  }, []);
+    if (!numberOptions || numberFilterRestored.current) return;
+    numberFilterRestored.current = true;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('wa-number-filter'); } catch { /* storage bloqueado: sem filtro salvo */ }
+    if (saved && numberOptions.some((o) => o.id === saved)) setNumberFilter(saved);
+  }, [numberOptions]);
   const changeNumberFilter = (id: string | null) => {
     setNumberFilter(id);
-    if (id) localStorage.setItem('wa-number-filter', id);
-    else localStorage.removeItem('wa-number-filter');
+    try {
+      if (id) localStorage.setItem('wa-number-filter', id);
+      else localStorage.removeItem('wa-number-filter');
+    } catch { /* storage bloqueado: o filtro só não sobrevive ao F5 */ }
   };
   const numberBadges = useMemo(() => {
     if (waNumbers.length < 2) return null;
@@ -371,21 +446,20 @@ export function WhatsAppInbox() {
   const { confirm, confirmDialog } = useConfirm();
   const { perms } = usePermissions();
 
-  function reloadTags() {
-    listWhatsAppTags().then(setAllTags).catch(() => { });
-  }
-  useEffect(() => { reloadTags(); }, []);
-
   // Rail de pastas: "Ativas" (fila + atendimento humano juntos, com quem está
   // na fila sempre no topo) abre selecionada por padrão; Bot e Recuperação
   // vêm em seguida; os desfechos (encerradas) ficam cada um com seu próprio
   // ícone, sem nada escondido atrás de um select.
+  // O `satisfies` confere cada pasta contra INBOX_FOLDER_KEYS (as que a
+  // restauração da troca de aba aceita); o setActiveFolder da restauração
+  // confere o outro lado.
+  type RailFolder = { key: InboxFolderKey; label: string; title: string; icon: React.ElementType };
   const ACTIVE_FOLDERS = [
     { key: 'todos', label: 'Todos', title: 'Todas as conversas', icon: InboxIcon },
     { key: 'ativas', label: 'Ativas', title: 'Conversas ativas', icon: MessageCircle },
     { key: 'bot', label: 'Bot', title: 'Bot atendendo', icon: Bot },
     { key: 'standby', label: 'Recup.', title: 'Em recuperação', icon: RotateCcw },
-  ] as const;
+  ] as const satisfies readonly RailFolder[];
   const CLOSED_FOLDERS = [
     { key: 'qualified', label: 'Qualific.', title: 'Qualificadas', icon: BadgeCheck },
     { key: 'unqualified', label: 'Não qual.', title: 'Não qualificadas', icon: XCircle },
@@ -394,7 +468,10 @@ export function WhatsAppInbox() {
     { key: 'novo_acidente', label: 'Novo acid.', title: CLOSE_CATEGORY_LABELS.novo_acidente, icon: AlertTriangle },
     { key: 'transferido', label: 'Transf.', title: CLOSE_CATEGORY_LABELS.transferido, icon: Headset },
     { key: 'descartado', label: 'Descart.', title: CLOSE_CATEGORY_LABELS.descartado, icon: Trash2 },
-  ] as const;
+    // Churn (contratou e foi perdido) não tinha pasta: sumia da lista e só
+    // aparecia pela pasta Todos.
+    { key: 'churn', label: 'Churn', title: CLOSE_CATEGORY_LABELS.contratado_perdido, icon: UserX },
+  ] as const satisfies readonly RailFolder[];
   const ALL_FOLDERS = [...ACTIVE_FOLDERS, ...CLOSED_FOLDERS];
   type FolderKey = (typeof ALL_FOLDERS)[number]['key'];
   const FOLDER_TITLE: Record<FolderKey, string> = Object.fromEntries(
@@ -405,17 +482,159 @@ export function WhatsAppInbox() {
   const FOLDER_ACCENT: Record<FolderKey, keyof typeof GROUP_ACCENT | undefined> = {
     todos: 'ativas', ativas: 'ativas', bot: 'bot', standby: 'recup',
     qualified: undefined, unqualified: undefined, sem_resposta: undefined,
-    perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined,
+    perguntas: undefined, novo_acidente: undefined, transferido: undefined, descartado: undefined, churn: undefined,
   };
   const [activeFolder, setActiveFolder] = useState<FolderKey>('todos');
 
   // Pasta "Contatos" (18/08/2026): a AGENDA da linha — todos os contatos,
   // mesmo sem conversa (importados do BotConversa incluídos).
   const [contactsMode, setContactsMode] = useState(false);
-  const [directoryTotal, setDirectoryTotal] = useState(0);
-  useEffect(() => {
-    listWaContactsDirectory('', null, 0).then((p) => setDirectoryTotal(p.total)).catch(() => {});
+  // Total do selo do rail (cache SWR: sobrevive à troca de aba). Falha = 0.
+  const { data: directoryTotal = 0 } = useSWR<number>(
+    'wa-directory-total',
+    () => listWaContactsDirectory('', null, 0).then((p) => p.total),
+    INBOX_SUPPORT_SWR,
+  );
+
+  // FILTROS NO BANCO (auditoria de 24/09/2026, E3/LISTA-3): busca (2+
+  // caracteres), tag, data de entrada e coluna do Kanban procuram em TODO o
+  // histórico por GET (/api/whatsapp/inbox/search), com o total real ("X de
+  // Y") e "Carregar mais" de 300 em 300. Antes tag e data filtravam só as 1.000
+  // carregadas e o contador mentia (Contratados 124 de 276; "Este mês" 861 de
+  // 1.608). Com um deles ligado, número e "Em fila" vão junto no where, a lista
+  // vira GLOBAL (seções por pasta sobre o resultado, a pasta do rail não
+  // filtra) e só "lidas/não lidas" filtram no navegador, na página carregada.
+  // Regras puras em app/_shared/utils/inbox-filter.ts.
+  const serverFilter = useMemo<InboxServerFilter>(() => ({
+    term: search,
+    tagIds: tagFilter,
+    fromDay: dateRange?.from,
+    toDay: dateRange?.to,
+    labelId: columnFilter ?? undefined,
+    numberId: numberFilter ?? undefined,
+    queuedOnly: readFilter === 'fila',
+  }), [search, tagFilter, dateRange, columnFilter, numberFilter, readFilter]);
+  // Na Agenda a busca é dos contatos: nenhum filtro de conversa vai ao banco.
+  const serverFilterActive = !contactsMode && hasServerFilter(serverFilter);
+  // Chave do resultado = a query normalizada, sem a página.
+  const filterQuery = serverFilterActive ? inboxFilterQuery(serverFilter) : null;
+  type FilterResult = { key: string; items: WhatsAppConversationDTO[]; total: number };
+  const [remote, setRemote] = useState<FilterResult | null>(null);
+  const [remoteError, setRemoteError] = useState<{ key: string; error: unknown } | null>(null);
+  const [filterFetching, setFilterFetching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Lidos pelos callbacks (delta, timer, resposta do GET): vale o último render.
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
+  const filterQueryRef = useRef(filterQuery);
+  filterQueryRef.current = filterQuery;
+  const serverFilterRef = useRef(serverFilter);
+  serverFilterRef.current = serverFilter;
+  const lastFilterFetchAtRef = useRef(0);
+  const filterRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Rebusca pedida com a aba oculta: sai na volta à aba.
+  const filterRefreshDirtyRef = useRef(false);
+
+  // Uma página do filtro. A resposta só vale se o filtro na tela ainda for o
+  // mesmo (os GET correm em paralelo e chegam fora de ordem). 'first' = filtro
+  // novo (substitui); 'refresh' = rebusca da 1ª página sem perder as seguintes
+  // já carregadas; 'more' = "Carregar mais".
+  const fetchFilterPage = useCallback(async (query: string, mode: 'first' | 'refresh' | 'more') => {
+    const current = remoteRef.current;
+    const skip = mode === 'more' && current?.key === query ? current.items.length : 0;
+    if (mode === 'more') setLoadingMore(true);
+    else lastFilterFetchAtRef.current = Date.now();
+    try {
+      const page = await fetchInboxFilter(query, skip);
+      if (filterQueryRef.current !== query) return;
+      setRemote((prev) => {
+        const same = prev?.key === query ? prev : null;
+        if (!same || mode === 'first') return { key: query, items: page.items, total: page.total };
+        const items = mode === 'more'
+          ? appendFilterPage(same.items, page.items)
+          : mergeRefreshedFirstPage(same.items, page.items, INBOX_FILTER_PAGE);
+        return { key: query, items, total: page.total };
+      });
+      setRemoteError((prev) => (prev?.key === query ? null : prev));
+    } catch (err) {
+      if (filterQueryRef.current !== query) return;
+      // Rebusca que falha deixa na tela o resultado que já estava; a próxima
+      // mudança tenta de novo. O motivo vem da rota (ex.: fora da rede do escritório).
+      if (mode === 'first') setRemoteError({ key: query, error: err });
+      else if (mode === 'more') toast.error(`Não foi possível carregar mais conversas: ${describeFetchError(err)}`);
+    } finally {
+      if (mode === 'more') setLoadingMore(false);
+      else if (mode === 'first' && filterQueryRef.current === query) setFilterFetching(false);
+    }
   }, []);
+
+  // Filtro mudou → 1ª página depois da pausa (debounce). Filtro desligado →
+  // volta à lista normal. O resultado anterior fica em `remote` até o novo
+  // chegar: serve de prévia (a lista não pisca a cada tecla).
+  useEffect(() => {
+    if (filterRefreshTimerRef.current) {
+      clearTimeout(filterRefreshTimerRef.current);
+      filterRefreshTimerRef.current = null;
+    }
+    filterRefreshDirtyRef.current = false;
+    if (!filterQuery) {
+      setRemote(null);
+      setRemoteError(null);
+      setFilterFetching(false);
+      return;
+    }
+    setFilterFetching(true);
+    const t = setTimeout(() => { void fetchFilterPage(filterQuery, 'first'); }, FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [filterQuery, fetchFilterPage]);
+
+  // Rebusca da 1ª página quando o delta mostra conversa entrando ou saindo do
+  // resultado (a fusão do delta já atualiza quem continua nele): no máximo a
+  // cada 30 s, e nunca com a aba oculta (marca e sai na volta).
+  const scheduleFilterRefresh = useCallback(() => {
+    if (filterRefreshTimerRef.current) return;
+    if (document.hidden) {
+      filterRefreshDirtyRef.current = true;
+      return;
+    }
+    const wait = Math.max(0, lastFilterFetchAtRef.current + FILTER_REFRESH_MIN_MS - Date.now());
+    filterRefreshTimerRef.current = setTimeout(() => {
+      filterRefreshTimerRef.current = null;
+      const query = filterQueryRef.current;
+      if (!query) return;
+      if (document.hidden) {
+        filterRefreshDirtyRef.current = true;
+        return;
+      }
+      void fetchFilterPage(query, 'refresh');
+    }, wait);
+  }, [fetchFilterPage]);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden || !filterRefreshDirtyRef.current) return;
+      filterRefreshDirtyRef.current = false;
+      scheduleFilterRefresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (filterRefreshTimerRef.current) {
+        clearTimeout(filterRefreshTimerRef.current);
+        filterRefreshTimerRef.current = null;
+      }
+    };
+  }, [scheduleFilterRefresh]);
+
+  // Resultado do banco para o filtro NA TELA (o de um filtro anterior só serve de prévia).
+  const serverResult = remote && remote.key === filterQuery ? remote : null;
+  const serverFilterError = remoteError && remoteError.key === filterQuery ? remoteError.error : null;
+  const searchingServer = serverFilterActive && !serverResult && (filterFetching || !serverFilterError);
+  const retryServerFilter = () => {
+    if (!filterQuery) return;
+    setRemoteError(null);
+    setFilterFetching(true);
+    void fetchFilterPage(filterQuery, 'first');
+  };
 
   // Paginação client-side: cada pasta mostra 200 por vez, com "Carregar mais".
   // Reinicia ao trocar de pasta, buscar ou filtrar por tag.
@@ -423,7 +642,20 @@ export function WhatsAppInbox() {
 
   // Envio otimista: a mensagem entra na thread como "sending" na hora e o
   // input fica livre; quando a action confirma, o registro real substitui.
+  // O pending é POR CONTATO (a thread filtra pelo `contactId` em
+  // `displayMessages`) e sobrevive à troca de conversa: a bolha que falhou
+  // continua lá na volta, com o anexo em `pendingMediaRef` para o retry.
   const [pending, setPending] = useState<WhatsAppThreadMessage[]>([]);
+  const pendingMediaRef = useRef(new Map<string, PendingMedia>());
+  // Unmount (troca de aba da nova-dash): os previews saem da memória. Envio
+  // ainda em voo segue com o File que já capturou.
+  useEffect(() => {
+    const media = pendingMediaRef.current;
+    return () => {
+      media.forEach((m) => { if (m.previewUrl) URL.revokeObjectURL(m.previewUrl); });
+      media.clear();
+    };
+  }, []);
   const [replyTo, setReplyTo] = useState<WhatsAppThreadMessage | null>(null);
   const [editTarget, setEditTarget] = useState<WhatsAppThreadMessage | null>(null);
 
@@ -439,58 +671,178 @@ export function WhatsAppInbox() {
     setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1500);
   }
 
+  // Sem `setPending([])` aqui: zerar na troca de conversa sumia com a bolha
+  // que falhou (e o anexo dela ficaria órfão no ref, sem retry possível).
   useEffect(() => {
-    setPending([]); setReplyTo(null); setEditTarget(null);
+    setReplyTo(null); setEditTarget(null);
   }, [activeContactId]);
 
+  // Navegação que sobrevive à troca de aba (THR-4/LISTA-9): a nova-dash
+  // desmonta o inbox em toda troca de aba, e voltar do Kanban perdia conversa,
+  // pasta, busca e filtros. Restaura no mount, NUNCA no useState inicial (o
+  // SSR não tem sessionStorage: daria hydration mismatch). Não usar
+  // forceMount na aba: manteria SSE e polls rodando com o inbox escondido.
+  //
   // Notificação de WhatsApp clicada → abre a conversa do contato. O sinal
   // chega por evento (inbox já montado) ou pelo sessionStorage (montou agora).
+  // As duas chaves são lidas juntas por `restoreInboxView`, com o pedido
+  // ('wa-open-contact') por último: ele vence a conversa restaurada.
+  const viewRestoredRef = useRef(false);
+  // contactId que veio da navegação salva (não de um pedido de abertura).
+  const restoredContactIdRef = useRef<string | null>(null);
+  // Só grava depois de restaurar: senão o estado inicial (vazio) apagaria o salvo.
+  const [viewReady, setViewReady] = useState(false);
   useEffect(() => {
-    const stored = sessionStorage.getItem('wa-open-contact');
-    if (stored) {
-      sessionStorage.removeItem('wa-open-contact');
-      setActiveContactId(stored);
+    // Uma vez por montagem (o StrictMode roda o efeito 2x; a 2ª leitura não
+    // acharia mais o pedido já consumido e reabriria a conversa salva).
+    if (!viewRestoredRef.current) {
+      viewRestoredRef.current = true;
+      const restored = restoreInboxView(browserSessionStorage());
+      if (restored) {
+        const { view } = restored;
+        setActiveFolder(view.folder);
+        setSearch(view.search);
+        setTagFilter(view.tagFilter);
+        setDateRange(view.dateRange);
+        setColumnFilter(view.columnFilter);
+        setContactsMode(view.contactsMode);
+        setActiveContactId(view.contactId);
+        restoredContactIdRef.current = restored.fromRequest ? null : view.contactId;
+      }
+      setViewReady(true);
     }
     function openConversation(e: Event) {
       const contactId = (e as CustomEvent<{ contactId?: string }>).detail?.contactId;
       if (!contactId) return;
-      sessionStorage.removeItem('wa-open-contact');
+      try { sessionStorage.removeItem(OPEN_CONTACT_STORAGE_KEY); } catch { /* storage bloqueado */ }
       setActiveContactId(contactId);
     }
     window.addEventListener('open-whatsapp-conversation', openConversation);
     return () => window.removeEventListener('open-whatsapp-conversation', openConversation);
   }, []);
 
+  // Grava a navegação a cada mudança, com debounce (a busca muda a cada
+  // tecla). Trocar de aba logo depois de clicar desmonta o inbox no meio do
+  // debounce: o efeito de desmontagem abaixo grava o que ficou pendente.
+  const pendingViewRef = useRef<InboxViewState | null>(null);
+  useEffect(() => {
+    if (!viewReady) return;
+    const view: InboxViewState = {
+      contactId: activeContactId, folder: activeFolder, search, tagFilter, dateRange, columnFilter, contactsMode,
+    };
+    pendingViewRef.current = view;
+    const t = setTimeout(() => {
+      pendingViewRef.current = null;
+      saveInboxViewState(browserSessionStorage(), view);
+    }, INBOX_VIEW_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [viewReady, activeContactId, activeFolder, search, tagFilter, dateRange, columnFilter, contactsMode]);
+  useEffect(() => () => {
+    const view = pendingViewRef.current;
+    if (!view) return;
+    pendingViewRef.current = null;
+    saveInboxViewState(browserSessionStorage(), view);
+  }, []);
+
   // Conversa aberta: procura na lista, depois nos resultados da busca. Quem
   // está FORA dos dois (contato antigo aberto pela agenda, por exemplo) é
   // hidratado sob demanda — antes a thread abria vazia e parecia que a
-  // conversa "não abria" (27/08/2026).
+  // conversa "não abria" (27/08/2026). A hidratação é GET
+  // (/api/whatsapp/inbox/conversations?contactId=), fora da fila de actions:
+  // abrir pela agenda não espera mais uma recarga da lista em andamento.
   const listActive = useMemo(
     () => conversations.find((c) => c.contactId === activeContactId)
-      ?? remoteResults.find((c) => c.contactId === activeContactId)
+      ?? remote?.items.find((c) => c.contactId === activeContactId)
       ?? null,
-    [conversations, remoteResults, activeContactId],
+    [conversations, remote, activeContactId],
   );
   const [fetchedActive, setFetchedActive] = useState<WhatsAppConversationDTO | null>(null);
+  // contactId cuja busca sob demanda já terminou (achando ou não).
+  const [activeLookupDone, setActiveLookupDone] = useState<string | null>(null);
   const hasListActive = !!listActive;
   useEffect(() => {
     if (!activeContactId || hasListActive) return;
     let cancelled = false;
-    getWhatsAppConversationByContact(activeContactId)
-      .then((c) => { if (!cancelled && c) setFetchedActive(c); })
-      .catch(() => { /* a thread ainda carrega pelas mensagens */ });
-    return () => { cancelled = true; };
+    const cid = activeContactId;
+    fetchInboxConversation(cid)
+      .then((c) => {
+        if (cancelled) return;
+        if (c) setFetchedActive(c);
+        // Conversa restaurada da troca de aba que deixou de existir (contato
+        // excluído em outra aba): solta o id. Senão ela voltaria a cada troca
+        // de aba e, no celular, a lista ficaria escondida atrás da thread vazia.
+        else if (restoredContactIdRef.current === cid) {
+          restoredContactIdRef.current = null;
+          setActiveContactId((cur) => (cur === cid ? null : cur));
+        }
+      })
+      .catch(() => { /* a thread ainda carrega pelas mensagens */ })
+      .finally(() => { if (!cancelled) setActiveLookupDone(activeContactId); });
+    // Zera na troca: reabrir depois o mesmo contato fora da lista volta a
+    // mostrar "Abrindo conversa…" até a nova busca responder.
+    return () => { cancelled = true; setActiveLookupDone(null); };
   }, [activeContactId, hasListActive]);
   const active = listActive
     ?? (fetchedActive?.contactId === activeContactId ? fetchedActive : null);
+  // Conversa pedida (notificação, "Abrir conversa" do card) antes de a lista
+  // chegar: a thread mostra "Abrindo conversa…" em vez de "Selecione uma
+  // conversa", que parecia clique perdido. Termina quando a lista ou a busca
+  // sob demanda responde — contato inexistente volta ao estado vazio.
+  const openingActive = !!activeContactId && !active && activeLookupDone !== activeContactId;
 
-  // Ficha do cliente da conversa aberta: alimenta o Copiloto (aba Ficha /
-  // checklist) e o atalho "Card #N" do cabeçalho.
-  const { data: clientInfo, mutate: mutateClientInfo } = useSWR(
-    activeContactId ? ['wa-client-info', activeContactId] : null,
-    () => getClientInfo(activeContactId!),
-    { revalidateOnFocus: false },
-  );
+  // Delta da lista (sincronização a cada 15 s): as cópias fora do SWR só
+  // SUBSTITUEM quem já têm (`insertNew: false`) — o resultado filtrado não
+  // ganha conversa que não casa. As travas do patch otimista já vêm aplicadas
+  // pelo hook. Nada mudou = mesma referência (sem re-render). Conversa que
+  // entrou ou saiu do filtro (tag aplicada, card que mudou de coluna…) pede a
+  // rebusca do total no banco (`scheduleFilterRefresh`).
+  deltaListenerRef.current = (items) => {
+    setRemote((prev) => {
+      if (!prev) return prev;
+      const merged = mergeConversationDelta(prev.items, items, { cap: prev.items.length, insertNew: false });
+      return merged === prev.items ? prev : { ...prev, items: merged };
+    });
+    setFetchedActive((prev) => (prev ? mergeConversationDelta([prev], items, { cap: 1, insertNew: false })[0] : prev));
+    const current = remoteRef.current;
+    if (current && current.key === filterQueryRef.current
+      && filterResultChanged(items, current.items, serverFilterRef.current)) {
+      scheduleFilterRefresh();
+    }
+  };
+
+  // Tira UMA conversa de todas as cópias da tela (lista, busca, hidratada).
+  // Exclusão de contato não aparece no delta (o cascade apaga a conversa):
+  // quem excluiu tira na hora; as outras abas, no 404 ao abrir ou na lista
+  // completa de 10 min.
+  const dropConversation = useCallback((contactId: string) => {
+    void patchConversations((list) => (
+      list?.some((c) => c.contactId === contactId) ? list.filter((c) => c.contactId !== contactId) : list
+    ));
+    setRemote((prev) => (prev?.items.some((c) => c.contactId === contactId)
+      ? { ...prev, items: prev.items.filter((c) => c.contactId !== contactId), total: Math.max(0, prev.total - 1) }
+      : prev));
+    setFetchedActive((prev) => (prev?.contactId === contactId ? null : prev));
+  }, [patchConversations]);
+
+  // Ficha + documentos do cliente da conversa aberta numa ida só (GET
+  // /api/whatsapp/inbox/copilot/<id>, fora da fila serial de actions). A
+  // MESMA key alimenta o Copiloto (abas Ficha, Arquivos e checklist); aqui ela
+  // serve ao atalho "Card #N" do cabeçalho e ao CardDialog. O vínculo pelo
+  // telefone acontece nessa leitura e os documentos já vêm lidos depois dele:
+  // não há mais evento para a aba Arquivos recarregar.
+  const { clientInfo, error: copilotError, reloadCopilot, setCopilotDocuments } = useCopilot(activeContactId);
+
+  // 404 da ficha ou da thread = contato excluído em outra aba (o delta não vê
+  // exclusão). Sai da tela na hora, em vez de ficar na lista até a carga
+  // completa de 10 min com a thread vazia.
+  const activeGone = [copilotError, messagesError].some((e) => e instanceof HttpError && e.status === 404);
+  useEffect(() => {
+    if (!activeGone || !activeContactId) return;
+    const cid = activeContactId;
+    dropConversation(cid);
+    setActiveContactId((cur) => (cur === cid ? null : cur));
+    toast.info('Esta conversa foi excluída.');
+  }, [activeGone, activeContactId, dropConversation]);
 
   useEffect(() => { setCardDialogOpen(false); }, [activeContactId]);
 
@@ -513,106 +865,202 @@ export function WhatsAppInbox() {
   }, [clientInfo, active?.contactName]);
 
   // SSE do relay existente: eventos de WhatsApp chegam como canal "whatsapp:*".
+  // Guarda da auditoria de 24/09/2026: o relay hoje NÃO entrega em produção,
+  // e quando voltar cada evento de QUALQUER contato vai pedir a lista em todas
+  // as abas abertas, inclusive as ocultas. Não tire esta guarda ao consertar o
+  // relay. A thread só recarrega com a aba visível (o foco já revalida a
+  // thread na volta) e a lista pede só o DELTA pelo coalescer (rajada = 1
+  // pedido; aba oculta só marca, e a volta à aba já puxa um delta).
   const onStream = useCallback((e: ChatStreamEvent) => {
     const channelId = (e as { channelId?: string }).channelId;
     if (!channelId?.startsWith('whatsapp:')) return;
-    if (channelId === `whatsapp:${activeContactId}`) mutateMessages();
-    refreshConversations();
-  }, [activeContactId, mutateMessages, refreshConversations]);
+    if (channelId === `whatsapp:${activeContactId}` && !document.hidden) mutateMessages();
+    scheduleConversationsRefresh();
+  }, [activeContactId, mutateMessages, scheduleConversationsRefresh]);
   useChatStream(onStream);
-
-  // Abrir conversa zera o badge de não-lida.
-  useEffect(() => {
-    if (!active?.unread || !active.id) return;
-    markConversationRead(active.id).then(() => refreshConversations()).catch(() => { });
-  }, [active?.id, active?.unread, messages.length, refreshConversations]);
 
   const displayMessages = useMemo(
     () => [...messages, ...pending.filter((p) => p.contactId === activeContactId)],
     [messages, pending, activeContactId],
   );
 
-  const endRef = useRef<HTMLDivElement>(null);
+  /* ---------- rolagem da thread ---------- */
+  // Quem decide é o id da ÚLTIMA mensagem, não o total (auditoria de
+  // 24/09/2026): com a janela das 50 recentes cheia, a mensagem nova tira a
+  // mais antiga, o total não muda e a tela não descia. Regras em
+  // `decideThreadScroll` (app/_shared/utils/thread-scroll.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Ao carregar mensagens ANTIGAS (prepend), preservamos a posição de leitura em
-  // vez de pular pro fim. Guardamos a altura antes do prepend e ajustamos depois.
-  const prependAnchorRef = useRef<number | null>(null);
+  // Tudo em ref: o onScroll dispara dezenas de vezes por segundo e não pode
+  // virar setState. Só o chip "Nova mensagem ↓" é estado (muda pouco).
+  const scrollSessionRef = useRef<{ contactId: string | null; el: HTMLDivElement | null; positioned: boolean }>(
+    { contactId: null, el: null, positioned: false },
+  );
+  // Distância do fim no último evento de scroll = onde o atendente estava ANTES
+  // de a mensagem nova entrar (medir depois somaria a altura dela).
+  const distanceRef = useRef(0);
+  // Rolagem automática para o fim em andamento: os eventos de scroll do meio
+  // da animação não contam como "saiu do fim". Para ao chegar ou quando o
+  // atendente mexe (roda do mouse, toque, tecla, clique na barra).
+  const followRef = useRef(false);
+  const tailRef = useRef<ThreadTail | null>(null);
+  // "Carregar anteriores": distância do fim no clique + 1ª mensagem daquele
+  // momento. Só vira 'restore' quando o topo muda de verdade — bloco vazio ou
+  // erro não deixam âncora velha para a próxima mensagem nova.
+  const prependRef = useRef<{ anchor: number; firstId: string | null } | null>(null);
+  // Contador do chip por conversa (a troca de conversa zera).
+  const [newBelow, setNewBelow] = useState<{ contactId: string | null; count: number }>({ contactId: null, count: 0 });
+  const newBelowCount = newBelow.contactId === activeContactId ? newBelow.count : 0;
+  const hasActive = !!active;
 
-  useEffect(() => {
-    // Prepend de bloco antigo: mantém o ponto onde o usuário estava lendo.
-    if (prependAnchorRef.current != null && scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
-      prependAnchorRef.current = null;
-      return;
+  // Layout effect: roda antes de pintar — abrir a conversa não mostra 1 frame
+  // do topo, e o prepend não dá o pulo antes de voltar ao ponto de leitura.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !hasActive) return; // thread ainda não montou ("Abrindo conversa…")
+    const session = scrollSessionRef.current;
+    // Troca de conversa ou thread remontada (fechou e reabriu): nada do scroll
+    // anterior vale aqui.
+    if (session.contactId !== activeContactId || session.el !== el) {
+      scrollSessionRef.current = { contactId: activeContactId, el, positioned: false };
+      tailRef.current = null;
+      prependRef.current = null;
+      followRef.current = false;
+      distanceRef.current = 0;
+      setNewBelow((prev) => (prev.count === 0 ? prev : { contactId: null, count: 0 }));
     }
-    // Fluxo normal (mensagem nova / troca de conversa): desce pro fim.
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [displayMessages.length]);
+    if (displayMessages.length === 0) return; // 1ª carga ainda não chegou
+    const tail = threadTail(displayMessages);
+    const prevTail = tailRef.current;
+    tailRef.current = tail;
+    const advanced = tailAdvanced(prevTail, tail);
+    const lastIsMine = isOwnThreadMessage(displayMessages[displayMessages.length - 1], meId);
+    const prepend = prependRef.current;
+    const action = decideThreadScroll({
+      contactChanged: !scrollSessionRef.current.positioned,
+      prependPending: !!prepend && displayMessages[0].id !== prepend.firstId,
+      lastIdChanged: advanced,
+      distanceFromBottom: followRef.current ? 0 : distanceRef.current,
+      lastIsMine,
+    });
+    const bumpChip = () => {
+      const n = countNewBelow(displayMessages, prevTail?.id ?? null);
+      setNewBelow((prev) => ({
+        contactId: activeContactId,
+        count: (prev.contactId === activeContactId ? prev.count : 0) + n,
+      }));
+    };
+    switch (action) {
+      case 'jump':
+        scrollSessionRef.current.positioned = true;
+        el.scrollTop = el.scrollHeight;
+        distanceRef.current = 0;
+        break;
+      case 'restore':
+        prependRef.current = null;
+        if (prepend) el.scrollTop = el.scrollHeight - prepend.anchor;
+        // Mensagem nova no mesmo render do bloco antigo: quem está lendo o
+        // topo não é puxado, mas fica sabendo pelo chip.
+        if (advanced && !lastIsMine) bumpChip();
+        break;
+      case 'smooth':
+        followRef.current = true;
+        distanceRef.current = 0;
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        // Vai mostrar tudo o que chegou: o chip (se havia) já não tem o que avisar.
+        setNewBelow((prev) => (prev.count === 0 ? prev : { contactId: activeContactId, count: 0 }));
+        break;
+      case 'chip':
+        bumpChip();
+        break;
+      case 'none':
+        break;
+    }
+  }, [activeContactId, hasActive, displayMessages, meId]);
+
+  // Foto/vídeo que termina de carregar cresce a thread DEPOIS da rolagem para o
+  // fim (THR-11): quem estava no fim continua no fim. 'load' não borbulha, por
+  // isso a escuta é na fase de captura, no container.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !hasActive) return;
+    const onMediaLoad = () => {
+      if (followRef.current || distanceRef.current < NEAR_BOTTOM_PX) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener('load', onMediaLoad, true);
+    el.addEventListener('loadedmetadata', onMediaLoad, true);
+    return () => {
+      el.removeEventListener('load', onMediaLoad, true);
+      el.removeEventListener('loadedmetadata', onMediaLoad, true);
+    };
+  }, [hasActive]);
+
+  function handleThreadScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (followRef.current) {
+      if (distance > 2) return; // animação ainda descendo: continua "no fim"
+      followRef.current = false;
+    }
+    distanceRef.current = distance;
+    // Chegou ao fim: o chip some. setState só quando ele está aparecendo.
+    if (distance < NEAR_BOTTOM_PX && newBelowCount > 0) setNewBelow({ contactId: activeContactId, count: 0 });
+  }
+  // O atendente mexeu na rolagem: a rolagem automática deixa de valer.
+  function stopFollowingThread() {
+    followRef.current = false;
+  }
+
+  function scrollThreadToEnd() {
+    const el = scrollRef.current;
+    if (!el) return;
+    followRef.current = true;
+    distanceRef.current = 0;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    setNewBelow({ contactId: activeContactId, count: 0 });
+  }
 
   async function handleLoadOlder() {
-    // Âncora = distância do fim; após o prepend, o effect recompõe o scrollTop.
-    if (scrollRef.current) prependAnchorRef.current = scrollRef.current.scrollHeight - scrollRef.current.scrollTop;
+    // Âncora = distância do fim; depois do prepend, o layout effect recompõe o scrollTop.
+    const el = scrollRef.current;
+    if (el) prependRef.current = { anchor: el.scrollHeight - el.scrollTop, firstId: displayMessages[0]?.id ?? null };
     await loadOlder();
   }
 
-  // Busca por nome ou celular + filtro por tags (basta bater em uma das
-  // selecionadas) + "Hoje" + coluna do Kanban.
-  const inDateRange = (iso: string) => {
-    if (!dateRange) return true;
-    const k = brDayKey(iso);
-    return k >= dateRange.from && k <= dateRange.to;
-  };
-  // Lista carregada + o que a busca no servidor trouxe de fora dela (sem
-  // duplicar quem já está nas duas).
-  const searchUniverse = useMemo(() => {
-    if (!remoteResults.length) return conversations;
+  // Com filtro no banco e a resposta na tela: o resultado do servidor (com a
+  // versão mais nova da lista viva por cima) e SÓ "lidas/não lidas" no
+  // navegador — busca, tag, data, coluna, número e fila já vieram aplicados, e
+  // refiltrar uma página faria o "X de Y" mentir de novo. Esperando a resposta
+  // (ou com erro): prévia local do mesmo filtro sobre a lista + o último
+  // resultado, para a digitação não piscar. Sem filtro no banco: tudo local
+  // sobre as conversas carregadas (busca de 1 caractere, número, leitura/fila).
+  const serverItems = useMemo(
+    () => (serverResult ? mergeLiveIntoFiltered(serverResult.items, conversations) : null),
+    [serverResult, conversations],
+  );
+  const previewUniverse = useMemo(() => {
+    if (!serverFilterActive || !remote?.items.length) return conversations;
     const known = new Set(conversations.map((c) => c.contactId));
-    return [...conversations, ...remoteResults.filter((r) => !known.has(r.contactId))];
-  }, [conversations, remoteResults]);
-
+    return [...conversations, ...remote.items.filter((r) => !known.has(r.contactId))];
+  }, [serverFilterActive, remote, conversations]);
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const digits = term.replace(/\D/g, '');
-    return searchUniverse.filter((c) => {
-      if (term) {
-        const nameMatch = (c.contactName ?? '').toLowerCase().includes(term);
-        const phoneMatch = digits.length >= 2 && c.contactPhone.includes(digits);
-        if (!nameMatch && !phoneMatch) return false;
-      }
-      if (tagFilter.length && !c.tags.some((t) => tagFilter.includes(t.id))) return false;
-      if (!inDateRange(c.createdAt)) return false;
-      if (columnFilter && c.kanbanColumn !== columnFilter) return false;
-      if (numberFilter && c.numberId !== numberFilter) return false;
-      // Estado de leitura: "não lidas" = mensagem recebida depois da última
-      // leitura; "fila" = aguardando atendente (status queued).
-      if (readFilter === 'nao_lidas' && !c.unread) return false;
-      if (readFilter === 'lidas' && c.unread) return false;
-      if (readFilter === 'fila' && c.status !== 'queued') return false;
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchUniverse, search, tagFilter, dateRange, columnFilter, numberFilter, readFilter]);
+    // "Não lidas" = mensagem recebida depois da última leitura (computeUnread).
+    const readOk = (c: WhatsAppConversationDTO) => (
+      readFilter === 'nao_lidas' ? c.unread : readFilter === 'lidas' ? !c.unread : true
+    );
+    if (serverItems) {
+      return readFilter === 'nao_lidas' || readFilter === 'lidas' ? serverItems.filter(readOk) : serverItems;
+    }
+    return previewUniverse.filter((c) => matchesInboxFilter(c, serverFilter) && readOk(c));
+  }, [serverItems, previewUniverse, serverFilter, readFilter]);
 
-  // Contagem do chip de período (só o período, independe dos outros filtros)
-  // e colunas disponíveis pro seletor.
-  const dateCount = useMemo(() => conversations.filter((c) => inDateRange(c.createdAt)).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversations, dateRange]);
-  // Contagens dos chips de leitura/fila: também independem dos outros filtros
-  // pelo mesmo motivo do "Hoje" — o número não pode mudar ao clicar no chip.
+  // Contagens dos chips de leitura/fila: independem dos outros filtros — o
+  // número não pode mudar ao clicar no chip. Contam as conversas carregadas.
   const readCounts = useMemo(() => ({
     nao_lidas: conversations.filter((c) => c.unread).length,
     lidas: conversations.filter((c) => !c.unread).length,
     fila: conversations.filter((c) => c.status === 'queued').length,
   }), [conversations]);
-  const kanbanColumns = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of conversations) {
-      if (c.kanbanColumn) map.set(c.kanbanColumn, (map.get(c.kanbanColumn) ?? 0) + 1);
-    }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [conversations]);
   // Contagem por número (dropdown do filtro de linha).
   const numberCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -623,10 +1071,18 @@ export function WhatsAppInbox() {
   }, [conversations]);
 
   const groups = useMemo(() => {
-    const closed = filtered.filter((c) => c.status === 'closed');
-    // Conversas encerradas ANTES desta feature não têm closeCategory — caem
-    // no fallback pelo `qualified` antigo (true→qualificada, senão→não qualificada).
-    const byCategory = (cat: string) => closed.filter((c) => c.closeCategory === cat);
+    // Encerradas: uma pasta por desfecho pela regra pura closedFolderOf
+    // (inclui o fallback pelo `qualified` antigo e os sub-motivos nq_*).
+    // 'outros' é a rede de segurança para categoria sem pasta: não tem ícone
+    // no rail, mas aparece nas seções da lista global ("Outros desfechos")
+    // para as seções baterem com o resultado.
+    const closed: Record<ClosedFolderKey, WhatsAppConversationDTO[]> = {
+      qualified: [], unqualified: [], churn: [], sem_resposta: [], perguntas: [],
+      novo_acidente: [], transferido: [], descartado: [], outros: [],
+    };
+    for (const c of filtered) {
+      if (c.status === 'closed') closed[closedFolderOf(c)].push(c);
+    }
     return {
       queued: filtered.filter((c) => c.status === 'queued'),
       // Todas as conversas em atendimento humano, de qualquer atendente — o
@@ -634,14 +1090,7 @@ export function WhatsAppInbox() {
       ativas: filtered.filter((c) => c.status === 'human'),
       bot: filtered.filter((c) => c.status === 'bot'),
       standby: filtered.filter((c) => c.status === 'standby'),
-      sem_resposta: byCategory('sem_resposta'),
-      qualified: closed.filter((c) => c.closeCategory === 'qualificado' || (!c.closeCategory && c.qualified === true)),
-      // Inclui os sub-motivos dinâmicos (nq_*) — tudo que é "não qualificado".
-      unqualified: closed.filter((c) => c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_') || (!c.closeCategory && c.qualified !== true)),
-      perguntas: byCategory('perguntas'),
-      novo_acidente: byCategory('novo_acidente'),
-      transferido: byCategory('transferido'),
-      descartado: byCategory('descartado'),
+      ...closed,
     };
   }, [filtered]);
 
@@ -679,40 +1128,209 @@ export function WhatsAppInbox() {
     todos: todosItems, ativas: ativasItems, bot: groups.bot, standby: groups.standby,
     qualified: groups.qualified, unqualified: groups.unqualified, sem_resposta: groups.sem_resposta,
     perguntas: groups.perguntas, novo_acidente: groups.novo_acidente, transferido: groups.transferido,
-    descartado: groups.descartado,
+    descartado: groups.descartado, churn: groups.churn,
   };
   const unreadInFolder = (key: FolderKey) => FOLDER_ITEMS[key].filter((c) => c.unread).length;
 
-  // Filtro de tag E busca são globais: ignoram a pasta selecionada e procuram
-  // em TODAS as conversas — pesquisar um número acha o cliente mesmo que ele
-  // esteja em outra aba.
-  const tagFilterActive = tagFilter.length > 0 || search.trim().length > 0;
-  const visibleItems = tagFilterActive ? filtered : FOLDER_ITEMS[activeFolder];
+  // Lista GLOBAL: ignora a pasta selecionada e mostra o resultado em seções
+  // por pasta — pesquisar um número acha o cliente mesmo que ele esteja em
+  // outra pasta. Vale com filtro no banco (busca, tag, data, coluna) e com a
+  // busca de 1 caractere (local). Uma pasta refiltrando a PÁGINA do resultado
+  // faria o "X de Y" mentir.
+  const globalView = serverFilterActive || search.trim().length > 0;
+  const visibleItems = globalView ? filtered : FOLDER_ITEMS[activeFolder];
+  // Esqueleto / erro com "Tentar novamente" / "Nenhuma conversa ainda" — regra
+  // em inboxListState. Com a lista global, o que o banco achou aparece mesmo
+  // que a carga principal ainda não tenha chegado.
+  const listState = inboxListState({
+    loaded: conversationsLoaded,
+    isLoading: conversationsLoading,
+    hasError: !!conversationsError,
+    count: conversations.length,
+    searchHits: globalView ? filtered.length : 0,
+  });
 
-  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter, dateRange]);
+  // Aviso da lista parcial: desde quando vão as conversas carregadas (a lista
+  // vem por lastMessageAt desc; o mínimo protege de uma ordem trocada).
+  const loadedSinceLabel = useMemo(() => {
+    let min = Number.POSITIVE_INFINITY;
+    for (const c of conversations) {
+      const t = Date.parse(c.lastMessageAt);
+      if (t < min) min = t;
+    }
+    return Number.isFinite(min) ? brLabelFromKey(brDayKey(min)) : null;
+  }, [conversations]);
+
+  // Pasta do rail = sair da lista global: limpa tag, data e coluna (os
+  // filtros que vão ao banco e ignoram a pasta), como o clique já limpava a
+  // tag. A busca digitada fica, como antes.
+  const selectFolder = (key: FolderKey) => {
+    setTagFilter([]);
+    setDateRange(null);
+    setCustomFrom('');
+    setCustomTo('');
+    setColumnFilter(null);
+    setAttendantFilter(null);
+    setContactsMode(false);
+    setActiveFolder(key);
+  };
+
+  useEffect(() => { setVisibleCount(200); }, [activeFolder, search, tagFilter, readFilter, dateRange, columnFilter]);
 
   // Janela de 24h: sem mensagem recebida recente, a Meta só aceita template.
   const windowExpired = !!active && (
     !active.lastInboundAt || Date.now() - new Date(active.lastInboundAt).getTime() > WINDOW_24H_MS
   );
 
-  async function runAction(fn: () => Promise<void>, okMsg: string) {
+  // Ação sobre uma conversa sem esperar a recarga da lista (auditoria de
+  // 24/09/2026): server actions saem numa fila serial por aba (Next 14.2.35),
+  // e o clique esperava a action E a recarga das 1.000 conversas — 2-4 s até
+  // o toast, ~670 recargas completas por dia vindas direto de clique.
+  // - `optimistic` entra no clique; a resposta da action, quando é um patch
+  //   (assumir/devolver/encerrar), entra por cima e o toast sai logo em seguida;
+  // - resposta vazia com otimista (lida/não lida): o otimista já é o estado
+  //   final e nada recarrega — as outras abas veem pelo delta;
+  // - resposta vazia sem otimista (bloquear/desbloquear): um delta em segundo
+  //   plano (single-flight), sem segurar o toast;
+  // - enquanto a action roda, a conversa fica travada para o delta
+  //   (`holdConversation`): um delta lido antes do commit desfaria o otimista;
+  // - erro: rollback e mensagem própria (erro de action chega mascarado em
+  //   produção, e a aba com o bundle de antes do deploy também cai aqui).
+  // `base` é a conversa capturada ANTES do clique (antes até de fechar a
+  // thread, como no "Marcar como não lida"), para o patch e o rollback não
+  // dependerem do `active` do render.
+  async function runAction(
+    fn: () => Promise<Partial<WhatsAppConversationDTO> | void>,
+    okMsg: string,
+    opts: {
+      errorMsg: string;
+      base?: WhatsAppConversationDTO;
+      optimistic?: Partial<WhatsAppConversationDTO>;
+    },
+  ) {
+    const { base, optimistic, errorMsg } = opts;
+    const release = base ? holdConversation(base.contactId) : null;
+    if (base && optimistic) patchConversation(base.contactId, optimistic);
     try {
-      await fn();
-      await refreshConversations();
+      const res = await fn();
+      if (base && res) patchConversation(base.contactId, confirmedPatch(base.id, res));
+      else if (!optimistic) void refreshConversations();
       toast.success(okMsg);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha na operação.');
+    } catch {
+      if (base && optimistic) patchConversation(base.contactId, revertPatch(base, optimistic));
+      toast.error(errorMsg);
+    } finally {
+      release?.();
     }
   }
 
-  async function handleToggleTag(tagId: string) {
+  // Patch devolvido pela action, aplicado sobre a versão ATUAL da conversa.
+  // As tags do encerramento (syncCloseTag) só entram se não houver tag desta
+  // conversa gravando — a lista do servidor ainda não teria a tag em voo e o
+  // chip piscaria; a gravação da tag traz a lista certa quando termina.
+  function confirmedPatch(
+    conversationId: string,
+    res: Partial<WhatsAppConversationDTO>,
+  ): ConversationPatch {
+    const { tags, ...rest } = res;
+    if (!tags) return rest;
+    return (c) => {
+      const prefix = `${conversationId}:`;
+      const tagBusy = [...pendingTagsRef.current].some((k) => k.startsWith(prefix));
+      return tagBusy || sameTags(c.tags, tags) ? rest : { ...rest, tags };
+    };
+  }
+
+  // Patch local de UMA conversa em todas as cópias que a tela pode estar
+  // mostrando: a lista (SWR), o resultado dos filtros no servidor e a conversa
+  // hidratada fora do topo (agenda/busca). Sem as duas últimas, a ação em
+  // cliente antigo não aparecia até recarregar. Patch em função é calculado
+  // sobre a versão ATUAL de cada cópia (nunca sobre o `active` do render). O
+  // contactId vai junto para o hook travar a conversa contra um delta que já
+  // estava em voo (ele traria o estado de antes do clique).
+  const patchConversation = useCallback(
+    (contactId: string, patch: ConversationPatch) => {
+      void patchConversations((list) => patchConversationList(list, contactId, patch), contactId);
+      setRemote((prev) => {
+        if (!prev) return prev;
+        const items = patchConversationList(prev.items, contactId, patch);
+        return items === prev.items ? prev : { ...prev, items };
+      });
+      setFetchedActive((prev) => (prev?.contactId === contactId ? patchConversationRow(prev, patch) : prev));
+    },
+    [patchConversations],
+  );
+
+  // Abrir conversa zera o badge de não-lida — só quando há o que ler.
+  // Auditoria de 24/09/2026: o effect antigo dependia de messages.length e
+  // recarregava a lista inteira depois de cada markRead; como "não lida" contava
+  // mensagem de SAÍDA, todo envio do atendente virava markRead do próprio autor
+  // + recarga (~19% das cargas da lista). Agora "não lida" é só por mensagem
+  // recebida (computeUnread), o badge some por patch local e a lista não
+  // recarrega. A chave (conversa + última recebida + marcador manual) garante UM
+  // markRead por inbound novo: a lista percebe o inbound pelo delta (≤15 s) e a
+  // chave muda. Falhou → a chave zera e o próximo reload tenta de novo. A
+  // conversa fica travada para o delta até a action voltar: um delta lido antes
+  // do commit reacenderia a bolinha.
+  const readKeyRef = useRef<string | null>(null);
+  useEffect(() => { readKeyRef.current = null; }, [activeContactId]);
+  const readKey = active?.unread ? `${active.id}|${active.lastInboundAt ?? ''}|${active.manualUnread}` : null;
+  const readConversationId = active?.id;
+  const readContactId = active?.contactId;
+  useEffect(() => {
+    if (!readKey || !readConversationId || !readContactId) return;
+    if (readKeyRef.current === readKey) return;
+    readKeyRef.current = readKey;
+    const release = holdConversation(readContactId);
+    patchConversation(readContactId, readPatch(new Date().toISOString()));
+    markConversationRead(readConversationId)
+      .catch(() => { readKeyRef.current = null; })
+      .finally(release);
+  }, [readKey, readConversationId, readContactId, patchConversation, holdConversation]);
+
+  // Gravações de tag em voo, por `${conversationId}:${tagId}`: chaveado por
+  // conversa para trocar de conversa no meio de uma gravação não travar a
+  // mesma tag na outra. O ref responde na hora (duplo clique antes do
+  // re-render); o estado desenha o spinner.
+  const pendingTagsRef = useRef<Set<string>>(new Set());
+  const [pendingTags, setPendingTags] = useState<ReadonlySet<string>>(() => new Set());
+  const setTagPending = useCallback((key: string, on: boolean) => {
+    const next = new Set(pendingTagsRef.current);
+    if (on) next.add(key); else next.delete(key);
+    pendingTagsRef.current = next;
+    setPendingTags(next);
+  }, []);
+
+  // Tag na hora (auditoria de 24/09/2026): antes o clique esperava a action e
+  // a recarga das 1.000 conversas, e o 2º clique desfazia a tag. Agora o check
+  // e o chip mudam no clique, o servidor recebe o estado DESEJADO (idempotente)
+  // e a lista não é recarregada — outras abas veem pelo delta (a action "toca"
+  // o updatedAt da conversa, senão tirar a tag não deixava rastro).
+  async function handleSetTag(tag: WhatsAppTagDTO, on: boolean) {
     if (!active) return;
+    const { id: conversationId, contactId } = active;
+    const key = `${conversationId}:${tag.id}`;
+    if (pendingTagsRef.current.has(key)) return;
+    setTagPending(key, true);
+    const release = holdConversation(contactId);
+    patchConversation(contactId, (c) => ({ tags: withTag(c.tags, tag, on) }));
     try {
-      await toggleConversationTag(active.id, tagId);
-      await refreshConversations();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao atualizar tag.');
+      const res = await setConversationTag(conversationId, tag.id, on);
+      setTagPending(key, false);
+      // A verdade do banco só entra quando não sobrou outra tag desta conversa
+      // gravando: aplicar antes apagaria o otimista da outra e o chip piscaria.
+      const prefix = `${conversationId}:`;
+      if (![...pendingTagsRef.current].some((k) => k.startsWith(prefix))) {
+        patchConversation(contactId, (c) => (sameTags(c.tags, res.tags) ? {} : { tags: res.tags }));
+      }
+    } catch {
+      setTagPending(key, false);
+      patchConversation(contactId, (c) => ({ tags: withTag(c.tags, tag, !on) }));
+      // Erro de server action chega mascarado em produção — e a aba com o
+      // bundle de antes do deploy também cai aqui: por isso a dica do F5.
+      toast.error('Não foi possível salvar a tag. Recarregue a página (F5) e tente de novo.');
+    } finally {
+      release();
     }
   }
 
@@ -738,8 +1356,39 @@ export function WhatsAppInbox() {
   function patchPending(id: string, patch: Partial<WhatsAppThreadMessage>) {
     setPending((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }
+  // A bolha saiu (enviou ou foi descartada): o anexo e o preview saem junto.
+  // Fora do updater do setState (o StrictMode o roda 2x).
   function removePending(id: string) {
+    const media = pendingMediaRef.current.get(id);
+    if (media) {
+      if (media.previewUrl) URL.revokeObjectURL(media.previewUrl);
+      pendingMediaRef.current.delete(id);
+    }
     setPending((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  /**
+   * Troca a bolha otimista pela mensagem real SEM piscar (THR-10, auditoria de
+   * 24/09/2026). Antes: tirava o pending e esperava o refetch da thread — a
+   * bolha sumia por um instante e a rolagem pulava. Agora a mensagem que a
+   * action devolveu entra direto no cache da thread (sem refetch) e só então o
+   * pending sai; a revalidação vem depois, em segundo plano, e completa o que
+   * o DTO não traz (transcrição, reação, ticks).
+   *
+   * flushSync: o cache do SWR avisa a tela por useSyncExternalStore (render
+   * síncrono), e o setPending fora de evento teria prioridade normal — sairiam
+   * em dois renders, com 1 frame de bolha DUPLICADA. Dentro do flushSync os
+   * dois entram no mesmo render.
+   *
+   * `contactId` é o da conversa em que o envio começou (o atendente pode ter
+   * trocado de conversa no meio): o upsert mira a thread certa.
+   */
+  function commitSent(contactId: string, tempId: string, dto: SentMessageDTO, authorName: string | null) {
+    const real = toThreadMessage(dto, authorName);
+    flushSync(() => {
+      upsertThreadMessage(contactId, real);
+      removePending(tempId);
+    });
   }
 
   function handleSendText(text: string) {
@@ -754,10 +1403,14 @@ export function WhatsAppInbox() {
     });
     setPending((prev) => [...prev, temp]);
 
-    sendWhatsAppMessage({ contactId: active.contactId, body: text, replyToId: rt?.id ?? null })
-      .then(async () => {
-        removePending(temp.id);
-        await Promise.all([mutateMessages(), refreshConversations()]);
+    const contactId = active.contactId;
+    sendWhatsAppMessage({ contactId, body: text, replyToId: rt?.id ?? null })
+      .then((dto) => {
+        commitSent(contactId, temp.id, dto, temp.authorName);
+        // A conversa sobe para o topo com a prévia nova por patch local; a
+        // lista NÃO recarrega por envio (as outras abas veem pelo delta).
+        patchConversation(contactId, sentMessagePatch(dto, me));
+        void revalidateThread(contactId);
       })
       .catch((e) => {
         patchPending(temp.id, { status: 'failed' });
@@ -771,42 +1424,134 @@ export function WhatsAppInbox() {
     const rt = replyTo;
     setReplyTo(null);
 
-    const temps = files.map((file, i) => makePending({
-      body: i === 0 && caption ? caption : null,
-      mediaType: resolveMimeType(file),
-      replyToId: i === 0 ? rt?.id ?? null : null,
-      replyToBody: i === 0 && rt ? rt.body ?? '📎 Anexo' : null,
-      replyToDirection: i === 0 ? rt?.direction ?? null : null,
-    }));
-    setPending((prev) => [...prev, ...temps]);
+    // Cada arquivo vira uma bolha com o que está sendo mandado (a foto pelo
+    // object URL do File local, ou o nome), e o anexo fica guardado por tempId
+    // para o "tentar de novo". Só imagem ganha object URL: é o único preview.
+    const batch = files.map((file, i) => {
+      const mime = resolveMimeType(file);
+      const previewUrl = pendingPreviewKind(mime) === 'image' ? URL.createObjectURL(file) : undefined;
+      const temp = makePending({
+        body: i === 0 && caption ? caption : null,
+        mediaType: mime,
+        localPreviewUrl: previewUrl,
+        fileName: file.name,
+        replyToId: i === 0 ? rt?.id ?? null : null,
+        replyToBody: i === 0 && rt ? rt.body ?? '📎 Anexo' : null,
+        replyToDirection: i === 0 ? rt?.direction ?? null : null,
+      });
+      const item: PendingMedia = {
+        file,
+        mime,
+        caption: i === 0 ? caption || undefined : undefined,
+        replyToId: i === 0 ? rt?.id ?? null : null,
+        previewUrl,
+      };
+      pendingMediaRef.current.set(temp.id, item);
+      return { temp, item };
+    });
+    setPending((prev) => [...prev, ...batch.map((b) => b.temp)]);
 
     (async () => {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const temp = temps[i];
-        try {
-          const mime = resolveMimeType(file);
-          const { url, key } = await getWhatsAppUploadUrl(contactId, file.name, mime);
-          const put = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } });
-          if (!put.ok) throw new Error(`Falha ao subir "${file.name}".`);
-          await sendWhatsAppMedia({
-            contactId, key, mimeType: mime, fileName: file.name,
-            caption: i === 0 ? caption || undefined : undefined,
-            replyToId: i === 0 ? rt?.id ?? null : null,
-          });
-          removePending(temp.id);
-        } catch (e) {
-          patchPending(temp.id, { status: 'failed' });
-          toast.error(e instanceof Error ? e.message : `Falha ao enviar "${file.name}".`);
-        }
-      }
-      await Promise.all([mutateMessages(), refreshConversations()]);
+      // Em série: os arquivos chegam ao cliente na ordem em que foram anexados.
+      for (const { temp, item } of batch) await sendOneMedia(contactId, temp.id, item, temp.authorName);
+      // Revalidação de fundo (uma para o lote): completa os campos que o DTO
+      // não traz; a bolha já está no lugar. A lista não recarrega.
+      void revalidateThread(contactId);
     })();
   }
 
+  /**
+   * Sobe (se ainda não subiu) e envia UM anexo de bolha pendente. O `item` vem
+   * capturado, não relido do ref: sair do inbox no meio do lote (unmount limpa
+   * o ref) não pode cortar os arquivos seguintes, que o atendente já mandou.
+   * A `uploadedKey` fica gravada logo depois do PUT: o retry não sobe de novo.
+   * Nunca lança: a falha vira bolha "Falhou." + toast com texto próprio.
+   */
+  async function sendOneMedia(contactId: string, tempId: string, item: PendingMedia, authorName: string | null) {
+    const { file, mime } = item;
+    let stage: 'upload' | 'send' = 'upload';
+    try {
+      let key = item.uploadedKey;
+      if (!key) {
+        const upload = await getWhatsAppUploadUrl(contactId, file.name, mime);
+        const put = await fetch(upload.url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } });
+        if (!put.ok) throw new Error(`PUT do anexo respondeu ${put.status}`);
+        key = upload.key;
+        item.uploadedKey = key;
+      }
+      stage = 'send';
+      const dto = await sendWhatsAppMedia({
+        contactId, key, mimeType: mime, fileName: file.name, caption: item.caption, replyToId: item.replyToId,
+      });
+      commitSent(contactId, tempId, dto, authorName);
+      // Patch por arquivo: a prévia da lista acompanha o último enviado.
+      patchConversation(contactId, sentMessagePatch(dto, me));
+    } catch {
+      patchPending(tempId, { status: 'failed' });
+      toast.error(mediaSendFailedText(file.name, stage));
+    }
+  }
+
+  // Envio que não passa pela bolha otimista (passo de fluxo, template): a
+  // mensagem entra direto no cache da thread (o mesmo upsert do commitSent,
+  // sem esperar o refetch) e a conversa recebe o patch local na lista. Quem
+  // chama revalida a thread em segundo plano. Pelo contactId do DTO: o
+  // atendente pode ter trocado de conversa no meio do fluxo.
+  function handleSentOutside(dto: WhatsAppMessageDTO) {
+    upsertThreadMessage(dto.contactId, toThreadMessage(dto, session?.user?.name ?? 'Você'));
+    patchConversation(dto.contactId, sentMessagePatch(dto, me));
+  }
+
+  // "tentar de novo" só existe na conversa ABERTA (a bolha pendente só aparece
+  // nela), então `windowExpired` é o da conversa da bolha. Com a janela de
+  // 24 h fechada a Meta recusaria de novo, e o motivo chegaria mascarado.
   function retryPending(msg: WhatsAppThreadMessage) {
+    if (msg.status !== 'failed') return;
+    if (windowExpired) {
+      toast.error(RETRY_WINDOW_CLOSED_TEXT);
+      return;
+    }
+    if (msg.mediaType) {
+      const item = pendingMediaRef.current.get(msg.id);
+      if (item) void retryPendingMedia(msg, item);
+      return;
+    }
     removePending(msg.id);
-    if (msg.body && !msg.mediaType) handleSendText(msg.body);
+    if (msg.body) handleSendText(msg.body);
+  }
+
+  /**
+   * Retry de mídia sem reanexar. Se o arquivo já tinha subido, antes de
+   * reenviar confere na thread se a mensagem já entrou: a Meta pode ter aceitado
+   * e só a resposta da action ter se perdido, e reenviar mandaria a mesma foto
+   * duas vezes ao cliente (WABA com aviso de spam). Sem conseguir conferir, não
+   * reenvia.
+   */
+  async function retryPendingMedia(msg: WhatsAppThreadMessage, item: PendingMedia) {
+    const { id: tempId, contactId } = msg;
+    patchPending(tempId, { status: 'sending' });
+    if (item.uploadedKey) {
+      let recent: WhatsAppThreadMessage[];
+      try {
+        recent = await fetchThreadRecent(contactId);
+      } catch {
+        patchPending(tempId, { status: 'failed' });
+        toast.error(RETRY_CHECK_FAILED_TEXT);
+        return;
+      }
+      const sent = findSentMedia(recent, item.uploadedKey);
+      if (sent) {
+        // Já foi: a real entra no cache e a bolha sai no MESMO render (como no
+        // commitSent). A prévia da lista chega pelo delta.
+        flushSync(() => {
+          upsertThreadMessage(contactId, sent);
+          removePending(tempId);
+        });
+        return;
+      }
+    }
+    await sendOneMedia(contactId, tempId, item, msg.authorName);
+    void revalidateThread(contactId);
   }
 
   async function handleEditSubmit(id: string, text: string) {
@@ -816,11 +1561,13 @@ export function WhatsAppInbox() {
   }
 
   // "Anexar no card": a mídia da mensagem vira documento da ficha do cliente
-  // (idempotente no servidor). O Copiloto escuta o evento e atualiza a lista.
+  // (idempotente no servidor). A action devolve a lista nova, que entra no
+  // cache do Copiloto pela key do contato DA MENSAGEM (se o atendente trocou
+  // de conversa no meio, a lista não cai na ficha de outro cliente).
   async function handleAttachMedia(msg: WhatsAppThreadMessage) {
     try {
-      await attachConversationMediaToCard(msg.id);
-      window.dispatchEvent(new Event('wa-docs-changed'));
+      const updated = await attachConversationMediaToCard(msg.id);
+      void setCopilotDocuments(msg.contactId, updated);
       toast.success(clientInfo?.registered
         ? `Anexado no card${clientInfo.cardNumber ? ` #${clientInfo.cardNumber}` : ''}.`
         : 'Anexado na ficha (migra pro card quando o cliente for cadastrado).');
@@ -871,7 +1618,11 @@ export function WhatsAppInbox() {
         description: 'O contato volta a ser atendido normalmente (bot e mensagens da equipe).',
         confirmLabel: 'Desbloquear',
       }))) return;
-      await runAction(() => unblockWhatsAppContact(conv.contactId), 'Contato desbloqueado.');
+      // Sem patch: o desbloqueio mexe no contato, e a lista revalida em
+      // segundo plano sem segurar o toast.
+      await runAction(() => unblockWhatsAppContact(conv.contactId), 'Contato desbloqueado.', {
+        errorMsg: 'Não foi possível desbloquear o contato. Recarregue a página (F5) e tente de novo.',
+      });
       return;
     }
     if (!(await confirm({
@@ -879,7 +1630,9 @@ export function WhatsAppInbox() {
       description: 'O bot e as mensagens automáticas param na hora e a conversa é encerrada como "Descartada". O histórico fica guardado e dá pra desbloquear depois.',
       confirmLabel: 'Bloquear',
     }))) return;
-    await runAction(() => blockWhatsAppContact(conv.contactId), 'Contato bloqueado.');
+    await runAction(() => blockWhatsAppContact(conv.contactId), 'Contato bloqueado.', {
+      errorMsg: 'Não foi possível bloquear o contato. Recarregue a página (F5) e tente de novo.',
+    });
   }
 
   async function handleDeleteContact(conv: WhatsAppConversationDTO) {
@@ -892,7 +1645,9 @@ export function WhatsAppInbox() {
     try {
       await deleteWhatsAppContact(conv.contactId);
       setActiveContactId(null);
-      await refreshConversations();
+      // O delta não vê exclusão (o cascade apaga a conversa): sai da tela aqui,
+      // sem recarregar as 1.000 conversas.
+      dropConversation(conv.contactId);
       toast.success('Contato excluído.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao excluir contato.');
@@ -924,8 +1679,8 @@ export function WhatsAppInbox() {
               title={f.title}
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
-              active={!tagFilterActive && !contactsMode && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(false); setActiveFolder(f.key); }}
+              active={!globalView && !contactsMode && activeFolder === f.key}
+              onClick={() => selectFolder(f.key)}
             />
           ))}
           <div className="mx-3 my-2 h-px bg-[#14332a]" />
@@ -938,8 +1693,8 @@ export function WhatsAppInbox() {
               title={f.title}
               count={FOLDER_ITEMS[f.key].length}
               unread={unreadInFolder(f.key)}
-              active={!tagFilterActive && !contactsMode && activeFolder === f.key}
-              onClick={() => { setTagFilter([]); setAttendantFilter(null); setContactsMode(false); setActiveFolder(f.key); }}
+              active={!globalView && !contactsMode && activeFolder === f.key}
+              onClick={() => selectFolder(f.key)}
             />
           ))}
           <div className="mx-3 my-2 h-px bg-[#14332a]" />
@@ -1039,8 +1794,15 @@ export function WhatsAppInbox() {
                   <button title="Filtrar pela data de entrada do lead" className={chipCls(!!dateRange)}>
                     <Clock className="h-3.5 w-3.5 shrink-0" />
                     <span className={chipLabelCls(!!dateRange)}>{dateRange?.label ?? 'Data de entrada'}</span>
+                    {/* Total do banco com TODOS os filtros ligados (o número
+                        antigo contava só as 1.000 carregadas). */}
                     {dateRange && (
-                      <span className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white">{dateCount}</span>
+                      <span
+                        title="Conversas com todos os filtros ativos, em todo o histórico"
+                        className="ml-1 rounded-full bg-[#1d9e75] px-1.5 text-[10px] font-bold text-white"
+                      >
+                        {serverResult ? serverResult.total.toLocaleString('pt-BR') : '…'}
+                      </span>
                     )}
                   </button>
                 </DropdownMenuTrigger>
@@ -1127,13 +1889,14 @@ export function WhatsAppInbox() {
                 </DropdownMenu>
               )}
 
-              {/* Coluna do Kanban (só conversas já vinculadas a um card) */}
+              {/* Coluna do Kanban (só conversas já vinculadas a um card), pelo
+                  id da coluna e em todo o histórico */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button title="Filtrar pela coluna do card no Kanban" className={chipCls(!!columnFilter)}>
+                  <button title="Filtrar pela coluna do card no Kanban (em todo o histórico)" className={chipCls(!!columnFilter)}>
                     <Columns3 className="h-3.5 w-3.5 shrink-0" />
                     <span className={chipLabelCls(!!columnFilter)}>
-                      {columnFilter ?? 'Coluna do Kanban'}
+                      {columnFilter ? columnName ?? 'Coluna' : 'Coluna do Kanban'}
                     </span>
                   </button>
                 </DropdownMenuTrigger>
@@ -1150,26 +1913,39 @@ export function WhatsAppInbox() {
                     )}
                   </div>
                   <DropdownMenuSeparator />
-                  {kanbanColumns.length === 0 && (
+                  {inboxColumns === undefined && !columnsFailed && (
                     <DropdownMenuItem disabled className="text-sm text-gray-400">
-                      Nenhuma conversa vinculada a card ainda.
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Carregando colunas…
                     </DropdownMenuItem>
                   )}
-                  {kanbanColumns.map(([col, n]) => (
+                  {columnsFailed && (
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); reloadColumns(); }}
+                      className="text-sm text-amber-600"
+                    >
+                      <RotateCcw className="mr-2 h-3.5 w-3.5" /> Não carregou · Tentar novamente
+                    </DropdownMenuItem>
+                  )}
+                  {inboxColumns?.length === 0 && (
+                    <DropdownMenuItem disabled className="text-sm text-gray-400">
+                      Nenhuma coluna no Kanban.
+                    </DropdownMenuItem>
+                  )}
+                  {(inboxColumns ?? []).map((col) => (
                     <DropdownMenuCheckboxItem
-                      key={col}
-                      checked={columnFilter === col}
-                      onCheckedChange={() => setColumnFilter((cur) => (cur === col ? null : col))}
+                      key={col.id}
+                      checked={columnFilter === col.id}
+                      onCheckedChange={() => setColumnFilter((cur) => (cur === col.id ? null : col.id))}
                       onSelect={(e) => e.preventDefault()}
                       className="text-sm"
                     >
-                      <span className="min-w-0 flex-1 truncate">{col}</span>
-                      <span className="ml-2 text-xs text-gray-400">{n}</span>
+                      <span className={`min-w-0 flex-1 truncate ${col.count === 0 ? 'opacity-50' : ''}`}>{col.name}</span>
+                      <span className="ml-2 text-xs text-gray-400">{col.count}</span>
                     </DropdownMenuCheckboxItem>
                   ))}
-                  
+
                   <p className="px-2 py-1.5 text-[10px] leading-snug text-gray-400">
-                    Só conversas já vinculadas a um card do Kanban entram neste filtro.
+                    Conversas com card nesta coluna do Kanban, em todo o histórico (cards arquivados não entram).
                   </p>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1177,7 +1953,7 @@ export function WhatsAppInbox() {
               {/* Tags */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button title="Filtrar por tag (busca em todas as pastas)" className={chipCls(tagFilter.length > 0)}>
+                  <button title="Filtrar por tag (em todo o histórico)" className={chipCls(tagFilter.length > 0)}>
                     <TagIcon className="h-3.5 w-3.5 shrink-0" />
                     <span className={chipLabelCls(tagFilter.length > 0)}>
                       {tagFilter.length ? `Tags (${tagFilter.length})` : 'Tags'}
@@ -1197,10 +1973,8 @@ export function WhatsAppInbox() {
                     )}
                   </div>
                   <DropdownMenuSeparator />
-                  {allTags.length === 0 && (
-                    <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
-                  )}
-                  {allTags.map((t) => (
+                  <TagMenuStatus tags={allTags} failed={tagsFailed} onRetry={reloadTags} className="text-sm" />
+                  {(allTags ?? []).map((t) => (
                     <DropdownMenuCheckboxItem
                       key={t.id}
                       checked={tagFilter.includes(t.id)}
@@ -1222,7 +1996,7 @@ export function WhatsAppInbox() {
               {/* Equipe: dropdown em vez da fileira de pills (que ocupava uma
                   linha inteira e não cabia com muitos atendentes) — clique
                   abre a lista, com quem está selecionado destacado. */}
-              {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
+              {!globalView && (activeFolder === 'ativas' || activeFolder === 'todos') && teamLoad.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button title="Filtrar pelo atendente" className={chipCls(!!attendantFilter)}>
@@ -1269,7 +2043,7 @@ export function WhatsAppInbox() {
                 </DropdownMenu>
               )}
 
-              {!tagFilterActive && (activeFolder === 'ativas' || activeFolder === 'todos') && (
+              {!globalView && (activeFolder === 'ativas' || activeFolder === 'todos') && (
                 <button
                   onClick={() => setOnlyMine((v) => !v)}
                   title="Mostrar só o atendimento humano atribuído a mim (a fila continua visível pra todo mundo)"
@@ -1280,23 +2054,67 @@ export function WhatsAppInbox() {
                 </button>
               )}
             </div>
-            {tagFilterActive && (
+            {/* Faixa da lista global: o total vem do banco ("X de Y"), nunca
+                da página na tela. Leitura (lidas/não lidas) filtra só a
+                página carregada, e a faixa diz isso. */}
+            {globalView && (
               <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#26483c] px-2 py-1.5 text-[11px] font-semibold text-[#a9f2d8]">
                 {searchingServer
                   ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-                  : <Search className="h-3 w-3 shrink-0" />}
-                {searchingServer ? (
-                  <>Procurando em todo o histórico…</>
-                ) : (
-                  <>
-                    {filtered.length} resultado{filtered.length === 1 ? '' : 's'} {search.trim() ? 'pra essa busca' : 'com essas tags'}, em <b>todas as pastas</b>
-                    {search.trim() ? <> e em <b>todo o histórico</b></> : null}.
-                  </>
+                  : serverFilterError != null
+                    ? <AlertCircle className="h-3 w-3 shrink-0 text-amber-300" />
+                    : <Search className="h-3 w-3 shrink-0" />}
+                <span className="min-w-0 flex-1">
+                  {!serverFilterActive ? (
+                    <>
+                      {filtered.length} resultado{filtered.length === 1 ? '' : 's'} nas conversas carregadas. Digite ao
+                      menos 2 letras para procurar em <b>todo o histórico</b>.
+                    </>
+                  ) : searchingServer ? (
+                    <>Procurando em todo o histórico…</>
+                  ) : serverFilterError != null ? (
+                    <>Sem resposta do histórico ({describeFetchError(serverFilterError)}): mostrando só as conversas carregadas.</>
+                  ) : serverResult ? (
+                    <>
+                      {serverResult.items.length < serverResult.total
+                        ? `${serverResult.items.length.toLocaleString('pt-BR')} de ${serverResult.total.toLocaleString('pt-BR')}`
+                        : serverResult.total.toLocaleString('pt-BR')}
+                      {' '}conversa{serverResult.total === 1 ? '' : 's'} com esses filtros, em <b>todo o histórico</b>.
+                      {(readFilter === 'nao_lidas' || readFilter === 'lidas') && (
+                        <> {readFilter === 'nao_lidas' ? 'Não lidas' : 'Lidas'}: {filtered.length} (leitura filtrada só nesta página).</>
+                      )}
+                    </>
+                  ) : null}
+                </span>
+                {serverFilterError != null && !searchingServer && (
+                  <button
+                    onClick={retryServerFilter}
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300/50 px-1.5 py-0.5 text-amber-100 hover:bg-amber-500/20"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Tentar de novo
+                  </button>
                 )}
               </div>
             )}
             </>)}
           </div>
+
+          {/* Lista já na tela, mas a lista completa ou o delta falharam (403 da trava
+              de IP ao trocar de rede, 500 do banco, sem internet): as
+              conversas ficam (o SWR guarda o último dado) e o aviso diz o
+              motivo real — a rota GET devolve o texto, a action o mascarava. */}
+          {!contactsMode && conversationsLoaded && conversationsSyncError != null && (
+            <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-amber-300/40 bg-amber-500/15 px-3 py-1.5 text-[11px] text-amber-100">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+              <span className="min-w-0 flex-1">Lista sem atualizar: {describeFetchError(conversationsSyncError)}</span>
+              <button
+                onClick={() => { void retryConversationsSync(); }}
+                className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300/50 px-1.5 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20"
+              >
+                <RotateCcw className="h-3 w-3" /> Tentar de novo
+              </button>
+            </div>
+          )}
 
           {/* Área rolável: só a lista de conversas rola */}
           <div className="wa-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
@@ -1305,19 +2123,41 @@ export function WhatsAppInbox() {
                 search={search}
                 numberFilter={numberFilter}
                 numberLabelOf={numberBadges ? (nid) => (nid ? numberBadges.get(nid) ?? null : null) : null}
-                onOpen={async (contactId) => {
-                  await refreshConversations();
+                // Abre na hora: quem está fora da lista é hidratado pelo
+                // fetchedActive (GET por contato). A conversa recém-criada
+                // pelo openContactConversation entra na lista por um delta
+                // coalescido, depois — antes o clique esperava as 1.000
+                // conversas.
+                onOpen={(contactId) => {
                   setActiveContactId(contactId);
+                  scheduleConversationsRefresh();
                 }}
               />
-            ) : (<>
-            {conversations.length === 0 && (
+            ) : listState === 'loading' ? (
+              <ConversationListSkeleton />
+            ) : listState === 'error' ? (
+              // shouldRetryOnError:false no hook: sem este botão a lista só
+              // tentaria de novo no próximo delta. O motivo vem da rota (ex.:
+              // fora da internet do escritório), não um genérico. Sem lista
+              // não há delta: o botão pede a lista inteira.
+              <div role="alert" className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
+                <AlertCircle className="mb-2 h-7 w-7 text-amber-300" />
+                <p className="text-sm">Não foi possível carregar as conversas.</p>
+                <p className="mt-1 text-xs">{describeFetchError(conversationsError)}</p>
+                <button
+                  onClick={() => { void reloadAllConversations(); }}
+                  className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#2e5749] px-3 py-1.5 text-[12px] font-bold text-[#6fd6ad] hover:bg-[#356b57]"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Tentar novamente
+                </button>
+              </div>
+            ) : listState === 'empty' ? (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 <InboxIcon className="mb-2 h-8 w-8 opacity-40" />
                 <p className="text-sm">Nenhuma conversa ainda.</p>
                 <p className="mt-1 text-xs">Quando um cliente mandar mensagem no WhatsApp, ela aparece aqui.</p>
               </div>
-            )}
+            ) : (<>
             {conversations.length > 0 && visibleItems.length === 0 && (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[#a7c9bc]">
                 {searchingServer ? (
@@ -1328,7 +2168,9 @@ export function WhatsAppInbox() {
                 ) : (
                   <>
                     <Search className="mb-2 h-6 w-6 opacity-40" />
-                    <p className="text-sm">Nada encontrado com esse filtro.</p>
+                    <p className="text-sm">
+                      {serverResult?.total === 0 ? 'Nenhuma conversa com esses filtros em todo o histórico.' : 'Nada encontrado com esse filtro.'}
+                    </p>
                     {search.trim().length >= 2 && (
                       <p className="mt-1 text-xs">
                         Sem conversa com esse termo — veja na <b>Agenda de contatos</b>.
@@ -1339,11 +2181,11 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Com tag/busca ativa: mostra cada pasta em sua própria seção
-                (sem a "Todos", que duplicaria tudo) — os resultados aparecem
-                sem precisar entrar em pasta nenhuma. */}
-            {tagFilterActive ? (
-              ALL_FOLDERS.filter((f) => f.key !== 'todos').map((f) => (
+            {/* Lista global (filtro no banco ou busca): cada pasta em sua
+                própria seção (sem a "Todos", que duplicaria tudo) — os
+                resultados aparecem sem precisar entrar em pasta nenhuma. */}
+            {globalView ? (<>
+              {ALL_FOLDERS.filter((f) => f.key !== 'todos').map((f) => (
                 <ConversationGroup
                   key={f.key}
                   title={f.title}
@@ -1354,8 +2196,17 @@ export function WhatsAppInbox() {
                   meId={meId}
                   meName={session?.user?.name ?? ''}
                 />
-              ))
-            ) : activeFolder === 'unqualified' ? (
+              ))}
+              {/* Encerradas com desfecho sem pasta no rail (categoria nova). */}
+              <ConversationGroup
+                title="Outros desfechos"
+                items={groups.outros}
+                activeContactId={activeContactId}
+                onSelect={setActiveContactId}
+                meId={meId}
+                meName={session?.user?.name ?? ''}
+              />
+            </>) : activeFolder === 'unqualified' ? (
               // Não qualificadas agrupadas POR MOTIVO de descarte — identifica
               // de cara por que cada lead não fechou.
               (() => {
@@ -1392,7 +2243,7 @@ export function WhatsAppInbox() {
               />
             )}
 
-            {!tagFilterActive && visibleItems.length > visibleCount && (
+            {!globalView && visibleItems.length > visibleCount && (
               <div className="px-3 pt-1">
                 <button
                   onClick={() => setVisibleCount((v) => v + 200)}
@@ -1403,15 +2254,31 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* A lista carrega só as mais recentes: dizer isso em voz alta
-                evita a sensação de "sumiu conversa" — o que está fora do topo
-                aparece pela busca, que agora vai ao banco (27/08/2026). */}
-            {!tagFilterActive && conversationsTotal > conversations.length && conversations.length > 0 && (
+            {/* Resultado do banco maior que a página: a próxima de 300 (skip). */}
+            {serverResult && serverResult.items.length < serverResult.total && (
+              <div className="px-3 pt-1">
+                <button
+                  onClick={() => { if (filterQuery) void fetchFilterPage(filterQuery, 'more'); }}
+                  disabled={loadingMore}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#3a6b58] bg-[#2e5749] py-1.5 text-[11px] font-bold text-[#6fd6ad] hover:bg-[#356b57] disabled:opacity-60"
+                >
+                  {loadingMore && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Mostrando {serverResult.items.length.toLocaleString('pt-BR')} de {serverResult.total.toLocaleString('pt-BR')} · Carregar mais
+                </button>
+              </div>
+            )}
+
+            {/* Sem filtro no banco, pastas, leitura e número contam só as
+                conversas carregadas (as mais recentes): dizer isso em voz
+                alta evita a sensação de "sumiu conversa" e de contador
+                errado. Busca, tag, data e coluna vão ao histórico inteiro. */}
+            {!globalView && conversationsTotal > conversations.length && conversations.length > 0 && (
               <p className="px-3 pb-1 pt-2 text-center text-[10px] leading-relaxed text-[#7fae9c]">
                 Mostrando as {conversations.length.toLocaleString('pt-BR')} conversas mais recentes
-                de {conversationsTotal.toLocaleString('pt-BR')}.
+                {loadedSinceLabel ? ` (desde ${loadedSinceLabel})` : ''} de {conversationsTotal.toLocaleString('pt-BR')} —
+                pastas e filtros de leitura/número valem só para elas.
                 <br />
-                Use a <b>busca</b> acima para achar as anteriores — ela procura em todo o histórico.
+                <b>Busca</b>, <b>tags</b>, <b>data de entrada</b> e <b>coluna do Kanban</b> procuram em todo o histórico.
               </p>
             )}
             </>)}
@@ -1428,10 +2295,17 @@ export function WhatsAppInbox() {
       {/* ---------- Thread ---------- */}
       <section className={`${activeContactId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col bg-[#dce8e1] dark:bg-zinc-950/20`}>
         {!active ? (
-          <div className="flex h-full flex-col items-center justify-center text-gray-400">
-            <MessageCircle className="mb-2 h-10 w-10 opacity-30" />
-            <p className="text-base">Selecione uma conversa para atender.</p>
-          </div>
+          openingActive ? (
+            <div role="status" className="flex h-full flex-col items-center justify-center text-gray-400">
+              <Loader2 className="mb-2 h-8 w-8 animate-spin opacity-60" />
+              <p className="text-base">Abrindo conversa…</p>
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center text-gray-400">
+              <MessageCircle className="mb-2 h-10 w-10 opacity-30" />
+              <p className="text-base">Selecione uma conversa para atender.</p>
+            </div>
+          )
         ) : (
           <>
             <header className="flex items-center gap-2.5 border-b border-gray-100 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900 md:px-4">
@@ -1495,20 +2369,27 @@ export function WhatsAppInbox() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="text-sm">Tags desta conversa</DropdownMenuLabel>
-                  {allTags.length === 0 && (
-                    <DropdownMenuItem disabled className="text-sm text-gray-400">Nenhuma tag criada ainda.</DropdownMenuItem>
-                  )}
-                  {allTags.map((t) => (
-                    <DropdownMenuCheckboxItem
-                      key={t.id}
-                      checked={active.tags.some((at) => at.id === t.id)}
-                      onCheckedChange={() => handleToggleTag(t.id)}
-                      className="text-base"
-                    >
-                      <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: t.color }} />
-                      {t.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
+                  <TagMenuStatus tags={allTags} failed={tagsFailed} onRetry={reloadTags} className="text-sm" />
+                  {(allTags ?? []).map((t) => {
+                    const tagPending = pendingTags.has(`${active.id}:${t.id}`);
+                    return (
+                      // Menu fica aberto (preventDefault no select) para marcar
+                      // várias tags seguidas; o Radix chama onCheckedChange
+                      // mesmo assim. Travado só enquanto ESTA tag grava.
+                      <DropdownMenuCheckboxItem
+                        key={t.id}
+                        checked={active.tags.some((at) => at.id === t.id)}
+                        onSelect={(e) => e.preventDefault()}
+                        onCheckedChange={(v) => handleSetTag(t, v === true)}
+                        disabled={tagPending}
+                        className="text-base"
+                      >
+                        <span className="mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full align-middle" style={{ backgroundColor: t.color }} />
+                        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        {tagPending && <Loader2 className="ml-2 h-3.5 w-3.5 shrink-0 animate-spin opacity-70" />}
+                      </DropdownMenuCheckboxItem>
+                    );
+                  })}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setTagsModalOpen(true)} className="text-base">
                     <Settings2 className="mr-2 h-3.5 w-3.5" /> Gerenciar tags
@@ -1517,10 +2398,32 @@ export function WhatsAppInbox() {
               </DropdownMenu>
 
               {(active.status === 'queued' || active.status === 'bot' || active.status === 'standby' || (active.status === 'human' && active.assignedToId !== meId)) && (
-                <HeaderButton icon={Headset} label="Assumir" onClick={() => runAction(() => assumeConversation(active.id), 'Conversa assumida.')} />
+                <HeaderButton
+                  icon={Headset}
+                  label="Assumir"
+                  onClick={() => {
+                    const base = active;
+                    void runAction(() => assumeConversation(base.id), 'Conversa assumida.', {
+                      base,
+                      optimistic: assumePatch(me),
+                      errorMsg: 'Não foi possível assumir a conversa. Recarregue a página (F5) e tente de novo.',
+                    });
+                  }}
+                />
               )}
               {active.status === 'human' && (
-                <HeaderButton icon={Undo2} label="Devolver pro bot" onClick={() => runAction(() => returnConversationToBot(active.id), 'Conversa devolvida pro bot.')} />
+                <HeaderButton
+                  icon={Undo2}
+                  label="Devolver pro bot"
+                  onClick={() => {
+                    const base = active;
+                    void runAction(() => returnConversationToBot(base.id), 'Conversa devolvida pro bot.', {
+                      base,
+                      optimistic: returnToBotPatch(),
+                      errorMsg: 'Não foi possível devolver ao bot. Recarregue a página (F5) e tente de novo.',
+                    });
+                  }}
+                />
               )}
               {/* Encerrar (aberta) / Alterar desfecho (encerrada — a IA às
                   vezes desqualifica errado, e aqui a equipe corrige na mão). */}
@@ -1540,7 +2443,17 @@ export function WhatsAppInbox() {
                     return (
                       <DropdownMenuItem
                         key={category}
-                        onClick={() => runAction(() => closeConversation(active.id, category), `Encerrado: ${label}.`)}
+                        onClick={() => {
+                          const base = active;
+                          // Rótulo como a lista mostra (CLOSE_CATEGORY_LABELS; o
+                          // motivo da tabela já vem com o rótulo dele), não o
+                          // do menu — senão o chip trocaria na resposta.
+                          void runAction(() => closeConversation(base.id, category), `Encerrado: ${label}.`, {
+                            base,
+                            optimistic: closePatch(category, CLOSE_CATEGORY_LABELS[category] ?? label),
+                            errorMsg: 'Não foi possível encerrar. Recarregue a página (F5) e tente de novo.',
+                          });
+                        }}
                         className="text-base"
                       >
                         <Icon className={`mr-2 h-3.5 w-3.5 ${color}`} /> {label}
@@ -1555,7 +2468,18 @@ export function WhatsAppInbox() {
                 </DropdownMenuContent>
               </DropdownMenu>
               {active.status === 'closed' && (
-                <HeaderButton icon={Headset} label="Reabrir" onClick={() => runAction(() => assumeConversation(active.id), 'Atendimento reaberto.')} />
+                <HeaderButton
+                  icon={Headset}
+                  label="Reabrir"
+                  onClick={() => {
+                    const base = active;
+                    void runAction(() => assumeConversation(base.id), 'Atendimento reaberto.', {
+                      base,
+                      optimistic: assumePatch(me),
+                      errorMsg: 'Não foi possível reabrir o atendimento. Recarregue a página (F5) e tente de novo.',
+                    });
+                  }}
+                />
               )}
 
               {/* Mostrar/ocultar a coluna Copiloto (só existe no desktop lg+). */}
@@ -1582,19 +2506,31 @@ export function WhatsAppInbox() {
                   <DropdownMenuLabel className="text-xs text-gray-400">Conversa</DropdownMenuLabel>
                   {/* Abriu sem querer a conversa de outro atendente? Marcar como
                       não lida devolve o badge e FECHA a thread (senão o
-                      auto-read remarcaria como lida na hora). */}
+                      auto-read remarcaria como lida na hora). Os dois itens
+                      mudam a lista no clique (patch local), sem recarregá-la. */}
                   <DropdownMenuItem
                     onClick={() => {
-                      const id = active.id;
+                      const base = active;
                       setActiveContactId(null);
-                      runAction(() => markConversationUnread(id), 'Conversa marcada como não lida.');
+                      void runAction(() => markConversationUnread(base.id), 'Conversa marcada como não lida.', {
+                        base,
+                        optimistic: manualUnreadPatch(),
+                        errorMsg: 'Não foi possível marcar como não lida. Recarregue a página (F5) e tente de novo.',
+                      });
                     }}
                     className="text-base"
                   >
                     <MessageCircle className="mr-2 h-3.5 w-3.5 text-emerald-600" /> Marcar como não lida
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => runAction(() => markConversationRead(active.id), 'Conversa marcada como lida.')}
+                    onClick={() => {
+                      const base = active;
+                      void runAction(() => markConversationRead(base.id), 'Conversa marcada como lida.', {
+                        base,
+                        optimistic: readPatch(new Date().toISOString()),
+                        errorMsg: 'Não foi possível marcar como lida. Recarregue a página (F5) e tente de novo.',
+                      });
+                    }}
                     className="text-base"
                   >
                     <CheckCheck className="mr-2 h-3.5 w-3.5 text-sky-500" /> Marcar como lida
@@ -1617,7 +2553,35 @@ export function WhatsAppInbox() {
               </DropdownMenu>
             </header>
 
-            <div ref={scrollRef} className="wa-scroll flex-1 overflow-y-auto px-5 py-5 md:px-7">
+            {/* Invólucro relativo só para o chip "Nova mensagem ↓" flutuar sobre o rodapé da thread. */}
+            <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Poll da thread falhou (403 da trava de IP, 500, rede): as
+                mensagens que já estavam ficam (o SWR guarda o último dado) e
+                o aviso diz o motivo, em vez de a conversa esvaziar calada. */}
+            {messagesError != null && (
+              <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">
+                  {displayMessages.length > 0 ? 'Mensagens sem atualizar: ' : 'Não foi possível carregar as mensagens: '}
+                  {describeFetchError(messagesError)}
+                </span>
+                <button
+                  onClick={() => { void mutateMessages(); }}
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100"
+                >
+                  <RotateCcw className="h-3 w-3" /> Tentar de novo
+                </button>
+              </div>
+            )}
+            <div
+              ref={scrollRef}
+              onScroll={handleThreadScroll}
+              onWheel={stopFollowingThread}
+              onTouchMove={stopFollowingThread}
+              onPointerDown={stopFollowingThread}
+              onKeyDown={stopFollowingThread}
+              className="wa-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-7"
+            >
               {/* Carregar histórico anterior em blocos (evita puxar tudo de uma vez) */}
               {hasMore && (
                 <div className="mb-2 flex justify-center">
@@ -1630,6 +2594,14 @@ export function WhatsAppInbox() {
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...</>
                       : <><Clock className="h-3.5 w-3.5" /> Carregar mensagens anteriores</>}
                   </button>
+                </div>
+              )}
+              {/* 1ª carga de uma conversa não visitada: sem isto a thread
+                  aparecia vazia, como se o cliente nunca tivesse escrito. */}
+              {messagesLoading && displayMessages.length === 0 && (
+                <div role="status" className="flex h-full flex-col items-center justify-center text-gray-400">
+                  <Loader2 className="mb-2 h-7 w-7 animate-spin opacity-60" />
+                  <p className="text-sm">Carregando mensagens…</p>
                 </div>
               )}
               {displayMessages.map((msg, i) => {
@@ -1660,6 +2632,7 @@ export function WhatsAppInbox() {
                       onEdit={() => { setReplyTo(null); setEditTarget(msg); }}
                       onDelete={() => handleDelete(msg)}
                       onRetry={() => retryPending(msg)}
+                      canRetryMedia={!!msg.mediaType && pendingMediaRef.current.has(msg.id)}
                       onDiscard={() => removePending(msg.id)}
                       onJumpToReply={() => jumpToMessage(msg.replyToId)}
                       onAttachToCard={() => handleAttachMedia(msg)}
@@ -1669,7 +2642,20 @@ export function WhatsAppInbox() {
                   </Fragment>
                 );
               })}
-              <div ref={endRef} />
+            </div>
+            {/* Mensagem nova chegou enquanto o atendente lia mais acima: não
+                puxa a tela, avisa. Some ao chegar no fim. */}
+            {newBelowCount > 0 && (
+              <button
+                type="button"
+                onClick={scrollThreadToEnd}
+                title="Ir para a última mensagem"
+                className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-[#1d9e75] px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg ring-1 ring-black/5 transition-colors hover:bg-[#178a66]"
+              >
+                {newBelowCount === 1 ? 'Nova mensagem' : `${newBelowCount} novas mensagens`}
+                <ArrowDown className="h-3.5 w-3.5" />
+              </button>
+            )}
             </div>
 
             {/* Número desativado (tela Números): histórico só para consulta. */}
@@ -1706,7 +2692,8 @@ export function WhatsAppInbox() {
                 onSendText={handleSendText}
                 onSendMedia={handleSendMedia}
                 onEditSubmit={handleEditSubmit}
-                onRefresh={async () => { await Promise.all([mutateMessages(), refreshConversations()]); }}
+                onRefreshThread={() => revalidateThread(active.contactId)}
+                onSent={handleSentOutside}
               />
             </div>
             </>)}
@@ -1715,7 +2702,7 @@ export function WhatsAppInbox() {
               open={sendTemplateOpen}
               onOpenChange={setSendTemplateOpen}
               contactId={active.contactId}
-              onSent={async () => { await Promise.all([mutateMessages(), refreshConversations()]); }}
+              onSent={(dto) => { handleSentOutside(dto); void revalidateThread(dto.contactId); }}
             />
           </>
         )}
@@ -1733,8 +2720,6 @@ export function WhatsAppInbox() {
           <CopilotPanel
             conversation={active}
             messages={displayMessages}
-            clientInfo={clientInfo ?? null}
-            onClientInfoChanged={(info) => { mutateClientInfo(info, { revalidate: false }); }}
             onOpenCard={() => setCardDialogOpen(true)}
             onRefreshMessages={async () => { await mutateMessages(); }}
             focusFicha={fichaFocusToken}
@@ -1749,14 +2734,21 @@ export function WhatsAppInbox() {
           card={cardStub}
           open={cardDialogOpen}
           onClose={() => setCardDialogOpen(false)}
-          onUpdate={() => { mutateClientInfo(); }}
+          onUpdate={() => { if (activeContactId) void reloadCopilot(activeContactId); }}
           cardId={clientInfo.userId}
           isProcess={false}
           ownerId={clientInfo.userId}
         />
       )}
 
-      <WhatsAppTagsModal open={tagsModalOpen} onOpenChange={setTagsModalOpen} onChanged={reloadTags} />
+      {/* Renomear, recolorir ou excluir tag não passa pelo delta (não toca
+          conversa nenhuma): quem editou recarrega a lista inteira para os
+          chips baterem; as outras abas, na carga de 10 min. */}
+      <WhatsAppTagsModal
+        open={tagsModalOpen}
+        onOpenChange={setTagsModalOpen}
+        onChanged={() => { reloadTags(); void reloadAllConversations(); }}
+      />
       <CloseReasonsModal
         open={reasonsModalOpen}
         onOpenChange={setReasonsModalOpen}
@@ -1766,9 +2758,11 @@ export function WhatsAppInbox() {
       <AddContactDialog
         open={addContactOpen}
         onOpenChange={setAddContactOpen}
-        onCreated={async (contactId) => {
-          await refreshConversations();
+        // Mesmo desenho do "Abrir" da agenda: abre na hora (fetchedActive) e a
+        // lista pega a conversa nova num delta coalescido.
+        onCreated={(contactId) => {
           setActiveContactId(contactId);
+          scheduleConversationsRefresh();
         }}
       />
     </div>
@@ -1929,7 +2923,7 @@ function AddContactDialog({
   open, onOpenChange, onCreated,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void;
-  onCreated: (contactId: string) => Promise<void>;
+  onCreated: (contactId: string) => void;
 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -1940,7 +2934,7 @@ function AddContactDialog({
     setBusy(true);
     try {
       const { contactId } = await createWhatsAppContact(phone, name);
-      await onCreated(contactId);
+      onCreated(contactId);
       onOpenChange(false);
       setName(''); setPhone('');
       toast.success('Contato criado — a conversa já está aberta com você.');
@@ -2013,6 +3007,60 @@ function RailButton({
       )}
     </button>
   );
+}
+
+// Esqueleto da 1ª carga da lista (auditoria de 24/09/2026, FE-8: a lista
+// vazia dizia "Nenhuma conversa ainda" e o chefe lia como "não carrega").
+// 8 linhas no formato da linha real (avatar + nome/hora + prévia), com as
+// cores fixas da lista — sem dark:, o modo escuro é o Dark Reader.
+function ConversationListSkeleton() {
+  return (
+    <div role="status" aria-label="Carregando conversas" className="px-1.5 pt-1">
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="mb-0.5 flex animate-pulse items-center gap-2.5 rounded-lg px-2 py-2">
+          <span className="h-9 w-9 shrink-0 rounded-full bg-[#2e5749]" />
+          <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className="flex items-center gap-2">
+              <span className="h-3 rounded bg-[#2e5749]" style={{ width: `${45 + ((i * 17) % 35)}%` }} />
+              <span className="ml-auto h-2.5 w-8 shrink-0 rounded bg-[#294e41]" />
+            </span>
+            <span className="h-2.5 rounded bg-[#294e41]" style={{ width: `${60 + ((i * 23) % 30)}%` }} />
+          </span>
+        </div>
+      ))}
+      <span className="sr-only">Carregando conversas…</span>
+    </div>
+  );
+}
+
+// Linha de estado dos dois menus de tag (filtro da lista e cabeçalho da
+// thread): carregando / falhou / nenhuma criada. Com tags carregadas não
+// desenha nada. "Tentar novamente" mantém o menu aberto (preventDefault) para
+// o atendente ver o "Carregando tags…" e depois a lista.
+function TagMenuStatus({ tags, failed, onRetry, className = '' }: {
+  tags: WhatsAppTagDTO[] | undefined; failed: boolean; onRetry: () => void; className?: string;
+}) {
+  if (tags === undefined && failed) {
+    return (
+      <>
+        <DropdownMenuItem disabled className={`${className} text-gray-400`}>Não foi possível carregar as tags.</DropdownMenuItem>
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); onRetry(); }} className={className}>
+          <RotateCcw className="mr-2 h-3.5 w-3.5" /> Tentar novamente
+        </DropdownMenuItem>
+      </>
+    );
+  }
+  if (tags === undefined) {
+    return (
+      <DropdownMenuItem disabled className={`${className} text-gray-400`}>
+        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Carregando tags…
+      </DropdownMenuItem>
+    );
+  }
+  if (tags.length === 0) {
+    return <DropdownMenuItem disabled className={`${className} text-gray-400`}>Nenhuma tag criada ainda.</DropdownMenuItem>;
+  }
+  return null;
 }
 
 function ConversationGroup({
@@ -2212,12 +3260,14 @@ function parseReactionBody(body: string | null): { emoji: string | null; removed
 const WA_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
 
 function ThreadMessageRow({
-  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, onDiscard, onJumpToReply, onAttachToCard, onReact, contactName,
+  msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, canRetryMedia, onDiscard, onJumpToReply, onAttachToCard, onReact, contactName,
 }: {
   msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean; contactName?: string | null;
   setRowRef: (el: HTMLDivElement | null) => void;
   onReply: () => void; onEdit: () => void; onDelete: () => void;
-  onRetry: () => void; onDiscard: () => void; onJumpToReply: () => void;
+  // canRetryMedia: a bolha de mídia que falhou ainda tem o anexo guardado
+  // (`pendingMediaRef`), então dá para tentar de novo sem reanexar.
+  onRetry: () => void; canRetryMedia: boolean; onDiscard: () => void; onJumpToReply: () => void;
   onAttachToCard: () => void;
   onReact: (emoji: string) => void;
 }) {
@@ -2313,11 +3363,7 @@ function ThreadMessageRow({
             </button>
           )}
           {msg.mediaKey && <WaMediaBubble msg={msg} mine={mine} onAttachToCard={onAttachToCard} />}
-          {!msg.mediaKey && msg.mediaType && (
-            <span className={`mb-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold ${mine ? 'bg-white/15' : 'bg-gray-100 dark:bg-zinc-900/60'}`}>
-              <Paperclip className="h-3.5 w-3.5" /> Enviando anexo...
-            </span>
-          )}
+          {!msg.mediaKey && msg.mediaType && <PendingMediaPreview msg={msg} mine={mine} />}
           {msg.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{formatWaText(msg.body)}</p>}
           <span className={`ml-2 mt-0.5 flex items-center justify-end gap-1 text-xs ${mine ? 'text-white/70' : 'text-gray-400'}`}>
             {msg.editedAt && <span className="italic">editada ·</span>}
@@ -2341,7 +3387,7 @@ function ThreadMessageRow({
         {msg.status === 'failed' && isTemp && (
           <span className="mt-0.5 flex items-center gap-2 px-1 text-sm text-red-500">
             Falhou.
-            {msg.body && !msg.mediaType && (
+            {((msg.body && !msg.mediaType) || canRetryMedia) && (
               <button onClick={onRetry} className="font-semibold underline">tentar de novo</button>
             )}
             <button onClick={onDiscard} className="underline">descartar</button>
@@ -2384,40 +3430,77 @@ function ThreadMessageRow({
 }
 
 /**
+ * Anexo da bolha otimista: o atendente vê O QUE está mandando (a foto, ou o
+ * nome do arquivo) enquanto sobe e envia. Antes era um "Enviando anexo..." que
+ * continuava lá até depois da falha. A foto vem do object URL do File local
+ * (sem ida à rede), translúcida e com spinner enquanto envia; formato que o
+ * navegador não desenha (HEIC) cai no nome.
+ */
+function PendingMediaPreview({ msg, mine }: { msg: WhatsAppThreadMessage; mine: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const sending = msg.status === 'sending';
+  const name = msg.fileName?.trim() || 'Anexo';
+
+  if (msg.localPreviewUrl && pendingPreviewKind(msg.mediaType) === 'image' && !imgFailed) {
+    return (
+      <div className="relative mb-1 overflow-hidden rounded-xl border border-black/5 shadow-sm">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={msg.localPreviewUrl}
+          alt={name}
+          onError={() => setImgFailed(true)}
+          className={`max-h-72 max-w-full object-cover ${sending ? 'opacity-50' : 'opacity-80'}`}
+        />
+        {sending && (
+          <span role="status" aria-label={`Enviando ${name}`} className="absolute inset-0 flex items-center justify-center">
+            <span className="rounded-full bg-black/45 p-2">
+              <Loader2 className="h-5 w-5 animate-spin text-white" />
+            </span>
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <span
+      title={name}
+      className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold ${mine ? 'bg-white/15' : 'bg-gray-100'}`}
+    >
+      {sending
+        ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-label="Enviando" />
+        : <Paperclip className="h-3.5 w-3.5 shrink-0" />}
+      <span className="truncate">{name}</span>
+    </span>
+  );
+}
+
+/**
  * Mídia inline na bolha — visual novo:
  *   - imagem: cartão arredondado com zoom no hover, clique abre em nova aba
  *   - vídeo: player nativo em cartão arredondado
  *   - áudio: player próprio (play/pausa + barra + tempo) e botão "Transcrever"
  *     (IA; o texto fica salvo na mensagem — o próximo clique é grátis)
  *   - documento: cartão com ícone, extensão em selo e ação "abrir"
- * A URL pré-assinada é buscada uma vez (cache em memória via getMediaUrl).
+ * A URL pré-assinada já vem na mensagem (rota da thread, `mediaUrl`) e passa
+ * pelo cache único do media-url-cache: sem server action por bolha. A action
+ * só entra como fallback (sem URL, URL vencida) e no "Baixar".
  */
 function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessage; mine: boolean; onAttachToCard?: () => void }) {
   const mediaKey = msg.mediaKey as string;
   const mediaType = msg.mediaType;
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  // Nome legível ("Foto 24-09-2026 14h32m05.jpeg" no lugar de "midia.jpeg").
+  // É o mesmo que a rota da thread usa ao assinar: a URL do servidor e a do
+  // fallback caem na mesma entrada do cache.
+  const docName = mediaDisplayName({ key: mediaKey, mediaType, createdAt: msg.createdAt });
+  const { url, failed, onError, retry } = useMediaUrl(mediaKey, msg.mediaUrl, msg.mediaUrlExpiresAt, { fileName: docName });
   const isTemp = msg.id.startsWith('temp-');
 
-  useEffect(() => {
-    let cancelled = false;
-    setUrl(null);
-    setFailed(false);
-    getMediaUrl(mediaKey).then((u) => {
-      if (cancelled) return;
-      if (u) setUrl(u);
-      else setFailed(true);
-    });
-    return () => { cancelled = true; };
-  }, [mediaKey]);
-
   async function openInNewTab() {
-    const u = url ?? await getMediaUrl(mediaKey);
+    const u = url ?? await getMediaUrl(mediaKey, { fileName: docName });
     if (u) window.open(u, '_blank');
     else toast.error('Não foi possível abrir o anexo.');
   }
-
-  const docName = fileNameFromKey(mediaKey);
 
   // "Baixar" de verdade: URL com Content-Disposition attachment.
   async function downloadAsFile() {
@@ -2446,10 +3529,12 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
     </DropdownMenuContent>
   );
 
+  // Sem URL (action falhou) ou o navegador recusou a URL duas vezes: objeto
+  // renomeado/purgado no S3. Clique tenta de novo (falha passageira de rede).
   if (failed) {
     return (
-      <button onClick={openInNewTab} title={docName} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
-        <Paperclip className="h-4 w-4 shrink-0" /> <span className="truncate">{docName}</span>
+      <button onClick={retry} title={`${docName} — clique para tentar de novo`} className={`mb-1 flex max-w-[16rem] items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${mine ? 'bg-white/15 hover:bg-white/25' : 'bg-gray-100 hover:bg-gray-200 dark:bg-zinc-900/60 dark:hover:bg-zinc-900'}`}>
+        <Paperclip className="h-4 w-4 shrink-0" /> <span className="truncate">Arquivo indisponível</span>
       </button>
     );
   }
@@ -2463,7 +3548,14 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
             className="group/img relative mb-1 block overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt="Imagem enviada" className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]" />
+            <img
+              src={url}
+              alt="Imagem enviada"
+              loading="lazy"
+              decoding="async"
+              onError={onError}
+              className="max-h-72 max-w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]"
+            />
             <span className="pointer-events-none absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/25 via-transparent to-transparent p-2 opacity-0 transition-opacity group-hover/img:opacity-100">
               <span className="rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
                 Opções
@@ -2484,7 +3576,7 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
     return url ? (
       <div className="mb-1">
         <div className="overflow-hidden rounded-xl border border-black/5 shadow-sm dark:border-white/10">
-          <video src={url} controls className="max-h-72 max-w-full" />
+          <video src={url} controls preload="metadata" onError={onError} className="max-h-72 max-w-full" />
         </div>
         {onAttachToCard && !isTemp && (
           <button
@@ -2504,7 +3596,7 @@ function WaMediaBubble({ msg, mine, onAttachToCard }: { msg: WhatsAppThreadMessa
   }
 
   if (mediaType?.startsWith('audio/')) {
-    return <WaAudioBubble msg={msg} mine={mine} url={url} />;
+    return <WaAudioBubble msg={msg} mine={mine} url={url} onMediaError={onError} />;
   }
 
   const ext = (docName.split('.').pop() ?? '').toUpperCase().slice(0, 5);
@@ -2550,7 +3642,9 @@ function fmtAudioTime(sec: number): string {
  * inbox) + botão "Transcrever": chama a IA uma vez, o texto fica salvo na
  * mensagem e aparece pra equipe inteira nas próximas aberturas.
  */
-function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: boolean; url: string | null }) {
+function WaAudioBubble({ msg, mine, url, onMediaError }: {
+  msg: WhatsAppThreadMessage; mine: boolean; url: string | null; onMediaError?: () => void;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -2588,15 +3682,17 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
     a.currentTime = frac * duration;
   }
 
+  // POST /api/whatsapp/assist/transcribe (fora da fila de actions: enviar e
+  // tag não esperam a transcrição). O texto fica salvo na mensagem.
   async function handleTranscribe() {
     if (transcribing) return;
     setTranscribing(true);
     try {
-      const text = await transcribeWhatsAppAudio(msg.id);
+      const text = await requestAssistText('transcribe', msg.id);
       setTranscript(text);
       setShowTranscript(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao transcrever o áudio.');
+      toast.error(describeAssistError(e, 'Falha ao transcrever o áudio.'));
     } finally {
       setTranscribing(false);
     }
@@ -2617,6 +3713,9 @@ function WaAudioBubble({ msg, mine, url }: { msg: WhatsAppThreadMessage; mine: b
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => { setPlaying(false); setCurrent(0); }}
+          // URL recusada (vencida ou objeto apagado): o media-url-cache busca
+          // outra e, se falhar de novo, a bolha vira "Arquivo indisponível".
+          onError={onMediaError}
           className="hidden"
         />
       )}

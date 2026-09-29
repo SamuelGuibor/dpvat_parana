@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle, BadgeCheck, Bot, Brain, FileText, Headset, HelpCircle, IdCard,
-  Loader2, MessageSquare, ScrollText, ShieldCheck, Sparkles, Timer,
+  Loader2, MessageSquare, Mic, RotateCcw, ScrollText, ShieldCheck, Sparkles, Timer,
 } from 'lucide-react';
+import { Button } from '@/app/_shared/ui/button';
 import { getAiCorner, type AiCorner as AiCornerData, type AiOperation } from '@/app/_actions/analytics/get-ai-corner';
+import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
 
 /** Qualidade do bot no período do dashboard — vem do ChatbotDashboard. */
 export interface AiQuality {
@@ -30,6 +32,7 @@ const ICONS: Record<string, React.ElementType> = {
   message: MessageSquare,
   file: FileText,
   id: IdCard,
+  mic: Mic,
   shield: ShieldCheck,
   scroll: ScrollText,
   sparkles: Sparkles,
@@ -114,19 +117,11 @@ function OperationRow({ op, share, color }: { op: AiOperation; share: number; co
 }
 
 export function AiCorner({ quality }: { quality?: AiQuality }) {
-  const [data, setData] = useState<AiCornerData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<'month' | 'last30'>('month');
-
-  useEffect(() => {
-    let alive = true;
-    getAiCorner()
-      .then((d) => { if (alive) setData(d); })
-      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'Falha ao carregar o Canto da IA.'); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
+  // Janelas fixas (mês corrente e 30 dias), sem parâmetro: uma chave só. Pelo
+  // cache curto (usePanelSWR), reabrir a aba Chatbot ou trocar o período do
+  // painel em até 60 s não refaz a consulta.
+  const { data, error, busy, retry } = usePanelSWR<AiCornerData>('ai-corner', () => getAiCorner(), 'CANTO DA IA');
 
   const win = data ? (scope === 'month' ? data.month : data.last30) : null;
 
@@ -135,17 +130,27 @@ export function AiCorner({ quality }: { quality?: AiQuality }) {
     [data],
   );
 
-  if (loading) {
+  if (error) {
+    return (
+      <section className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+        <p>Não foi possível carregar o Canto da IA.</p>
+        <Button size="sm" variant="outline" disabled={busy} onClick={retry}>
+          <RotateCcw className={`mr-1 h-4 w-4 ${busy ? 'animate-spin' : ''}`} /> Tentar novamente
+        </Button>
+      </section>
+    );
+  }
+  if (!data) {
     return (
       <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       </section>
     );
   }
-  if (error || !data || !win) {
+  if (!win) {
     return (
-      <section className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">
-        {error ?? 'Sem dados de consumo.'}
+      <section className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+        Sem dados de consumo.
       </section>
     );
   }

@@ -9,11 +9,13 @@
     "lint": "next lint",
     "prepare": "prisma generate",
     "test": "vitest run",
+    "docs:check": "node scripts/check-ai-docs.mjs",
     "sign:seed": "vitest run tests/signature-seed.smoke.test.ts",
     "sign:pdf": "vitest run tests/signature-pdf.smoke.test.ts",
     "sign:templates": "vitest run tests/signature-templates.smoke.test.ts",
     "sign:flow": "vitest run tests/signature-flow-seed.smoke.test.ts",
-    "sign:voz": "node scripts/gerar-vozes.mjs"
+    "sign:voz": "node scripts/gerar-vozes.mjs",
+    "inbox:sql-smoke": "vitest run tests/inbox-unread-sql.smoke.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -60,6 +62,7 @@
     "@react-pdf/renderer": "^4.3.0",
     "@tanstack/react-table": "^8.21.3",
     "@types/jsonwebtoken": "^9.0.10",
+    "@vercel/functions": "^3.9.9",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.1",

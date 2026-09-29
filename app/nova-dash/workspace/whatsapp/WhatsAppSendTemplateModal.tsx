@@ -12,6 +12,7 @@ import { Input } from '@/app/_shared/ui/input';
 import {
   listWhatsAppTemplates, sendWhatsAppTemplateMessage, type WhatsAppTemplateDTO,
 } from '@/app/_actions/whatsapp/templates';
+import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { WhatsAppTemplatesModal } from './WhatsAppTemplatesModal';
 
 // Aberto pelo aviso de "janela de 24h expirada": único jeito de falar com o
@@ -28,7 +29,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contactId: string;
-  onSent: () => Promise<void>;
+  /**
+   * Template enviado: quem abriu aplica o patch local da conversa e revalida a
+   * thread em segundo plano. Síncrono de propósito (auditoria de 24/09/2026):
+   * o diálogo esperava a recarga das 1.000 conversas da lista para fechar.
+   */
+  onSent: (dto: WhatsAppMessageDTO) => void;
 }
 
 export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSent }: Props) {
@@ -83,10 +89,10 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
     if (!selected) return;
     setSending(true);
     try {
-      await sendWhatsAppTemplateMessage(contactId, selected.id, vars, headerVar);
+      const dto = await sendWhatsAppTemplateMessage(contactId, selected.id, vars, headerVar);
       toast.success('Template enviado.');
-      await onSent();
       onOpenChange(false);
+      onSent(dto);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao enviar o template.');
     } finally {

@@ -128,3 +128,15 @@ export const COST_PROVIDER_INFO: Record<string, { billingUrl: string; how: strin
     envVars: [],
   },
 };
+
+/** Recorrências do calendário de pagamentos (PaymentSchedule.recurrence). */
+export const PAYMENT_RECURRENCES = [
+  { key: "MONTHLY", label: "Todo mês" },
+  { key: "YEARLY", label: "Todo ano" },
+  { key: "ONCE", label: "Uma vez só" },
+] as const;
+
+export const MONTH_NAMES = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+] as const;

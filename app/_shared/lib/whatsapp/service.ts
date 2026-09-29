@@ -1,19 +1,26 @@
 import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
-import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
+import { broadcastToRelay, isRelayConfigured } from "@/app/_shared/lib/chat-relay";
+import { runAfterResponse } from "@/app/_shared/lib/background";
+import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { sameBrDay } from "@/app/_shared/utils/alert-policy";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
+import { syncCloseTag } from "./close-tags";
 import { recordRecoveryEvent } from "./rule-events";
+import { resolveConversationOwner } from "./ownership";
+import { waAlertRecipients, whatsappRecipients } from "./alert-recipients";
+
+// A lista da equipe (cache de 60 s) mora em alert-recipients.ts; o reexport
+// mantém os imports antigos de service.ts funcionando.
+export { whatsappRecipients };
 
 // Ingestão de eventos do webhook da WhatsApp Cloud API.
 //
 // Cada conversa de WhatsApp vira um "canal" no relay SSE já existente
 // (channelId = "whatsapp:<contactId>"), então os funcionários com a tela
 // aberta recebem em tempo real sem nenhuma mudança no relay do Railway.
-
-// Mesma convenção de equipe do chat interno (chat-access.ts / api/presence).
-const TEAM_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
 
 // Validade da ficha do bot entre conversas: reabertura dentro desta janela
 // mantém botMemory/botState (a IA lembra do contato); além dela, conversa
@@ -35,13 +42,28 @@ export function whatsappChannelId(contactId: string): string {
   return `whatsapp:${contactId}`;
 }
 
-/** Todos os membros da equipe recebem o broadcast (a UI filtra por conversa). */
-export async function whatsappRecipients(): Promise<string[]> {
-  const team = await db.user.findMany({
-    where: { role: { in: TEAM_ROLES } },
-    select: { id: true },
-  });
-  return team.map((u) => u.id);
+/** Evento do canal whatsapp:<contactId> no relay: mensagem nova/nota ou reação. */
+export type WhatsAppRelayEvent =
+  | WhatsAppMessageDTO
+  | {
+      type: "wa_reaction";
+      channelId: string;
+      contactId: string;
+      messageId: string;
+      reaction: string | null;
+    };
+
+/**
+ * Avisa o relay SSE DEPOIS da resposta (runAfterResponse): o atendente não
+ * espera a ida ao Railway (~50-120 ms, até o teto de 1,5 s) nem a lista de
+ * destinatários. Best-effort como sempre — sem relay, o hash/polling cobre.
+ */
+export function broadcastWhatsAppEvent(event: WhatsAppRelayEvent): void {
+  // Sem relay configurado nem vale buscar destinatários ou estender a função.
+  if (!isRelayConfigured()) return;
+  runAfterResponse("relay", async () =>
+    broadcastToRelay({ channelId: event.channelId, recipients: await whatsappRecipients(), message: event }),
+  );
 }
 
 export interface WhatsAppMessageDTO {
@@ -263,8 +285,13 @@ export async function ingestIncomingMessage(
   }
 
   // Conversa encerrada + cliente mandou mensagem de novo → reabre (volta pro
-  // bot, sem atendente). NÃO reabre se o contato está em opt-out: quem pediu
-  // silêncio não deve voltar a receber respostas automáticas.
+  // bot). NÃO reabre se o contato está em opt-out: quem pediu silêncio não
+  // deve voltar a receber respostas automáticas.
+  //
+  // DONO PEGAJOSO (EF-1, auditoria de 24/09/2026): reabre em 'bot' (o cérebro
+  // responde, nada de pular para 'human'/'queued'), mas com o último atendente
+  // da janela (WA_HUMAN_HOLD_DAYS, 7 dias) gravado como dono. Se o bot
+  // transferir, a conversa volta para ele em vez de cair na Fila sem dono.
   //
   // FICHA COM VALIDADE (25/07/2026): os encerramentos preservam botMemory/
   // botState (antes zeravam — e um "obrigado" pós-despedida reabria a conversa
@@ -297,7 +324,9 @@ export async function ingestIncomingMessage(
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: {
-        status: "bot", assignedToId: null, lastReadAt: null,
+        status: "bot",
+        assignedToId: await resolveConversationOwner(contact.id, conversation.assignedToId),
+        lastReadAt: null,
         // Conversa nova de verdade → ciclo de recuperação zerado.
         recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
         ...(staleContext ? { botMemory: null, botState: null } : {}),
@@ -309,13 +338,16 @@ export async function ingestIncomingMessage(
   // volta pro bot com a ficha intacta e a IA retoma de onde parou. O contador
   // de tentativas NÃO zera — se ele sumir de novo, o ciclo continua da
   // tentativa em que estava (máx. 3 no total). Telemetria: "recovered" com a
-  // tentativa que o trouxe de volta (aba Métricas da Revisão da IA).
+  // tentativa que o trouxe de volta (aba Métricas da Revisão da IA). Dono
+  // pegajoso igual à reabertura de encerrada (último atendente da janela).
   if (conversation.status === "standby" && !contact.optedOut && !wantsOptOut) {
     const rescuedAt = conversation.recoveryAttempts;
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: {
-        status: "bot", assignedToId: null, lastReadAt: null,
+        status: "bot",
+        assignedToId: await resolveConversationOwner(contact.id, conversation.assignedToId),
+        lastReadAt: null,
         recoveryNextAt: null, recoveryOutcome: "recuperado",
       },
     });
@@ -347,6 +379,27 @@ export async function ingestIncomingMessage(
     if (stored) {
       mediaKey = stored.key;
       mediaType = stored.mimeType;
+    } else {
+      // Mídia perdida fica registrada no banco: o reportCriticalError é só
+      // console (efêmero na Vercel) e, sem este log, não dá para contar quantos
+      // anexos se perdem por dia nem medir o efeito do timeout do download.
+      // Retry da Meta não duplica: o dedup por waMessageId sai antes daqui.
+      await logWhatsAppEvent({
+        action: "wa_media_fail",
+        message: `mídia recebida (${msg.type}) não foi salva: falha ou timeout no download da Meta`,
+        authorId: "system",
+        authorName: "Sistema (webhook WhatsApp)",
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        numberId: contact.numberId, // vai para metadata.numberId (visão por linha)
+        metadata: {
+          mediaId: media.id,
+          waMessageId: msg.id,
+          mediaKind: msg.type,
+          ...(media.filename ? { filename: media.filename } : {}),
+        },
+      });
     }
   }
 
@@ -379,6 +432,16 @@ export async function ingestIncomingMessage(
     },
   });
 
+  // Mídia: a conversa foi atualizada (lastMessageAt) ANTES do download, que
+  // pode levar até 40 s, e a mensagem só existe agora. A lista do inbox
+  // sincroniza por delta (loadConversationsSince, margem de 5 s): um delta
+  // lido nesse vão levava a conversa com a prévia e a contagem de não lidas
+  // antigas, e ela não voltava mais. Tocar o updatedAt aqui a traz de novo.
+  // Texto não precisa: entre o upsert e a gravação são milissegundos.
+  if (media) {
+    await db.whatsAppConversation.updateMany({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+  }
+
   const dto: WhatsAppMessageDTO = {
     id: message.id,
     channelId: whatsappChannelId(contact.id),
@@ -401,8 +464,7 @@ export async function ingestIncomingMessage(
   };
 
   // Best-effort, igual ao chat interno: se o relay estiver fora, o polling cobre.
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 
   // Opt-out por REGEX. Duas situações:
   //   1. COMANDO exato ("SAIR"/"STOP"/"DESCADASTRAR"...): honrado SEMPRE,
@@ -440,6 +502,8 @@ export async function ingestIncomingMessage(
       where: { id: conversation.id },
       data: { status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
     });
+    // Tag do desfecho, como nos outros encerramentos (close-tags.ts). Nunca lança.
+    await syncCloseTag(conversation.id, "nao_qualificado");
     return { contactId: contact.id, numberId: contact.numberId, conversationStatus: "closed", message: dto, isNew: true };
   }
 
@@ -476,9 +540,11 @@ export async function ingestIncomingMessage(
 
 /**
  * Notificação (sino) do "cliente respondeu" — política de destinatário:
- *   - conversa "queued" (ninguém assumiu ainda) → toda a equipe pode pegar,
- *     então TODOS recebem (é a fila de distribuição).
- *   - conversa "human" com dono (assignedToId) → SÓ o dono é avisado.
+ *   - conversa "queued" SEM dono (ninguém assumiu ainda) → toda a equipe pode
+ *     pegar, então TODOS recebem (é a fila de distribuição).
+ *   - conversa "human" ou "queued" com dono (assignedToId) → SÓ o dono é
+ *     avisado. A "queued" com dono é a transferência que voltou para o último
+ *     atendente (dono pegajoso, ownership.ts).
  *   - conversa "bot" → não notifica aqui; se a IA escalar, handoffToQueue/
  *     qualifyToQueue já criam a notificação certa depois de decidir.
  * Debounce leve (3min) por destinatário pra não inundar o sino quando o
@@ -497,7 +563,7 @@ async function notifyIncomingMessage(
     // "human" SEM dono era buraco negro: retornava em silêncio e nem bot nem
     // humano agiam (qualquer limpeza que zere assignedToId mantendo o status
     // prendia a conversa). Agora é tratado como fila: avisa a equipe inteira.
-    const owned = conversation.status === "human" && !!conversation.assignedToId;
+    const owned = (conversation.status === "human" || conversation.status === "queued") && !!conversation.assignedToId;
     const recipientIds = owned
       ? [conversation.assignedToId as string]
       : await whatsappRecipients();
@@ -539,10 +605,6 @@ export interface IncomingWaStatus {
   // Presentes quando status = "failed": código e descrição do erro da Meta.
   errors?: { code?: number; title?: string; message?: string }[];
 }
-
-// Debounce do alerta de falha de entrega: no máximo 1 aviso por conversa a
-// cada 6h, mesmo que várias mensagens falhem em sequência.
-const DELIVERY_ALERT_DEBOUNCE_MS = 6 * 60 * 60_000;
 
 // Erro 131050: o PRÓPRIO cliente pediu à Meta para não receber mensagens de
 // marketing desta empresa. É um opt-out formal — ignorá-lo é o que derruba a
@@ -602,9 +664,15 @@ export async function applyStatusUpdate(st: IncomingWaStatus): Promise<void> {
  * Falha de entrega (status "failed" ou mensagem parada em "sent" — provável
  * bloqueio ou número errado). Política escolhida: NÃO bloqueia envios futuros
  * (a janela de 24h continua sendo validada em todo envio); em vez disso a
- * conversa vai para a FILA e a equipe recebe notificação pedindo verificação:
- * número correto? cliente bloqueou? janela de 24h expirada?
- * Debounce por conversa via deliveryAlertAt.
+ * conversa vai para a FILA e o dono (ou o setor da Fila) recebe notificação
+ * pedindo verificação: número correto? cliente bloqueou? janela de 24h expirada?
+ *
+ * No máximo 1 aviso por contato por DIA de Brasília (deliveryAlertAt). O
+ * debounce antigo, de 6 h, repetia o mesmo "não foi entregue" até 10x por
+ * contato enquanto a mensagem seguia travada em "sent" (o cron olha 72 h para
+ * trás), sempre para a equipe inteira: ~3.600 avisos por semana em 09/2026.
+ * Uma 2ª falha diferente no mesmo dia não avisa de novo (a conversa já foi
+ * para a Fila no 1º aviso).
  */
 export async function alertDeliveryFailure(contactId: string, cause: string): Promise<void> {
   const conversation = await db.whatsAppConversation.upsert({
@@ -613,21 +681,24 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
     create: { contactId },
     include: { contact: true },
   });
-  const alertedRecently =
-    conversation.deliveryAlertAt &&
-    conversation.deliveryAlertAt.getTime() > Date.now() - DELIVERY_ALERT_DEBOUNCE_MS;
-  if (alertedRecently) return;
+  if (sameBrDay(conversation.deliveryAlertAt, new Date())) return;
 
   // Manda pra fila de atendimento (se ninguém já estiver cuidando): alguém
   // precisa conferir o número/bloqueio antes do próximo envio automático.
   // Conversa ENCERRADA não volta pra fila: reabrir ticket fechado por causa de
   // status antigo era o que gerava alertas de fila a noite toda.
   const shouldQueue = conversation.status === "bot";
+  // Dono pegajoso: a conversa do bot vai para a fila com o último atendente
+  // (ownership.ts), não sem dono. Fora do 'bot' o dono fica como está.
+  const owner = shouldQueue
+    ? await resolveConversationOwner(contactId, conversation.assignedToId)
+    : conversation.assignedToId;
+  const status = shouldQueue ? "queued" : conversation.status;
   await db.whatsAppConversation.update({
     where: { id: conversation.id },
     data: {
       deliveryAlertAt: new Date(),
-      ...(shouldQueue ? { status: "queued", assignedToId: null, queuedAt: new Date(), queueAlertAt: null } : {}),
+      ...(shouldQueue ? { status: "queued", assignedToId: owner, queuedAt: new Date(), queueAlertAt: null } : {}),
     },
   });
 
@@ -637,11 +708,14 @@ export async function alertDeliveryFailure(contactId: string, cause: string): Pr
     `⚠️ WhatsApp: mensagem para ${label} não foi entregue — ${cause}. ` +
     `Verifique se o número está correto, se o cliente bloqueou nosso contato ou se a janela de 24h expirou.`;
 
-  // Dono do ticket é avisado sozinho; sem dono, a equipe toda (é a fila).
-  const recipients =
-    conversation.status === "human" && conversation.assignedToId
-      ? [conversation.assignedToId]
-      : await whatsappRecipients();
+  // Dono do ticket (atendimento humano ou fila que voltou para ele) é avisado
+  // sozinho; sem dono (ou conversa encerrada/em recuperação), o setor da Fila.
+  // A equipe inteira só entra pelos degraus do SLA da fila (cron-tasks.ts).
+  const recipients = await waAlertRecipients({
+    contactId,
+    ownerId: status === "human" || status === "queued" ? owner : null,
+    audience: "owner_or_sector",
+  });
   for (const recipientId of recipients) {
     await db.notification.create({
       data: {

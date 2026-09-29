@@ -1,17 +1,19 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   Bot, Loader2, BadgeCheck, XCircle, AlertTriangle,
   Timer, Activity, MessageSquare, FileText, Workflow, FileBadge,
   UserRound, Undo2, StickyNote, ShieldAlert, ShieldCheck,
   Info, Facebook, Instagram, Megaphone, Globe, Send, CheckCircle2, BellRing,
-  Tag as TagIcon, Users,
+  Tag as TagIcon, RotateCcw,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
+import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
+import { StaleDataVeil } from './StaleDataVeil';
 // import { SystemMap } from './SystemMap';
 import { AiCorner } from './AiCorner';
 import { formatDistanceToNow } from 'date-fns';
@@ -74,6 +76,8 @@ const ACTION_META: Record<string, { icon: React.ElementType; label: string }> = 
   wa_flow: { icon: Workflow, label: 'Fluxo' },
   wa_template: { icon: FileBadge, label: 'Template' },
   wa_note: { icon: StickyNote, label: 'Nota interna' },
+  wa_tag_add: { icon: TagIcon, label: 'Tag aplicada' },
+  wa_tag_remove: { icon: TagIcon, label: 'Tag removida' },
 };
 
 
@@ -110,42 +114,30 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
   );
 }
 
-export function ChatbotDashboard({ numberId = null, initialData = null, range }: {
+export function ChatbotDashboard({ numberId = null, range }: {
   numberId?: string | null;
-  /** Analytics do período inicial, vindo da carga única do dashboard —
-   *  evita refetch na primeira renderização. */
-  initialData?: ChatbotAnalytics | null;
   /** Calendário do dashboard (ISO). Presente → modo "Calendário" por padrão. */
   range?: { from: string; to: string };
 } = {}) {
   // 'range' = segue o calendário do topo do dashboard; 7/30/90 são atalhos.
   const [period, setPeriod] = useState<7 | 30 | 90 | 'range'>(range ? 'range' : 7);
-  const [data, setData] = useState<ChatbotAnalytics | null>(initialData);
-  const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState<string | null>(null);
-
   const useRange = period === 'range' && !!range;
   const periodDays = period === 'range' ? 30 : period;
   const rangeFrom = useRange ? range!.from : undefined;
   const rangeTo = useRange ? range!.to : undefined;
 
-  // Com initialData (carga única do dashboard), o primeiro fetch é pulado —
-  // ele só volta a rodar quando o usuário troca o período, o número ou o
-  // calendário.
-  const skipFirstFetch = useRef(Boolean(initialData));
-  useEffect(() => {
-    if (skipFirstFetch.current) {
-      skipFirstFetch.current = false;
-      return;
-    }
-    let alive = true;
-    setLoading(true);
-    getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo)
-      .then((d) => { if (alive) { setData(d); setError(null); } })
-      .catch((e) => { if (alive) setError(e?.message ?? 'Erro ao carregar.'); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [periodDays, numberId, rangeFrom, rangeTo]);
+  // Sem dado inicial vindo de fora: o painel busca ao montar (a aba Chatbot só
+  // monta quando o gestor a abre), já com o número e o período certos. O
+  // initialData antigo era sempre de "Todos os números" e mostrava a soma de
+  // todas as linhas com um número escolhido no topo.
+  // Cache curto (usePanelSWR): a chave leva o botão 7/30/90/Calendário além do
+  // calendário do topo; trocar de período mantém o painel sob o véu, e reabrir
+  // a aba em até 60 s não refaz a análise.
+  const { data, error, stale, busy, retry } = usePanelSWR<ChatbotAnalytics>(
+    ['chatbot-analytics', period, numberId, rangeFrom ?? null, rangeTo ?? null],
+    () => getChatbotAnalytics(periodDays, numberId, rangeFrom, rangeTo),
+    'CHATBOT',
+  );
 
   return (
     <div className="mx-auto max-w-8xl px-3 pb-12 md:px-6">
@@ -163,11 +155,18 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/10">{error}</div>
-      ) : loading || !data ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+          <p>Não foi possível carregar as métricas do chatbot.</p>
+          <Button size="sm" variant="outline" disabled={busy} onClick={retry}>
+            <RotateCcw className={`mr-1 h-4 w-4 ${busy ? 'animate-spin' : ''}`} /> Tentar novamente
+          </Button>
+        </div>
+      ) : !data ? (
         <div className="flex items-center justify-center py-20 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <>
+        <div className="relative">
+          {/* Números do período anterior enquanto o novo carrega. */}
+          <StaleDataVeil show={stale} />
           {/* Canto da IA: custo por operação + qualidade do bot num bloco só.
               (Qualificados/Não qualificados moraram aqui; agora vivem na
               Origem dos leads, por campanha — onde a pergunta é feita.) */}
@@ -226,43 +225,10 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
             )}
           </section>
 
-          {/* Desempenho do atendimento humano */}
-          {/* {data.team.attendants.length > 0 && (
-            <section className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-1 flex items-center gap-2 font-bold text-gray-900 dark:text-zinc-100">
-                <Users className="h-4 w-4 text-emerald-500" /> Desempenho da equipe
-              </h2>
-              <p className="mb-4 text-xs text-gray-400">
-                Conversas assumidas, encerradas, mensagens enviadas e tempo médio até a primeira resposta após assumir.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400 dark:border-zinc-800">
-                      <th className="pb-2 pr-4 font-semibold">Atendente</th>
-                      <th className="pb-2 pr-4 font-semibold">Assumidas</th>
-                      <th className="pb-2 pr-4 font-semibold">Encerradas</th>
-                      <th className="pb-2 pr-4 font-semibold">Mensagens</th>
-                      <th className="pb-2 font-semibold">1ª resposta (média)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.team.attendants.map((a) => (
-                      <tr key={a.name} className="border-b border-gray-50 last:border-0 dark:border-zinc-800/50">
-                        <td className="py-2 pr-4 font-semibold text-gray-800 dark:text-zinc-100">{a.name}</td>
-                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.assumed}</td>
-                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.closed}</td>
-                        <td className="py-2 pr-4 tabular-nums text-gray-600 dark:text-zinc-300">{a.messages}</td>
-                        <td className="py-2 tabular-nums text-gray-600 dark:text-zinc-300">
-                          {a.avgFirstResponseMin != null ? `${a.avgFirstResponseMin} min` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )} */}
+          {/* O bloco 'Desempenho da equipe' (assumidas/encerradas/1ª resposta por
+              atendente) saiu do getChatbotAnalytics junto com a agregação em
+              SQL: ninguém o exibia e a 1ª resposta varria whatsapp_messages.
+              Métrica por atendente, se voltar, vem das métricas de eficácia. */}
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-6">
             {/* Avisos automáticos ao cliente: entregas × falhas (auditoria) */}
@@ -391,7 +357,7 @@ export function ChatbotDashboard({ numberId = null, initialData = null, range }:
               )}
             </section>
           </div>
-        </>
+        </div>
       )}
       {/* <SystemMap /> */}
     </div>

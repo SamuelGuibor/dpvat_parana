@@ -503,6 +503,9 @@ model Notification {
   // índice só em recipientId o Postgres lia TODAS as linhas da pessoa (eram
   // ~8 mil por usuário) e ordenava, a cada poll.
   @@index([recipientId, createdAt])
+  // markConversationRead apaga o sino por contato (contactId + read=false) a
+  // cada conversa aberta; sem o índice era seq scan da tabela inteira.
+  @@index([contactId, read])
 }
 
 // Caixa de menções e tarefas. Cada @menção (comentário de card ou chat da
@@ -638,7 +641,8 @@ model WhatsAppContact {
   // ainda não tem User vinculado. Vira User no "Adicionar cliente".
   clientDraft       Json?
   // Documentos pessoais anexados na ficha antes do contato virar cliente:
-  // [{ key, name, uploadedAt }]. Migram para Document real no "Adicionar cliente".
+  // [{ key, name, uploadedAt }]. Migram para Document real quando o contato é
+  // vinculado a um card (telefone ao abrir a conversa ou "Adicionar cliente").
   draftDocuments    Json?
   // Atribuição de origem (Click-to-WhatsApp ads): preenchido na PRIMEIRA
   // mensagem que chega com objeto `referral` da Meta e nunca sobrescrito
@@ -910,6 +914,10 @@ model WhatsAppMessage {
 
   @@index([contactId, createdAt])
   @@index([numberId, createdAt])
+  // O hash do inbox (getWhatsAppInboxVersion) pede max(createdAt) global a
+  // cada 15 s por aba. Sem este índice era seq scan da tabela inteira. O termo
+  // de mensagens fica no hash porque nota interna não toca a conversa.
+  @@index([createdAt])
   @@map("whatsapp_messages")
 }
 
@@ -1355,10 +1363,44 @@ model ProjectCost {
   createdById    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @default(now()) @updatedAt
+  // Quando o lançamento é o "marcar pago" do calendário de pagamentos: de qual
+  // conta recorrente e de qual mês ("YYYY-MM"). Um pagamento por conta/mês.
+  scheduleId     String?
+  periodKey      String?
+  schedule       PaymentSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
 
+  @@unique([scheduleId, periodKey])
   @@index([chargedAt])
   @@index([service])
   @@map("project_costs")
+}
+
+// Calendário de pagamentos (24/09/2026): contas que se repetem ("Vercel, dia
+// 10 a 12, R$ 100–120"). O pagamento em si vira uma ProjectCost vinculada,
+// então já soma nos totais do painel de Custos sem contar duas vezes.
+model PaymentSchedule {
+  id          String   @id @default(cuid())
+  service     String // chave de COST_SERVICES
+  description String?
+  dayFrom     Int // 1..31 — dia em que a janela de vencimento abre
+  dayTo       Int // 1..31 — fecha; menor que dayFrom = vira o mês ("28 a 3")
+  minCents    Int
+  maxCents    Int
+  currency    String   @default("BRL") // BRL | USD
+  recurrence  String   @default("MONTHLY") // MONTHLY | YEARLY | ONCE
+  // YEARLY/ONCE: mês (1..12) do vencimento; ONCE usa também startMonth como ano.
+  month       Int?
+  // "YYYY-MM": a partir de quando a conta existe (ONCE = o único mês).
+  startMonth  String
+  active      Boolean  @default(true)
+  notes       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  payments    ProjectCost[]
+
+  @@index([active])
+  @@map("payment_schedules")
 }
 
 // Agenda de EVENTOS da equipe (27/08/2026) — o "Eventos" do Discord aplicado

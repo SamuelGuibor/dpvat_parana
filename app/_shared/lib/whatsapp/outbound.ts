@@ -2,11 +2,10 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { broadcastToRelay } from "@/app/_shared/lib/chat-relay";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendText, sendTemplate, type TemplateHeaderMedia } from "./client";
 // import { OPT_OUT_FOOTER } from "./opt-out";
-import { whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
+import { broadcastWhatsAppEvent, whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 import { renderTemplateThreadText } from "./template-text";
 
 // Envio de mensagens de SISTEMA pro WhatsApp do cliente — usado pelas
@@ -214,8 +213,7 @@ async function persistSystemMessage(
     contactPhone: contact.phone,
     conversationStatus: conversation.status,
   };
-  const recipients = await whatsappRecipients();
-  await broadcastToRelay({ channelId: dto.channelId, recipients, message: dto });
+  broadcastWhatsAppEvent(dto);
 }
 
 /**

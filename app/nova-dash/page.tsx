@@ -29,15 +29,24 @@ import { DarkModeToggle, useDarkMode } from '@/app/nova-dash/_components/DarkMod
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
-import { useWhatsAppUnread } from '@/app/_shared/hooks/use-whatsapp';
+import { useHeaderBadges } from '@/app/_shared/hooks/use-header-badges';
 import { usePendingMentions, OPEN_MENTIONS_TAB_EVENT } from '@/app/_shared/hooks/use-mentions';
+import { TEAM_CHAT_ENABLED } from '@/app/nova-dash/workspace/chat/chat-flags';
 import { PermissionsProvider, usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { GlobalSearch } from '@/app/nova-dash/_components/GlobalSearch';
 import { isTeamRole } from '@/app/_shared/lib/permissions';
 import { DashboardTour, START_DASH_TOUR_EVENT } from '@/app/nova-dash/_components/DashboardTour';
 import { EventsDialog, EventsButton } from '@/app/nova-dash/_components/EventsDialog';
-import { countEventsSoon } from '@/app/_actions/events/event-actions';
 export const dynamic = "force-dynamic";
+// Teto das server actions desta página (todas rodam na função de /nova-dash).
+// Tem que ficar AQUI, não no layout: no Next 14.2 a Vercel lê o maxDuration só
+// do arquivo da página (getPageStaticInfo → functions-config-manifest). O
+// resumo de vínculo do "Adicionar cliente" roda depois da resposta
+// (runAfterResponse/waitUntil) e morre no teto da função; 300 = o padrão do
+// Pro com Fluid, então nada que já funciona fica mais curto (a Auditoria IA
+// manual, com ~160 mil tokens de entrada, pode passar de 60 s), e sem Fluid
+// o teto deixa de ser os 15 s padrão.
+export const maxDuration = 300;
 
 // Abas do topo (20/08/2026): estilo "underline nav" — texto discreto, hover
 // suave e a aba ativa marcada por texto esmeralda + barra embaixo, alinhada à
@@ -56,30 +65,30 @@ export default function Page() {
 function PageInner() {
   const [activeTab, setActiveTab] = useState('kanban');
   const [open, setOpen] = useState(false);
-  // Agenda de eventos (27/08/2026): ícone no cabeçalho com o que vem nas
-  // próximas 24h. Recontagem a cada 5min e sempre que alguém mexe na agenda.
   const [eventsOpen, setEventsOpen] = useState(false);
-  const [eventsSoon, setEventsSoon] = useState(0);
-  const refreshEventsCount = React.useCallback(() => {
-    countEventsSoon().then(setEventsSoon).catch(() => {});
-  }, []);
-  useEffect(() => {
-    refreshEventsCount();
-    const t = setInterval(refreshEventsCount, 5 * 60 * 1000);
-    return () => clearInterval(t);
-  }, [refreshEventsCount]);
   const { isDark: darkReaderOn } = useDarkMode();
   const { perms } = usePermissions();
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { unread } = useUnread();
+  // Badges do cabeçalho (WhatsApp, Menções, Eventos e o pop-up do dev no
+  // UserMenu) numa ida só: GET /api/team/badges a cada 30 s e no foco, fora da
+  // fila serial de server actions. ESTE é o dono do poll; menções e pop-up só
+  // leem a mesma key. Só busca com a sessão de equipe resolvida (o role do
+  // JWT aqui só decide se vale a pena perguntar: quem decide o acesso é a rota).
+  const teamSession = status === 'authenticated' && isTeamRole(session?.user?.role);
+  const { badges, refresh: refreshBadges } = useHeaderBadges({ poll: true, enabled: teamSession });
+  // Agenda de eventos (27/08/2026): ícone no cabeçalho com o que vem nas
+  // próximas 24h; mexer na agenda reconta na hora (refreshBadges).
+  const eventsSoon = badges?.eventsSoon ?? 0;
+  // Chat geral desligado: sem poll de /api/chat/read, badge sempre 0.
+  const { unread } = useUnread(TEAM_CHAT_ENABLED);
   const chatUnread = Object.values(unread).reduce((a, b) => a + b, 0);
   // O WhatsApp agora tem aba própria: o badge do Espaço de Trabalho conta só
   // o chat interno; o do WhatsApp conta as conversas não lidas do inbox.
-  const whatsappUnread = useWhatsAppUnread();
+  const whatsappUnread = badges?.whatsappUnread ?? 0;
   const workspaceUnread = chatUnread;
   // Menções pendentes na caixa própria (não some quando o sino é limpo).
-  const { pending: mentionsPending, fresh: mentionsFresh, clearFresh: clearMentionsFresh } = usePendingMentions();
+  const { pending: mentionsPending, fresh: mentionsFresh, clearFresh: clearMentionsFresh } = usePendingMentions(teamSession);
 
   // O dark mode oficial é o Dark Reader (DarkModeToggle). Este era um toggle
   // legado que aplicava `.dark` no <html> por cima — se um usuário tivesse
@@ -230,7 +239,7 @@ function PageInner() {
               <EventsDialog
                 open={eventsOpen}
                 onOpenChange={setEventsOpen}
-                onChanged={refreshEventsCount}
+                onChanged={refreshBadges}
               />
 
               <div className="flex items-center gap-2 pl-1 ml-1 border-l border-gray-200 dark:border-zinc-700">

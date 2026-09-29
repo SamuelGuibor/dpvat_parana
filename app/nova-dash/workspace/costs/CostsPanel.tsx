@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Loader2, Plus, RefreshCw, Wallet, Pencil, Trash2, Receipt, ExternalLink,
-  AlertTriangle, KeyRound, Coins, CalendarClock, Hourglass, Info,
+  AlertTriangle, KeyRound, Coins, CalendarClock, CalendarDays, Hourglass, Info,
 } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -24,6 +24,11 @@ import {
   costServiceColor, costServiceLabel, formatMoney, formatMonthLabel, parseMoneyToCents,
 } from '@/app/_shared/lib/costs';
 import { CostFormDialog } from './CostFormDialog';
+import { PaymentCalendar } from './PaymentCalendar';
+
+// Calendário de pagamentos em construção (24/09/2026): o código e a tabela
+// payment_schedules já estão no ar, mas a aba só aparece quando isto virar true.
+const SHOW_PAYMENT_CALENDAR = false;
 
 // CUSTOS DO PROJETO (redesenho de 14/09/2026, pedido do escritório):
 // 1. Visão do MÊS por serviço — consumo até hoje, média/dia, projeção do mês
@@ -211,6 +216,7 @@ export function CostsPanel() {
   const [syncing, setSyncing] = useState(false);
   const [creditTarget, setCreditTarget] = useState<ServiceCostCard | null>(null);
 
+  const [tab, setTab] = useState<'consumo' | 'calendario'>('consumo');
   const [period, setPeriod] = useState<Period>('12m');
   const [data, setData] = useState<CostsSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -305,6 +311,26 @@ export function CostsPanel() {
         </Button>
       </div>
 
+      {/* Abas: consumo/faturas × calendário de pagamentos (24/09/2026).
+          O calendário ainda está em construção: fica escondido até
+          SHOW_PAYMENT_CALENDAR virar true. */}
+      {SHOW_PAYMENT_CALENDAR && (
+      <div className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+        {([['consumo', 'Consumo e faturas', Wallet], ['calendario', 'Calendário de pagamentos', CalendarDays]] as const).map(([key, label, Icon]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold transition ${tab === key ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
+      </div>
+      )}
+
+      {SHOW_PAYMENT_CALENDAR && tab === 'calendario' ? (
+        <PaymentCalendar onPaidChange={() => { void load(); void loadOverview(); }} />
+      ) : (<>
       {/* ── 1. Mês atual ─────────────────────────────────────────────── */}
       {ovLoading && !overview ? (
         <div className="grid place-items-center py-10"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
@@ -472,6 +498,8 @@ export function CostsPanel() {
           </div>
         )}
       </div>
+
+      </>)}
 
       <CostFormDialog open={formOpen} onOpenChange={setFormOpen} editing={editing} onSaved={async () => { await load(); await loadOverview(); }} />
       <CreditDialog target={creditTarget} onClose={() => setCreditTarget(null)} onSaved={loadOverview} />

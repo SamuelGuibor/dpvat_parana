@@ -4,6 +4,7 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { db } from '@/app/_shared/lib/prisma';
+import { contentDisposition, hasTraversalSegment, isAllowedKeyPrefix } from '@/app/_shared/utils/s3-keys';
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -21,25 +22,13 @@ interface DownloadFileResponse {
 }
 
 // Esta action é chamada também por páginas públicas (área do cliente), então
-// qualquer visitante consegue invocá-la. Sem esta lista, ela viraria um leitor
-// arbitrário do bucket inteiro: só assinamos chaves dos prefixos que o app
-// realmente usa para arquivos de cliente/atendimento.
-const ALLOWED_KEY_PREFIXES = [
-  'uploads/',
-  'whatsapp/',
-  'roteiro-temp/',
-  'instructions/',
-  'automation-templates/',
-  'chat/',
-  'dev-tickets/',
-];
-
+// qualquer visitante consegue invocá-la. Sem a allowlist de prefixos
+// (ALLOWED_KEY_PREFIXES, em s3-keys.ts — a mesma do assinador da thread), ela
+// viraria um leitor arbitrário do bucket inteiro. Nenhum helper exportado
+// daqui: todo export de arquivo "use server" vira endpoint público.
 async function isAllowedKey(key: string): Promise<boolean> {
-  // Traversal é um segmento de caminho igual a ".." — não qualquer ".." na
-  // string: nome de arquivo legítimo pode ter ponto duplo ("DOC-123..pdf") e
-  // a checagem por substring bloqueava o download desses anexos.
-  if (key.split('/').includes('..')) return false;
-  if (ALLOWED_KEY_PREFIXES.some((p) => key.startsWith(p))) return true;
+  if (hasTraversalSegment(key)) return false;
+  if (isAllowedKeyPrefix(key)) return true;
   // Documentos antigos podem ter chave fora dos prefixos atuais: se a chave
   // está registrada na tabela de documentos, o download continua liberado.
   const doc = await db.document.findFirst({ where: { key }, select: { id: true } });
@@ -66,7 +55,9 @@ export async function downloadFileFromS3(
       Bucket: process.env.AWS_S3_BUCKET_NAME,
       Key: key,
       // inline: abre no navegador (pré-visualização); attachment: força o download.
-      ResponseContentDisposition: `${inline ? 'inline' : 'attachment'}; filename="${fileName}"`,
+      // Mesmo header do assinador da thread (s3-presign.ts): filename* em UTF-8
+      // para acento e fallback ASCII sem aspas.
+      ResponseContentDisposition: contentDisposition(inline, fileName),
     });
 
     // Gerar URL pré-assinada com validade de 1 hora (3600 segundos)

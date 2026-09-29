@@ -42,9 +42,3 @@ export interface ExtendedKanbanCard extends KanbanCard {
   archiveStatus?: string | null;
   attachments: { id?: string; key: string; name: string; size?: number; uploadedAt: Date }[];
 }
-
-export interface FileWithBase64 {
-  name: string;
-  type: string;
-  base64: string;
-}

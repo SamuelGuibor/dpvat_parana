@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git ls-files*)",
+      "Bash(npx tsc --noEmit*)",
+      "Bash(npm test*)",
+      "Bash(npm run lint*)",
+      "Bash(npx vitest *)",
+      "Bash(npx eslint *)",
+      "Bash(npx knip*)",
+      "Bash(npx prisma validate*)",
+      "Bash(npx prisma format*)",
+      "Bash(npx prisma generate*)",
+      "Bash(npx prisma migrate diff *)",
+      "Bash(npx prisma migrate status*)",
+      "Bash(node --check *)",
+      "Bash(wc *)",
+      "PowerShell(git status*)",
+      "PowerShell(git diff*)",
+      "PowerShell(git log*)",
+      "PowerShell(npx tsc --noEmit*)",
+      "PowerShell(npm test*)",
+      "PowerShell(npm run lint*)",
+      "PowerShell(npx vitest *)",
+      "PowerShell(npx eslint *)",
+      "PowerShell(npx prisma validate*)",
+      "PowerShell(npx prisma migrate diff *)",
+      "PowerShell(npx prisma migrate status*)",
+      "Read(//d/Chatbot_whatsapp/**)",
+      "Read(//d/docx-converter/**)"
+    ],
+    "deny": [
+      "Bash(npx prisma migrate dev*)",
+      "Bash(npx prisma migrate reset*)",
+      "PowerShell(npx prisma migrate dev*)",
+      "PowerShell(npx prisma migrate reset*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash.mjs\"", "timeout": 10 }]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-env.mjs\"", "timeout": 10 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-typecheck.mjs\"", "timeout": 180 }]
+      }
+    ]
+  }
+}
