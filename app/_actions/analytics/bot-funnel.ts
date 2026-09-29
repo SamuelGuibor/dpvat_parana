@@ -16,8 +16,15 @@ import { HIRED_TAG_NAME, QUALIFIED_TAG_NAME } from '@/app/_shared/lib/whatsapp/c
 // conversas de qualquer idade e com sobreposição entre etapas, enquanto o
 // Fluxo mostrava só as criadas no período — os dois nunca batiam.
 //
+// Contratado conta no mês em que o lead ENTROU (29/09/2026): lead que chegou
+// em 29/09 e só recebeu a etiqueta em 01/10 é contratado de setembro. Antes
+// (14/09) a régua era a data em que a etiqueta foi aplicada, e o card dava 222
+// enquanto o filtro do inbox (data de entrada + tag) dava 181 no mesmo mês.
+// Consequência aceita: o número de um mês fechado ainda sobe enquanto os
+// leads dele vão sendo contratados.
+//
 // Etapas (uma por conversa, nesta ordem de prioridade):
-// - Contratado: tem a tag "Contratados".
+// - Contratado: tem a tag "Contratados" (aplicada em qualquer data).
 // - Não qualificado: encerrada como nao_qualificado / nq_*.
 // - Não contratado: encerrada como sem_resposta (sumiu após a recuperação).
 // - Lista docs: recebeu a lista de documentos, ou tem a tag "Qualificada".
@@ -56,10 +63,10 @@ export interface BotFunnelData {
   disqualified: number;
   qualified: number;
   /**
-   * Contratados no período = etiquetas "Contratados" APLICADAS no período
-   * (+ legado BotConversa na visão "todos os números"). Mesma definição da
-   * Meta do mês (14/09/2026) — antes o card contava conversas CRIADAS no
-   * período que tinham a tag hoje, e os dois números nunca batiam.
+   * Contratados no período = conversas CRIADAS no período que têm a etiqueta
+   * "Contratados", aplicada em qualquer data (+ legado BotConversa, pela data
+   * de entrada do lead, na visão "todos os números"). Mesma régua da Meta do
+   * mês, do gráfico Mensal e do filtro do inbox (data de entrada + tag).
    */
   hired: number;
   hiredBot: number;
@@ -75,7 +82,7 @@ export interface BotFunnelData {
   monthHiredLegacy: number;
   // Série do ano corrente pro gráfico "Mensal" (mesma leitura do antigo
   // Processos por Mês, agora contada pelo nosso banco): aprovados = tag
-  // Contratados; indeferidos = encerradas nq_*/nao_qualificado/sem_resposta
+  // Contratados, pelo mês de entrada do lead; indeferidos = encerradas nq_*/nao_qualificado/sem_resposta
   // (pela data real de encerramento); emAndamento = conversas AINDA abertas,
   // pelo mês de criação.
   monthly: { month: string; aprovados: number; indeferidos: number; emAndamento: number }[];
@@ -109,28 +116,19 @@ function parseRange(fromISO?: string, toISO?: string): { from: Date; to: Date } 
 async function loadCohort(numberId: string | null, from: Date, to: Date | null) {
   const createdIn = to ? { gte: from, lte: to } : { gte: from };
   const byNumber = numberId ? { numberId } : {};
-  const inRange = (d: Date) => d >= from && (!to || d <= to);
 
   const [convs, numbers] = await Promise.all([
     // Sem teto: o kanban é virtualizado e o funil precisa da coorte inteira.
-    // Coorte (14/09/2026) = conversas CRIADAS no período OU que receberam a
-    // etiqueta "Contratados" no período (contratação é um EVENTO datado pela
-    // etiqueta — mesma régua da Meta do mês; a conversa pode ter nascido
-    // antes).
+    // Só conversas CRIADAS no período (29/09/2026): a que nasceu antes e foi
+    // etiquetada Contratados agora conta no mês de entrada dela, não neste.
     db.whatsAppConversation.findMany({
-      where: {
-        ...byNumber,
-        OR: [
-          { createdAt: createdIn },
-          { tags: { some: { createdAt: createdIn, tag: { name: HIRED_TAG_NAME } } } },
-        ],
-      },
+      where: { ...byNumber, createdAt: createdIn },
       orderBy: { lastMessageAt: 'desc' },
       select: {
         id: true, status: true, closeCategory: true, botState: true, numberId: true,
         createdAt: true, updatedAt: true,
         contact: { select: { id: true, name: true, phone: true } },
-        tags: { select: { createdAt: true, tag: { select: { name: true } } } },
+        tags: { select: { tag: { select: { name: true } } } },
       },
     }),
     db.whatsAppNumber.findMany({ select: { id: true, label: true } }),
@@ -165,10 +163,8 @@ async function loadCohort(numberId: string | null, from: Date, to: Date | null) 
     const tagNames = c.tags.map((t) => t.tag.name);
     if (tagNames.includes(QUALIFIED_TAG_NAME)) qualified++;
     const closed = c.status === 'closed';
-    // Contratado só se a etiqueta foi aplicada DENTRO do período.
-    const hiredInRange = c.tags.some((t) => t.tag.name === HIRED_TAG_NAME && inRange(t.createdAt));
     let evento: BotStage;
-    if (hiredInRange) evento = 'contratado';
+    if (tagNames.includes(HIRED_TAG_NAME)) evento = 'contratado';
     else if (closed && (c.closeCategory === 'nao_qualificado' || c.closeCategory?.startsWith('nq_'))) evento = 'nao_qualificado';
     else if (closed && c.closeCategory === 'sem_resposta') evento = 'nao_contratado';
     else if (docsSet.has(c.contact.id) || tagNames.includes(QUALIFIED_TAG_NAME)) evento = 'enviou_documentos';
@@ -219,29 +215,26 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
   const inRefYear = { gte: yearStart, lt: yearEnd };
 
   const periodRange = { gte: since, lte: until };
-  const [monthHiredBot, goalRow, monthHiredLegacy, yearHiredTags, yearRejected, yearOpen, hiredLegacy] =
+  // Contratado = conversa com a etiqueta, datada pela ENTRADA do lead
+  // (createdAt da conversa), não pelo dia em que a etiqueta foi aplicada.
+  const hasHiredTag = { tags: { some: { tag: { name: HIRED_TAG_NAME } } } };
+  const [monthHiredBot, goalRow, monthHiredLegacy, yearHiredConvs, yearRejected, yearOpen, hiredLegacy] =
     await Promise.all([
-      db.whatsAppConversationTag.count({
-        where: {
-          createdAt: inGoalMonth,
-          tag: { name: HIRED_TAG_NAME },
-          ...(numberId ? { conversation: { numberId } } : {}),
-        },
+      db.whatsAppConversation.count({
+        where: { ...byNumber, createdAt: inGoalMonth, ...hasHiredTag },
       }),
       db.appSetting.findUnique({ where: { key: GOAL_KEY } }),
       // Meta do mês (transição 08/2026): soma os contratados que AINDA
       // entraram pelo webhook do BotConversa neste mês. Com o número migrado,
       // o webhook antigo para de gravar e esta parcela zera sozinha. Só na
       // visão "todos os números" — filtro por número é só do sistema novo.
+      // Pelo createdAt da linha (1º evento do telefone = entrada do lead), a
+      // mesma régua do sistema e do legado no MiniKanban.
       numberId
         ? Promise.resolve(0)
-        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: inGoalMonth } }),
-      db.whatsAppConversationTag.findMany({
-        where: {
-          createdAt: inRefYear,
-          tag: { name: HIRED_TAG_NAME },
-          ...(numberId ? { conversation: { numberId } } : {}),
-        },
+        : db.botconversa.count({ where: { evento: 'contratado', createdAt: inGoalMonth } }),
+      db.whatsAppConversation.findMany({
+        where: { ...byNumber, createdAt: inRefYear, ...hasHiredTag },
         select: { createdAt: true },
       }),
       db.whatsAppConversation.findMany({
@@ -264,7 +257,7 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
       // Legado BotConversa no PERÍODO (mesma parcela que entra na meta).
       numberId
         ? Promise.resolve(0)
-        : db.botconversa.count({ where: { evento: 'contratado', updatedAt: periodRange } }),
+        : db.botconversa.count({ where: { evento: 'contratado', createdAt: periodRange } }),
     ]);
 
   return {
@@ -272,14 +265,14 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
     monthHiredLegacy,
     monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
     hiredLegacy,
-    yearHiredAt: yearHiredTags.map((t) => t.createdAt),
+    yearHiredAt: yearHiredConvs.map((c) => c.createdAt),
     yearRejectedAt: yearRejected.flatMap((c) => (c.closedAt ? [c.closedAt] : [])),
     yearOpenAt: yearOpen.map((c) => c.createdAt),
   };
 }
 
 /** Parte pura do Funil: etapas da coorte + totais já buscados. */
-function computeFunnel(cohort: Cohort, totals: FunnelTotals, since: Date, until: Date): BotFunnelData {
+function computeFunnel(cohort: Cohort, totals: FunnelTotals): BotFunnelData {
   const monthly = MONTHS.map((month) => ({ month, aprovados: 0, indeferidos: 0, emAndamento: 0 }));
   for (const at of totals.yearHiredAt) monthly[brMonthIndex(at)].aprovados++;
   for (const at of totals.yearRejectedAt) monthly[brMonthIndex(at)].indeferidos++;
@@ -291,18 +284,9 @@ function computeFunnel(cohort: Cohort, totals: FunnelTotals, since: Date, until:
   };
   for (const l of cohort.leads) count[l.evento]++;
 
-  // "Total no período" = conversas CRIADAS no período (a coorte também traz
-  // conversas antigas etiquetadas Contratados no período — elas contam na
-  // etapa Contratado, não no total de novas).
-  const sinceMs = since.getTime();
-  const untilMs = until.getTime();
-  const createdInPeriod = cohort.leads.filter((l) => {
-    const t = l.createdAt ? new Date(l.createdAt).getTime() : 0;
-    return t >= sinceMs && t <= untilMs;
-  }).length;
-
   return {
-    started: createdInPeriod,
+    // "Total no período" = a coorte inteira (só conversas criadas no período).
+    started: cohort.leads.length,
     // Iniciado e Em conversa separados (14/09/2026): o card somava os dois e
     // dava 302 enquanto a coluna "Em Conversa" do Fluxo mostrava 297.
     initiated: count.iniciado,
@@ -349,7 +333,7 @@ export async function getBotFunnelAndLeads(
     loadCohort(numberId, range.from, range.to),
     loadFunnelTotals(numberId, range.from, range.to),
   ]);
-  return { funnel: computeFunnel(cohort, totals, range.from, range.to), leads: cohort.leads };
+  return { funnel: computeFunnel(cohort, totals), leads: cohort.leads };
 }
 
 /** Ajusta a meta mensal de contratados (Visão do Gestor). */

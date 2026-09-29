@@ -37,8 +37,8 @@ export interface DashboardKanbanItem {
 
 export interface StrategicDashboardData {
   /**
-   * Legado BotConversa: só os CONTRATADOS do período (14/09/2026) — são a
-   * parcela que a meta e o card "Contratados" somam. As outras etapas legadas
+   * Legado BotConversa: só os CONTRATADOS que entraram no período (createdAt,
+   * 14/09/2026) — são a parcela que a meta e o card "Contratados" somam. As outras etapas legadas
    * não existem no Funil e só inflavam as colunas do Fluxo de Eventos Rápidos.
    */
   kanban: DashboardKanbanItem[];

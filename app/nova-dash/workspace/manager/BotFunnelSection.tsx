@@ -117,8 +117,8 @@ export function BotFunnelSection({ data, loading, error, stale = false, onRetry,
               value={data.hired}
               className="text-emerald-600"
               hint={data.hiredLegacy > 0
-                ? `${data.hiredBot} do sistema + ${data.hiredLegacy} do BotConversa · etiquetas no período`
-                : 'etiquetas "Contratados" aplicadas no período'}
+                ? `${data.hiredBot} do sistema + ${data.hiredLegacy} do BotConversa · pela data de entrada`
+                : 'leads do período com a etiqueta "Contratados"'}
             />
             <Kpi label="Outros desfechos" value={data.others} />
             {/* Meta do mês com barra embutida (clique no lápis para editar) */}
