@@ -552,8 +552,19 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Erro ao gerar PDF');
+        // Quando a Vercel derruba a função (timeout/crash) o corpo é texto
+        // puro, não JSON — lê como texto e só então tenta interpretar.
+        const raw = await response.text().catch(() => '');
+        let message = '';
+        try {
+          message = JSON.parse(raw).error || '';
+        } catch {
+          message =
+            response.status === 504
+              ? 'o servidor demorou demais para responder. Tente de novo.'
+              : `falha no servidor (${response.status}). Tente de novo.`;
+        }
+        throw new Error(message || `falha no servidor (${response.status})`);
       }
 
       const blob = await response.blob();

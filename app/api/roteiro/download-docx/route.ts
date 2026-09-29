@@ -11,6 +11,18 @@ const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 // campos via IA + conversão DOCX→PDF), que juntas passam fácil do default.
 export const maxDuration = 120;
 
+// Cada chamada ao microserviço tem teto próprio, somando menos que o
+// maxDuration. Sem isso, IA lenta ou fila do LibreOffice travada faziam a
+// Vercel matar a função aos 120s e devolver texto puro ("An error occurred
+// with your deployment"), que o front tentava ler como JSON.
+const EXTRACT_TIMEOUT_MS = 45_000;
+const CONVERT_TIMEOUT_MS = 60_000;
+
+function isTimeoutError(err: unknown): boolean {
+  const name = (err as any)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
+
 /**
  * Parse the chat response directly using regex.
  * Handles formats like:
@@ -94,6 +106,7 @@ async function extractFieldsViaAI(content: string): Promise<Record<string, strin
         ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
       },
       body: JSON.stringify({ content }),
+      signal: AbortSignal.timeout(EXTRACT_TIMEOUT_MS),
     });
     if (!res.ok) return {};
     const data = await res.json();
@@ -115,7 +128,12 @@ async function extractFieldsViaAI(content: string): Promise<Record<string, strin
     }
     return data;
   } catch (err) {
-    console.warn("[DOCX] extract-fields (rede de seguranca) falhou:", err);
+    // Timeout aqui não derruba o download: segue só com o que o regex achou.
+    if (isTimeoutError(err)) {
+      console.warn(`[DOCX] extract-fields passou de ${EXTRACT_TIMEOUT_MS / 1000}s; seguindo so com o regex`);
+    } else {
+      console.warn("[DOCX] extract-fields (rede de seguranca) falhou:", err);
+    }
     return {};
   }
 }
@@ -260,17 +278,30 @@ export async function POST(request: Request) {
     });
 
     // Convert DOCX → PDF via microservice
-    const convertRes = await fetch(`${CONVERTER_URL}/convert`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
-      },
-      body: Buffer.from(docxBuffer),
-    });
+    let convertRes: Response;
+    try {
+      convertRes = await fetch(`${CONVERTER_URL}/convert`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          ...(CONVERTER_API_KEY && { "x-api-key": CONVERTER_API_KEY }),
+        },
+        body: Buffer.from(docxBuffer),
+        signal: AbortSignal.timeout(CONVERT_TIMEOUT_MS),
+      });
+    } catch (err) {
+      if (isTimeoutError(err)) {
+        throw new Error(
+          "O conversor de PDF não respondeu a tempo. Tente de novo em alguns instantes."
+        );
+      }
+      throw new Error("Não foi possível falar com o conversor de PDF");
+    }
 
     if (!convertRes.ok) {
-      throw new Error("Erro ao converter DOCX para PDF");
+      const detail = await convertRes.text().catch(() => "");
+      console.error(`[DOCX] /convert respondeu ${convertRes.status}:`, detail.slice(0, 300));
+      throw new Error(`Erro ao converter DOCX para PDF (conversor respondeu ${convertRes.status})`);
     }
 
     const pdfBuffer = await convertRes.arrayBuffer();
