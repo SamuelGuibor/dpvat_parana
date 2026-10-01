@@ -66,6 +66,27 @@ export function classifyLastMessage(last: LastMessageInfo | null): LastMessageKi
 }
 
 /**
+ * A última mensagem do cliente entra na rede de órfã do modo bot (se o cérebro
+ * não decidiu sobre ela, vai para a Fila)?
+ * - pendência: sempre;
+ * - fecho ("ok", "bom dia"): também, desde 01/10/2026 — antes a lista de
+ *   palavras julgava sozinha o "bom dia" que o bot nunca viu (caso José
+ *   Roberto); mensagem que a IA não leu não pode ser dada como despedida pelo
+ *   código. Exceção: fecho que chegou ANTES de o atendente devolver a conversa
+ *   ao bot. O Devolver não roda o bot, então não há wa_bot depois do "ok", e
+ *   ele voltaria à Fila como órfã (pingue-pongue do Devolver).
+ */
+export function isOrphanCandidate(
+  kind: LastMessageKind,
+  lastAt: Date,
+  returnedToBotAt: Date | null,
+): boolean {
+  if (kind === 'client_pending') return true;
+  if (kind !== 'client_ack') return false;
+  return !(returnedToBotAt && returnedToBotAt.getTime() >= lastAt.getTime());
+}
+
+/**
  * Um log `wa_bot` gravado depois da mensagem do cliente prova que o cérebro
  * decidiu sobre ela, inclusive quando escolheu ficar calado (`silent`). Não
  * provam:

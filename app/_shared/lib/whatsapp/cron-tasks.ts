@@ -8,6 +8,7 @@ import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { waAlertRecipients } from '@/app/_shared/lib/whatsapp/alert-recipients';
+import { clientMessageIsClosing } from '@/app/_shared/lib/whatsapp/closing-ai';
 import { isWindowOpen, sendSystemWhatsApp, systemSendBlockReason } from '@/app/_shared/lib/whatsapp/outbound';
 import { activeNumberConversationWhere } from '@/app/_shared/lib/whatsapp/numbers';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT, recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
@@ -15,7 +16,7 @@ import {
   brBusinessMinutesBetween, brStartOfDay, isBrBusinessHour, nextBrBusinessSlot,
 } from '@/app/_shared/utils/date-br';
 import {
-  classifyLastMessage, isBotDecisionLog, isClosingAck, isEnvSwitchOn, orphanReason,
+  classifyLastMessage, isBotDecisionLog, isClosingAck, isEnvSwitchOn, isOrphanCandidate, orphanReason,
 } from '@/app/_shared/utils/wa-silence';
 import { holdDaysLabel, humanLastVerdict } from '@/app/_shared/utils/ownership';
 import { maskMemorySecrets, maskSecretsInSequence } from '@/app/_shared/utils/mask-secrets';
@@ -743,9 +744,10 @@ async function runPendingFollowup(conv: PendingConv, now: number, pacer: Pacer, 
     select: { direction: true, sentByBot: true, authorId: true, body: true, mediaType: true, createdAt: true },
   });
   if (!last) return;
-  // Cliente perguntou e o bot não decidiu nada → Fila com o motivo da falha.
+  // Cliente escreveu (pergunta, "bom dia" ou "ok") e o bot não decidiu nada →
+  // Fila com o motivo da falha: o que a IA não leu o código não julga.
   // Falha técnica não conclui o pedido: ele volta quando o atendente devolver.
-  if (classifyLastMessage(last) === 'client_pending') {
+  if (isOrphanCandidate(classifyLastMessage(last), last.createdAt, conv.returnedToBotAt)) {
     const orphan = await sendOrphanToQueue(conv, last.createdAt, now);
     if (orphan === 'queued') {
       results.orphans++;
@@ -1289,8 +1291,9 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
         select: { direction: true, sentByBot: true, authorId: true, body: true, mediaType: true, createdAt: true },
       });
       const kind = classifyLastMessage(last);
-      // Cliente perguntou e o bot não decidiu nada → Fila com o motivo.
-      if (kind === 'client_pending' && last) {
+      // Cliente escreveu (pergunta, "bom dia" ou "ok") e o bot não decidiu nada
+      // → Fila com o motivo: o que a IA não leu o código não julga.
+      if (last && isOrphanCandidate(kind, last.createdAt, conv.returnedToBotAt)) {
         const orphan = await sendOrphanToQueue(conv, last.createdAt, now);
         if (orphan === 'queued') {
           results.orphans++;
@@ -1402,8 +1405,8 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       });
       const kind = classifyLastMessage(lastMsg);
       // Mesma rede de segurança do passo 1 (marcador antigo ou interruptor
-      // religado): pergunta do cliente sem decisão do bot vai para a Fila.
-      if (kind === 'client_pending' && lastMsg) {
+      // religado): mensagem do cliente sem decisão do bot vai para a Fila.
+      if (lastMsg && isOrphanCandidate(kind, lastMsg.createdAt, conv.returnedToBotAt)) {
         const orphan = await sendOrphanToQueue(conv, lastMsg.createdAt, now);
         if (orphan === 'queued') {
           results.orphans++;
@@ -1691,9 +1694,14 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
 
 // ---------------------------------------------------------------------------
 // FASE SLA (a cada 15min): fila, SLA humano, entrega travada e cards
-// estourados. SEM chamadas de IA — roda em segundos; é o cron que NÃO PODE
-// atrasar (o alerta de cliente esperando é o mais crítico do sistema).
+// estourados. Roda em segundos; é o cron que NÃO PODE atrasar (o alerta de
+// cliente esperando é o mais crítico do sistema). A única IA daqui é o juiz de
+// fecho do SLA humano (closing-ai.ts), com teto de SLA_HUMAN_AI_MAX chamadas
+// por rodada: 25 × 15 s passaria do maxDuration de 120 s da rota.
 // ---------------------------------------------------------------------------
+/** Chamadas do juiz de fecho (IA) por rodada do SLA humano. */
+const SLA_HUMAN_AI_MAX = 5;
+
 export async function runSlaPhase(): Promise<CronResults> {
   const now = Date.now();
   const results = emptyResults();
@@ -1783,6 +1791,7 @@ export async function runSlaPhase(): Promise<CronResults> {
       .filter((conv) => dueAlertStep(HUMAN_ALERT_STEPS_MS, conv.lastMessageAt.getTime(), now, conv.queueAlertAt) != null)
       .slice(0, 25);
 
+    let closingAiCalls = 0;
     for (const conv of humanStalled) {
       try {
         const last = await db.whatsAppMessage.findFirst({
@@ -1791,13 +1800,30 @@ export async function runSlaPhase(): Promise<CronResults> {
           select: { direction: true, body: true, mediaType: true },
         });
         if (!last || last.direction !== 'in') continue;
-        if (isClosingAck(last.body, last.mediaType)) continue;
 
         const label = conv.contact.name ?? `+${conv.contact.phone}`;
         const waitingMin = conv.lastMessageAt
           ? brBusinessMinutesBetween(conv.lastMessageAt.getTime(), now)
           : 0;
         if (waitingMin < HUMAN_SLA_MS / 60_000) continue;
+
+        // Parece fecho ("ok", "obrigado", "bom dia")? Quem decide é a IA, pelos
+        // horários: "bom dia" dias depois é retomada (caso José Roberto,
+        // 01/10/2026). Fecho julgado marca o degrau, para a IA não rodar de novo
+        // a cada rodada (no máximo 1 vez por degrau); mensagem nova do cliente
+        // re-arma os degraus. Passou do teto da rodada: fica para a próxima,
+        // sem marcar o degrau.
+        if (isClosingAck(last.body, last.mediaType)) {
+          if (closingAiCalls >= SLA_HUMAN_AI_MAX) continue;
+          closingAiCalls++;
+          if (await clientMessageIsClosing(conv)) {
+            await db.whatsAppConversation.update({
+              where: { id: conv.id },
+              data: { queueAlertAt: new Date() },
+            });
+            continue;
+          }
+        }
 
         const owner = conv.assignedToId
           ? await db.user.findUnique({ where: { id: conv.assignedToId }, select: { name: true } })

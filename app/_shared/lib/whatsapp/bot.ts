@@ -23,6 +23,7 @@ import {
 } from "@/app/_shared/utils/collect-request";
 import { CONTRACT_PENDING_WINDOW_MS, buildContractPending } from "@/app/_shared/utils/contract-pending";
 import { buildAudioTranscriptNote } from "@/app/_shared/utils/audio-note";
+import { burstClientText } from "@/app/_shared/utils/burst-text";
 import {
   BOT_TURN_BUDGET_MS, BRAIN_MIN_ATTEMPT_MS, BURST_DEBOUNCE_MS, EARLY_TRANSCRIBE_WAIT_MS,
   brainAttemptTimeoutMs, brainTimeoutError, isBrainTimeoutError, isTerminalBotAction, microBudgetMs,
@@ -1390,14 +1391,14 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       where: burstWhere,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: BURST_MAX_MESSAGES + 1,
-      select: { id: true, body: true, mediaKey: true, mediaType: true, transcript: true },
+      select: { id: true, body: true, mediaKey: true, mediaType: true, transcript: true, createdAt: true },
     });
     const burstTruncated = burstNewest.length > BURST_MAX_MESSAGES;
     const burst = burstNewest.slice(0, BURST_MAX_MESSAGES).reverse();
     const burstIds = burst.length ? burst.map((b) => b.id) : [message.id];
-    let clientText = (burst.length ? burst.map((b) => b.body?.trim()).filter(Boolean) : [message.body?.trim()])
-      .filter(Boolean)
-      .join("\n");
+    // Mensagem do lote que ficou horas/dias sem resposta sai marcada com a data
+    // (burst-text.ts): colada na nova, virava "entendi, bom dia" e silêncio.
+    let clientText = burst.length ? burstClientText(burst) : (message.body?.trim() ?? "");
 
     // ---- Mídia ----------------------------------------------------------
     // TUDO vai pra IA com URL pré-assinada: áudio é transcrito (Gemini) e

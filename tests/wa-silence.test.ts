@@ -4,6 +4,7 @@ import {
   isBotDecisionLog,
   isClosingAck,
   isEnvSwitchOn,
+  isOrphanCandidate,
   orphanReason,
 } from "@/app/_shared/utils/wa-silence";
 
@@ -58,6 +59,25 @@ describe("classifyLastMessage", () => {
       .toBe("client_pending");
     expect(classifyLastMessage({ ...base, direction: "in", body: "", mediaType: "image/jpeg" }))
       .toBe("client_pending");
+  });
+});
+
+describe("isOrphanCandidate", () => {
+  const ultima = new Date("2026-10-01T12:35:43Z");
+  it("pendência e fecho do cliente entram na rede de órfã; bot, atendente e vazio não", () => {
+    expect(isOrphanCandidate("client_pending", ultima, null)).toBe(true);
+    expect(isOrphanCandidate("client_ack", ultima, null)).toBe(true);
+    expect(isOrphanCandidate("bot_asked", ultima, null)).toBe(false);
+    expect(isOrphanCandidate("human_last", ultima, null)).toBe(false);
+    expect(isOrphanCandidate("none", ultima, null)).toBe(false);
+  });
+
+  it("fecho anterior ao Devolver não volta à Fila; pendência continua valendo", () => {
+    const devolvida = new Date("2026-10-01T13:00:00Z");
+    expect(isOrphanCandidate("client_ack", ultima, devolvida)).toBe(false);
+    expect(isOrphanCandidate("client_pending", ultima, devolvida)).toBe(true);
+    // Devolvida ANTES do "ok": o bot devia ter decidido sobre ele.
+    expect(isOrphanCandidate("client_ack", ultima, new Date("2026-10-01T12:00:00Z"))).toBe(true);
   });
 });
 
