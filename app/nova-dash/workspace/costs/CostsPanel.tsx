@@ -72,13 +72,13 @@ function fmtDate(iso: string | null) {
 }
 
 /** Cartão de um serviço: números do mês + crédito + estado da integração. */
-function ServiceCard({ s, totalMtdCents, onCredit }: { s: ServiceCostCard; totalMtdCents: number; onCredit: (s: ServiceCostCard) => void }) {
-  // Barra = fatia do serviço no gasto do mês (pedido de 30/09/2026). A versão
-  // de 14/09 media consumo ÷ projeção do próprio serviço, que no fim do mês
-  // encosta em 100% em todos — Claude de R$ 1.600 e Gemini de R$ 1 ficavam
-  // com a barra cheia igual.
-  const share = totalMtdCents > 0 ? (s.mtdCents / totalMtdCents) * 100 : 0;
-  const shareLabel = s.mtdCents <= 0 ? '0%' : share < 1 ? '<1%' : `${Math.round(share)}%`;
+function ServiceCard({ s, totalProjectedCents, onCredit }: { s: ServiceCostCard; totalProjectedCents: number; onCredit: (s: ServiceCostCard) => void }) {
+  // Barra = fatia do serviço no gasto do MÊS (pedido de 30/09/2026), pela
+  // projeção de fechamento. A versão de 14/09 media consumo ÷ projeção do
+  // próprio serviço e enchia todas no fim do mês; a de 30/09 usava o "até
+  // hoje", que no dia 1 é quase zero e deu 95% ao Claude com R$ 0,97.
+  const share = totalProjectedCents > 0 ? (s.projectedMonthCents / totalProjectedCents) * 100 : 0;
+  const shareLabel = s.projectedMonthCents <= 0 ? '0%' : share < 1 ? '<1%' : `${Math.round(share)}%`;
   const tone = s.error ? 'border-rose-200 dark:border-rose-900/60' : 'border-gray-200 dark:border-zinc-800';
   return (
     <div className={`flex flex-col gap-3 rounded-2xl border bg-white p-4 dark:bg-zinc-900 ${tone}`}>
@@ -109,10 +109,10 @@ function ServiceCard({ s, totalMtdCents, onCredit }: { s: ServiceCostCard; total
           <p className="text-base font-black tabular-nums" style={{ color: s.color }}>{formatMoney(s.projectedMonthCents)}</p>
         </div>
       </div>
-      <div className="flex items-center gap-2" title={`${shareLabel} do consumo do mês até hoje`}>
+      <div className="flex items-center gap-2" title={`${shareLabel} do gasto previsto no mês`}>
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-zinc-800">
           {/* Fatia mínima visível: serviço com centavos não some da barra. */}
-          <div className="h-full rounded-full" style={{ width: `${s.mtdCents > 0 ? Math.max(share, 1) : 0}%`, backgroundColor: s.color }} />
+          <div className="h-full rounded-full" style={{ width: `${s.projectedMonthCents > 0 ? Math.max(share, 1) : 0}%`, backgroundColor: s.color }} />
         </div>
         <span className="w-9 shrink-0 text-right text-[11px] font-bold tabular-nums text-gray-500 dark:text-zinc-400">{shareLabel}</span>
       </div>
@@ -376,7 +376,7 @@ export function CostsPanel() {
 
           {/* Cartões por serviço */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {activeServices.map((s) => <ServiceCard key={s.service} s={s} totalMtdCents={overview.totals.mtdCents} onCredit={setCreditTarget} />)}
+            {activeServices.map((s) => <ServiceCard key={s.service} s={s} totalProjectedCents={overview.totals.projectedMonthCents} onCredit={setCreditTarget} />)}
           </div>
 
           {/* ── 2. Série diária ────────────────────────────────────────── */}
