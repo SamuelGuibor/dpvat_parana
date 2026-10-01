@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { batchMediaNames, cleanBaseName, mediaDisplayName, mediaKindLabel } from "@/app/_shared/utils/media-name";
+import { batchMediaNames, cleanBaseName, mediaDisplayName, mediaKindLabel, mediaOriginalName } from "@/app/_shared/utils/media-name";
 import { brDateTimeParts } from "@/app/_shared/utils/date-br";
 import { inferCategory } from "@/app/_shared/lib/document-categories";
 
@@ -216,5 +216,26 @@ describe("cleanBaseName", () => {
     expect(cleanBaseName("a".repeat(120))).toHaveLength(80);
     expect(cleanBaseName(null)).toBe("");
     expect(cleanBaseName("\u0000\u001f")).toBe("");
+  });
+});
+
+describe("mediaOriginalName — nome do arquivo que vai ao cérebro (mediaList[].fileName)", () => {
+  it("nome dado pelo cliente sai legível", () => {
+    expect(mediaOriginalName("whatsapp/c/1727000000000-Carta_de_concessao.pdf")).toBe("Carta de concessao.pdf");
+    expect(mediaOriginalName("whatsapp/c/1727000000000-CNIS%20atual.pdf")).toBe("CNIS atual.pdf");
+  });
+
+  it("nome inventado pelo sistema, vazio ou sem key dá null", () => {
+    expect(mediaOriginalName("whatsapp/c/1727000000000-midia.jpeg")).toBeNull();
+    expect(mediaOriginalName("whatsapp/c/1727000000000-midia.pdf")).toBeNull();
+    expect(mediaOriginalName("whatsapp/c/out-1727000000000-audio-1727000000001.ogg")).toBeNull();
+    expect(mediaOriginalName("whatsapp/c/1727000000000-image.png")).toBeNull();
+    expect(mediaOriginalName("whatsapp/c/1727000000000-.pdf")).toBeNull();
+    expect(mediaOriginalName(null)).toBeNull();
+    expect(mediaOriginalName("")).toBeNull();
+  });
+
+  it("corta nome enorme", () => {
+    expect(mediaOriginalName(`whatsapp/c/1727000000000-${"a".repeat(300)}.pdf`)).toHaveLength(120);
   });
 });

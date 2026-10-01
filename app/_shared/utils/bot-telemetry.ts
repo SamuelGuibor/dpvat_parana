@@ -7,6 +7,8 @@
 // código jogava para a Fila), e a resposta descartada por corrida não deixava
 // rastro, nem do gasto.
 
+import { maskSecrets } from "./mask-secrets";
+
 /** Uso de tokens de uma chamada de IA (mesmo formato de metadata.usage). */
 export interface AiUsage {
   model: string;
@@ -129,4 +131,62 @@ export function sumUsageByModel(usages: readonly unknown[] | null | undefined): 
     byModel.set(model, acc);
   }
   return [...byModel.values()];
+}
+
+// ---------------------------------------------------------------------------
+// Raciocínio e fatos no log wa_bot (30/09/2026). Até aqui o `rationale` do
+// cérebro só ia para o console do micro e não dava para saber pelo banco qual
+// caminho a IA seguiu em cada handoff. Ele entra no metadata do log, mas o log
+// fica 180 dias na tabela `logs`: corta o tamanho e tira dado pessoal.
+// ---------------------------------------------------------------------------
+
+/** Teto do raciocínio no log (o micro já corta em 600). */
+export const RATIONALE_LOG_MAX = 500;
+/** Teto de cada texto dentro de `facts` no log (o pedido do atendente vai inteiro ao cérebro). */
+export const FACT_TEXT_LOG_MAX = 200;
+
+// Dígitos em sequência, com ou sem ". - /" e espaço no meio: CPF, telefone,
+// CEP, número de benefício ("630.015.983-7"). Com 6 dígitos ou mais vira
+// "•••"; "R$ 1.234,56" (4 dígitos antes da vírgula) e "45 dias" ficam.
+const DIGIT_RUN_RE = /\d(?:[\d.\-/ ]*\d)?/g;
+
+function clipText(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+/**
+ * Raciocínio do cérebro pronto para o log: senha/código mascarados
+ * (mask-secrets.ts), sequência de 6+ dígitos trocada por "•••" e corte em
+ * `max` caracteres com "…". Vazio ou não-string devolve undefined (a chave
+ * some do JSON, como no micro antigo, que não manda o campo).
+ */
+export function clipRationale(text: unknown, max = RATIONALE_LOG_MAX): string | undefined {
+  if (typeof text !== "string") return undefined;
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const masked = maskSecrets(trimmed).replace(DIGIT_RUN_RE, (run) =>
+    run.replace(/\D/g, "").length >= 6 ? "•••" : run,
+  );
+  return clipText(masked, max);
+}
+
+/**
+ * `conversationFacts` enxuto para o log: número e booleano passam como estão;
+ * texto longo (solto ou no campo `text` de um objeto, como o pedido do
+ * atendente) é cortado em FACT_TEXT_LOG_MAX. O cérebro recebe os fatos
+ * inteiros; o log só precisa conferir a decisão, e grava um por turno.
+ */
+export function compactFactsForLog(facts: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(facts)) {
+    if (typeof value === "string") {
+      out[key] = clipText(value, FACT_TEXT_LOG_MAX);
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      const obj = value as Record<string, unknown>;
+      out[key] = typeof obj.text === "string" ? { ...obj, text: clipText(obj.text, FACT_TEXT_LOG_MAX) } : obj;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
 }

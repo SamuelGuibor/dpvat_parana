@@ -38,9 +38,13 @@ const PURGEABLE_LOG_ACTIONS = [
   "wa_bot",
   // Resposta do cérebro descartada: telemetria e custo, contados por período.
   "wa_bot_discarded",
+  // IA do cron (follow-up de silêncio): custo e diagnóstico, contados por período.
+  "wa_followup",
   "wa_text",
   "wa_ficha_ai",
   "wa_return_bot",
+  // Edição/limpeza do pedido em aberto da IA: trilha recente, contada por período.
+  "wa_collect_request",
   "wa_template",
   "wa_flow",
   "wa_transcribe",

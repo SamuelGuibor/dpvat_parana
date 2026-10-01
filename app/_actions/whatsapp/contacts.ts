@@ -7,6 +7,7 @@ import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { requirePermission } from '@/app/_shared/lib/permissions-server';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { syncCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
+import { collectRequestEndedData } from '@/app/_shared/utils/collect-request';
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -198,6 +199,9 @@ export async function blockWhatsAppContact(contactId: string): Promise<void> {
         status: 'closed', closedAt: new Date(), assignedToId: null, closeCategory: 'descartado', qualified: null,
         botFailCount: 0, queuedAt: null, queueAlertAt: null,
         recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
+        // Bloqueio CONCLUI o pedido em aberto (com âncora): a lista mandada
+        // antes não volta como pedido se o contato for desbloqueado.
+        ...collectRequestEndedData(),
       },
     });
     // Tag "Descartados", como nos outros encerramentos (close-tags.ts).

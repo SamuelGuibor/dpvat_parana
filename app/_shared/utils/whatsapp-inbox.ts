@@ -9,6 +9,7 @@
 import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { QUALIFIED_BY_CATEGORY } from '@/app/_shared/lib/whatsapp/close-categories';
+import type { CollectRequestDTO } from '@/app/_shared/utils/collect-request';
 
 /**
  * Tamanho máximo da prévia da última mensagem na lista. O corte é feito no SQL
@@ -188,9 +189,15 @@ export function assumePatch(me: Attendant): ConversationChanges {
  * volta para ele. `keepOwner: false` = interruptor WA_HUMAN_HOLD_DAYS desligado
  * no servidor (solta o atendente, como antes); o otimista do clique usa o
  * padrão e a resposta da action corrige.
+ *
+ * `collect` (pedido em aberto, 30/09/2026): o `collectRequestPatch` do texto
+ * do diálogo. Ausente = o pedido não muda e a chave nem entra no patch (o
+ * rollback não mexe na barra).
  */
-export function returnToBotPatch(opts: { keepOwner?: boolean } = {}): ConversationChanges {
-  const patch: ConversationChanges = { status: 'bot', closeCategoryLabel: null };
+export function returnToBotPatch(
+  opts: { keepOwner?: boolean; collect?: { collectRequest: CollectRequestDTO | null } } = {},
+): ConversationChanges {
+  const patch: ConversationChanges = { status: 'bot', closeCategoryLabel: null, ...(opts.collect ?? {}) };
   return opts.keepOwner === false ? { ...patch, assignedToId: null, assignedToName: null } : patch;
 }
 
@@ -199,8 +206,12 @@ export function returnToBotPatch(opts: { keepOwner?: boolean } = {}): Conversati
  * (CLOSE_CATEGORY_LABELS ou o motivo da tabela whatsapp_close_reasons). As
  * tags de desfecho só chegam na resposta (syncCloseTag), porque o id da tag
  * pode nem existir antes.
+ *
+ * O pedido em aberto sai junto (o encerramento conclui ou limpa), salvo
+ * `keepRequest`: o atendente escolheu "manter" na confirmação e a IA retoma a
+ * lista se o cliente voltar (closeConversation com 'manter').
  */
-export function closePatch(category: string, label: string): ConversationChanges {
+export function closePatch(category: string, label: string, opts: { keepRequest?: boolean } = {}): ConversationChanges {
   return {
     status: 'closed',
     closeCategory: category,
@@ -208,6 +219,7 @@ export function closePatch(category: string, label: string): ConversationChanges
     qualified: qualifiedForCategory(category),
     assignedToId: null,
     assignedToName: null,
+    ...(opts.keepRequest ? {} : { collectRequest: null }),
   };
 }
 

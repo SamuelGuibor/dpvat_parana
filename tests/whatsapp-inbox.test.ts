@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WhatsAppConversationDTO } from "@/app/_shared/lib/whatsapp/inbox-types";
+import { collectRequestPatch } from "@/app/_shared/utils/collect-request";
 import {
   LIST_PREVIEW_MAX_CHARS,
   assumePatch,
@@ -235,6 +236,7 @@ const conv = (extra: Partial<WhatsAppConversationDTO> = {}): WhatsAppConversatio
   lastMessageFromClient: true, lastMessageStatus: null, lastMessageMediaType: null,
   handoffReason: "quer falar com atendente", adPlatform: null, createdAt: "2026-09-20T10:00:00.000Z",
   caseLesoes: null, caseCidade: null, caseDataAcidente: null, hasCpf: false, recoveryAttempts: 0,
+  collectRequest: null,
   unread: true, unreadCount: 2, manualUnread: false, kanbanColumn: null, kanbanLabelId: null, optedOut: false,
   numberId: "n1", readOnly: false, tags: [VIP],
   ...extra,
@@ -362,7 +364,7 @@ describe("patches de assumir / devolver / encerrar", () => {
     expect(qualifiedForCategory("perguntas")).toBeNull();
     expect(closePatch("qualificado", "Qualificada")).toEqual({
       status: "closed", closeCategory: "qualificado", closeCategoryLabel: "Qualificada",
-      qualified: true, assignedToId: null, assignedToName: null,
+      qualified: true, assignedToId: null, assignedToName: null, collectRequest: null,
     });
   });
 
@@ -379,6 +381,74 @@ describe("patches de assumir / devolver / encerrar", () => {
     const optimistic = assumePatch(ME);
     const apos = patchConversationRow(original, optimistic);
     expect(patchConversationRow(apos, revertPatch(original, optimistic))).toEqual(original);
+  });
+});
+
+/* ---------- pedido em aberto (30/09/2026): barra "IA recolhendo" ---------- */
+// O otimista do Devolver/barra/Encerrar e a resposta da action saem das
+// MESMAS funções (collectRequestPatch, returnToBotPatch, closePatch).
+
+describe("patches do pedido em aberto", () => {
+  const AT = "2026-09-30T12:00:00.000Z";
+  const LISTA = "Lista de documentos do INSS (Meu INSS):\n- CNIS\n- Carta de concessão";
+  const aberto = collectRequestPatch({ text: LISTA, at: AT, byName: "Ana", source: "devolver" });
+
+  it("collectRequestPatch monta o DTO (nudges 0 por padrão) e null limpa", () => {
+    expect(aberto).toEqual({
+      collectRequest: { text: LISTA, at: AT, byName: "Ana", source: "devolver", nudges: 0 },
+    });
+    expect(collectRequestPatch({ text: "x", at: new Date(AT), byName: null, source: "fluxo_ia", nudges: 2 }).collectRequest)
+      .toEqual({ text: "x", at: AT, byName: null, source: "fluxo_ia", nudges: 2 });
+    expect(collectRequestPatch(null)).toEqual({ collectRequest: null });
+  });
+
+  it("devolver com texto abre o pedido na linha", () => {
+    const minha = conv({ status: "human", assignedToId: "u1", assignedToName: "Ana" });
+    const out = patchConversationRow(minha, returnToBotPatch({ collect: aberto }));
+    expect(out.status).toBe("bot");
+    expect(out.collectRequest).toEqual(aberto.collectRequest);
+  });
+
+  it("devolver com o campo esvaziado limpa; sem collect o pedido nem entra no patch", () => {
+    const comPedido = conv({ status: "human", ...aberto });
+    expect(patchConversationRow(comPedido, returnToBotPatch({ collect: collectRequestPatch(null) })).collectRequest).toBeNull();
+    expect(returnToBotPatch()).not.toHaveProperty("collectRequest");
+    expect(patchConversationRow(comPedido, returnToBotPatch()).collectRequest).toEqual(aberto.collectRequest);
+  });
+
+  it("rollback do devolver com pedido restaura o pedido original", () => {
+    const original = conv({
+      status: "human",
+      ...collectRequestPatch({ text: "RG e CNH", at: "2026-09-29T10:00:00.000Z", byName: "Bia", source: "lista_atendente", nudges: 1 }),
+    });
+    const optimistic = returnToBotPatch({ collect: aberto });
+    const apos = patchConversationRow(original, optimistic);
+    expect(apos.collectRequest?.text).toBe(LISTA);
+    expect(patchConversationRow(apos, revertPatch(original, optimistic))).toEqual(original);
+  });
+
+  it("encerrar zera o pedido, salvo quando o atendente escolhe manter", () => {
+    expect(closePatch("qualificado", "Qualificada")).toHaveProperty("collectRequest", null);
+    expect(closePatch("qualificado", "Qualificada", { keepRequest: true })).not.toHaveProperty("collectRequest");
+    const comPedido = conv({ status: "human", ...aberto });
+    expect(patchConversationRow(comPedido, closePatch("perguntas", "Perguntas / dúvidas", { keepRequest: true })).collectRequest)
+      .toEqual(aberto.collectRequest);
+  });
+
+  it("rollback do encerramento devolve o pedido", () => {
+    const original = conv({ status: "human", ...aberto });
+    const optimistic = closePatch("qualificado", "Qualificada");
+    const encerrada = patchConversationRow(original, optimistic);
+    expect(encerrada.collectRequest).toBeNull();
+    expect(patchConversationRow(encerrada, revertPatch(original, optimistic))).toEqual(original);
+  });
+
+  it("editar/limpar pela barra: o patch é só o pedido (o status não muda)", () => {
+    const naBot = conv({ status: "bot" });
+    const out = patchConversationRow(naBot, aberto);
+    expect(out.status).toBe("bot");
+    expect(out.collectRequest?.byName).toBe("Ana");
+    expect(patchConversationRow(out, collectRequestPatch(null)).collectRequest).toBeNull();
   });
 });
 

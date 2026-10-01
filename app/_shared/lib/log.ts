@@ -21,6 +21,7 @@ export type LogAction =
   | "wa_assign"      // atendente assumiu / atribuiu a conversa
   | "wa_reopen"      // reabriu um atendimento encerrado
   | "wa_return_bot"  // devolveu a conversa pro bot
+  | "wa_collect_request" // editou ou limpou o pedido em aberto da IA (barra "IA recolhendo"); conta como atividade
   | "wa_close"       // encerrou (qualificada / não qualificada)
   | "wa_text"        // enviou mensagem de texto
   | "wa_document"    // enviou documento/arquivo
@@ -31,6 +32,7 @@ export type LogAction =
   | "wa_reaction"    // reagiu com emoji a uma mensagem da thread
   | "wa_bot"         // decisão da IA (qualify/disqualify/handoff/continue/erro)
   | "wa_bot_discarded" // resposta do cérebro jogada fora (corrida, atendente assumiu, envio interrompido), com o gasto
+  | "wa_followup"    // IA do cron (/followup-decision), com o gasto; nunca wa_bot (o critério de órfã lê wa_bot)
   | "wa_suggest"     // IA sugeriu resposta pro atendente (agent-assist)
   | "wa_summary"     // IA resumiu a conversa pro card do kanban
   | "wa_transcribe"  // IA transcreveu áudio: a pedido do atendente ou no /reply do bot (metadata.bySystem)

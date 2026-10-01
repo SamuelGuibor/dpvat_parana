@@ -1,12 +1,14 @@
 import { db } from '@/app/_shared/lib/prisma';
-import { handoffToQueue, sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
+import { logWhatsAppEvent } from '@/app/_shared/lib/log';
+import { brainHistory, handoffToQueue, sendBotReply } from '@/app/_shared/lib/whatsapp/bot';
+import { flowNameForListText } from '@/app/_shared/lib/whatsapp/flow-runner';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { syncCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
 import { recordFollowupDecision } from '@/app/_shared/lib/whatsapp/rule-events';
 import { recordRecoveryEvent, recordCodeIntervention } from '@/app/_shared/lib/whatsapp/rule-events';
 import { whatsappRecipients, alertDeliveryFailure } from '@/app/_shared/lib/whatsapp/service';
 import { waAlertRecipients } from '@/app/_shared/lib/whatsapp/alert-recipients';
-import { isWindowOpen, sendSystemWhatsApp } from '@/app/_shared/lib/whatsapp/outbound';
+import { isWindowOpen, sendSystemWhatsApp, systemSendBlockReason } from '@/app/_shared/lib/whatsapp/outbound';
 import { activeNumberConversationWhere } from '@/app/_shared/lib/whatsapp/numbers';
 import { RECOVERY_MAX_ATTEMPTS_DEFAULT, recoveryCapForPhoneNumberId } from '@/app/_shared/lib/whatsapp/recovery-caps';
 import {
@@ -16,6 +18,13 @@ import {
   classifyLastMessage, isBotDecisionLog, isClosingAck, isEnvSwitchOn, orphanReason,
 } from '@/app/_shared/utils/wa-silence';
 import { holdDaysLabel, humanLastVerdict } from '@/app/_shared/utils/ownership';
+import { maskMemorySecrets, maskSecretsInSequence } from '@/app/_shared/utils/mask-secrets';
+import { microBudgetMs } from '@/app/_shared/utils/bot-timing';
+import { COLLECT_REQUEST_CLEARED, isCollectRequestLive, isCollectSource } from '@/app/_shared/utils/collect-request';
+import {
+  PENDING_MIN_SILENCE_MS, PENDING_NUDGE_GAP_MS, PENDING_RETRY_MS, pendingHandoffReason, planPendingFollowup,
+} from '@/app/_shared/utils/pending-followup';
+import { clientDocumentMediaWhere } from '@/app/_shared/utils/wa-media';
 import { QUEUE_ALERT_STEPS_MS, queueAlertAudience, queueWaitLabel } from '@/app/_shared/utils/alert-policy';
 import { HUMAN_HOLD_MS } from '@/app/_shared/lib/whatsapp/ownership';
 import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
@@ -213,10 +222,17 @@ export interface CronResults {
   signatureReminders: number;
   /** Conversas órfãs (o bot não decidiu sobre a última mensagem) enviadas à Fila. */
   orphans: number;
+  /** Cobranças do pedido em aberto enviadas (fase 0 do nudge). */
+  pendingNudges: number;
+  /** Pedidos em aberto transferidos ao dono (janela fechando ou decisão da IA da cobrança). */
+  pendingHandoffs: number;
 }
 
 function emptyResults(): CronResults {
-  return { nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0, signatureReminders: 0, orphans: 0 };
+  return {
+    nudged30: 0, closed: 0, standby: 0, recoverySent: 0, queueAlerts: 0, deliveryAlerts: 0, overdueAlerts: 0, errors: 0,
+    signatureReminders: 0, orphans: 0, pendingNudges: 0, pendingHandoffs: 0,
+  };
 }
 
 /**
@@ -296,6 +312,19 @@ async function standbyBlockReason(conv: {
 // cliente. WA_ORPHAN_TO_QUEUE=0 desliga, se a Fila encher de falso positivo.
 const ORPHAN_TO_QUEUE = isEnvSwitchOn(process.env.WA_ORPHAN_TO_QUEUE);
 
+// ---- PEDIDO EM ABERTO: cobrança de 6 em 6 h (fase 0 do nudge, 30/09/2026) ---
+// Conversa em 'bot' com pedido em aberto (collect-request.ts) e cliente em
+// silêncio: a IA cobra de 6 em 6 h enquanto a janela de 24 h da Meta estiver
+// aberta (texto do cérebro, /followup-decision em modo de pendência, envio por
+// sendSystemWhatsApp com opt-out, cooldown, janela e marcapasso) e transfere ao
+// dono, com o que falta, 2 h antes de a janela fechar (pending-followup.ts).
+// Nada de nudge de 30 min/despedida/encerramento/standby com pedido aberto.
+// DESLIGADA POR PADRÃO, ao contrário dos outros interruptores: liga só com
+// WA_PENDING_FOLLOWUP=1, depois de as instruções v22 estarem publicadas (sem
+// elas o cérebro não sabe cobrar a lista). Desligada, as conversas com pedido
+// seguem o nudge/despedida/standby normais, e o enterStandby limpa o pedido.
+const PENDING_FOLLOWUP_ON = (process.env.WA_PENDING_FOLLOWUP ?? '').trim() === '1';
+
 /** O cliente escreveu depois deste instante? */
 async function inboundSince(contactId: string, since: Date): Promise<boolean> {
   const row = await db.whatsAppMessage.findFirst({
@@ -374,6 +403,24 @@ const CHATBOT_URL = process.env.CHATBOT_URL?.replace(/\/$/, '') ?? '';
 const CHATBOT_SECRET = process.env.CHATBOT_SECRET ?? '';
 
 /**
+ * Histórico curto das chamadas de IA do cron (/followup-decision, /farewell,
+ * /recovery-message): ordem cronológica, só mensagens com texto e senha/código
+ * mascarados (mask-secrets.ts, decisão do dono de 30/09/2026) — o valor que o
+ * cliente mandou nunca vai à IA; o banco guarda o original para a equipe. A
+ * ficha (`memory`) dessas chamadas vai por maskMemorySecrets.
+ */
+function cronBrainHistory(
+  newestFirst: { direction: string; sentByBot: boolean; body: string | null }[],
+): { role: 'client' | 'bot' | 'agent'; text: string }[] {
+  const rows = [...newestFirst].reverse().filter((h) => !!h.body);
+  const texts = maskSecretsInSequence(rows.map((h) => h.body ?? ''));
+  return rows.map((h, i) => ({
+    role: h.direction === 'in' ? 'client' : h.sentByBot ? 'bot' : 'agent',
+    text: texts[i],
+  }));
+}
+
+/**
  * Despedida CONTEXTUAL via IA; qualquer falha cai no texto fixo.
  */
 async function buildFarewell(contactId: string, contactName: string | null): Promise<string> {
@@ -396,11 +443,8 @@ async function buildFarewell(contactId: string, contactName: string | null): Pro
         headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHATBOT_SECRET },
         body: JSON.stringify({
           contact: { name: contactName },
-          memory: conv?.botMemory ?? null,
-          history: history
-            .reverse()
-            .filter((h) => h.body)
-            .map((h) => ({ role: h.direction === 'in' ? 'client' : h.sentByBot ? 'bot' : 'agent', text: h.body })),
+          memory: maskMemorySecrets(conv?.botMemory),
+          history: cronBrainHistory(history),
         }),
         signal: controller.signal,
         cache: 'no-store',
@@ -429,13 +473,50 @@ function looksLikeFarewell(text: string | null | undefined): boolean {
 }
 
 /**
+ * Log da IA do cron (30/09/2026). O /followup-decision roda ~300 vezes por
+ * semana e o gasto não aparecia no Canto da IA (regra: toda chamada de IA
+ * grava metadata.usage). Ação própria `wa_followup`, nunca `wa_bot`: o
+ * critério de órfã (botDecidedSince) lê wa_bot depois da mensagem do cliente
+ * como prova de decisão, e este log esconderia órfã. `bySystem` tira o log do
+ * feed de atividade dos atendentes no painel do chatbot. Micro antigo não
+ * manda usage: o log sai sem custo, como antes.
+ */
+async function logFollowupDecision(
+  conv: { contactId: string; numberId: string | null; contact: { name: string | null; phone: string } },
+  metadata: { action: string; reason?: string; usage?: unknown; error?: string },
+): Promise<void> {
+  const usage = metadata.usage && typeof metadata.usage === 'object' ? metadata.usage : undefined;
+  await logWhatsAppEvent({
+    action: 'wa_followup',
+    message: metadata.error
+      ? `IA do cron (follow-up de silêncio): falhou — ${metadata.error}`
+      : `IA do cron (follow-up de silêncio): ${metadata.action}`,
+    authorId: 'whatsapp-bot',
+    authorName: '🤖 Bot WhatsApp',
+    contactId: conv.contactId,
+    numberId: conv.numberId,
+    contactName: conv.contact.name,
+    contactPhone: conv.contact.phone,
+    metadata: {
+      mode: 'followup',
+      action: metadata.action,
+      reason: metadata.reason ? metadata.reason.slice(0, 300) : undefined,
+      usage,
+      error: metadata.error,
+      bySystem: true,
+    },
+  });
+}
+
+/**
  * Decisão CONTEXTUAL de follow-up (nudge x close); falha cai na heurística.
  */
 async function decideFollowup(
-  contactId: string,
-  contactName: string | null,
+  conv: { contactId: string; numberId: string | null; contact: { name: string | null; phone: string } },
   lastBotText: string | null,
 ): Promise<{ action: 'nudge' | 'close'; message: string; reason: string }> {
+  const { contactId } = conv;
+  const contactName = conv.contact.name;
   const localFallback = (): { action: 'nudge' | 'close'; message: string; reason: string } =>
     looksLikeFarewell(lastBotText)
       ? { action: 'close', message: '', reason: 'heurística local: última mensagem do bot já era despedida' }
@@ -443,7 +524,7 @@ async function decideFollowup(
 
   if (!CHATBOT_URL || !CHATBOT_SECRET) return localFallback();
   try {
-    const [history, conv] = await Promise.all([
+    const [history, saved] = await Promise.all([
       db.whatsAppMessage.findMany({
         where: { contactId, internal: false, deletedAt: null },
         orderBy: { createdAt: 'desc' },
@@ -463,27 +544,428 @@ async function decideFollowup(
         headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHATBOT_SECRET },
         body: JSON.stringify({
           contact: { name: contactName },
-          memory: conv?.botMemory ?? null,
-          state: conv?.botState ?? null,
-          history: history
-            .reverse()
-            .filter((h) => h.body)
-            .map((h) => ({ role: h.direction === 'in' ? 'client' : h.sentByBot ? 'bot' : 'agent', text: h.body })),
+          memory: maskMemorySecrets(saved?.botMemory),
+          state: saved?.botState ?? null,
+          history: cronBrainHistory(history),
         }),
         signal: controller.signal,
         cache: 'no-store',
       });
       if (!res.ok) throw new Error(`followup-decision HTTP ${res.status}`);
       const data = await res.json();
-      const action = data?.action === 'close' ? 'close' : 'nudge';
-      return { action, message: String(data?.message ?? '').trim(), reason: String(data?.reason ?? '').trim() };
+      const action: 'nudge' | 'close' = data?.action === 'close' ? 'close' : 'nudge';
+      const decision = { action, message: String(data?.message ?? '').trim(), reason: String(data?.reason ?? '').trim() };
+      await logFollowupDecision(conv, { action, reason: decision.reason, usage: data?.usage });
+      return decision;
     } finally {
       clearTimeout(timer);
     }
   } catch (err) {
     console.warn('[WHATSAPP CRON] Decisão de follow-up por IA indisponível (heurística local):', err);
-    return localFallback();
+    const fallback = localFallback();
+    await logFollowupDecision(conv, {
+      action: fallback.action,
+      reason: fallback.reason,
+      error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+    });
+    return fallback;
   }
+}
+
+// ---- Fase 0: cobrança do pedido em aberto (helpers) ---------------------------
+
+/** O que a fase 0 lê da conversa (seleção com include: { contact: true }). */
+interface PendingConv {
+  id: string;
+  contactId: string;
+  numberId: string | null;
+  botState: string | null;
+  botMemory: string | null;
+  qualified: boolean | null;
+  lastMessageAt: Date;
+  collectRequest: string | null;
+  collectRequestAt: Date | null;
+  collectRequestSource: string | null;
+  collectNudgeAt: Date | null;
+  collectNudgeCount: number;
+  returnedToBotAt: Date | null;
+  contact: { name: string | null; phone: string };
+}
+
+/** Resposta do /followup-decision no modo de pendência, já normalizada. */
+interface PendingDecision {
+  outcome: 'nudge' | 'silent' | 'handoff' | 'legacy' | 'error';
+  message: string;
+  missing: string;
+  reason: string;
+  leaked: boolean;
+  usage?: unknown;
+  error?: string;
+}
+
+/**
+ * Log wa_followup da cobrança (a mesma ação do follow-up de silêncio, com
+ * mode 'pending'; nunca wa_bot, que o critério de órfã lê). `retry` marca a
+ * tentativa que não andou (cérebro fora, micro antigo, envio recusado): a
+ * próxima avaliação espera PENDING_RETRY_MS. `missing` vira o "o que faltava"
+ * da cobrança seguinte e o "faltam …" da transferência na janela fechando.
+ */
+async function logPendingFollowup(
+  conv: PendingConv,
+  m: {
+    action: string; sent: boolean; attempt: number; reason?: string; missing?: string;
+    leaked?: boolean; usage?: unknown; error?: string; retry?: boolean;
+  },
+): Promise<void> {
+  const usage = m.usage && typeof m.usage === 'object' ? m.usage : undefined;
+  await logWhatsAppEvent({
+    action: 'wa_followup',
+    message: m.error
+      ? `IA do cron (cobrança do pedido em aberto): falhou — ${m.error}`
+      : `IA do cron (cobrança do pedido em aberto): ${m.action}${m.sent ? ' (enviada)' : ''}`,
+    authorId: 'whatsapp-bot',
+    authorName: '🤖 Bot WhatsApp',
+    contactId: conv.contactId,
+    numberId: conv.numberId,
+    contactName: conv.contact.name,
+    contactPhone: conv.contact.phone,
+    metadata: {
+      mode: 'pending',
+      action: m.action,
+      sent: m.sent,
+      attempt: m.attempt,
+      reason: m.reason ? m.reason.slice(0, 300) : undefined,
+      missing: m.missing ? m.missing.slice(0, 500) : undefined,
+      leaked: m.leaked ? true : undefined,
+      usage,
+      error: m.error,
+      retry: m.retry ? true : undefined,
+      bySystem: true,
+    },
+  });
+}
+
+/**
+ * Tempo limite da cobrança (só deste modo; o follow-up de silêncio segue com
+ * 12 s). A chamada usa o modelo principal com o pedido + 20 mensagens, e o
+ * /reply medido em 7 dias (n=954) leva p50 9,2 s e p90 19,8 s na IA: com 12 s,
+ * um terço das cobranças abortava, saía sem usage e repetia de hora em hora
+ * até a janela fechar sem nenhuma cobrança. O lote é sequencial e cada chamada
+ * já ocupa uma vaga do marcapasso (RUN_BUDGET_MS 240 s, maxDuration 300 s).
+ */
+const PENDING_DECISION_TIMEOUT_MS = 35_000;
+
+/**
+ * Cérebro da cobrança: /followup-decision com `pendingRequest` (tudo dentro
+ * dele: o index.js do micro só desestrutura contact/history/memory/state/
+ * pendingRequest). O texto é da IA; o código nunca põe texto fixo no lugar.
+ * Micro antigo (sem mode 'pending') = "legacy": nada sai nem encerra.
+ */
+async function decidePendingFollowup(conv: PendingConv, pendingRequest: Record<string, unknown>): Promise<PendingDecision> {
+  const empty = { message: '', missing: '', reason: '', leaked: false };
+  if (!CHATBOT_URL || !CHATBOT_SECRET) {
+    return { ...empty, outcome: 'error', error: 'cérebro não configurado (CHATBOT_URL/CHATBOT_SECRET)' };
+  }
+  try {
+    const rows = await db.whatsAppMessage.findMany({
+      where: { contactId: conv.contactId, internal: false, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { direction: true, sentByBot: true, systemSource: true, body: true, mediaType: true, transcript: true },
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PENDING_DECISION_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${CHATBOT_URL}/followup-decision`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-bot-secret': CHATBOT_SECRET,
+          // Orçamento do micro (mesmo header do /reply): estourou → 504 e ele
+          // para de pagar a IA, em vez de seguir depois de o cron desistir.
+          'x-bot-budget-ms': String(microBudgetMs(PENDING_DECISION_TIMEOUT_MS)),
+        },
+        body: JSON.stringify({
+          contact: { name: conv.contact.name },
+          memory: maskMemorySecrets(conv.botMemory),
+          state: conv.botState ?? null,
+          // Mesmo formato do /reply ([anexo: PDF], [mensagem automática: …]),
+          // com senha/código mascarados: a cobrança vê o que já chegou.
+          history: brainHistory(rows.reverse()),
+          pendingRequest,
+        }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`followup-decision HTTP ${res.status}`);
+      const data = await res.json();
+      const base = {
+        message: String(data?.message ?? '').trim(),
+        missing: String(data?.missing ?? '').trim(),
+        reason: String(data?.reason ?? '').trim(),
+        leaked: data?.leaked === true,
+        usage: data?.usage,
+      };
+      if (data?.mode !== 'pending') return { ...base, outcome: 'legacy' };
+      const action = data?.action;
+      if (action === 'nudge' || action === 'silent' || action === 'handoff') return { ...base, outcome: action };
+      return { ...base, outcome: 'error', error: `ação desconhecida do cérebro: ${String(action).slice(0, 40)}` };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return { ...empty, outcome: 'error', error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300) };
+  }
+}
+
+/**
+ * Fase 0 para UMA conversa com pedido em aberto. Ordem: pedido vencido (limpa
+ * sem âncora) → órfã (Fila, MANTENDO o pedido) → plano (pending-followup.ts)
+ * → espera o cliente (janela já fechada quando o pedido abriu ou a conversa
+ * voltou), transferência na janela fechando (sem IA, MANTENDO o pedido) ou
+ * cobrança: trava de envio ANTES da IA, vaga no marcapasso, cérebro, releitura
+ * de mensagem nova, ação.
+ */
+async function runPendingFollowup(conv: PendingConv, now: number, pacer: Pacer, results: CronResults): Promise<void> {
+  const label = conv.contact.name ?? `+${conv.contact.phone}`;
+  // Pedido vencido (> 7 dias): o bot já o ignora. Limpa sem âncora e a
+  // conversa volta ao fluxo normal do silêncio na próxima rodada.
+  if (!isCollectRequestLive(conv.collectRequestAt, now)) {
+    await db.whatsAppConversation.updateMany({
+      where: { id: conv.id, status: 'bot', collectRequestAt: conv.collectRequestAt },
+      data: COLLECT_REQUEST_CLEARED,
+    });
+    return;
+  }
+  const last = await db.whatsAppMessage.findFirst({
+    where: { contactId: conv.contactId, internal: false, deletedAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: { direction: true, sentByBot: true, authorId: true, body: true, mediaType: true, createdAt: true },
+  });
+  if (!last) return;
+  // Cliente perguntou e o bot não decidiu nada → Fila com o motivo da falha.
+  // Falha técnica não conclui o pedido: ele volta quando o atendente devolver.
+  if (classifyLastMessage(last) === 'client_pending') {
+    const orphan = await sendOrphanToQueue(conv, last.createdAt, now);
+    if (orphan === 'queued') {
+      results.orphans++;
+      return;
+    }
+    if (orphan === 'left') return;
+  }
+
+  const requestAt = conv.collectRequestAt ?? new Date(now);
+  const [lastInbound, followupLogs] = await Promise.all([
+    // Sem filtro de lixeira, como o isWindowOpen: a mensagem apagada no CRM
+    // abriu a janela do mesmo jeito na Meta.
+    db.whatsAppMessage.findFirst({
+      where: { contactId: conv.contactId, direction: 'in' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    }),
+    // Avaliações anteriores (backoff de falha e o que faltava). Índice
+    // (action, createdAt) de logs; o contato é filtrado no JSON.
+    db.log.findMany({
+      where: {
+        action: 'wa_followup',
+        createdAt: { gte: new Date(Math.min(requestAt.getTime(), now - PENDING_RETRY_MS)) },
+        metadata: { path: ['contactId'], equals: conv.contactId },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { createdAt: true, metadata: true },
+    }),
+  ]);
+  const pendingLogs = followupLogs
+    .map((l) => ({ at: l.createdAt, m: (l.metadata ?? {}) as Record<string, unknown> }))
+    .filter((l) => l.m.mode === 'pending');
+  const lastRetryAt = pendingLogs.find((l) => l.m.retry === true && now - l.at.getTime() < PENDING_RETRY_MS)?.at ?? null;
+  const previousMissing = pendingLogs
+    .filter((l) => l.at.getTime() >= requestAt.getTime())
+    .map((l) => l.m.missing)
+    .find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
+
+  const plan = planPendingFollowup({
+    now,
+    lastInboundAt: lastInbound?.createdAt ?? null,
+    // Pedido aberto (ou conversa devolvida) com a janela já fechando: espera o
+    // cliente, sem devolver à Fila (Devolver com a janela fechada voltava à
+    // Fila na rodada seguinte, com o pedido concluído).
+    requestSince: new Date(Math.max(requestAt.getTime(), conv.returnedToBotAt?.getTime() ?? 0)),
+    lastMessageAt: conv.lastMessageAt,
+    collectNudgeAt: conv.collectNudgeAt,
+    collectNudgeCount: conv.collectNudgeCount,
+    lastFailedAt: lastRetryAt,
+    isBusinessHour: isBrBusinessHour,
+  });
+  if (plan.kind === 'wait') {
+    // Esperando o cliente: sai da frente da seleção (collectNudgeAt asc,
+    // nulos primeiro) para não tomar a vaga de quem vence. No máximo 1
+    // gravação a cada 6 h — cada uma toca o updatedAt que o delta do inbox lê.
+    if (
+      plan.why === 'awaiting_client'
+      && (!conv.collectNudgeAt || now - conv.collectNudgeAt.getTime() >= PENDING_NUDGE_GAP_MS)
+    ) {
+      await db.whatsAppConversation.updateMany({
+        where: { id: conv.id, status: 'bot', collectRequestAt: conv.collectRequestAt, collectNudgeAt: conv.collectNudgeAt },
+        data: { collectNudgeAt: new Date(now) },
+      });
+    }
+    return;
+  }
+  // Desfecho da transferência pelo que a conversa É: o closeCategory gravado
+  // pode ser velho ('perguntas', nq_*) de um atendimento anterior.
+  const closeCategory = conv.qualified ? 'qualificado' : 'transferido';
+  const nudges = conv.collectNudgeCount;
+
+  if (plan.kind === 'handoff') {
+    if (await inboundSince(conv.contactId, last.createdAt)) return;
+    const reason = pendingHandoffReason({
+      trigger: 'window', missing: previousMissing, nudges,
+      windowClosed: plan.windowClosed, windowClosesAt: plan.windowClosesAt, now,
+    });
+    // Janela fechando NÃO conclui o pedido: quem conclui é a IA (lista
+    // completa, item impossível). Mantido e pausado na Fila, o Devolver sem
+    // texto retoma a coleta (decisão 5) e a nota diz "continua valendo".
+    if (await handoffToQueue(conv.contactId, label, reason, closeCategory, { onlyIfStatus: 'bot' })) {
+      results.pendingHandoffs++;
+      await recordCodeIntervention({
+        contactId: conv.contactId,
+        contactName: conv.contact.name,
+        botState: conv.botState,
+        action: 'pendencia_para_fila',
+        detail: `Pedido em aberto enviado à Fila pelo cron de silêncio: ${reason}.`,
+      });
+    }
+    return;
+  }
+
+  // Cobrança. A trava do envio vem ANTES da IA: uma automação ou um aviso de
+  // andamento nas últimas 6 h (cooldown de toda proativa) fariam a IA ser paga
+  // a cada rodada sem nada sair. O envio confere tudo de novo.
+  const block = await systemSendBlockReason(conv.contactId);
+  if (block) {
+    console.log(`[WHATSAPP CRON] ${conv.contactId}: cobrança do pedido em aberto adiada (${block}).`);
+    return;
+  }
+  if (!(await pacer.slot())) return;
+  const [docsSinceOpened, flowName] = await Promise.all([
+    db.whatsAppMessage.count({
+      where: {
+        contactId: conv.contactId, direction: 'in', deletedAt: null, mediaKey: { not: null },
+        createdAt: { gte: requestAt }, ...clientDocumentMediaWhere(),
+      },
+    }),
+    conv.collectRequestSource === 'fluxo_ia' && conv.collectRequest
+      ? flowNameForListText(conv.collectRequest)
+      : Promise.resolve(null),
+  ]);
+  const attempt = plan.attempt;
+  const d = await decidePendingFollowup(conv, {
+    text: conv.collectRequest,
+    source: isCollectSource(conv.collectRequestSource) ? conv.collectRequestSource : 'devolver',
+    at: requestAt.toISOString(),
+    flowName,
+    docsSinceOpened,
+    attempt,
+    windowClosesAt: plan.windowClosesAt.toISOString(),
+    lastClientAt: lastInbound?.createdAt.toISOString() ?? null,
+    ...(previousMissing ? { previousMissing } : {}),
+  });
+  const logBase = { attempt, reason: d.reason, missing: d.missing, leaked: d.leaked, usage: d.usage };
+  // Corrida (BOT-5): o cliente escreveu durante a decisão; o bot da mensagem
+  // nova responde. O gasto da IA fica no log mesmo assim.
+  if (await inboundSince(conv.contactId, last.createdAt)) {
+    await logPendingFollowup(conv, {
+      ...logBase, action: d.outcome, sent: false, error: d.error,
+      reason: `${d.reason} [descartado: o cliente escreveu durante a decisão]`.trim(),
+    });
+    return;
+  }
+  // Guard das gravações: o pedido e a avaliação vistos na seleção (Devolver
+  // com pedido novo no meio do caminho zera os dois).
+  const guard = { id: conv.id, status: 'bot', collectRequestAt: conv.collectRequestAt, collectNudgeAt: conv.collectNudgeAt };
+  switch (d.outcome) {
+    case 'legacy':
+      await logPendingFollowup(conv, {
+        ...logBase, action: 'legacy', sent: false, retry: true,
+        reason: 'micro sem o modo de pendência: nada enviado nem encerrado',
+      });
+      return;
+    case 'error':
+      await logPendingFollowup(conv, { ...logBase, action: 'error', sent: false, retry: true, error: d.error });
+      return;
+    case 'silent':
+      // Backoff do silêncio: a próxima avaliação sai 6 h depois desta.
+      await db.whatsAppConversation.updateMany({ where: guard, data: { collectNudgeAt: new Date() } });
+      await logPendingFollowup(conv, { ...logBase, action: 'silent', sent: false });
+      return;
+    case 'handoff': {
+      // Nada mais pendente, item que o cliente não consegue ou assunto da
+      // equipe: Fila com o checklist, concluindo o pedido.
+      const reason = pendingHandoffReason({ trigger: 'ai', missing: d.missing, aiReason: d.reason, nudges });
+      if (await handoffToQueue(conv.contactId, label, reason, closeCategory, { onlyIfStatus: 'bot', concludeRequest: true })) {
+        results.pendingHandoffs++;
+      }
+      await logPendingFollowup(conv, { ...logBase, action: 'handoff', sent: false });
+      return;
+    }
+    case 'nudge': {
+      if (!d.message) {
+        await logPendingFollowup(conv, {
+          ...logBase, action: 'nudge', sent: false, retry: true, reason: `${d.reason} [cobrança sem texto]`.trim(),
+        });
+        return;
+      }
+      // unansweredAlert:false — o aviso "N automáticas sem resposta" iria à
+      // equipe inteira; aqui quem é avisado é o dono, na transferência.
+      const res = await sendSystemWhatsApp({
+        phone: conv.contact.phone,
+        contactId: conv.contactId,
+        clientName: conv.contact.name,
+        text: d.message,
+        authorId: 'whatsapp-bot',
+        authorName: '🤖 Bot WhatsApp',
+        source: 'collect_nudge',
+        unansweredAlert: false,
+      });
+      if (res.sent) {
+        await db.whatsAppConversation.updateMany({
+          where: guard,
+          data: { collectNudgeAt: new Date(), collectNudgeCount: { increment: 1 } },
+        });
+        results.pendingNudges++;
+        await recordFollowupDecision({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'nudge',
+          detail: `pendência: ${d.reason || d.missing || 'cobrança do pedido em aberto'}`,
+        });
+      }
+      await logPendingFollowup(conv, {
+        ...logBase, action: 'nudge', sent: res.sent, retry: !res.sent,
+        reason: res.sent ? d.reason : `${d.reason} [não enviada: ${res.reason ?? 'sem detalhe'}]`.trim(),
+      });
+      return;
+    }
+  }
+}
+
+/**
+ * Rede do cron de silêncio (30/09/2026): conversa DEVOLVIDA pela equipe
+ * (returnedToBotAt depois do último encerramento, dentro da janela do dono
+ * pegajoso) a um contato COM card. Devolve o instante do Devolver, ou null.
+ * Ela não recebe "ainda está aí?" nem despedida e mantém o dono: o cliente com
+ * processo responde ao atendente no tempo dele (settleHumanLast segura).
+ */
+function returnedCardHoldFrom(
+  conv: { returnedToBotAt: Date | null; closedAt: Date | null; contact: { userId: string | null } },
+  now: number,
+): Date | null {
+  if (HUMAN_HOLD_MS <= 0 || !conv.returnedToBotAt || !conv.contact.userId) return null;
+  const at = conv.returnedToBotAt.getTime();
+  return at > (conv.closedAt?.getTime() ?? 0) && now - at < HUMAN_HOLD_MS ? conv.returnedToBotAt : null;
 }
 
 /**
@@ -542,6 +1024,9 @@ async function finalizeClose(
       recoveryNextAt: null,
       ...(opts.closeCategory ? { closeCategory: opts.closeCategory } : {}),
       ...(opts.recoveryOutcome ? { recoveryOutcome: opts.recoveryOutcome } : {}),
+      // Encerramento por silêncio LIMPA o pedido em aberto sem âncora (não o
+      // conclui): a lista continua detectável se o cliente voltar em 7 dias.
+      ...COLLECT_REQUEST_CLEARED,
     },
   });
   if (count === 0) return false;
@@ -593,6 +1078,9 @@ async function enterStandby(
       queueAlertAt: null,
       recoveryNextAt: nextBrBusinessSlot(Math.max(base, Date.now() + 60_000)),
       recoveryOutcome: null,
+      // Standby limpa o pedido em aberto sem âncora, como o encerramento (com
+      // WA_PENDING_FOLLOWUP desligado é por aqui que ele sai).
+      ...COLLECT_REQUEST_CLEARED,
     },
   });
   return count > 0;
@@ -700,14 +1188,11 @@ async function buildRecoveryMessage(
         headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHATBOT_SECRET },
         body: JSON.stringify({
           contact: { name: contactName },
-          memory: conv?.botMemory ?? null,
+          memory: maskMemorySecrets(conv?.botMemory),
           state: conv?.botState ?? null,
           attempt,
           maxAttempts,
-          history: history
-            .reverse()
-            .filter((h) => h.body)
-            .map((h) => ({ role: h.direction === 'in' ? 'client' : h.sentByBot ? 'bot' : 'agent', text: h.body })),
+          history: cronBrainHistory(history),
         }),
         signal: controller.signal,
         cache: 'no-store',
@@ -747,6 +1232,38 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   const pacer = createPacer(budgetMs);
   // Número desativado (somente leitura no inbox) fica fora de todos os crons.
   const onlyActive = await activeNumberConversationWhere();
+  // Conversas paradas com o atendente (última fala humana ou devolvida a
+  // cliente com card), no resumo do fim.
+  let humanHeld = 0;
+
+  // ---- 0. Pedido em aberto (cobrança de 6 em 6 h) ---------------------------
+  // Antes do silêncio de 30 min: com a fase ligada, conversa com pedido não
+  // passa pelos passos 1 e 2 (filtro collectRequest: null neles). Nunca
+  // avaliadas primeiro e, depois, quem foi avaliado há mais tempo: as que
+  // estão só esperando a hora (sem IA) não tomam as vagas das que vencem.
+  if (PENDING_FOLLOWUP_ON) {
+    const pendingConvs = await db.whatsAppConversation.findMany({
+      where: {
+        ...onlyActive,
+        status: 'bot',
+        collectRequest: { not: null },
+        lastMessageAt: { lte: new Date(now - PENDING_MIN_SILENCE_MS) },
+      },
+      include: { contact: true },
+      orderBy: [{ collectNudgeAt: { sort: 'asc', nulls: 'first' } }, { lastMessageAt: 'asc' }],
+      take: 25,
+    });
+    await timed(`pedido em aberto (${pendingConvs.length} conversas)`, () => inSequence(pendingConvs, async (conv) => {
+      try {
+        await runPendingFollowup(conv, now, pacer, results);
+      } catch (err) {
+        console.error('[WHATSAPP CRON] Falha na cobrança do pedido em aberto:', conv.contactId, err);
+        results.errors++;
+      }
+    }));
+  }
+  // Com a fase ligada, os passos 1 e 2 não pegam conversa com pedido em aberto.
+  const noOpenRequest = PENDING_FOLLOWUP_ON ? { collectRequest: null } : {};
 
   // ---- 1. Silêncio de 30 minutos ------------------------------------------
   // Mais antigas primeiro: às 7h o acúmulo da noite sai na ordem em que as
@@ -754,6 +1271,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   const silent30 = await db.whatsAppConversation.findMany({
     where: {
       ...onlyActive,
+      ...noOpenRequest,
       status: 'bot',
       botNudge30At: null,
       lastMessageAt: { lte: new Date(now - NUDGE_AFTER_MS) },
@@ -780,6 +1298,15 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
         }
         if (orphan === 'left') return;
       }
+      // Devolvida pela equipe a cliente com card (rede de 30/09/2026): sem
+      // "ainda está aí?" nem despedida, e o dono fica. Parada até o fim da
+      // janela do dono pegajoso contada do Devolver (botNudge30At no futuro,
+      // como na última fala humana); depois, encerramento normal sem standby.
+      const returnedAt = returnedCardHoldFrom(conv, now);
+      if (returnedAt) {
+        if ((await settleHumanLast(conv, returnedAt, now)) === 'held') humanHeld++;
+        return;
+      }
       // Só cutuca se a ÚLTIMA mensagem foi do bot (pergunta sem resposta).
       // Fecho do cliente, atendente por último ou silêncio escolhido pelo
       // cérebro só ganham o marcador (e vão para standby/encerradas depois;
@@ -796,7 +1323,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       // Daqui pra frente a conversa vai receber mensagem: pega uma vaga na
       // fila de envio. Sem vaga, fica intacta pra próxima rodada do cron.
       if (!(await pacer.slot())) return;
-      const decision = await decideFollowup(conv.contactId, conv.contact.name, last.body);
+      const decision = await decideFollowup(conv, last.body);
       // Corrida com mensagem nova (BOT-5): a decisão da IA leva até 12 s e a
       // vaga do marcapasso mais alguns. Se o cliente escreveu nesse meio
       // tempo, o bot da mensagem nova responde; o cron sai sem mexer em nada.
@@ -854,10 +1381,10 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   // Mesma ordem: quem foi cutucado primeiro se despede primeiro. Conversa com
   // a última fala de atendente dentro da janela do dono pegajoso é "parada"
   // (botNudge30At no futuro, ver settleHumanLast) e não volta aqui até vencer.
-  let humanHeld = 0;
   const silentAfterNudge = await db.whatsAppConversation.findMany({
     where: {
       ...onlyActive,
+      ...noOpenRequest,
       status: 'bot',
       botNudge30At: { not: null, lte: new Date(now - CLOSE_AFTER_MS) },
     },
@@ -883,6 +1410,15 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
           return;
         }
         if (orphan === 'left') return;
+      }
+      // Devolvida a cliente com card ainda dentro da janela (marcador antigo,
+      // de antes do Devolver): volta a ficar parada, sem despedida.
+      const returnedAt = returnedCardHoldFrom(conv, now);
+      if (returnedAt) {
+        const settled = await settleHumanLast(conv, returnedAt, now);
+        if (settled === 'held') humanHeld++;
+        if (settled === 'closed') results.closed++;
+        if (settled !== 'legacy') return;
       }
       // Última fala de atendente: parada no bot durante a janela do dono
       // pegajoso; depois dela, encerrada direto, sem standby (settleHumanLast).
@@ -948,7 +1484,11 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
   console.log(
     `[WHATSAPP CRON] nudge: ${results.nudged30} cutucada(s), ${results.standby} standby, ${results.closed} encerrada(s), ` +
     `${results.orphans} órfã(s) para a Fila${ORPHAN_TO_QUEUE ? '' : ' (WA_ORPHAN_TO_QUEUE desligado)'}, ` +
-    `${humanHeld} parada(s) com o atendente${HUMAN_HOLD_MS > 0 ? '' : ' (WA_HUMAN_HOLD_DAYS desligado)'}, ${results.errors} erro(s).`,
+    `${humanHeld} parada(s) com o atendente${HUMAN_HOLD_MS > 0 ? '' : ' (WA_HUMAN_HOLD_DAYS desligado)'}, ` +
+    (PENDING_FOLLOWUP_ON
+      ? `${results.pendingNudges} cobrança(s) de pedido em aberto, ${results.pendingHandoffs} pedido(s) em aberto para a Fila, `
+      : 'cobrança do pedido em aberto desligada (WA_PENDING_FOLLOWUP), ') +
+    `${results.errors} erro(s).`,
   );
   return results;
 }

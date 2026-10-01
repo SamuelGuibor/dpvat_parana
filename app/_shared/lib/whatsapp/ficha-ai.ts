@@ -17,6 +17,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "@/app/_shared/lib/prisma";
 import { createLog, logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { newerInboundWhere } from "@/app/_shared/utils/bot-timing";
+import { maskSecretsInSequence } from "@/app/_shared/utils/mask-secrets";
 
 /** Ação do log do card quando a IA preenche a ficha (aba Histórico). */
 export const FICHA_AI_ACTION = "ficha_ai_fill";
@@ -233,7 +234,11 @@ export async function autoFillClientInfo(contactId: string, opts: FichaAiOptions
       }
     }
 
-    const transcriptText = history
+    // Senha/código mascarados antes do prompt (mask-secrets.ts, decisão do
+    // dono de 30/09/2026): esta chamada roda a cada rajada, em qualquer status,
+    // e sem a máscara mandava ao Haiku o valor que o /reply do mesmo turno já
+    // escondia. A ficha não tem campo de senha, então nada se perde.
+    const lines = history
       .map((m) => {
         const who = m.direction === "in" ? "CLIENTE" : m.sentByBot ? "BOT" : "ATENDENTE";
         const text = m.body?.trim()
@@ -243,10 +248,11 @@ export async function autoFillClientInfo(contactId: string, opts: FichaAiOptions
             : m.mediaKey
               ? "📎 (anexo)"
               : "";
-        return text ? `${who}: ${text}` : null;
+        return text ? { who, text } : null;
       })
-      .filter(Boolean)
-      .join("\n");
+      .filter((l): l is { who: string; text: string } => !!l);
+    const maskedTexts = maskSecretsInSequence(lines.map((l) => l.text));
+    const transcriptText = lines.map((l, i) => `${l.who}: ${maskedTexts[i]}`).join("\n");
 
     const prompt = `Você é o assistente da Paraná Seguros (assessoria previdenciária). Leia a conversa de WhatsApp abaixo (e os documentos anexados, se houver — RG, CNH, comprovantes etc.) e extraia SOMENTE os dados do CLIENTE para a ficha de cadastro.
 

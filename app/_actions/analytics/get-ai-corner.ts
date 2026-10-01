@@ -31,6 +31,8 @@ const OPERATION_LABELS: Record<string, string> = {
   // Fora do wa_bot de propósito: o custo por decisão do bot não conta turno
   // descartado (corrida, atendente assumiu).
   wa_bot_discarded: 'Bot — respostas descartadas',
+  // IA do cron: decide se cutuca ou encerra a conversa calada.
+  wa_followup: 'Bot — follow-up do cron',
   wa_transcribe: 'Transcrição de áudio',
   wa_suggest: 'Sugestão de resposta',
   wa_summary: 'Resumo da conversa',
@@ -43,6 +45,7 @@ const OPERATION_LABELS: Record<string, string> = {
 const OPERATION_ICONS: Record<string, string> = {
   wa_bot: 'bot',
   wa_bot_discarded: 'bot',
+  wa_followup: 'bot',
   wa_transcribe: 'mic',
   wa_suggest: 'message',
   wa_summary: 'file',

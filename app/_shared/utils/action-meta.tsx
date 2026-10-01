@@ -3,7 +3,7 @@ import {
   Activity, ArrowRightLeft, Pencil, Plus, MessageSquare, FileUp, FileX,
   ListChecks, Archive, MessageCircle, Image as ImageIcon, FileText, Workflow,
   LayoutTemplate, StickyNote, Bot, UserCheck, RotateCcw, CheckCircle2, Code2, Sparkles,
-  FileClock, Trash2, Tag,
+  FileClock, Trash2, Tag, ClipboardList,
 } from 'lucide-react';
 
 /** Metadados visuais por tipo de ação de log (compartilhado por Meu Espaço e Gestor).
@@ -30,6 +30,8 @@ export const ACTION_META: Record<string, { label: string; icon: React.ElementTyp
   wa_assign:       { label: 'WhatsApp: assumiu',   icon: UserCheck,      tint: 'text-sky-600 bg-sky-50',       ring: 'ring-sky-100',     bar: 'bg-sky-500', hex: '#0ea5e9' },
   wa_reopen:       { label: 'WhatsApp: reaberto',  icon: RotateCcw,      tint: 'text-orange-600 bg-orange-50', ring: 'ring-orange-100',  bar: 'bg-orange-500', hex: '#f97316' },
   wa_return_bot:   { label: 'WhatsApp: p/ bot',    icon: Bot,            tint: 'text-gray-600 bg-gray-100',    ring: 'ring-gray-100',    bar: 'bg-gray-500', hex: '#6b7280' },
+  // Editou/concluiu o pedido em aberto da IA pela barra "IA recolhendo".
+  wa_collect_request: { label: 'WhatsApp: pedido p/ IA', icon: ClipboardList, tint: 'text-sky-700 bg-sky-50', ring: 'ring-sky-100', bar: 'bg-sky-600', hex: '#0284c7' },
   wa_close:        { label: 'WhatsApp: encerrou',  icon: CheckCircle2,   tint: 'text-lime-600 bg-lime-50',     ring: 'ring-lime-100',    bar: 'bg-lime-600', hex: '#65a30d' },
   wa_bot:          { label: 'WhatsApp: bot (IA)',  icon: Bot,            tint: 'text-zinc-500 bg-zinc-100',    ring: 'ring-zinc-100',    bar: 'bg-zinc-400', hex: '#a1a1aa' },
   wa_tag_add:      { label: 'WhatsApp: tags',      icon: Tag,            tint: 'text-pink-600 bg-pink-50',     ring: 'ring-pink-100',    bar: 'bg-pink-500', hex: '#ec4899' },

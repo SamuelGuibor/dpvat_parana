@@ -783,6 +783,31 @@ model WhatsAppConversation {
   botFailCount     Int                        @default(0) // "não entendi" seguidos; 2 → escala pra humano
   botNudge30At     DateTime? // "ainda está aí?" enviado (silêncio de 30min)
   botNudge24At     DateTime? // follow-up de ~24h enviado
+  // PEDIDO EM ABERTO (30/09/2026): o que a IA deve recolher até completar
+  // (lista de documentos, prints, dados). Vai ao cérebro como FATO
+  // (conversationFacts.attendantRequest); quem decide o que fazer é ele.
+  // Regras e helpers em app/_shared/utils/collect-request.ts. Origem
+  // (collectRequestSource): "devolver" (texto do botão Devolver ao bot),
+  // "lista_atendente" (lista detectada numa mensagem de atendente dos
+  // últimos 7 dias) ou "fluxo_ia" (fluxo com cara de lista que a própria IA
+  // mandou). Null = nada em aberto. CONCLUIR (collectRequestEndedData) grava
+  // collectRequestEndedAt; LIMPAR (COLLECT_REQUEST_CLEARED) não grava, de
+  // propósito: a detecção só ignora mensagens anteriores ao fim de um pedido
+  // concluído, e o encerramento manual/cron não consome a lista enviada.
+  collectRequest        String?
+  collectRequestAt      DateTime? // abertura; na lista detectada, o createdAt da mensagem
+  collectRequestById    String? // User.id de quem pediu (sem FK); null em fluxo_ia; nunca vai ao cérebro
+  collectRequestSource  String? // devolver | lista_atendente | fluxo_ia
+  collectRequestEndedAt DateTime? // fim do último pedido concluído (âncora da detecção)
+  // Cobrança automática do pedido em aberto (cron, fase 0 do nudge): última
+  // avaliação que terminou em cobrança ou silêncio (backoff de 6 h) e quantas
+  // cobranças saíram no pedido atual (zera quando o pedido abre ou é limpo).
+  collectNudgeAt        DateTime?
+  collectNudgeCount     Int       @default(0)
+  // Último "Devolver ao bot" (NUNCA limpo): fato priorOutcome.returnedByAttendant
+  // do cérebro (até 7 dias e depois do último encerramento) e rede do cron
+  // de silêncio para contato com card.
+  returnedToBotAt       DateTime?
   // Urgência detectada pela IA — destaca a conversa no inbox até um atendente
   // assumir ou encerrar.
   urgent           Boolean                    @default(false)

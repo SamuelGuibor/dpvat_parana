@@ -4,6 +4,7 @@ import { db } from "@/app/_shared/lib/prisma";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendText, sendMedia, sendVoiceNote } from "./client";
 import { applyFlowTagsToContact } from "./flow-tags";
+import { flowListText, sameCollectRequest } from "@/app/_shared/utils/collect-request";
 import { broadcastWhatsAppEvent, whatsappChannelId, type WhatsAppMessageDTO } from "./service";
 
 // Execução de um fluxo pré-setado (WhatsAppFlow) do lado do SERVIDOR — usada
@@ -46,6 +47,37 @@ export async function listFlowsForBot(): Promise<{ name: string; description: st
   return flows
     .filter((f) => f.description && f.description.trim())
     .map((f) => ({ name: f.name, description: f.description!.trim() }));
+}
+
+/**
+ * Texto do pedido em aberto que este fluxo abre quando a IA o manda (passos de
+ * texto com cara de lista, collect-request.ts), ou null: fluxo sem lista ou
+ * inexistente. Genérico de propósito: qualquer fluxo de lista que a equipe
+ * criar abre o pedido, sem nome de fluxo no código. Nunca lança.
+ */
+export async function flowListTextByName(flowName: string): Promise<string | null> {
+  try {
+    const flow = await db.whatsAppFlow.findUnique({ where: { name: flowName }, select: { steps: true } });
+    return flow ? flowListText((flow.steps as unknown as FlowStep[]) ?? []) : null;
+  } catch (err) {
+    console.error(`[FLOW BOT] Falha ao ler a lista do fluxo "${flowName}":`, err);
+    return null;
+  }
+}
+
+/**
+ * Nome do fluxo cuja lista virou o pedido em aberto (fato flowName do cérebro,
+ * origem fluxo_ia): a coluna guarda só o texto. São poucos fluxos; nunca lança.
+ */
+export async function flowNameForListText(text: string): Promise<string | null> {
+  try {
+    const flows = await db.whatsAppFlow.findMany({ select: { name: true, steps: true } });
+    const match = flows.find((f) => sameCollectRequest(flowListText((f.steps as unknown as FlowStep[]) ?? []), text));
+    return match?.name ?? null;
+  } catch (err) {
+    console.error("[FLOW BOT] Falha ao achar o fluxo do pedido em aberto:", err);
+    return null;
+  }
 }
 
 async function persistAndBroadcast(
