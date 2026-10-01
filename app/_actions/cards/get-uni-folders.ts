@@ -18,7 +18,7 @@ export type UniFolderRow = FolderRow;
 export type UniFoldersResult = FolderReportResult;
 
 interface GetUniFoldersProps {
-  /** ISO — início do período (filtra por enviadoEm). */
+  /** ISO — início do período (envio e desfecho filtrados cada um pela sua data). */
   from: string;
   /** ISO — fim do período. */
   to: string;
@@ -28,5 +28,10 @@ export async function getUniFolders({ from, to }: GetUniFoldersProps): Promise<U
   noStore();
   // Permissão própria (antes herdava view_archived — hoje é granular).
   await requirePermission("view_pagos_uni");
-  return buildFolderReport({ keyword: "UNI", from, to });
+  return buildFolderReport({
+    keyword: "UNI",
+    statuses: { paid: "pagos_uni", denied: "pastas_negadas_uni" },
+    from,
+    to,
+  });
 }

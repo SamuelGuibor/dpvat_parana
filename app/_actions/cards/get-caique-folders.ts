@@ -18,7 +18,7 @@ export type CaiqueFolderRow = FolderRow;
 export type CaiqueFoldersResult = FolderReportResult;
 
 interface GetCaiqueFoldersProps {
-  /** ISO — início do período (filtra por enviadoEm). */
+  /** ISO — início do período (envio e desfecho filtrados cada um pela sua data). */
   from: string;
   /** ISO — fim do período. */
   to: string;
@@ -28,5 +28,12 @@ export async function getCaiqueFolders({ from, to }: GetCaiqueFoldersProps): Pro
   noStore();
   // Permissão própria (antes herdava view_archived — hoje é granular).
   await requirePermission("view_pagos_caique");
-  return buildFolderReport({ keyword: "CAIQUE", from, to });
+  // CCS = Caique: "APTOS CCS"/"PASTAS NEGADAS CCS" são o desfecho das pastas
+  // dele; pasta que foi pro UNI e saiu "APTOS UNI" não conta como paga aqui.
+  return buildFolderReport({
+    keyword: "CAIQUE",
+    statuses: { paid: "pagos_ccs", denied: "pastas_negadas_ccs" },
+    from,
+    to,
+  });
 }

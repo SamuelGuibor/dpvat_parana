@@ -1,4 +1,12 @@
 import { db } from "./prisma";
+import {
+  computeFolderTotals,
+  inPeriod,
+  outcomeAsOf,
+  type FolderOutcome,
+  type FolderPeriodTotals,
+  type FolderStatuses,
+} from "../utils/folder-period";
 
 // ---------------------------------------------------------------------------
 // Núcleo das planilhas de "pastas enviadas" (Caique e UNI).
@@ -11,11 +19,13 @@ import { db } from "./prisma";
 // movimento: se o card saiu da coluna (ou foi arquivado), a data de entrada se
 // perderia. O Log preserva o histórico completo.
 //
-// Desfecho: vem do archiveStatus do card (mesma régua da aba Arquivados) —
-// pagos_* = PAGO, pastas_negadas_* = NEGADO, resto continua só "enviado".
+// Desfecho: vem do archiveStatus + archivedAt do card (mesma régua da aba
+// Arquivados). Pago/negado conta no período da DATA DO DESFECHO, não do envio
+// (regras em utils/folder-period.ts). Antes contava "enviadas no mês que hoje
+// estão pagas" e misturava pagos_uni na planilha do Caique (e vice-versa).
 // ---------------------------------------------------------------------------
 
-export type FolderOutcome = "enviado" | "pago" | "negado";
+export type { FolderOutcome };
 
 export interface FolderRow {
   cardId: string;
@@ -25,12 +35,18 @@ export interface FolderRow {
   name: string;
   telefone: string;
   hospital: string;
-  /** ISO de quando o card ENTROU na coluna destino (primeiro movimento). */
-  enviadoEm: string;
+  /** ISO de quando o card ENTROU na coluna destino (primeiro movimento).
+   *  null = pasta paga/negada sem registro de envio (anterior aos logs). */
+  enviadoEm: string | null;
   /** Nome da coluna que recebeu a pasta (ex.: "ENVIADOS P/ UNI"). */
   colunaOrigem: string;
+  /** Desfecho como estava no FIM do período pedido. */
   desfecho: FolderOutcome;
-  /** ISO de quando foi arquivado (null = ainda ativo no board). */
+  /** ISO do desfecho (pagamento/negativa/encerramento) — null se em aberto. */
+  desfechoEm: string | null;
+  enviadaNoPeriodo: boolean;
+  resolvidaNoPeriodo: boolean;
+  /** ISO de quando foi arquivado HOJE (null = ainda ativo no board). */
   arquivadoEm: string | null;
   /** Coluna atual do board ou rótulo do status de arquivamento. */
   situacaoAtual: string;
@@ -39,16 +55,9 @@ export interface FolderRow {
   label: { id: string; name: string; color: string } | null;
 }
 
-export interface FolderReportTotals {
-  enviadas: number;
-  pagas: number;
-  negadas: number;
-  /** Enviadas que ainda não têm desfecho (nem pago, nem negado). */
-  emAnalise: number;
+export interface FolderReportTotals extends FolderPeriodTotals {
   /** Enviadas no período imediatamente anterior, de mesma duração. */
   enviadasAnterior: number;
-  /** Mediana de dias entre o envio e o arquivamento das já resolvidas. */
-  medianaDiasDesfecho: number | null;
 }
 
 export interface FolderReportResult {
@@ -73,20 +82,12 @@ const ARCHIVE_LABELS: Record<string, string> = {
   voltar_um_dia: "VOLTAR UM DIA",
 };
 
-// Status de arquivamento que definem o desfecho da pasta.
-const PAID_STATUSES = new Set(["pagos_ccs", "pagos_uni"]);
-const DENIED_STATUSES = new Set(["pastas_negadas_ccs", "pastas_negadas_uni"]);
-
-function outcomeFromArchiveStatus(status: string | null): FolderOutcome {
-  if (status && PAID_STATUSES.has(status)) return "pago";
-  if (status && DENIED_STATUSES.has(status)) return "negado";
-  return "enviado";
-}
-
 interface BuildFolderReportProps {
   /** Trecho do nome da coluna que marca o envio (ex.: "CAIQUE", "UNI"). */
   keyword: string;
-  /** ISO — início do período (filtra por enviadoEm). */
+  /** Status de arquivamento que são pago/negado NESTE destino. */
+  statuses: FolderStatuses;
+  /** ISO — início do período. */
   from: string;
   /** ISO — fim do período. */
   to: string;
@@ -94,6 +95,7 @@ interface BuildFolderReportProps {
 
 export async function buildFolderReport({
   keyword,
+  statuses,
   from,
   to,
 }: BuildFolderReportProps): Promise<FolderReportResult> {
@@ -132,17 +134,24 @@ export async function buildFolderReport({
   const spanMs = Math.max(0, toDate.getTime() - fromDate.getTime());
   const prevFrom = new Date(fromDate.getTime() - spanMs);
 
-  // Só interessam os cards cuja entrada caiu DENTRO do período pedido.
-  const userIds: string[] = [];
-  const processIds: string[] = [];
+  const sentUserIds: string[] = [];
+  const sentProcessIds: string[] = [];
   let enviadasAnterior = 0;
   for (const [key, entry] of firstEntry) {
     const at = entry.at;
     if (at >= prevFrom && at < fromDate) enviadasAnterior++;
-    if (at < fromDate || at > toDate) continue;
-    if (key.startsWith("p:")) processIds.push(key.slice(2));
-    else userIds.push(key.slice(2));
+    const isProcess = key.startsWith("p:");
+    if (inPeriod(at, fromDate, toDate)) (isProcess ? sentProcessIds : sentUserIds).push(key.slice(2));
   }
+
+  // Cards da planilha = enviados no período + os pagos/negados no período
+  // (enviados antes, pagos agora). Entram também os arquivados com o
+  // pago/negado deste destino sem passar pela coluna: pastas anteriores aos
+  // logs de movimento (começam em 02/07/2026) ou arquivadas direto do board.
+  const resolvedIn = {
+    archivedAt: { gte: fromDate, lte: toDate },
+    archiveStatus: { in: [statuses.paid, statuses.denied] },
+  };
 
   const cardSelect = {
     id: true,
@@ -159,19 +168,22 @@ export async function buildFolderReport({
   };
 
   const [users, processes] = await Promise.all([
-    userIds.length
-      ? db.user.findMany({ where: { id: { in: userIds } }, select: cardSelect })
-      : Promise.resolve([]),
-    processIds.length
-      ? db.process.findMany({ where: { id: { in: processIds } }, select: { ...cardSelect, userId: true } })
-      : Promise.resolve([]),
+    db.user.findMany({
+      where: { OR: [{ id: { in: sentUserIds } }, resolvedIn] },
+      select: cardSelect,
+    }),
+    db.process.findMany({
+      where: { OR: [{ id: { in: sentProcessIds } }, resolvedIn] },
+      select: { ...cardSelect, userId: true },
+    }),
   ]);
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const toRow = (c: any, isProcess: boolean): FolderRow => {
-    const entry = firstEntry.get(isProcess ? `p:${c.id}` : `u:${c.id}`)!;
-    const enviadoEm = entry.at;
+    const entry = firstEntry.get(isProcess ? `p:${c.id}` : `u:${c.id}`);
     const archiveStatus: string | null = c.archiveStatus ?? null;
+    const archivedAt: Date | null = c.archivedAt ?? null;
+    const { desfecho, desfechoEm } = outcomeAsOf(archiveStatus, archivedAt, statuses, toDate);
     return {
       cardId: c.id,
       isProcess,
@@ -179,10 +191,13 @@ export async function buildFolderReport({
       name: c.name || "Sem nome",
       telefone: c.telefone || "",
       hospital: c.hospital || c.outro_hospital || "",
-      enviadoEm: enviadoEm.toISOString(),
-      colunaOrigem: entry.column,
-      desfecho: outcomeFromArchiveStatus(archiveStatus),
-      arquivadoEm: c.archivedAt ? c.archivedAt.toISOString() : null,
+      enviadoEm: entry ? entry.at.toISOString() : null,
+      colunaOrigem: entry?.column ?? "",
+      desfecho,
+      desfechoEm: desfechoEm ? desfechoEm.toISOString() : null,
+      enviadaNoPeriodo: !!entry && inPeriod(entry.at, fromDate, toDate),
+      resolvidaNoPeriodo: (desfecho === "pago" || desfecho === "negado") && inPeriod(desfechoEm, fromDate, toDate),
+      arquivadoEm: archivedAt ? archivedAt.toISOString() : null,
       situacaoAtual: archiveStatus
         ? (ARCHIVE_LABELS[archiveStatus] ?? archiveStatus)
         : (c.label?.name ?? c.role ?? ""),
@@ -192,38 +207,17 @@ export async function buildFolderReport({
     };
   };
 
+  // Linha fica no mês do desfecho quando foi paga/negada no período; senão no
+  // mês do envio. Mais recente primeiro.
+  const refTime = (r: FolderRow) =>
+    new Date((r.resolvidaNoPeriodo ? r.desfechoEm : r.enviadoEm) ?? 0).getTime();
   const rows: FolderRow[] = [
     ...users.map((u: any) => toRow(u, false)),
     ...processes.map((p: any) => toRow(p, true)),
-  ].sort((a, b) => new Date(b.enviadoEm).getTime() - new Date(a.enviadoEm).getTime());
+  ]
+    .filter((r) => r.enviadaNoPeriodo || r.resolvidaNoPeriodo)
+    .sort((a, b) => refTime(b) - refTime(a));
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
-  // Mediana (e não média) do tempo até o desfecho: uma pasta esquecida por
-  // meses distorceria a média e daria a impressão de que tudo demora.
-  const diasResolvidas = rows
-    .filter((r) => r.desfecho !== "enviado" && r.arquivadoEm)
-    .map((r) => (new Date(r.arquivadoEm!).getTime() - new Date(r.enviadoEm).getTime()) / 86_400_000)
-    .sort((a, b) => a - b);
-  const mid = Math.floor(diasResolvidas.length / 2);
-  const medianaDiasDesfecho = diasResolvidas.length === 0
-    ? null
-    : Math.round(
-        diasResolvidas.length % 2
-          ? diasResolvidas[mid]
-          : (diasResolvidas[mid - 1] + diasResolvidas[mid]) / 2,
-      );
-
-  const pagas = rows.filter((r) => r.desfecho === "pago").length;
-  const negadas = rows.filter((r) => r.desfecho === "negado").length;
-
-  const totals: FolderReportTotals = {
-    enviadas: rows.length,
-    pagas,
-    negadas,
-    emAnalise: rows.length - pagas - negadas,
-    enviadasAnterior,
-    medianaDiasDesfecho,
-  };
-
-  return { rows, totals };
+  return { rows, totals: { ...computeFolderTotals(rows), enviadasAnterior } };
 }

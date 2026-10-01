@@ -31,6 +31,7 @@ const STATE_CONFIG: Record<RowState, { label: string; badge: string; dot: string
   parada: { label: 'Parada', badge: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500' },
   pago: { label: 'Pago', badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' },
   negado: { label: 'Negado', badge: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' },
+  encerrado: { label: 'Encerrada', badge: 'bg-gray-100 text-gray-600 ring-gray-200', dot: 'bg-gray-400' },
 };
 
 // Cada destino tem seu próprio fetch e sua própria cópia; o resto da planilha
@@ -68,15 +69,31 @@ function formatDate(iso: string | null): string {
   return brDateBR(d);
 }
 
-/** Dias entre o envio e o arquivamento — ou até hoje, se ainda está aberta. */
-function diasDaPasta(r: FolderRow): number {
-  const fim = r.arquivadoEm ? new Date(r.arquivadoEm).getTime() : Date.now();
+/** Dias entre o envio e o desfecho — ou até hoje, se ainda está aberta.
+ *  null = pasta sem registro de envio (anterior aos logs de movimento). */
+function diasDaPasta(r: FolderRow): number | null {
+  if (!r.enviadoEm) return null;
+  const fimIso = r.desfechoEm ?? r.arquivadoEm;
+  const fim = fimIso ? new Date(fimIso).getTime() : Date.now();
   return Math.max(0, Math.round((fim - new Date(r.enviadoEm).getTime()) / 86_400_000));
 }
 
 function rowState(r: FolderRow): RowState {
   if (r.desfecho !== 'enviado') return r.desfecho;
-  return diasDaPasta(r) >= DIAS_PARA_PARADA ? 'parada' : 'enviado';
+  return (diasDaPasta(r) ?? 0) >= DIAS_PARA_PARADA ? 'parada' : 'enviado';
+}
+
+/** Mês (AAAA-MM, Brasília) em que a linha aparece: o do pagamento/negativa
+ *  quando ela foi resolvida no período, senão o do envio. */
+function rowMonth(r: FolderRow): string {
+  const iso = r.resolvidaNoPeriodo ? r.desfechoEm : r.enviadoEm;
+  return brDayKey(new Date(iso!)).slice(0, 7);
+}
+
+function monthLabel(key: string): string {
+  // Meio do mês, pra nenhum fuso empurrar pro mês vizinho.
+  const d = new Date(`${key}-15T12:00:00-03:00`);
+  return `${brMonthNameExtenso(d)} de ${brYear(d)}`;
 }
 
 function pct(part: number, total: number): string {
@@ -147,8 +164,8 @@ type OutcomeFilter = 'all' | 'pago' | 'negado' | 'aberto';
 
 /**
  * Planilha de controle das pastas enviadas pro Caique ou pra UNI: quem entrou
- * na coluna correspondente no período, com o desfecho (pago/negado) vindo do
- * arquivamento. Vive como sub-visão da aba Arquivados.
+ * na coluna correspondente no período + quem foi pago/negado no período (pela
+ * data do pagamento, não do envio). Vive como sub-visão da aba Arquivados.
  */
 export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
   const config = KIND_CONFIG[kind];
@@ -190,9 +207,9 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
-      if (filter === 'pago' && r.desfecho !== 'pago') return false;
-      if (filter === 'negado' && r.desfecho !== 'negado') return false;
-      if (filter === 'aberto' && r.desfecho !== 'enviado') return false;
+      if (filter === 'pago' && !(r.resolvidaNoPeriodo && r.desfecho === 'pago')) return false;
+      if (filter === 'negado' && !(r.resolvidaNoPeriodo && r.desfecho === 'negado')) return false;
+      if (filter === 'aberto' && !(r.enviadaNoPeriodo && r.desfecho === 'enviado')) return false;
       if (!q) return true;
       return (
         r.name.toLowerCase().includes(q) ||
@@ -202,26 +219,41 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
     });
   }, [rows, filter, query]);
 
-  // Agrupamento por mês de ENVIO, com subtotal por grupo. As linhas já vêm
-  // ordenadas do mais recente pro mais antigo, então basta quebrar na virada.
+  // Agrupamento por mês. A linha fica no mês do desfecho se foi paga/negada
+  // no período, senão no do envio — mas as contagens do cabeçalho olham cada
+  // uma a sua data: "enviadas" pelo envio, "pagas"/"negadas" pelo desfecho
+  // (entrou em 09 e foi paga em 10 → enviada em setembro, paga em outubro).
+  // Assim a soma dos cabeçalhos bate com os cartões do topo.
   const groups = useMemo(() => {
-    const out: { key: string; label: string; rows: FolderRow[] }[] = [];
+    type Group = { key: string; label: string; rows: FolderRow[]; enviadas: number; pagas: number; negadas: number };
+    const byKey = new Map<string, Group>();
+    const group = (key: string) => {
+      let g = byKey.get(key);
+      if (!g) {
+        g = { key, label: monthLabel(key), rows: [], enviadas: 0, pagas: 0, negadas: 0 };
+        byKey.set(key, g);
+      }
+      return g;
+    };
     for (const r of visible) {
-      const d = new Date(r.enviadoEm);
-      const key = brDayKey(d).slice(0, 7);
-      const last = out[out.length - 1];
-      if (last && last.key === key) last.rows.push(r);
-      else out.push({ key, label: `${brMonthNameExtenso(d)} de ${brYear(d)}`, rows: [r] });
+      group(rowMonth(r)).rows.push(r);
+      if (r.enviadaNoPeriodo) group(brDayKey(new Date(r.enviadoEm!)).slice(0, 7)).enviadas++;
+      if (r.resolvidaNoPeriodo) {
+        const g = group(brDayKey(new Date(r.desfechoEm!)).slice(0, 7));
+        if (r.desfecho === 'pago') g.pagas++;
+        else g.negadas++;
+      }
     }
-    return out;
+    return [...byKey.values()].sort((a, b) => b.key.localeCompare(a.key));
   }, [visible]);
 
   const exportCsv = useCallback(() => {
-    const head = ['Cliente', 'Telefone', 'Hospital', 'Coluna de origem', 'Enviado em', 'Dias', 'Situação', 'Situação atual', 'Arquivado em'];
+    const head = ['Cliente', 'Telefone', 'Hospital', 'Coluna de origem', 'Enviado em', 'Dias', 'Situação', 'Desfecho em', 'Situação atual', 'Arquivado em'];
     const esc = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
     const body = visible.map((r) => [
       r.name, r.telefone, r.hospital, r.colunaOrigem, formatDate(r.enviadoEm),
-      String(diasDaPasta(r)), STATE_CONFIG[rowState(r)].label, r.situacaoAtual, formatDate(r.arquivadoEm),
+      String(diasDaPasta(r) ?? ''), STATE_CONFIG[rowState(r)].label, formatDate(r.desfechoEm),
+      r.situacaoAtual, formatDate(r.arquivadoEm),
     ].map(esc).join(';'));
     // BOM pro Excel abrir os acentos certos.
     const blob = new Blob(['﻿' + [head.map(esc).join(';'), ...body].join('\r\n')], {
@@ -273,8 +305,7 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
           value={totals.pagas}
           valueClass="text-emerald-600 dark:text-emerald-400"
           iconBg="bg-emerald-100 text-emerald-600"
-          sub={`${pct(totals.pagas, totals.enviadas)} das enviadas`}
-          bar={{ pct: totals.enviadas ? totals.pagas / totals.enviadas * 100 : 0, color: 'bg-emerald-500' }}
+          sub="pela data do pagamento"
         />
         <KpiCard
           icon={XCircle}
@@ -282,8 +313,7 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
           value={totals.negadas}
           valueClass="text-red-600 dark:text-red-400"
           iconBg="bg-red-100 text-red-600"
-          sub={`${pct(totals.negadas, totals.enviadas)} das enviadas`}
-          bar={{ pct: totals.enviadas ? totals.negadas / totals.enviadas * 100 : 0, color: 'bg-red-500' }}
+          sub="pela data da negativa"
         />
         <KpiCard
           icon={Hourglass}
@@ -291,7 +321,7 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
           value={totals.emAnalise}
           valueClass="text-amber-600 dark:text-amber-400"
           iconBg="bg-amber-100 text-amber-600"
-          sub="ainda sem desfecho"
+          sub={`${pct(totals.emAnalise, totals.enviadas)} das enviadas no período, sem desfecho`}
           bar={{ pct: totals.enviadas ? totals.emAnalise / totals.enviadas * 100 : 0, color: 'bg-amber-500' }}
         />
         <KpiCard
@@ -301,14 +331,14 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
             ? '—'
             : <>{totals.medianaDiasDesfecho}<span className="text-base font-bold text-gray-400 dark:text-zinc-500">d</span></>}
           iconBg="bg-slate-100 text-slate-600"
-          sub="mediana das resolvidas"
+          sub="mediana das resolvidas no período"
         />
       </div>
 
       {/* ---- Filtros, busca, período e exportação ---- */}
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-5">
         <div className="flex items-center gap-2 flex-wrap">
-          <FilterChip value="all" label="Todas" count={totals.enviadas} />
+          <FilterChip value="all" label="Todas" count={rows.length} />
           <FilterChip value="pago" label="Pagas" count={totals.pagas} />
           <FilterChip value="negado" label="Negadas" count={totals.negadas} />
           <FilterChip value="aberto" label="Aguardando" count={totals.emAnalise} />
@@ -360,7 +390,7 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 dark:bg-zinc-950/50 text-left">
-                  {['Cliente', 'Telefone', 'Hospital', 'Coluna de origem', 'Enviado em', 'Dias', 'Situação', 'Arquivado em'].map((h) => (
+                  {['Cliente', 'Telefone', 'Hospital', 'Coluna de origem', 'Enviado em', 'Dias', 'Situação', 'Desfecho em'].map((h) => (
                     <th key={h} className="px-4 py-3 font-black text-[11px] text-gray-400 dark:text-zinc-500 uppercase tracking-wider whitespace-nowrap">
                       {h}
                     </th>
@@ -369,8 +399,7 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
               </thead>
               <tbody>
                 {groups.map((g) => {
-                  const pagas = g.rows.filter((r) => r.desfecho === 'pago').length;
-                  const negadas = g.rows.filter((r) => r.desfecho === 'negado').length;
+                  const diasConhecidos = g.rows.map(diasDaPasta).filter((d): d is number => d !== null);
                   return (
                     <React.Fragment key={g.key}>
                       {/* Cabeçalho do mês */}
@@ -379,7 +408,7 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
                           <div className="flex items-center gap-3 flex-wrap">
                             <span className="font-black text-[11px] uppercase tracking-wider text-gray-700 dark:text-zinc-200">{g.label}</span>
                             <span className="text-[11px] text-gray-400 dark:text-zinc-500 tabular-nums">
-                              {g.rows.length} enviadas · {pagas} pagas · {negadas} negadas
+                              {g.enviadas} enviadas · {g.pagas} pagas · {g.negadas} negadas
                             </span>
                           </div>
                         </td>
@@ -411,14 +440,16 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
                               {r.hospital || '—'}
                             </td>
                             <td className="px-4 py-3 border-b border-gray-100 dark:border-zinc-800 text-gray-500 dark:text-zinc-500 max-w-[190px] truncate text-xs" title={r.colunaOrigem}>
-                              {r.colunaOrigem}
+                              {r.colunaOrigem || (
+                                <span title="Paga/negada sem registro de entrada na coluna (anterior aos logs de movimento)">sem registro de envio</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 border-b border-gray-100 dark:border-zinc-800 text-gray-600 dark:text-zinc-400 whitespace-nowrap tabular-nums">{formatDate(r.enviadoEm)}</td>
                             <td className={cn(
                               'px-4 py-3 border-b border-gray-100 dark:border-zinc-800 whitespace-nowrap tabular-nums font-bold',
                               state === 'parada' ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-zinc-400',
                             )}>
-                              {diasDaPasta(r)}
+                              {diasDaPasta(r) ?? '—'}
                             </td>
                             <td className="px-4 py-3 border-b border-gray-100 dark:border-zinc-800">
                               <span className={cn(
@@ -435,13 +466,21 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
                                 </p>
                               )}
                             </td>
-                            <td className="px-4 py-3 border-b border-gray-100 dark:border-zinc-800 text-gray-600 dark:text-zinc-400 whitespace-nowrap tabular-nums">{formatDate(r.arquivadoEm)}</td>
+                            <td className="px-4 py-3 border-b border-gray-100 dark:border-zinc-800 text-gray-600 dark:text-zinc-400 whitespace-nowrap tabular-nums">
+                              {formatDate(r.desfechoEm)}
+                              {/* Arquivada só depois do fim do período: no período ela ainda estava em análise. */}
+                              {!r.desfechoEm && r.arquivadoEm && (
+                                <p className="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">
+                                  {formatDate(r.arquivadoEm)} (após o período)
+                                </p>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
 
-                      {/* Subtotal do mês */}
-                      <tr className="bg-gray-50 dark:bg-zinc-950/50">
+                      {/* Subtotal do mês (mês só com contagens, sem linha, fica só no cabeçalho) */}
+                      {g.rows.length > 0 && <tr className="bg-gray-50 dark:bg-zinc-950/50">
                         <td colSpan={4} className="px-4 py-2 font-black text-[11px] uppercase tracking-wider text-gray-500 dark:text-zinc-400">
                           Subtotal
                         </td>
@@ -449,12 +488,14 @@ export const FolderReport: React.FC<{ kind: FolderKind }> = ({ kind }) => {
                           {g.rows.length} pastas
                         </td>
                         <td className="px-4 py-2 text-[11px] text-gray-400 dark:text-zinc-500 tabular-nums whitespace-nowrap">
-                          {Math.round(g.rows.reduce((s, r) => s + diasDaPasta(r), 0) / g.rows.length)} méd.
+                          {diasConhecidos.length
+                            ? `${Math.round(diasConhecidos.reduce((s, d) => s + d, 0) / diasConhecidos.length)} méd.`
+                            : '—'}
                         </td>
                         <td colSpan={2} className="px-4 py-2 text-[11px] font-bold text-gray-500 dark:text-zinc-400 whitespace-nowrap">
-                          {pct(pagas, g.rows.length)} pagas · {pct(negadas, g.rows.length)} negadas
+                          {g.pagas} pagas · {g.negadas} negadas no mês
                         </td>
-                      </tr>
+                      </tr>}
                     </React.Fragment>
                   );
                 })}
