@@ -3,6 +3,7 @@
 'use server';
 
 import { getServerSession } from 'next-auth';
+import type { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
@@ -21,6 +22,11 @@ import { closeCategoryLabel, prepareCloseTag } from '@/app/_shared/lib/whatsapp/
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { STICKY_OWNER_ENABLED } from '@/app/_shared/lib/whatsapp/ownership';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
+import {
+  COLLECT_REQUEST_CLEARED, COLLECT_REQUEST_LOG_MAX, clipCollectText, collectOpenData, collectRequestEndedData,
+  collectRequestPatch, collectSummary, isCollectRequestLive, isCollectSource, normalizeCollectRequest,
+  pickAttendantRequest, requestAnchor, sameCollectRequest, type CollectRequestDTO, type CollectSource,
+} from '@/app/_shared/utils/collect-request';
 
 // Fila e atribuição de conversas de WhatsApp (estilo Botconversa):
 // bot → queued (handoff) → human (atendente assume) → closed.
@@ -32,8 +38,18 @@ import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
+/** Pedido em aberto da conversa, como está no banco (collect-request.ts). */
+interface StoredCollectRequest {
+  text: string | null;
+  at: Date | null;
+  source: string | null;
+  endedAt: Date | null;
+  nudges: number;
+}
+
 /**
- * Busca contactId + status + nome/telefone para anexar aos logs de auditoria.
+ * Busca contactId + status + nome/telefone para anexar aos logs de auditoria,
+ * e o pedido em aberto (Devolver, barra e Encerrar decidem em cima dele).
  * Um JOIN só: o `select` com a relação `contact` virava 2 SQL (o schema não
  * liga relationJoins), e isto roda em todo assumir, devolver e encerrar.
  */
@@ -41,9 +57,16 @@ async function convContact(conversationId: string): Promise<{
   contactId: string;
   status: string;
   contact: { name: string | null; phone: string };
+  collect: StoredCollectRequest;
 } | null> {
-  const rows = await db.$queryRaw<{ contactId: string; status: string; name: string | null; phone: string }[]>`
-    SELECT c."contactId", c.status, ct.name, ct.phone
+  const rows = await db.$queryRaw<{
+    contactId: string; status: string; name: string | null; phone: string;
+    collectRequest: string | null; collectRequestAt: Date | null; collectRequestSource: string | null;
+    collectRequestEndedAt: Date | null; collectNudgeCount: number | null;
+  }[]>`
+    SELECT c."contactId", c.status, ct.name, ct.phone,
+           c."collectRequest", c."collectRequestAt", c."collectRequestSource",
+           c."collectRequestEndedAt", c."collectNudgeCount"
     FROM whatsapp_conversations c
     JOIN whatsapp_contacts ct ON ct.id = c."contactId"
     WHERE c.id = ${conversationId}
@@ -51,12 +74,24 @@ async function convContact(conversationId: string): Promise<{
   `;
   const row = rows[0];
   if (!row) return null;
-  return { contactId: row.contactId, status: row.status, contact: { name: row.name, phone: row.phone } };
+  return {
+    contactId: row.contactId,
+    status: row.status,
+    contact: { name: row.name, phone: row.phone },
+    collect: {
+      text: row.collectRequest,
+      at: row.collectRequestAt,
+      source: row.collectRequestSource,
+      endedAt: row.collectRequestEndedAt,
+      nudges: Number(row.collectNudgeCount ?? 0),
+    },
+  };
 }
 
-// Guarda das MUTAÇÕES deste arquivo: role do JWT, sem trava de IP. A troca por
-// requireTeam (cargo do banco + trava) nas mutações é outra etapa; as leituras
-// abaixo já usam requireTeam.
+// Guarda das mutações ANTIGAS deste arquivo: role do JWT, sem trava de IP.
+// Devolver, Encerrar e o pedido em aberto já usam requireTeam (cargo do banco
+// + trava): o texto do pedido entra no prompt do cérebro. As leituras abaixo
+// também usam requireTeam; a troca nas demais mutações é outra etapa.
 async function requireTeamMember(): Promise<{ id: string; name: string }> {
   // Role e nome já vêm no JWT da sessão — o findUnique extra por chamada era
   // uma query redundante em TODO poll do inbox.
@@ -178,10 +213,112 @@ export async function assumeConversation(conversationId: string): Promise<Partia
   return assumePatch(me);
 }
 
-/** Devolve a conversa pro bot responder. */
-export async function returnConversationToBot(conversationId: string): Promise<Partial<WhatsAppConversationDTO>> {
-  const me = await requireTeamMember();
+/** Plano do pedido em aberto no Devolver: o `data` do update, o patch da tela e o que fica valendo (log). */
+interface ReturnCollectPlan {
+  data: Prisma.WhatsAppConversationUncheckedUpdateInput;
+  /** Ausente = a barra não muda. */
+  collect?: { collectRequest: CollectRequestDTO | null };
+  /** Pedido que fica valendo depois do Devolver (null = nada em aberto). */
+  text: string | null;
+  source: CollectSource | null;
+  changed: boolean;
+}
+
+const sourceOf = (v: string | null): CollectSource => (isCollectSource(v) ? v : 'devolver');
+
+/**
+ * O que o Devolver faz com o pedido em aberto (contrato de 30/09/2026):
+ * - `raw` undefined (campo vazio sem pedido anterior, ou aba com o bundle
+ *   antigo): mantém o pedido não vencido ou detecta a última lista mandada por
+ *   atendente, a mesma detecção do turno do bot (pickAttendantRequest depois
+ *   de requestAnchor). Gravar aqui, e não só no próximo turno, é o que deixa o
+ *   cron cobrar o silêncio de quem nunca mais respondeu;
+ * - null ou '' (o atendente esvaziou o campo): CONCLUI, com âncora (a
+ *   detecção não reabre a mesma lista);
+ * - texto: abre ou substitui com origem 'devolver'; o mesmo texto de um pedido
+ *   ainda válido não mexe (data e contagem de cobranças seguem).
+ */
+async function planReturnCollect(
+  stored: StoredCollectRequest,
+  contactId: string,
+  raw: string | null | undefined,
+  me: { id: string; name: string },
+  now: Date,
+): Promise<ReturnCollectPlan> {
+  const live = !!stored.text && isCollectRequestLive(stored.at, now);
+  if (raw !== undefined) {
+    const wanted = normalizeCollectRequest(raw);
+    if (!wanted) {
+      return { data: collectRequestEndedData(now), collect: collectRequestPatch(null), text: null, source: null, changed: !!stored.text };
+    }
+    if (live && sameCollectRequest(wanted, stored.text)) {
+      return { data: {}, text: stored.text, source: sourceOf(stored.source), changed: false };
+    }
+    return {
+      data: collectOpenData(wanted, me.id, 'devolver', now),
+      collect: collectRequestPatch({ text: wanted, at: now, byName: me.name, source: 'devolver' }),
+      text: wanted,
+      source: 'devolver',
+      changed: true,
+    };
+  }
+
+  // Lista de atendente MAIS NOVA que o pedido gravado fica no lugar dele
+  // ("Ainda faltam: ✅ …"), como no bot.ts. Índice [contactId, createdAt].
+  const after = new Date(Math.max(requestAnchor(stored.endedAt, now).getTime(), live && stored.at ? stored.at.getTime() : 0));
+  const msgs = await db.whatsAppMessage.findMany({
+    where: {
+      contactId, direction: 'out', sentByBot: false, internal: false, deletedAt: null,
+      createdAt: { gt: after },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+    select: { id: true, body: true, createdAt: true, authorId: true },
+  });
+  const detected = pickAttendantRequest(msgs, after);
+  if (detected) {
+    const author = detected.authorId
+      ? await db.user.findUnique({ where: { id: detected.authorId }, select: { name: true } })
+      : null;
+    return {
+      data: collectOpenData(detected.text, detected.authorId, 'lista_atendente', detected.at),
+      collect: collectRequestPatch({
+        text: detected.text, at: detected.at, byName: author ? author.name ?? 'Atendente' : null, source: 'lista_atendente',
+      }),
+      text: detected.text,
+      source: 'lista_atendente',
+      changed: true,
+    };
+  }
+  if (live) return { data: {}, text: stored.text, source: sourceOf(stored.source), changed: false };
+  // Vencido (> 7 dias) e nada novo: sai sem âncora, como no turno do bot.
+  if (stored.text) return { data: COLLECT_REQUEST_CLEARED, collect: collectRequestPatch(null), text: null, source: null, changed: true };
+  return { data: {}, text: null, source: null, changed: false };
+}
+
+/**
+ * Devolve a conversa pro bot responder, com o pedido opcional do campo "O
+ * que a IA deve recolher?" (regras em planReturnCollect). Também a partir da
+ * Fila: a IA transferiu por uma dúvida no meio da coleta, o atendente
+ * respondeu sem assumir e devolve.
+ */
+export async function returnConversationToBot(
+  conversationId: string,
+  // Opcional: a aba com o bundle antigo chama com 1 argumento só.
+  collectRequest?: string | null,
+): Promise<Partial<WhatsAppConversationDTO>> {
+  // requireTeam (cargo do banco + trava de IP), não o JWT: o texto do pedido
+  // vai para o prompt do cérebro.
+  const ctx = await requireTeam();
+  const me = { id: ctx.userId, name: ctx.name ?? 'Atendente' };
   const before = await convContact(conversationId);
+  const now = new Date();
+  // Vem do navegador: fora de texto/null vale como "não mexer" (nunca conclui
+  // um pedido por um valor estranho).
+  const raw = typeof collectRequest === 'string' || collectRequest === null ? collectRequest : undefined;
+  const plan: ReturnCollectPlan = before
+    ? await planReturnCollect(before.collect, before.contactId, raw, me, now)
+    : { data: {}, text: null, source: null, changed: false };
   await db.whatsAppConversation.update({
     where: { id: conversationId },
     // botNudge30At zerado: um marcador de silêncio antigo (armado antes de o
@@ -195,26 +332,83 @@ export async function returnConversationToBot(conversationId: string): Promise<P
     // transferia, a conversa caía na Fila sem dono e outro atendente pegava.
     // Agora ela segue 'bot' com o selo do atendente, e handoff/qualify levam de
     // volta para ele (ownership.ts). WA_HUMAN_HOLD_DAYS=0 volta a soltar.
+    //
+    // returnedToBotAt (nunca limpo): fato "conversa devolvida pela equipe" do
+    // cérebro (priorOutcome.returnedByAttendant) e rede do cron de silêncio.
     data: {
       status: 'bot',
       ...(STICKY_OWNER_ENABLED ? {} : { assignedToId: null }),
       queuedAt: null, queueAlertAt: null, botNudge30At: null, botNudge24At: null,
+      returnedToBotAt: now,
+      ...plan.data,
     },
   });
   if (before) {
-    const at = new Date();
+    const who = before.contact?.name ?? before.contact?.phone;
     runAfterResponse('log wa_return_bot', () => logWhatsAppEvent({
       action: 'wa_return_bot',
-      message: `devolveu ${before.contact?.name ?? before.contact?.phone} para o atendimento automático (bot)`,
+      message: plan.text
+        ? `devolveu ${who} para o atendimento automático (bot) — IA vai recolher: ${collectSummary(plan.text)}`
+        : `devolveu ${who} para o atendimento automático (bot)`,
       authorId: me.id,
       authorName: me.name,
       contactId: before.contactId,
       contactName: before.contact?.name,
       contactPhone: before.contact?.phone,
-      at,
+      metadata: {
+        collectRequest: plan.text ? clipCollectText(plan.text, COLLECT_REQUEST_LOG_MAX) : null,
+        collectSource: plan.source,
+        collectChanged: plan.changed,
+      },
+      at: now,
     }));
   }
-  return returnToBotPatch({ keepOwner: STICKY_OWNER_ENABLED });
+  return returnToBotPatch({ keepOwner: STICKY_OWNER_ENABLED, collect: plan.collect });
+}
+
+/**
+ * Edita ou limpa o pedido em aberto pela barra "IA recolhendo" da conversa
+ * (não muda o status). Texto → abre/substitui com origem 'devolver' e zera as
+ * cobranças; null/'' → CONCLUI (com âncora: a detecção não reabre a lista).
+ * Mesmo texto de um pedido válido → nada muda (idempotente).
+ */
+export async function setConversationCollectRequest(
+  conversationId: string,
+  text: string | null,
+): Promise<Partial<WhatsAppConversationDTO>> {
+  const ctx = await requireTeam();
+  const before = await convContact(conversationId);
+  if (!before) throw new Error('Conversa não encontrada.');
+  const now = new Date();
+  const wanted = normalizeCollectRequest(text);
+  if (wanted && before.collect.text && isCollectRequestLive(before.collect.at, now) && sameCollectRequest(wanted, before.collect.text)) {
+    return {};
+  }
+  if (!wanted && !before.collect.text) return collectRequestPatch(null);
+  await db.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: wanted ? collectOpenData(wanted, ctx.userId, 'devolver', now) : collectRequestEndedData(now),
+  });
+  const authorName = ctx.name ?? 'Atendente';
+  const who = before.contact?.name ?? before.contact?.phone;
+  runAfterResponse('log wa_collect_request', () => logWhatsAppEvent({
+    action: 'wa_collect_request',
+    message: wanted
+      ? `mudou o que a IA deve recolher de ${who}: ${collectSummary(wanted)}`
+      : `encerrou o pedido em aberto da IA com ${who}`,
+    authorId: ctx.userId,
+    authorName,
+    contactId: before.contactId,
+    contactName: before.contact?.name,
+    contactPhone: before.contact?.phone,
+    metadata: {
+      op: wanted ? 'set' : 'clear',
+      text: wanted ? clipCollectText(wanted, COLLECT_REQUEST_LOG_MAX) : null,
+      conversationId,
+    },
+    at: now,
+  }));
+  return collectRequestPatch(wanted ? { text: wanted, at: now, byName: authorName, source: 'devolver' } : null);
 }
 
 /**
@@ -223,12 +417,20 @@ export async function returnConversationToBot(conversationId: string): Promise<P
  * mensagem depois, a conversa reabre pro bot automaticamente.
  *
  * Aceita também `true/false` (compat) → qualificado / não qualificado.
+ *
+ * `collect` = o que fazer com o pedido em aberto (a tela pergunta quando há
+ * um): 'concluir' grava o fim (com âncora: a lista não volta como pedido);
+ * 'manter' deixa o pedido gravado e, se o cliente voltar em até 7 dias, a IA
+ * retoma a lista de onde parou; ausente (sem pedido, ou aba com o bundle
+ * antigo) limpa sem âncora, como o encerramento do cron.
  */
 export async function closeConversation(
   conversationId: string,
   category: string | boolean = 'nao_qualificado',
+  collect?: 'concluir' | 'manter',
 ): Promise<Partial<WhatsAppConversationDTO>> {
-  const me = await requireTeamMember();
+  const ctx = await requireTeam();
+  const me = { id: ctx.userId, name: ctx.name ?? 'Atendente' };
 
   const cat = typeof category === 'boolean' ? (category ? 'qualificado' : 'nao_qualificado') : category;
   // Motivos dinâmicos criados pela equipe têm prefixo "nq_" — todos contam
@@ -238,6 +440,16 @@ export async function closeConversation(
     ? cat
     : 'nao_qualificado';
   const qualified = qualifiedForCategory(closeCategory);
+  // Vem do navegador: só os dois valores conhecidos contam.
+  const keepRequest = collect === 'manter';
+  const concludeRequest = collect === 'concluir';
+  // Ficha (botMemory/botState) PRESERVADA nos desfechos que não desqualificam
+  // (30/09/2026), como o bot e o cron já fazem desde 25/07: o checklist item a
+  // item da coleta mora na ficha, e encerrar como "Qualificada" no meio da
+  // lista apagava o que já tinha chegado. A limpeza por idade fica na
+  // reabertura (service.ts). Não qualificada (nq_*) e descartada continuam
+  // zerando: essas conversas nem voltam ao bot sozinhas.
+  const wipeMemory = qualified === false || closeCategory === 'descartado';
 
   // Encerrar levava ~1,25 s no p50 (auditoria de 24/09/2026, DUR-3): contato,
   // motivo, snapshot, update, 5 queries de tag e o log, tudo em série. Agora
@@ -254,16 +466,22 @@ export async function closeConversation(
     // recarga pelo hash.
     prepareCloseTag(conversationId, closeCategory, label),
     (async () => {
-      // Cérebro: snapshot ANTES do update (que zera botMemory/botState abaixo).
-      // A leitura do snapshot precisa ficar antes do update, por isso ele não
-      // vai para depois da resposta.
+      // Cérebro: snapshot ANTES do update (que pode zerar botMemory/botState
+      // abaixo). A leitura do snapshot precisa ficar antes do update, por isso
+      // ele não vai para depois da resposta.
       if (before) await captureConversation(before.contactId, 'manual', { closeCategory, qualified });
       await db.whatsAppConversation.update({
         where: { id: conversationId },
-        // Ticket encerrado: zera a memória/estado do bot para que uma futura
-        // conversa desse cliente comece do zero.
         // Desfecho real → ciclo de recuperação zerado por completo.
-        data: { status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory, botMemory: null, botState: null, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+        data: {
+          status: 'closed', closedAt: new Date(), assignedToId: null, qualified, closeCategory,
+          ...(wipeMemory ? { botMemory: null, botState: null } : {}),
+          botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
+          // Pedido em aberto: concluir (com âncora), manter, ou limpar sem
+          // âncora (padrão: a lista do atendente volta a ser detectável se o
+          // cliente responder na janela de 7 dias).
+          ...(keepRequest ? {} : concludeRequest ? collectRequestEndedData() : COLLECT_REQUEST_CLEARED),
+        },
       });
     })(),
   ]);
@@ -281,7 +499,13 @@ export async function closeConversation(
       contactId: before.contactId,
       contactName: before.contact?.name,
       contactPhone: before.contact?.phone,
-      metadata: { qualified, closeCategory, by: 'atendente' },
+      metadata: {
+        qualified, closeCategory, by: 'atendente',
+        // O que aconteceu com o pedido em aberto (só quando havia um).
+        ...(before.collect.text
+          ? { collectRequest: keepRequest ? 'mantido' : concludeRequest ? 'concluido' : 'limpo' }
+          : {}),
+      },
       at,
     }));
     // Devolve pra Meta o desfecho decidido pelo atendente (qualificado /
@@ -289,7 +513,7 @@ export async function closeConversation(
     // que a Vercel podia congelar quando a action respondia.
     runAfterResponse('meta capi wa_close', () => reportLeadStageToMeta(before.contactId, closeCategory));
   }
-  return { ...closePatch(closeCategory, label), ...(closeTag ? { tags: closeTag.tags } : {}) };
+  return { ...closePatch(closeCategory, label, { keepRequest }), ...(closeTag ? { tags: closeTag.tags } : {}) };
 }
 
 /**

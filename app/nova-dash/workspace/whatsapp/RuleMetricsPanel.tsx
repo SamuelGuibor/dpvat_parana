@@ -47,6 +47,7 @@ const ACTION_LABELS: Record<string, string> = {
   // Intervenções de código (cron de silêncio)
   recuperacao_bloqueada: 'recuperação bloqueada',
   orfa_para_fila: 'órfã → Fila (bot não respondeu)',
+  pendencia_para_fila: 'pedido em aberto → Fila (janela fechando)',
 };
 
 function StatCard({ icon: Icon, label, value, hint, tone = 'indigo' }: {

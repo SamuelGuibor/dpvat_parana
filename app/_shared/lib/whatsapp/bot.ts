@@ -3,8 +3,9 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { sendText, markMessageRead } from "./client";
-import { runFlowForContact, listFlowsForBot } from "./flow-runner";
+import { runFlowForContact, listFlowsForBot, flowListTextByName, flowNameForListText } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
+import { runAfterResponse } from "@/app/_shared/lib/background";
 import { captureConversation } from "./brain";
 import { recordAppliedRules, recordCodeIntervention } from "./rule-events";
 import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
@@ -13,6 +14,14 @@ import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { signUrlFor } from "@/app/_shared/lib/signature/tokens";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import { clientDocumentMediaWhere, docsReceivedSince } from "@/app/_shared/utils/wa-media";
+import { mediaOriginalName } from "@/app/_shared/utils/media-name";
+import { MASK_CONTEXT_MESSAGES, maskMemorySecrets, maskSecrets, maskSecretsInSequence } from "@/app/_shared/utils/mask-secrets";
+import {
+  COLLECT_REQUEST_CLEARED, appendListToRequest, buildAttendantRequestFact, collectOpenData,
+  collectRequestEndedData, isCollectRequestLive, isCollectSource, isListLikeRequest, pickAttendantRequest,
+  requestAnchor, requestNoteLine, type CollectSource,
+} from "@/app/_shared/utils/collect-request";
+import { CONTRACT_PENDING_WINDOW_MS, buildContractPending } from "@/app/_shared/utils/contract-pending";
 import { buildAudioTranscriptNote } from "@/app/_shared/utils/audio-note";
 import {
   BOT_TURN_BUDGET_MS, BRAIN_MIN_ATTEMPT_MS, BURST_DEBOUNCE_MS, EARLY_TRANSCRIBE_WAIT_MS,
@@ -21,7 +30,7 @@ import {
 } from "@/app/_shared/utils/bot-timing";
 import { transcribeInboundAudio } from "./transcribe";
 import {
-  discardOutcomeOf, queueEffective, sumUsageByModel, turnTimings,
+  clipRationale, compactFactsForLog, discardOutcomeOf, queueEffective, sumUsageByModel, turnTimings,
   type AiUsage, type DiscardOutcome, type EffectiveOutcome,
 } from "@/app/_shared/utils/bot-telemetry";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
@@ -119,10 +128,60 @@ const SYSTEM_SOURCE_LABELS: Record<string, string> = {
   signature_otp: "código de verificação da assinatura",
   signature_reminder: "lembrete de assinatura",
   signature_resend: "reenvio do link de assinatura",
+  // Cobrança do pedido em aberto pelo cron (fase 0 do nudge, 30/09/2026). O
+  // micro e as instruções v22 citam este texto exato para reconhecer a
+  // resposta do cliente à cobrança.
+  collect_nudge: "cobrança automática do pedido em aberto",
 };
 
 function systemSourceLabel(source: string): string {
   return SYSTEM_SOURCE_LABELS[source] ?? source;
+}
+
+/** Mensagem do histórico como sai do banco (whatsapp_messages). */
+export interface BrainHistoryRow {
+  direction: string;
+  sentByBot: boolean;
+  systemSource: string | null;
+  body: string | null;
+  mediaType: string | null;
+  transcript: string | null;
+}
+
+/** Turno do histórico no formato que o cérebro recebe. */
+export interface BrainTurn {
+  role: "client" | "bot" | "agent" | "system";
+  source: string | null;
+  text: string;
+}
+
+/** Turnos do histórico (entrada em ordem cronológica), sem os vazios. */
+function historyTurnsOf(rows: BrainHistoryRow[]): BrainTurn[] {
+  return rows
+    .map((h) => ({
+      role: historyRole(h),
+      // O NOME do atendente NÃO viaja mais para a IA (23/09/2026): o bot
+      // passou a citá-lo nas respostas ao cliente ("como o Leonardo pediu
+      // ...") — a conversa tem que soar como uma voz só do escritório. O
+      // rótulo do turno fica genérico ([atendente]); só a origem das
+      // mensagens automáticas continua indo ([mensagem automática: ...]).
+      source: h.direction === "out" && h.sentByBot && h.systemSource ? systemSourceLabel(h.systemSource) : null,
+      text: historyText(h),
+    }))
+    .filter((h) => h.text);
+}
+
+/**
+ * Histórico no formato do /reply (papéis, origem das automáticas, marcador de
+ * anexo e transcrição), com senha/código mascarados. Entrada em ordem
+ * cronológica. Usado pela cobrança do pedido em aberto (cron, /followup-
+ * decision): sem os "[anexo: PDF]" a IA da cobrança não vê o que já chegou e
+ * cobraria o documento que o cliente mandou.
+ */
+export function brainHistory(rows: BrainHistoryRow[]): BrainTurn[] {
+  const turns = historyTurnsOf(rows);
+  const masked = maskSecretsInSequence(turns.map((t) => t.text));
+  return turns.map((t, i) => ({ ...t, text: masked[i] }));
 }
 
 /** Cérebro a usar para este telefone: staging para números de teste, senão produção. */
@@ -150,6 +209,23 @@ const BOT_RETRY_DELAY_MS = 1_000;
 // recuperação) e não ligado ao WA_HUMAN_HOLD_DAYS: o micro escreve "nos
 // últimos 7 dias" no prompt e a regra das instruções depende desse texto.
 const RECENT_ATTENDANT_MS = 7 * 24 * 60 * 60_000;
+// Fato priorOutcome.returnedByAttendant (conversa devolvida pela equipe):
+// vale por 7 dias depois do Devolver e só se ele veio depois do último
+// encerramento. returnedToBotAt nunca é limpo; sem o prazo, o bloco "CONVERSA
+// DEVOLVIDA PELA EQUIPE" do micro apareceria para sempre numa conversa longa.
+const RETURNED_FACT_MS = 7 * 24 * 60 * 60_000;
+// Aviso ao dono quando a IA segue sozinha numa conversa devolvida: no máximo
+// um a cada 30 min por conversa (o cliente manda várias mensagens seguidas).
+const BOT_RESUMED_NOTICE = "WhatsApp: IA retomou a conversa com";
+const BOT_RESUMED_DEDUPE_MS = 30 * 60_000;
+// Mensagens do cliente num turno (lote desde a nossa última saída). Até
+// 30/09/2026 eram as 12 MAIS ANTIGAS (orderBy asc + take 12): num lote maior
+// o "pronto, mandei tudo" e os últimos PDFs ficavam fora do turno, apareciam
+// no histórico fora de ordem e nunca eram abertos (30 dias: 34 lotes com mais
+// de 12 mensagens, 32 com mais de 8 documentos, máximo de 49). Agora são as 20
+// MAIS NOVAS; as que sobram entram no histórico na ordem certa e o cérebro
+// recebe conversationFacts.burstTruncated.
+const BURST_MAX_MESSAGES = 20;
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -174,6 +250,11 @@ interface ProcessInfo {
 export interface LinkedCard extends ProcessInfo {
   kind: "user" | "process";
   id: string;
+  // Nome cru da coluna do board (Label.name; o `role` do card é cópia dele),
+  // fato conversationFacts.cardColumn (30/09/2026): a `etapa` acima prioriza o
+  // rótulo de status do serviço e chega como "Processo iniciado" para a
+  // maioria dos cards em COLHER-ASSINATURA. Não vai no processInfo.
+  column?: string | null;
 }
 
 type BotUsage = AiUsage;
@@ -186,6 +267,17 @@ interface BotDecision {
   action: "continue" | "qualify" | "disqualify" | "handoff" | "lookup" | "send_flow" | "resolve";
   // Nome do fluxo cadastrado a disparar quando action="send_flow".
   flowName?: string | null;
+  // Decisão 5 do dono (30/09/2026, "assinei"): com action="send_flow", depois
+  // do fluxo a conversa vai para a Fila com o handoffReason, SEM texto de
+  // transferência ao cliente e SEM concluir o pedido em aberto (a IA segue
+  // recolhendo quando o atendente devolver). Micro antigo não manda: false.
+  handoffAfterFlow?: boolean;
+  // Com action="handoff": transferir MANTENDO o pedido em aberto (revisão de
+  // 30/09: "assinei" com a LISTA já mandada, cliente ocupado/pede ligação no
+  // meio da lista). Sem isto todo handoff do cérebro conclui o pedido, e o
+  // Devolver sem texto não trazia a lista de volta. Micro antigo não manda:
+  // false (conclui, como antes).
+  keepRequest?: boolean;
   // Categoria de encerramento (para qualify/disqualify/handoff/resolve):
   // qualificado | nao_qualificado | perguntas | novo_acidente | transferido.
   closeCategory?: string | null;
@@ -224,6 +316,19 @@ interface BotDecision {
   // vira um log wa_transcribe próprio. Micro antigo não manda: fica sem custo,
   // como antes.
   transcribeUsage?: BotUsage[] | null;
+  // Telemetria do cérebro (30/09/2026), só para o log wa_bot — nunca vai ao
+  // cliente. `rationale`: o raciocínio da IA (até aqui só no console do micro);
+  // `model`: o modelo que respondeu; `brain`: de onde veio o prompt (instruções
+  // publicadas no CRM ou o fallback do bot.js; `stale` = texto antigo em
+  // memória porque o CRM não respondeu). Micro antigo não manda: undefined.
+  rationale?: string | null;
+  model?: string | null;
+  brain?: {
+    source: "crm" | "fallback";
+    instructionsVersion: number | null;
+    playbookVersion: number | null;
+    stale?: boolean;
+  } | null;
 }
 
 function sumUsage(a?: BotUsage | null, b?: BotUsage | null): BotUsage | null {
@@ -251,7 +356,7 @@ function isBotConfigured(): boolean {
 // fragmento de JSON ou token solto do schema é descartado antes do envio.
 // ---------------------------------------------------------------------------
 const SCHEMA_TOKENS = new Set([
-  "reply", "replies", "action", "flowname", "closecategory", "handoffreason",
+  "reply", "replies", "action", "flowname", "closecategory", "handoffreason", "handoffafterflow", "keeprequest",
   "lookup", "memory", "state", "intent", "emotion", "urgent", "understood",
   "confidence", "optout", "appliedrules", "silent", "usage",
   "continue", "qualify", "disqualify", "handoff", "send_flow", "sendflow",
@@ -293,7 +398,7 @@ const REASONING_PATTERNS: RegExp[] = [
   // Rótulo de deliberação em pt-BR com dois-pontos ("categoria: ...").
   /^\s*(categoria|avalia[çc][ãa]o|an[áa]lise|racioc[íi]nio|delibera[çc][ãa]o|decis[ãa]o|passo|nota interna|resumo interno)\s*[:=]/i,
   // Atribuição de campo do schema no meio da prosa ("state=coleta_documentos").
-  /(state|action|closeCategory|handoffReason|flowName|replies|intent|silent|confidence|memory|rationale)\s*[:=]\s*["'\[]?[a-z_]/i,
+  /(state|action|closeCategory|handoffReason|handoffAfterFlow|keepRequest|flowName|replies|intent|silent|confidence|memory|rationale)\s*[:=]\s*["'\[]?[a-z_]/i,
   // Rascunho em inglês ("let's write actual reply", "final json").
   /(let'?s|final json|actual reply|i (should|will|need to)|we (should|need to))/i,
   // Chave de JSON solta no meio do texto — mensagem de WhatsApp não tem { }.
@@ -409,11 +514,11 @@ export async function findLinkedCard(contactId: string): Promise<LinkedCard | nu
 
   if (contact.userId) {
     const u = await db.user.findUnique({ where: { id: contact.userId }, include: { label: true } });
-    if (u) return { kind: "user", id: u.id, name: u.name, etapa: getStatusLabel(u.service, u.status) ?? u.label?.name ?? u.role, etapaDescricao: getStatusDescription(u.service, u.status), service: u.service };
+    if (u) return { kind: "user", id: u.id, name: u.name, etapa: getStatusLabel(u.service, u.status) ?? u.label?.name ?? u.role, etapaDescricao: getStatusDescription(u.service, u.status), service: u.service, column: u.label?.name ?? u.role ?? null };
   }
   if (contact.processId) {
     const p = await db.process.findUnique({ where: { id: contact.processId }, include: { label: true } });
-    if (p) return { kind: "process", id: p.id, name: p.name, etapa: getStatusLabel(p.service, p.status) ?? p.label?.name ?? p.role, etapaDescricao: getStatusDescription(p.service, p.status), service: p.service };
+    if (p) return { kind: "process", id: p.id, name: p.name, etapa: getStatusLabel(p.service, p.status) ?? p.label?.name ?? p.role, etapaDescricao: getStatusDescription(p.service, p.status), service: p.service, column: p.label?.name ?? p.role ?? null };
   }
 
   const last8 = contact.phone.replace(/\D/g, "").slice(-8);
@@ -426,7 +531,7 @@ export async function findLinkedCard(contactId: string): Promise<LinkedCard | nu
   `);
   if (users.length) {
     const u = await db.user.findUnique({ where: { id: users[0].id }, include: { label: true } });
-    if (u) return { kind: "user", id: u.id, name: u.name, etapa: getStatusLabel(u.service, u.status) ?? u.label?.name ?? u.role, etapaDescricao: getStatusDescription(u.service, u.status), service: u.service };
+    if (u) return { kind: "user", id: u.id, name: u.name, etapa: getStatusLabel(u.service, u.status) ?? u.label?.name ?? u.role, etapaDescricao: getStatusDescription(u.service, u.status), service: u.service, column: u.label?.name ?? u.role ?? null };
   }
 
   const processes = await db.$queryRaw<{ id: string }[]>(Prisma.sql`
@@ -436,7 +541,7 @@ export async function findLinkedCard(contactId: string): Promise<LinkedCard | nu
   `);
   if (processes.length) {
     const p = await db.process.findUnique({ where: { id: processes[0].id }, include: { label: true } });
-    if (p) return { kind: "process", id: p.id, name: p.name, etapa: getStatusLabel(p.service, p.status) ?? p.label?.name ?? p.role, etapaDescricao: getStatusDescription(p.service, p.status), service: p.service };
+    if (p) return { kind: "process", id: p.id, name: p.name, etapa: getStatusLabel(p.service, p.status) ?? p.label?.name ?? p.role, etapaDescricao: getStatusDescription(p.service, p.status), service: p.service, column: p.label?.name ?? p.role ?? null };
   }
 
   return null;
@@ -530,16 +635,43 @@ export async function postInternalNote(contactId: string, body: string): Promise
  * MESMA nota, não numa segunda: a lista da Fila mostra a última nota do bot
  * como motivo (loadConversations), e uma nota só com a transcrição tomaria o
  * lugar dele.
+ *
+ * `concludeRequest` = o cérebro (ou o cron da cobrança) CONCLUIU o pedido em
+ * aberto (collect-request.ts): o mesmo UPDATE limpa o pedido e grava
+ * collectRequestEndedAt, e a detecção não reabre aquela lista. Falha técnica
+ * (timeout, erro, órfã, resposta vazia), o handoffAfterFlow, o handoff do
+ * cérebro com keepRequest e a janela fechando no cron NÃO passam isto: o
+ * pedido continua valendo quando o atendente devolver a conversa. Com ou sem
+ * conclusão, o texto do pedido vai na MESMA nota da Fila (requestNoteLine).
  */
 export interface QueueOpts {
   onlyIfStatus?: "bot";
   extraNote?: string;
+  concludeRequest?: boolean;
 }
 
 /** Motivo da nota interna + o texto extra (transcrição), numa nota só. */
 function withExtraNote(note: string, extraNote: string | undefined): string {
   const extra = extraNote?.trim();
   return extra ? `${note}\n\n${extra}` : note;
+}
+
+/** Junta os textos extras da nota da Fila (transcrição, pedido em aberto). */
+function joinExtraNotes(...parts: (string | null | undefined)[]): string | undefined {
+  const joined = parts.map((p) => p?.trim()).filter(Boolean).join("\n\n");
+  return joined || undefined;
+}
+
+/** Pedido em aberto da conversa lido antes de ir à Fila (para a nota e o dono). */
+interface QueueConvSnapshot {
+  assignedToId: string | null;
+  collectRequest: string | null;
+  collectRequestSource: string | null;
+}
+
+/** Linha do pedido em aberto na nota da Fila (null sem pedido). */
+function queueRequestNote(cur: QueueConvSnapshot | null, opts: QueueOpts): string | null {
+  return cur ? requestNoteLine({ text: cur.collectRequest, source: cur.collectRequestSource }, { concluded: !!opts.concludeRequest }) : null;
 }
 
 /**
@@ -568,11 +700,19 @@ export async function handoffToQueue(
   closeCategory: string = "transferido",
   opts: QueueOpts = {},
 ): Promise<boolean> {
-  const owner = await queueOwner(contactId);
+  // Uma leitura só para o dono (assignedToId) e o pedido em aberto da nota.
+  // Falha aqui não impede a transferência: cai na fila sem dono, como antes.
+  const cur: QueueConvSnapshot | null = await db.whatsAppConversation
+    .findUnique({ where: { contactId }, select: { assignedToId: true, collectRequest: true, collectRequestSource: true } })
+    .catch(() => null);
+  const owner = await queueOwner(contactId, cur?.assignedToId ?? null);
   const { count } = await db.whatsAppConversation.updateMany({
     where: { contactId, ...(opts.onlyIfStatus ? { status: opts.onlyIfStatus } : {}) },
     // queuedAt alimenta o SLA da fila (cron alerta se ninguém assumir).
-    data: { status: "queued", assignedToId: owner?.id ?? null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null },
+    data: {
+      status: "queued", assignedToId: owner?.id ?? null, botFailCount: 0, closeCategory, queuedAt: new Date(), queueAlertAt: null,
+      ...(opts.concludeRequest ? collectRequestEndedData() : {}),
+    },
   });
   if (count === 0) {
     console.log(`[WHATSAPP BOT] ${contactId}: transferência para a fila ignorada — a conversa já não está com o bot (${reason}).`);
@@ -581,7 +721,10 @@ export async function handoffToQueue(
 
   // Motivo da transferência visível NA THREAD (nota interna, só equipe; o
   // histórico do cérebro filtra internal, então o nome não chega à IA).
-  await postInternalNote(contactId, withExtraNote(`🤖 Transferido para atendimento humano — ${reason}${ownerSuffix(owner)}`, opts.extraNote));
+  await postInternalNote(contactId, withExtraNote(
+    `🤖 Transferido para atendimento humano — ${reason}${ownerSuffix(owner)}`,
+    joinExtraNotes(opts.extraNote, queueRequestNote(cur, opts)),
+  ));
 
   try {
     const recipients = await waAlertRecipients({ contactId, ownerId: owner?.id ?? null, audience: "owner_or_sector" });
@@ -667,15 +810,20 @@ export async function qualifyToQueue(
   // inédito e não redispara o evento pra Meta — só garante que voltou pra fila.
   const existing = await db.whatsAppConversation.findUnique({
     where: { contactId },
-    select: { id: true, qualified: true, assignedToId: true },
+    select: { id: true, qualified: true, assignedToId: true, collectRequest: true, collectRequestSource: true },
   });
   if (!existing) return false;
   const alreadyQualified = existing.qualified === true;
   const owner = await queueOwner(contactId, existing.assignedToId);
+  // Pedido em aberto na MESMA nota da Fila (com o motivo do cérebro).
+  const extraNote = joinExtraNotes(opts.extraNote, queueRequestNote(existing, opts));
 
   const { count } = await db.whatsAppConversation.updateMany({
     where: { contactId, ...(opts.onlyIfStatus ? { status: opts.onlyIfStatus } : {}) },
-    data: { status: "queued", assignedToId: owner?.id ?? null, qualified: true, botFailCount: 0, closeCategory: "qualificado", queuedAt: new Date(), queueAlertAt: null },
+    data: {
+      status: "queued", assignedToId: owner?.id ?? null, qualified: true, botFailCount: 0, closeCategory: "qualificado", queuedAt: new Date(), queueAlertAt: null,
+      ...(opts.concludeRequest ? collectRequestEndedData() : {}),
+    },
   });
   if (count === 0) {
     console.log(`[WHATSAPP BOT] ${contactId}: qualificação sem ida à fila — a conversa já não está com o bot (${reason}).`);
@@ -684,11 +832,11 @@ export async function qualifyToQueue(
   await tagAsQualified(existing.id);
 
   if (alreadyQualified) {
-    await postInternalNote(contactId, withExtraNote(`🤖 Lead qualificado retornou ao atendimento — ${reason}${ownerSuffix(owner)}`, opts.extraNote));
+    await postInternalNote(contactId, withExtraNote(`🤖 Lead qualificado retornou ao atendimento — ${reason}${ownerSuffix(owner)}`, extraNote));
     return true;
   }
 
-  await postInternalNote(contactId, withExtraNote(`🤖 Lead qualificado pela IA — ${reason}${ownerSuffix(owner)}`, opts.extraNote));
+  await postInternalNote(contactId, withExtraNote(`🤖 Lead qualificado pela IA — ${reason}${ownerSuffix(owner)}`, extraNote));
   const recipients = await waAlertRecipients({ contactId, ownerId: owner?.id ?? null, audience: "owner_and_sector" });
   await handoffNotifyOnly(contactLabel, `${WA_QUALIFIED_MARK} — ${reason}`, contactId, recipients);
   // Lead qualificado SEM card ainda: cria a tarefa na caixa de Menções e
@@ -754,7 +902,12 @@ async function disqualifyAndClose(contactId: string, category?: string | null): 
     // contexto e a IA responde curto em vez de recomeçar a triagem do zero
     // (caso Luiz: 4 ciclos de saudação→triagem→despedida na mesma tarde). A
     // limpeza acontece na REABERTURA, se a conversa estiver velha (service.ts).
-    data: { status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null },
+    // Desfecho decidido pelo cérebro conclui o pedido em aberto (com âncora:
+    // a lista não volta como pedido na reabertura).
+    data: {
+      status: "closed", closedAt: new Date(), assignedToId: null, qualified: false, closeCategory, botFailCount: 0, queuedAt: null, queueAlertAt: null, recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
+      ...collectRequestEndedData(),
+    },
     select: { id: true },
   });
   // Tag do motivo ("Não qualificada — Acidente muito antigo"), como no
@@ -796,6 +949,8 @@ async function resolveAndClose(contactId: string, category: string = "perguntas"
       queuedAt: null, queueAlertAt: null,
       // Desfecho real → ciclo de recuperação zerado.
       recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
+      // ...e o pedido em aberto concluído (com âncora), como no disqualify.
+      ...collectRequestEndedData(),
     },
     select: { id: true },
   });
@@ -861,6 +1016,61 @@ async function handoffNotifyOnly(
     }
   } catch (err) {
     console.error("[WHATSAPP BOT] Falha ao notificar equipe:", err);
+  }
+}
+
+/**
+ * Aviso ao DONO quando a IA segue sozinha numa conversa que ele devolveu ao bot
+ * (30/09/2026): sem transferência, o atendente não sabia que a IA retomou e
+ * podia responder por cima, ou achar que o cliente sumiu. Só o dono (assignedTo
+ * ou o último atendente da janela, ownership.ts); sem dono, nada (o setor da
+ * Fila não precisa de aviso de conversa que não está na Fila). No máximo um a
+ * cada BOT_RESUMED_DEDUPE_MS por conversa. Best-effort: nunca lança.
+ */
+async function notifyOwnerBotResumed(input: {
+  contactId: string;
+  contactName: string | null;
+  contactLabel: string;
+  assignedToId: string | null;
+  summary: string;
+  closedCategory: string | null;
+}): Promise<void> {
+  try {
+    const owner = await queueOwner(input.contactId, input.assignedToId);
+    if (!owner) return;
+    const recipients = await waAlertRecipients({ contactId: input.contactId, ownerId: owner.id, audience: "owner_or_sector" });
+    if (!recipients.length) return;
+    const recent = await db.notification.findFirst({
+      where: {
+        contactId: input.contactId,
+        authorId: "whatsapp-bot",
+        recipientId: { in: recipients },
+        message: { startsWith: BOT_RESUMED_NOTICE },
+        createdAt: { gte: new Date(Date.now() - BOT_RESUMED_DEDUPE_MS) },
+      },
+      select: { id: true },
+    });
+    if (recent) return;
+    const firstName = input.contactName?.trim().split(/\s+/)[0] || input.contactLabel;
+    const chars = Array.from(input.summary.replace(/\s+/g, " ").trim());
+    const summary = chars.length > 140 ? `${chars.slice(0, 139).join("").trimEnd()}…` : chars.join("");
+    const message =
+      `${BOT_RESUMED_NOTICE} ${firstName}: ${summary || "respondeu ao cliente"}` +
+      (input.closedCategory ? ` — conversa encerrada (${input.closedCategory})` : "");
+    for (const recipientId of recipients) {
+      await db.notification.create({
+        data: {
+          recipientId,
+          authorId: "whatsapp-bot",
+          authorName: "🤖 Bot WhatsApp",
+          targetName: input.contactLabel,
+          message,
+          contactId: input.contactId,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[WHATSAPP BOT] Falha no aviso ao dono (IA retomou a conversa devolvida):", input.contactId, err);
   }
 }
 
@@ -1144,7 +1354,12 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
 
     const conversation = await db.whatsAppConversation.findUnique({
       where: { contactId },
-      select: { id: true, status: true, createdAt: true, closedAt: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true },
+      select: {
+        id: true, status: true, createdAt: true, closedAt: true, botMemory: true, botState: true, botFailCount: true, qualified: true, closeCategory: true,
+        // Dono (aviso de "IA retomou") e pedido em aberto (collect-request.ts).
+        assignedToId: true, collectRequest: true, collectRequestAt: true, collectRequestSource: true,
+        collectRequestEndedAt: true, collectNudgeCount: true, returnedToBotAt: true,
+      },
     });
 
     // Durante o debounce um atendente pode ter assumido/encerrado a conversa —
@@ -1163,17 +1378,22 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     });
-    const burst = await db.whatsAppMessage.findMany({
-      where: {
-        contactId,
-        direction: "in",
-        deletedAt: null,
-        ...(lastOut ? { createdAt: { gt: lastOut.createdAt } } : {}),
-      },
-      orderBy: { createdAt: "asc" },
-      take: 12,
+    const burstWhere = {
+      contactId,
+      direction: "in",
+      deletedAt: null,
+      ...(lastOut ? { createdAt: { gt: lastOut.createdAt } } : {}),
+    } satisfies Prisma.WhatsAppMessageWhereInput;
+    // As MAIS NOVAS primeiro (BURST_MAX_MESSAGES + 1 só para saber se sobrou
+    // alguma) e depois de volta à ordem cronológica.
+    const burstNewest = await db.whatsAppMessage.findMany({
+      where: burstWhere,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: BURST_MAX_MESSAGES + 1,
       select: { id: true, body: true, mediaKey: true, mediaType: true, transcript: true },
     });
+    const burstTruncated = burstNewest.length > BURST_MAX_MESSAGES;
+    const burst = burstNewest.slice(0, BURST_MAX_MESSAGES).reverse();
     const burstIds = burst.length ? burst.map((b) => b.id) : [message.id];
     let clientText = (burst.length ? burst.map((b) => b.body?.trim()).filter(Boolean) : [message.body?.trim()])
       .filter(Boolean)
@@ -1200,7 +1420,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     const attachments = (burst.length ? burst : [message]).filter(
       (m) => m.mediaKey && m.mediaType,
     );
-    const mediaList: { id: string; url: string; mimeType: string }[] = [];
+    // fileName: nome que o cliente deu ao arquivo ("CNIS.pdf"), para o micro
+    // rotular o anexo; null quando o nome foi inventado (midia.jpeg).
+    const mediaList: { id: string; url: string; mimeType: string; fileName: string | null }[] = [];
     for (const m of attachments) {
       if (!m.mediaKey || !m.mediaType) continue;
       // Áudio já transcrito (invocação anterior deste mesmo lote que desistiu
@@ -1216,7 +1438,7 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: m.mediaKey }),
         { expiresIn: 600 },
       );
-      mediaList.push({ id: m.id, url, mimeType: m.mediaType });
+      mediaList.push({ id: m.id, url, mimeType: m.mediaType, fileName: mediaOriginalName(m.mediaKey) });
     }
     const lastMedia = mediaList.at(-1) ?? null;
     const media: { url: string; mimeType: string } | null = lastMedia
@@ -1319,7 +1541,10 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         })
       : 0;
 
-    const [history, card, flows, recentAttendantMsg] = await Promise.all([
+    // Relógio único dos fatos deste turno (janelas de 7/10 dias e validade do
+    // pedido em aberto).
+    const turnNow = Date.now();
+    const [history, card, flows, attendantMsgs, docsThisTurn, zapSignMsg] = await Promise.all([
       db.whatsAppMessage.findMany({
         where: { contactId, internal: false, id: { notIn: burstIds }, deletedAt: null },
         orderBy: { createdAt: "desc" },
@@ -1329,18 +1554,126 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       findLinkedCard(contactId),
       // Fluxos cadastrados COM descrição — a IA escolhe qual se encaixa.
       listFlowsForBot(),
-      // Mensagem de atendente (out, não bot, não nota interna — o mesmo
-      // "agent" do historyRole) na janela do fato recentAttendant. O
-      // histórico de 30 mensagens nem sempre alcança. Índice
+      // Mensagens de atendente (out, não bot, não nota interna — o mesmo
+      // "agent" do historyRole) na janela de 7 dias: o fato recentAttendant e a
+      // detecção da lista do pedido em aberto (pickAttendantRequest), na mesma
+      // ida ao banco. O histórico de 30 mensagens nem sempre alcança. Índice
       // [contactId, createdAt].
+      db.whatsAppMessage.findMany({
+        where: {
+          contactId, direction: "out", sentByBot: false, internal: false, deletedAt: null,
+          createdAt: { gte: new Date(turnNow - RECENT_ATTENDANT_MS) },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        select: { id: true, body: true, createdAt: true, authorId: true },
+      }),
+      // Fotos/PDFs do lote INTEIRO deste turno (desde a nossa última saída),
+      // contados no banco e sem o teto de BURST_MAX_MESSAGES: o que passou do
+      // teto também chegou, e o cérebro não pode dizer "recebi tudo" contando
+      // só o que abriu. Mesmo filtro do docsReceived.
+      db.whatsAppMessage.count({
+        where: { ...burstWhere, mediaKey: { not: null }, ...clientDocumentMediaWhere() },
+      }),
+      // Último link da ZapSign mandado por um ATENDENTE (fato contractPending,
+      // contract-pending.ts): o link sai copiado desta mensagem, nunca de
+      // mensagem do cliente nem montado.
       db.whatsAppMessage.findFirst({
         where: {
           contactId, direction: "out", sentByBot: false, internal: false, deletedAt: null,
-          createdAt: { gte: new Date(Date.now() - RECENT_ATTENDANT_MS) },
+          createdAt: { gte: new Date(turnNow - CONTRACT_PENDING_WINDOW_MS) },
+          body: { contains: "zapsign.com", mode: "insensitive" },
         },
-        select: { id: true },
+        orderBy: { createdAt: "desc" },
+        select: { body: true, createdAt: true },
       }),
     ]);
+
+    // ---- Pedido em aberto (collect-request.ts, 30/09/2026) -----------------
+    // O que a IA deve recolher até completar: o gravado na conversa (Devolver
+    // com texto, fluxo de lista que a IA mandou, lista detectada antes) ou a
+    // lista que um atendente mandou nos últimos 7 dias, depois do fim do último
+    // pedido concluído (NUNCA desde o closedAt: o atendente costuma encerrar
+    // como "Qualificada" logo depois de mandar a lista). Lista de atendente mais
+    // nova que o pedido gravado ("Ainda faltam: ✅ …") fica no lugar dele. Vai
+    // ao cérebro como FATO; conferir, cobrar e transferir é decisão dele.
+    const storedRequest = conversation?.collectRequest && isCollectRequestLive(conversation.collectRequestAt, turnNow)
+      ? {
+          text: conversation.collectRequest,
+          source: (isCollectSource(conversation.collectRequestSource) ? conversation.collectRequestSource : "devolver") as CollectSource,
+          at: conversation.collectRequestAt ?? new Date(turnNow),
+          nudges: conversation.collectNudgeCount,
+        }
+      : null;
+    const detected = pickAttendantRequest(attendantMsgs, new Date(Math.max(
+      requestAnchor(conversation?.collectRequestEndedAt, turnNow).getTime(),
+      storedRequest?.at.getTime() ?? 0,
+    )));
+    const openRequest = detected
+      ? { text: detected.text, source: "lista_atendente" as CollectSource, at: detected.at, nudges: 0 }
+      : storedRequest;
+    // Gravado junto da memória (persistMemory) em todo turno que não foi
+    // descartado, inclusive o silent: sem isso o cron nunca cobraria a lista
+    // detectada num turno de "👍". Pedido vencido (> 7 dias) sai sem âncora.
+    const collectWrite = detected
+      ? collectOpenData(detected.text, detected.authorId, "lista_atendente", detected.at)
+      : conversation?.collectRequest && !storedRequest ? COLLECT_REQUEST_CLEARED : null;
+    const [docsSinceOpened, requestFlowName] = openRequest
+      ? await Promise.all([
+          db.whatsAppMessage.count({
+            where: {
+              contactId, direction: "in", deletedAt: null, mediaKey: { not: null },
+              createdAt: { gte: openRequest.at }, ...clientDocumentMediaWhere(),
+            },
+          }),
+          openRequest.source === "fluxo_ia" ? flowNameForListText(openRequest.text) : Promise.resolve(null),
+        ])
+      : [0, null];
+    const attendantRequest = openRequest
+      ? buildAttendantRequestFact({
+          ...openRequest,
+          returnedToBotAt: conversation?.returnedToBotAt,
+          docsSinceOpened,
+          flowName: requestFlowName,
+        })
+      : null;
+    // Coluna do card e contrato da ZapSign ainda sem assinatura no kanban
+    // (contract-pending.ts): o cliente que diz "não achei o link" ou manda
+    // "podemos conversar?" recebe o MESMO link de novo, e a pendência continua.
+    const cardColumn = card?.column ?? null;
+    const contractPending = buildContractPending({ message: zapSignMsg, hasCard: !!card, cardColumn, now: turnNow });
+
+    // Histórico em ordem cronológica, com senha/código mascarados
+    // (mask-secrets.ts, decisão do dono de 30/09/2026): o valor nunca vai à
+    // IA, só o fato de que o cliente mandou. O banco guarda o original para a
+    // equipe. Cada mensagem olha a anterior ("qual a senha?" → "Abc@1234").
+    const historyTurns = historyTurnsOf(history.reverse());
+    const maskedHistoryTexts = maskSecretsInSequence(historyTurns.map((h) => h.text));
+    // A mensagem deste turno também: é ela que vira histórico no turno seguinte.
+    // Olha as últimas mensagens, não só a anterior: "qual a senha?" → "segue"
+    // → "Abc@1234" (o lote ainda junta os balões em linhas).
+    const brainMessage = maskSecrets(clientText, historyTurns.slice(-MASK_CONTEXT_MESSAGES).map((h) => h.text));
+    // Conversa DEVOLVIDA pela equipe (coluna returnedToBotAt, gravada pelo
+    // Devolver ao bot): só depois do último encerramento e por até 7 dias.
+    const returnedAtMs = conversation?.returnedToBotAt?.getTime() ?? null;
+    const returnedByAttendant = returnedAtMs !== null
+      && returnedAtMs > (conversation?.closedAt?.getTime() ?? 0)
+      && turnNow - returnedAtMs <= RETURNED_FACT_MS;
+    // Desfecho anterior deste contato (sobrevive ao fechamento). Quando
+    // qualified=true, o cérebro NÃO deve refazer a triagem: é um lead já
+    // qualificado voltando — retomar contrato, tirar dúvida ou (se for
+    // acidente diferente) oferecer nova qualificação. Com returnedByAttendant o
+    // micro troca o bloco "ATENDIMENTO ANTERIOR" (retomada de conversa
+    // encerrada) por "CONVERSA DEVOLVIDA PELA EQUIPE": o closeCategory velho
+    // veio de um handoff, e a conversa seguiu com a equipe.
+    const priorOutcome: {
+      qualified: boolean | null; closeCategory: string | null; returnedByAttendant: boolean; returnedAt: string | null;
+    } = {
+      qualified: conversation?.qualified ?? null,
+      closeCategory: conversation?.closeCategory ?? null,
+      returnedByAttendant,
+      returnedAt: returnedByAttendant && conversation?.returnedToBotAt ? conversation.returnedToBotAt.toISOString() : null,
+    };
 
     const basePayload = {
       // Qual dos NOSSOS números atende esta conversa (multi-tenant): hoje o
@@ -1351,35 +1684,19 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       processInfo: card ? { name: card.name, etapa: card.etapa, etapaDescricao: card.etapaDescricao, service: card.service } : null,
       // Fluxos que a IA pode disparar (action="send_flow" + flowName).
       flows,
-      history: history
-        .reverse()
-        .map((h) => ({
-          role: historyRole(h),
-          // O NOME do atendente NÃO viaja mais para a IA (23/09/2026): o bot
-          // passou a citá-lo nas respostas ao cliente ("como o Leonardo pediu
-          // ...") — a conversa tem que soar como uma voz só do escritório. O
-          // rótulo do turno fica genérico ([atendente]); só a origem das
-          // mensagens automáticas continua indo ([mensagem automática: ...]).
-          source: h.direction === "out" && h.sentByBot && h.systemSource ? systemSourceLabel(h.systemSource) : null,
-          text: historyText(h),
-        }))
-        .filter((h) => h.text),
-      message: crossedWithLastOut ? `${clientText}\n\n${crossNote}` : clientText,
+      history: historyTurns.map((h, i) => ({ ...h, text: maskedHistoryTexts[i] })),
+      message: crossedWithLastOut ? `${brainMessage}\n\n${crossNote}` : brainMessage,
       media,
-      // Lote completo de anexos ({ id, url, mimeType }) — o micro novo abre
-      // todos; um micro antigo simplesmente ignora este campo e usa `media`.
+      // Lote completo de anexos ({ id, url, mimeType, fileName }) — o micro
+      // novo abre todos; um micro antigo simplesmente ignora este campo e usa
+      // `media`.
       mediaList: mediaList.length ? mediaList : undefined,
-      memory: conversation?.botMemory ?? null,
+      // Ficha com senha/código mascarados (linha a linha): se a IA copiou o
+      // valor para a ficha, ele não volta a ela em todo turno.
+      memory: maskMemorySecrets(conversation?.botMemory),
       state: conversation?.botState ?? null,
       failCount: conversation?.botFailCount ?? 0,
-      // Desfecho anterior deste contato (sobrevive ao fechamento). Quando
-      // qualified=true, o cérebro NÃO deve refazer a triagem: é um lead já
-      // qualificado voltando — retomar contrato, tirar dúvida ou (se for
-      // acidente diferente) oferecer nova qualificação.
-      priorOutcome: {
-        qualified: conversation?.qualified ?? null,
-        closeCategory: conversation?.closeCategory ?? null,
-      },
+      priorOutcome,
       // Sinais da conversa atual que mudam o desfecho correto (ver instruções:
       // ENCERRAMENTO CONTEXTUAL / CATEGORIAS DE ENCERRAMENTO).
       conversationFacts: {
@@ -1394,7 +1711,26 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // a IA retomava a triagem e desqualificava lead já atendido. Só o fato;
         // como agir fica nas instruções (ATENDENTE HUMANO NA CONVERSA). Micro
         // antigo ignora o campo.
-        recentAttendant: !!recentAttendantMsg,
+        recentAttendant: attendantMsgs.length > 0,
+        // Fotos/PDFs que chegaram NESTE turno (lote inteiro, sem teto), para o
+        // cérebro não confundir com o docsReceived do atendimento todo: "recebi
+        // 2 agora" × "recebi 5 desde o começo". Micro antigo ignora.
+        docsThisTurn,
+        // O lote passou de BURST_MAX_MESSAGES mensagens: parte do que o cliente
+        // mandou neste turno ficou no histórico e não foi aberta. O cérebro não
+        // pode dizer "recebi tudo". Micro antigo ignora.
+        burstTruncated,
+        // Coluna (Label) do card no kanban ("COLHER-ASSINATURA", "FALTA
+        // SENHA"...), null sem card. Micro antigo ignora.
+        cardColumn,
+        // Contrato da ZapSign mandado por atendente e ainda sem assinatura no
+        // kanban: { link, sentAt } | null (contract-pending.ts).
+        contractPending,
+        // Pedido em aberto: { text, source, at, returnedToBot,
+        // docsSinceOpened, nudges, flowName? } | null — o micro renderiza o
+        // bloco "PEDIDO DO ATENDENTE EM ABERTO" e as instruções v22 dizem
+        // como conduzir. Micro antigo ignora.
+        attendantRequest,
       },
       business: businessHours(),
       // Contrato aguardando assinatura → bloco "ASSINATURA EM ANDAMENTO" no
@@ -1468,6 +1804,23 @@ ${emptyNote}`,
     // O gasto das chamadas ao Claude (lookup e retry inclusos) vai inteiro
     // na métrica de custo do log desta decisão.
     decision = { ...decision, usage: turnCost.usage };
+    // Telemetria da decisão nos logs do turno (wa_bot, wa_bot_discarded e o do
+    // possível descadastro), 30/09/2026: até aqui não dava para saber pelo
+    // banco qual caminho a IA seguiu num handoff, com que versão do prompt nem
+    // com que modelo. O raciocínio vai cortado e sem dado pessoal
+    // (clipRationale); os fatos vão enxutos (compactFactsForLog).
+    const decisionTelemetry = () => ({
+      state: decision.state || undefined,
+      rationale: clipRationale(decision.rationale),
+      brain: decision.brain ?? undefined,
+      model: decision.model || decision.usage?.model || undefined,
+      returnedByAttendant: priorOutcome.returnedByAttendant,
+      // O link do contrato fica só na mensagem do atendente; o log guarda a hora.
+      facts: compactFactsForLog({
+        ...basePayload.conversationFacts,
+        contractPending: contractPending ? { sentAt: contractPending.sentAt } : null,
+      }),
+    });
 
     // ---- Persiste transcrições dos áudios do lote (16/08/2026) ------------
     // O micro transcreve cada áudio na hora da decisão e devolve o texto com o
@@ -1541,6 +1894,7 @@ ${emptyNote}`,
           intendedAction: decision.action,
           usage: turnCost.usage ?? undefined,
           sentBlocks,
+          ...decisionTelemetry(),
           ...timings(),
         },
       });
@@ -1605,6 +1959,8 @@ ${emptyNote}`,
           status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", qualified: false,
           botFailCount: 0, queuedAt: null, queueAlertAt: null,
           recoveryAttempts: 0, recoveryNextAt: null, recoveryOutcome: null,
+          // Desfecho do cérebro: conclui o pedido em aberto (com âncora).
+          ...collectRequestEndedData(),
         },
         select: { id: true },
       });
@@ -1621,7 +1977,7 @@ ${emptyNote}`,
         metadata: {
           outcome: "disqualify", optOut: true, intent: decision.intent,
           closeCategory: "nao_qualificado", usage: decision.usage ?? undefined,
-          facts: basePayload.conversationFacts,
+          ...decisionTelemetry(),
           effective: { status: "closed", reason: "nao_qualificado (possível descadastro)" } satisfies EffectiveOutcome,
           conversationAgeMs: conversation ? Date.now() - conversation.createdAt.getTime() : undefined,
           ...timings(),
@@ -1643,9 +1999,14 @@ ${emptyNote}`,
       await db.whatsAppConversation.update({
         where: { contactId },
         data: {
-          botMemory: decision.memory || conversation?.botMemory || null,
+          // Gravada já mascarada (mask-secrets.ts): a instrução manda não copiar
+          // senha para a ficha, e isto é a rede se a IA copiar.
+          botMemory: maskMemorySecrets(decision.memory || conversation?.botMemory || null),
           botState: decision.state || conversation?.botState || null,
           botFailCount: failCount,
+          // Lista do atendente detectada neste turno vira o pedido gravado (o
+          // cron só enxerga a coluna); pedido vencido sai sem âncora.
+          ...(collectWrite ?? {}),
         },
       });
     };
@@ -1733,16 +2094,56 @@ ${emptyNote}`,
             })
           : false;
         markSent(sent);
+        // Fluxo com cara de lista (decisão 4: "LISTA DE DOCUMENTOS - INSS")
+        // abre o pedido em aberto com os itens do fluxo (fluxo_ia). Pedido
+        // vago já aberto ("ver se tem Meu INSS") ganha a lista no fim; lista
+        // que já estava aberta (do atendente) continua valendo como está.
+        if (sent && decision.flowName) {
+          try {
+            const listText = await flowListTextByName(decision.flowName);
+            const data = !listText
+              ? null
+              : !openRequest
+                ? collectOpenData(listText, null, "fluxo_ia", new Date())
+                : !isListLikeRequest(openRequest.text)
+                  ? { collectRequest: appendListToRequest(openRequest.text, listText) }
+                  : null;
+            if (data) await db.whatsAppConversation.updateMany({ where: { contactId, status: "bot" }, data });
+          } catch (err) {
+            await reportCriticalError("WHATSAPP BOT pedido do fluxo", err, { contactId });
+          }
+        }
+        // handoffAfterFlow (decisão 5, "assinei"): depois do fluxo, Fila com o
+        // motivo da IA para o atendente conferir a assinatura na ZapSign. SEM
+        // texto de transferência ao cliente (handoffToQueue não manda nada ao
+        // cliente) e SEM concluir o pedido: quando o atendente devolver, a IA
+        // segue recolhendo a lista. Só vale com motivo, como no micro.
+        const handoffAfter = decision.handoffAfterFlow === true ? decision.handoffReason?.trim() || null : null;
+        // "nenhum" no send_flow (a v22 manda assim) chega como null: o desfecho
+        // vem do que a conversa É, como na fase 0 do cron. Quase todo "assinei"
+        // é de lead qualificado, e "transferido" tirava esses contratos do
+        // funil por closeCategory.
+        const handoffAfterCategory = decision.closeCategory ?? (conversation?.qualified ? "qualificado" : "transferido");
+        const flowFailNote = `o fluxo "${decision.flowName ?? "?"}" não pôde ser enviado`;
         // Fluxo inexistente/falhou e nada foi enviado → não deixa o cliente no
-        // vácuo: manda ao menos uma confirmação e passa pra fila humana.
+        // vácuo: manda ao menos uma confirmação e passa pra fila humana. No
+        // handoffAfterFlow a confirmação não cita atendente (decisão 5: o
+        // cliente não fica sabendo da transferência para conferir a ZapSign).
         if (!sent && outgoing.length === 0) {
           markSent(await sendBotReply(
             contactId, message.contactPhone, message.contactName,
-            "Só um instante que vou verificar isso pra você com um de nossos atendentes, tá?",
+            handoffAfter
+              ? "Obrigado! Em instantes seguimos por aqui com os próximos passos."
+              : "Só um instante que vou verificar isso pra você com um de nossos atendentes, tá?",
             humanDelay("x".repeat(50)),
           ));
-          const reason = "fluxo escolhido pela IA não pôde ser enviado";
-          toQueue(await handoffToQueue(contactId, contactLabel, reason, "perguntas", queueOpts), reason);
+          const reason = handoffAfter ? `${handoffAfter} (${flowFailNote})` : "fluxo escolhido pela IA não pôde ser enviado";
+          toQueue(await handoffToQueue(
+            contactId, contactLabel, reason, handoffAfter ? handoffAfterCategory : "perguntas", queueOpts,
+          ), reason);
+        } else if (handoffAfter) {
+          const reason = sent ? handoffAfter : `${handoffAfter} (${flowFailNote})`;
+          toQueue(await handoffToQueue(contactId, contactLabel, reason, handoffAfterCategory, queueOpts), reason);
         }
         break;
       }
@@ -1763,7 +2164,8 @@ ${emptyNote}`,
         // falha → segue o caminho de sempre (nota interna explica o porquê).
         if ((await signature.maybeStartSignatureFlow(contactId, contactRef)) === "queue") {
           const reason = decision.handoffReason ?? "triagem aprovada pela IA";
-          toQueue(await qualifyToQueue(contactId, contactLabel, reason, queueOpts), reason);
+          // Qualificar é decisão do cérebro: conclui o pedido em aberto.
+          toQueue(await qualifyToQueue(contactId, contactLabel, reason, { ...queueOpts, concludeRequest: true }), reason);
         } else {
           effective = { status: "signature" };
         }
@@ -1793,11 +2195,16 @@ ${emptyNote}`,
         }
         {
           const reason = decision.handoffReason ?? "transferido pelo bot";
+          // Transferência decidida pelo cérebro (lista completa, item que o
+          // cliente não consegue, pergunta só da equipe) conclui o pedido em
+          // aberto; o texto dele vai na mesma nota da Fila. keepRequest (a IA
+          // transfere NO MEIO da lista: "assinei" com a LISTA já mandada,
+          // ocupado/pede ligação) mantém o pedido para o Devolver sem texto.
           toQueue(await handoffToQueue(
             contactId, contactLabel,
             reason,
             decision.closeCategory ?? "transferido",
-            queueOpts,
+            { ...queueOpts, concludeRequest: decision.keepRequest !== true },
           ), reason);
         }
         break;
@@ -1867,6 +2274,10 @@ ${emptyNote}`,
         // Categoria de encerramento (perguntas/qualificado/novo_acidente/...).
         closeCategory: decision.closeCategory ?? undefined,
         flowName: decision.action === "send_flow" ? decision.flowName ?? undefined : undefined,
+        // Fluxo seguido de Fila sem concluir o pedido (decisão 5, "assinei").
+        handoffAfterFlow: decision.action === "send_flow" && decision.handoffAfterFlow === true ? true : undefined,
+        // Transferência que manteve o pedido em aberto (keepRequest).
+        keepRequest: decision.action === "handoff" && decision.keepRequest === true ? true : undefined,
         conversationAgeMs,
         usage: decision.usage ?? undefined,
         // Onde a conversa ficou de fato ("continue" vazio termina na Fila) e
@@ -1885,10 +2296,11 @@ ${emptyNote}`,
         // Quantas vezes a rede de segurança de vazamento de raciocínio pegou
         // algo — dá pra medir se o campo `rationale` resolveu de fato.
         leaked: decision.leaked ? true : undefined,
-        // Fatos que o cérebro recebeu neste turno: sem eles não dá para
-        // conferir em produção se a decisão (resolver × transferir) seguiu o
-        // docsReceived/registeredClient certo.
-        facts: basePayload.conversationFacts,
+        // Etapa, raciocínio, origem do prompt, modelo e os fatos que o cérebro
+        // recebeu neste turno (enxutos): sem os fatos não dá para conferir em
+        // produção se a decisão (resolver × transferir) seguiu o
+        // docsReceived/registeredClient/docsThisTurn certo.
+        ...decisionTelemetry(),
         // Blocos do roteiro que não saíram porque o cliente escreveu no meio
         // (a ação rodou mesmo assim).
         blocksSkipped: blocksSkipped > 0 ? blocksSkipped : undefined,
@@ -1909,6 +2321,30 @@ ${emptyNote}`,
       action: decision.action,
       replyText: outgoing[0] ?? null,
     });
+
+    // ---- Aviso ao dono: a IA seguiu sozinha na conversa devolvida ----------
+    // (30/09/2026) Conversa que a equipe devolveu ao bot (até 7 dias) e a IA
+    // respondeu sem transferir: o dono fica sabendo que a IA retomou (e o que
+    // ela pediu), em vez de descobrir pela lista. Turno silencioso ou que foi
+    // para a Fila não avisa (a Fila já notifica o dono). Depois da resposta:
+    // não segura o webhook nem o próximo turno.
+    if (
+      returnedByAttendant && firstSentAt !== null
+      && (effective.status === "bot" || effective.status === "closed")
+    ) {
+      const summary = decision.action === "send_flow" && decision.flowName
+        ? `mandou o fluxo "${decision.flowName}"${outgoing[0] ? ` — ${outgoing[0]}` : ""}`
+        : outgoing[0] ?? "";
+      const closedCategory = effective.status === "closed" ? effective.reason ?? null : null;
+      runAfterResponse("aviso ao dono: IA retomou conversa devolvida", () => notifyOwnerBotResumed({
+        contactId,
+        contactName: message.contactName,
+        contactLabel,
+        assignedToId: conversation?.assignedToId ?? null,
+        summary,
+        closedCategory,
+      }));
+    }
   } catch (err) {
     // Erro em QUALQUER ponto → fila de distribuição direto, SEM mensagem de
     // erro pro cliente ("Ocorreu um erro..." nunca chega no WhatsApp dele).

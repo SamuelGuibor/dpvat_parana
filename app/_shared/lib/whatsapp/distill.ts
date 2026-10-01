@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@/app/_shared/lib/prisma';
 import { readSnapshot } from './brain';
+import { maskMemorySecrets, maskSecretsInSequence } from '@/app/_shared/utils/mask-secrets';
 import { invalidatePlaybookCache } from './rule-events';
 
 // CÉREBRO — camada 3: transformar julgamentos humanos em regras que entram no
@@ -104,13 +105,17 @@ export async function extractLesson(reviewId: string): Promise<{
     const snapshot = await readSnapshot(review.s3Key);
     if (!snapshot) return null;
 
+    // Senha/código mascarados antes de ir à IA (mask-secrets.ts, decisão do dono
+    // de 30/09/2026): os snapshots anteriores a essa data saíram do brain.ts sem
+    // máscara. Idempotente com os que já vêm mascarados.
+    const historyTexts = maskSecretsInSequence(snapshot.messages.map((m) => m.text));
     const out = await callBrain<{ lesson: string; states: string[]; section: string }>(
       '/distill-lesson',
       {
         contact: { name: review.contactName, phone: review.contactPhone },
         // Notas internas entram: é nelas que o bot registra o porquê das decisões.
-        history: snapshot.messages.map((m) => ({ role: m.role, text: m.text })),
-        memory: snapshot.conversation.botMemory,
+        history: snapshot.messages.map((m, i) => ({ role: m.role, text: historyTexts[i] })),
+        memory: maskMemorySecrets(snapshot.conversation.botMemory),
         review: {
           verdict: review.verdict,
           comment: review.comment,

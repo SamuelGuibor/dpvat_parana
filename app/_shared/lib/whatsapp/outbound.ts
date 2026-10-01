@@ -167,6 +167,41 @@ export async function isWindowOpen(contactId: string): Promise<boolean> {
 const SYSTEM_COOLDOWN_MS =
   Number(process.env.WHATSAPP_SYSTEM_COOLDOWN_HOURS ?? 6) * 60 * 60_000;
 
+/** Já saiu mensagem proativa (qualquer systemSource) para o contato dentro do SYSTEM_COOLDOWN_MS? */
+async function inSystemCooldown(contactId: string): Promise<boolean> {
+  const lastProactive = await db.whatsAppMessage.findFirst({
+    where: {
+      contactId,
+      direction: "out",
+      systemSource: { not: null },
+      createdAt: { gte: new Date(Date.now() - SYSTEM_COOLDOWN_MS) },
+    },
+    select: { id: true },
+  });
+  return !!lastProactive;
+}
+
+export type SystemSendBlock = "opt-out" | "cooldown" | "janela";
+
+/**
+ * O sendSystemWhatsApp recusaria agora um TEXTO livre para este contato? Mesma
+ * régua dele (opt-out, SYSTEM_COOLDOWN_MS, janela de 24h), para o chamador
+ * checar ANTES de pagar uma chamada de IA que escreveria a mensagem: sem isso,
+ * uma automação dentro das últimas 6 h fazia a IA ser paga a cada rodada do
+ * cron sem nada sair. Não afrouxa nada: o envio continua checando tudo de novo.
+ * Contato inexistente conta como "opt-out" (nada pode sair para ele).
+ */
+export async function systemSendBlockReason(contactId: string): Promise<SystemSendBlock | null> {
+  const contact = await db.whatsAppContact.findUnique({
+    where: { id: contactId },
+    select: { optedOut: true },
+  });
+  if (!contact || contact.optedOut) return "opt-out";
+  if (await inSystemCooldown(contactId)) return "cooldown";
+  if (!(await isWindowOpen(contactId))) return "janela";
+  return null;
+}
+
 // Depois de N proativas seguidas sem NENHUMA resposta do cliente, a equipe é
 // alertada (contato por outro canal?) — quem nunca responde é quem denuncia.
 // O envio NÃO é bloqueado; o alerta dispara uma única vez, ao cruzar o limiar.
@@ -317,6 +352,14 @@ export interface SystemSendInput {
    * quebra o fluxo. Opt-out e janela/template continuam valendo.
    */
   transactional?: boolean;
+  /**
+   * Aviso "N mensagens automáticas sem resposta" (alertIfUnanswered) depois do
+   * envio. Padrão true. false para quem já avisa o dono do jeito dele (ex.: a
+   * cobrança do pedido em aberto transfere ao dono antes de a janela fechar):
+   * sem isso a 3ª cobrança avisaria a equipe inteira. Não mexe em nenhuma
+   * trava anti-spam (opt-out, cooldown, janela continuam).
+   */
+  unansweredAlert?: boolean;
 }
 
 export interface SystemSendResult {
@@ -358,16 +401,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
     // Cap de frequência: já houve proativa há menos de SYSTEM_COOLDOWN_MS?
     // Pula (o card avançando várias etapas de uma vez não vira rajada).
     // Transacional (OTP etc.) não conta aqui: foi o CLIENTE que pediu.
-    const lastProactive = input.transactional ? null : await db.whatsAppMessage.findFirst({
-      where: {
-        contactId: contact.id,
-        direction: "out",
-        systemSource: { not: null },
-        createdAt: { gte: new Date(Date.now() - SYSTEM_COOLDOWN_MS) },
-      },
-      select: { id: true },
-    });
-    if (lastProactive) {
+    if (!input.transactional && (await inSystemCooldown(contact.id))) {
       await logWhatsAppEvent({
         action: "wa_text",
         message: `não enviou mensagem automática para ${contact.name ?? contact.phone}: intervalo mínimo entre mensagens automáticas ainda não passou`,
@@ -410,7 +444,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
         contactPhone: contact.phone,
         metadata: { source: input.source, automated: true, preview: input.text.slice(0, 120) },
       });
-      await alertIfUnanswered(contact, input.authorId, input.authorName);
+      if (input.unansweredAlert !== false) await alertIfUnanswered(contact, input.authorId, input.authorName);
       return { sent: true, via: "text" };
     }
 
@@ -584,7 +618,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
       contactPhone: contact.phone,
       metadata: { source: input.source, automated: true, templateName: template.name, vars },
     });
-    await alertIfUnanswered(contact, input.authorId, input.authorName);
+    if (input.unansweredAlert !== false) await alertIfUnanswered(contact, input.authorId, input.authorName);
     return { sent: true, via: "template" };
   } catch (err) {
     console.error("[WHATSAPP OUTBOUND] Falha no envio de sistema:", err);

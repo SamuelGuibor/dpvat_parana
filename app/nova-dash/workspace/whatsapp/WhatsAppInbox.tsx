@@ -40,7 +40,9 @@ import {
 import { closedFolderOf, type ClosedFolderKey } from '@/app/_shared/utils/inbox-folders';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
+  setConversationCollectRequest,
 } from '@/app/_actions/whatsapp/conversations';
+import { collectRequestPatch, sameCollectRequest } from '@/app/_shared/utils/collect-request';
 // Só tipo: o módulo de dados (inbox-data.ts) importa o Prisma e não pode
 // entrar no bundle do navegador.
 import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
@@ -83,6 +85,7 @@ import { CopilotPanel } from './CopilotPanel';
 import { WhatsAppTagsModal } from './WhatsAppTagsModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
 import { ContactsDirectory } from './ContactsDirectory';
+import { CloseWithRequestDialog, CollectRequestBar, CollectRequestPill, ReturnToBotDialog } from './CollectRequest';
 import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
@@ -393,6 +396,13 @@ export function WhatsAppInbox() {
     { revalidateOnFocus: false },
   );
   const [reasonsModalOpen, setReasonsModalOpen] = useState(false);
+  // Pedido em aberto (CollectRequest.tsx): diálogo do Devolver/Editar e a
+  // pergunta do Encerrar com pedido. `base` = a conversa capturada no clique,
+  // como no runAction (patch e rollback não dependem do `active` do render).
+  // `open` separado: ao fechar, o conteúdo fica até a animação terminar (sem
+  // o título trocar para o padrão no meio do fade).
+  const [collectDialog, setCollectDialog] = useState<{ mode: 'return' | 'edit'; base: WhatsAppConversationDTO; open: boolean } | null>(null);
+  const [closeAsk, setCloseAsk] = useState<{ base: WhatsAppConversationDTO; category: string; label: string; listLabel: string; open: boolean } | null>(null);
   const [addContactOpen, setAddContactOpen] = useState(false);
   // Menu de encerrar: estático (sem os nq_* hardcoded, que agora moram na
   // tabela) + motivos dinâmicos logo depois de "Não qualificada (genérico)".
@@ -1239,6 +1249,68 @@ export function WhatsAppInbox() {
       const tagBusy = [...pendingTagsRef.current].some((k) => k.startsWith(prefix));
       return tagBusy || sameTags(c.tags, tags) ? rest : { ...rest, tags };
     };
+  }
+
+  // ---- Pedido em aberto (CollectRequest.tsx, 30/09/2026) -------------------
+  // Devolver com o campo "O que a IA deve recolher?", Editar/Limpar da barra e
+  // Encerrar com pedido. Mesmo desenho do runAction: otimista pelas mesmas
+  // funções puras que a action usa na resposta, rollback e texto próprio
+  // (erro de action chega mascarado em produção).
+
+  // `value` no formato da action: texto = abre/substitui; null = conclui o
+  // pedido que existia; undefined = campo vazio sem pedido (o servidor mantém
+  // ou detecta a última lista do atendente e devolve o pedido no patch).
+  function handleReturnToBot(base: WhatsAppConversationDTO, value: string | null | undefined) {
+    const current = base.collectRequest?.text ?? null;
+    const collect = value === undefined || sameCollectRequest(value, current)
+      ? undefined
+      : collectRequestPatch(value ? { text: value, at: new Date(), byName: me.name, source: 'devolver' } : null);
+    void runAction(
+      // 1 argumento quando não há o que mandar (a action lê undefined como
+      // "manter/detectar"; null e texto vão como estão).
+      () => (value === undefined ? returnConversationToBot(base.id) : returnConversationToBot(base.id, value)),
+      value ? 'Conversa devolvida. A IA vai recolher o pedido.' : value === null ? 'Conversa devolvida pro bot. Pedido concluído.' : 'Conversa devolvida pro bot.',
+      {
+        base,
+        optimistic: returnToBotPatch({ collect }),
+        errorMsg: 'Não foi possível devolver ao bot. Recarregue a página (F5) e tente de novo.',
+      },
+    );
+  }
+
+  function handleSaveCollectRequest(base: WhatsAppConversationDTO, value: string | null) {
+    if (sameCollectRequest(value, base.collectRequest?.text ?? null)) return;
+    void runAction(() => setConversationCollectRequest(base.id, value), value ? 'Pedido atualizado.' : 'Pedido concluído.', {
+      base,
+      optimistic: collectRequestPatch(value ? { text: value, at: new Date(), byName: me.name, source: 'devolver' } : null),
+      errorMsg: 'Não foi possível salvar o pedido. Recarregue a página (F5) e tente de novo.',
+    });
+  }
+
+  async function handleClearCollectRequest(base: WhatsAppConversationDTO) {
+    if (!(await confirm({
+      title: 'Concluir o pedido?',
+      description: 'A IA para de conferir e de cobrar esta lista, e ela não volta a valer. O histórico da conversa continua.',
+      tone: 'warning',
+      confirmLabel: 'Concluir pedido',
+    }))) return;
+    handleSaveCollectRequest(base, null);
+  }
+
+  // Encerrar (e Alterar desfecho). Com pedido em aberto, pergunta antes se
+  // conclui ou mantém; sem pedido, encerra direto como sempre.
+  function runClose(base: WhatsAppConversationDTO, category: string, label: string, collect?: 'concluir' | 'manter') {
+    // Rótulo como a lista mostra (CLOSE_CATEGORY_LABELS; o motivo da tabela já
+    // vem com o rótulo dele), não o do menu — senão o chip trocaria na resposta.
+    void runAction(
+      () => (collect ? closeConversation(base.id, category, collect) : closeConversation(base.id, category)),
+      `Encerrado: ${label}.`,
+      {
+        base,
+        optimistic: closePatch(category, CLOSE_CATEGORY_LABELS[category] ?? label, { keepRequest: collect === 'manter' }),
+        errorMsg: 'Não foi possível encerrar. Recarregue a página (F5) e tente de novo.',
+      },
+    );
   }
 
   // Patch local de UMA conversa em todas as cópias que a tela pode estar
@@ -2411,18 +2483,14 @@ export function WhatsAppInbox() {
                   }}
                 />
               )}
-              {active.status === 'human' && (
+              {/* Devolver abre o diálogo do pedido ("O que a IA deve
+                  recolher?"). Também na Fila: a IA transferiu por uma dúvida
+                  no meio da coleta e o atendente respondeu sem assumir. */}
+              {(active.status === 'human' || active.status === 'queued') && (
                 <HeaderButton
                   icon={Undo2}
                   label="Devolver pro bot"
-                  onClick={() => {
-                    const base = active;
-                    void runAction(() => returnConversationToBot(base.id), 'Conversa devolvida pro bot.', {
-                      base,
-                      optimistic: returnToBotPatch(),
-                      errorMsg: 'Não foi possível devolver ao bot. Recarregue a página (F5) e tente de novo.',
-                    });
-                  }}
+                  onClick={() => setCollectDialog({ mode: 'return', base: active, open: true })}
                 />
               )}
               {/* Encerrar (aberta) / Alterar desfecho (encerrada — a IA às
@@ -2445,14 +2513,12 @@ export function WhatsAppInbox() {
                         key={category}
                         onClick={() => {
                           const base = active;
-                          // Rótulo como a lista mostra (CLOSE_CATEGORY_LABELS; o
-                          // motivo da tabela já vem com o rótulo dele), não o
-                          // do menu — senão o chip trocaria na resposta.
-                          void runAction(() => closeConversation(base.id, category), `Encerrado: ${label}.`, {
-                            base,
-                            optimistic: closePatch(category, CLOSE_CATEGORY_LABELS[category] ?? label),
-                            errorMsg: 'Não foi possível encerrar. Recarregue a página (F5) e tente de novo.',
-                          });
+                          // Pedido em aberto: concluir ou manter, antes de encerrar.
+                          if (base.collectRequest) {
+                            setCloseAsk({ base, category, label, listLabel: CLOSE_CATEGORY_LABELS[category] ?? label, open: true });
+                            return;
+                          }
+                          runClose(base, category, label);
                         }}
                         className="text-base"
                       >
@@ -2552,6 +2618,18 @@ export function WhatsAppInbox() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </header>
+
+            {/* Pedido em aberto: o que a IA está recolhendo (ou pausado fora
+                do bot). Editar reaproveita o diálogo do Devolver. */}
+            {active.collectRequest && (
+              <CollectRequestBar
+                value={active.collectRequest}
+                status={active.status}
+                readOnly={active.readOnly}
+                onEdit={() => setCollectDialog({ mode: 'edit', base: active, open: true })}
+                onClear={() => { void handleClearCollectRequest(active); }}
+              />
+            )}
 
             {/* Invólucro relativo só para o chip "Nova mensagem ↓" flutuar sobre o rodapé da thread. */}
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -2748,6 +2826,28 @@ export function WhatsAppInbox() {
         open={tagsModalOpen}
         onOpenChange={setTagsModalOpen}
         onChanged={() => { reloadTags(); void reloadAllConversations(); }}
+      />
+      <ReturnToBotDialog
+        open={!!collectDialog?.open}
+        onOpenChange={(o) => { if (!o) setCollectDialog((d) => (d ? { ...d, open: false } : d)); }}
+        mode={collectDialog?.mode ?? 'return'}
+        current={collectDialog?.base.collectRequest ?? null}
+        lastInboundAt={collectDialog?.base.lastInboundAt ?? null}
+        onConfirm={(value) => {
+          const dialog = collectDialog;
+          if (!dialog?.open) return;
+          if (dialog.mode === 'return') handleReturnToBot(dialog.base, value);
+          else handleSaveCollectRequest(dialog.base, value ?? null);
+        }}
+      />
+      <CloseWithRequestDialog
+        open={!!closeAsk?.open}
+        onOpenChange={(o) => { if (!o) setCloseAsk((d) => (d ? { ...d, open: false } : d)); }}
+        closeLabel={closeAsk?.listLabel ?? ''}
+        request={closeAsk?.base.collectRequest ?? null}
+        onChoose={(choice) => {
+          if (closeAsk?.open) runClose(closeAsk.base, closeAsk.category, closeAsk.label, choice);
+        }}
       />
       <CloseReasonsModal
         open={reasonsModalOpen}
@@ -3158,6 +3258,8 @@ function ConversationGroup({
                   {Math.min(c.recoveryAttempts, recoveryCapOf(c.numberId))}ª de {recoveryCapOf(c.numberId)}
                 </span>
               )}
+              {/* Pedido em aberto: a IA está recolhendo uma lista (resumo no title). */}
+              {c.collectRequest && <CollectRequestPill value={c.collectRequest} status={c.status} />}
               {pill && (
                 <span className="shrink-0 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-amber-300 ring-1 ring-amber-400/30">{pill}</span>
               )}

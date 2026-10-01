@@ -115,6 +115,25 @@ export function mediaDisplayName({ key, mediaType, createdAt }: MediaNameInput):
   return `${label} ${dd}-${mm}-${yyyy} ${hh}h${min}m${second}${suffix}`;
 }
 
+/**
+ * Nome que o CLIENTE deu ao arquivo (PDF "Carta de concessão.pdf"), tirado da
+ * key do S3; null quando o nome foi inventado pelo sistema (`midia.<ext>`,
+ * `audio.<ext>`, `image.png`) ou está vazio. Vai para o cérebro do bot no
+ * `mediaList[].fileName` (30/09/2026): na coleta de documentos, o nome do PDF
+ * ajuda a IA a conferir qual item da lista chegou. Um nome inventado diria
+ * "midia.pdf" em todo anexo e não ajuda em nada.
+ */
+export function mediaOriginalName(key: string | null | undefined, max = 120): string | null {
+  if (!key) return null;
+  const raw = rawNameFromKey(key);
+  const rawExt = EXT_RE.exec(raw)?.[1] ?? '';
+  const base = rawExt ? raw.slice(0, -(rawExt.length + 1)) : raw;
+  if (!base.trim() || DEFAULT_NAME_RE.test(raw)) return null;
+  const tidy = tidyOriginalName(raw);
+  if (!tidy || tidy.startsWith('.')) return null;
+  return tidy.length > max ? tidy.slice(0, max) : tidy;
+}
+
 // Caracteres que o Windows recusa em nome de arquivo (o download do card sai
 // com este nome), o ";" que abre outro parâmetro no Content-Disposition
 // (mesma regra do sanitizeDocName) e controles invisíveis.

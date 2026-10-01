@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@/app/_shared/lib/prisma';
+import { maskMemorySecrets, maskSecrets, maskSecretsInSequence } from '@/app/_shared/utils/mask-secrets';
 
 // CÉREBRO DA IA — camada 1 (arquivo bruto) e camada 2 (índice).
 //
@@ -106,6 +107,21 @@ function turnText(m: {
 }
 
 /**
+ * Senha e código mascarados nos turnos do snapshot (mask-secrets.ts, decisão do
+ * dono de 30/09/2026): o arquivo fica no S3 para sempre, abre na tela de
+ * revisão e vai inteiro para a IA na destilação. Cada turno olha o anterior
+ * ("qual a senha?" → "Abc@1234"). Idempotente: turno já mascarado não muda.
+ */
+function maskTurns(turns: SnapshotTurn[]): SnapshotTurn[] {
+  const texts = maskSecretsInSequence(turns.map((t) => t.text));
+  return turns.map((t, i) => ({
+    ...t,
+    text: texts[i],
+    ...(t.transcript ? { transcript: maskSecrets(t.transcript) } : {}),
+  }));
+}
+
+/**
  * Captura o snapshot de uma conversa que está sendo encerrada e cria a linha na
  * fila de revisão.
  *
@@ -190,7 +206,7 @@ export async function captureConversation(
       : [];
     const authorName = new Map(authors.map((a) => [a.id, a.name]));
 
-    const turns: SnapshotTurn[] = messages
+    const turns: SnapshotTurn[] = maskTurns(messages
       .map((m): SnapshotTurn | null => {
         const text = turnText(m);
         if (!text) return null;
@@ -213,7 +229,7 @@ export async function captureConversation(
           authorName: m.authorId ? (authorName.get(m.authorId) ?? null) : null,
         };
       })
-      .filter((t): t is SnapshotTurn => !!t);
+      .filter((t): t is SnapshotTurn => !!t));
 
     const fromClient = turns.filter((t) => t.role === 'client').length;
     const fromBot = turns.filter((t) => t.role === 'bot').length;
@@ -251,7 +267,9 @@ export async function captureConversation(
         id: conversation?.id ?? null,
         qualified,
         closeCategory,
-        botMemory: conversation?.botMemory ?? null,
+        // A ficha também: a IA não deve copiar senha para ela, mas se copiar,
+        // não fica no S3.
+        botMemory: maskMemorySecrets(conversation?.botMemory),
         botState: conversation?.botState ?? null,
         botFailCount: conversation?.botFailCount ?? 0,
         createdAt: conversation?.createdAt?.toISOString() ?? null,
@@ -275,7 +293,9 @@ export async function captureConversation(
     if (last && last.status === 'pendente' && Date.now() - last.createdAt.getTime() < MERGE_WINDOW_MS) {
       const prev = await readSnapshot(last.s3Key);
       if (prev) {
-        const mergedTurns = [...prev.messages, ...turns];
+        // Snapshot anterior a 30/09/2026 saiu sem máscara: o merge regrava o
+        // arquivo inteiro já mascarado.
+        const mergedTurns = maskTurns([...prev.messages, ...turns]);
         const merged: ConversationSnapshot = {
           ...snapshot,
           messages: mergedTurns,

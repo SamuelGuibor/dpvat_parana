@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  conversationAgeOf, discardOutcomeOf, isDiscardedOutcome, queueEffective, sumUsageByModel, turnTimings,
+  FACT_TEXT_LOG_MAX, RATIONALE_LOG_MAX, clipRationale, compactFactsForLog, conversationAgeOf, discardOutcomeOf,
+  isDiscardedOutcome, queueEffective, sumUsageByModel, turnTimings,
 } from "@/app/_shared/utils/bot-telemetry";
 import { BURST_DEBOUNCE_MS, newerInboundWhere } from "@/app/_shared/utils/bot-timing";
 import { modelLabel, priceFor, usageCostUSD } from "@/app/_shared/lib/ai-pricing";
@@ -118,5 +119,69 @@ describe("newerInboundWhere", () => {
 
   it("o debounce da rajada é o mesmo para o bot e para a ficha (8 s)", () => {
     expect(BURST_DEBOUNCE_MS).toBe(8_000);
+  });
+});
+
+describe("clipRationale", () => {
+  it("mascara CPF com e sem pontuação, telefone com DDD e número de benefício", () => {
+    expect(clipRationale("CPF 123.456.789-00 confere")).toBe("CPF ••• confere");
+    expect(clipRationale("CPF 12345678900 confere")).toBe("CPF ••• confere");
+    expect(clipRationale("ligar no (41) 99786-2323")).toBe("ligar no (41) •••");
+    expect(clipRationale("benefício 630.015.983-7 ativo")).toBe("benefício ••• ativo");
+    expect(clipRationale("CEP 80000-000")).toBe("CEP •••");
+  });
+
+  it("preserva texto sem dígito longo (datas curtas, valores, contagens)", () => {
+    const text = "Cliente mandou 2 PDFs e disse que falta 1; valor R$ 1.234,56; 45 dias afastado.";
+    expect(clipRationale(text)).toBe(text);
+  });
+
+  it("senha e código citados no raciocínio também são mascarados", () => {
+    expect(clipRationale("cliente mandou a senha: Abc@1234, transferir")).toBe(
+      "cliente mandou a senha: [senha omitida], transferir",
+    );
+  });
+
+  it("corta em 500 caracteres com '…'", () => {
+    const out = clipRationale("a".repeat(800));
+    expect(out).toHaveLength(RATIONALE_LOG_MAX);
+    expect(out?.endsWith("…")).toBe(true);
+    expect(clipRationale("abc def", 5)).toBe("abc…");
+  });
+
+  it("não-string, vazio e só espaços dão undefined", () => {
+    expect(clipRationale(undefined)).toBeUndefined();
+    expect(clipRationale(null)).toBeUndefined();
+    expect(clipRationale(42)).toBeUndefined();
+    expect(clipRationale("")).toBeUndefined();
+    expect(clipRationale("   ")).toBeUndefined();
+  });
+});
+
+describe("compactFactsForLog", () => {
+  it("número e booleano passam; texto longo (solto ou em .text) é cortado", () => {
+    const long = "x".repeat(1_500);
+    const out = compactFactsForLog({
+      docsReceived: 3,
+      docsThisTurn: 2,
+      burstTruncated: false,
+      registeredClient: true,
+      note: long,
+      attendantRequest: { text: long, source: "devolver", nudges: 0 },
+      nothing: null,
+    });
+    expect(out.docsReceived).toBe(3);
+    expect(out.docsThisTurn).toBe(2);
+    expect(out.burstTruncated).toBe(false);
+    expect(out.registeredClient).toBe(true);
+    expect(out.nothing).toBeNull();
+    expect((out.note as string).length).toBe(FACT_TEXT_LOG_MAX);
+    expect(out.attendantRequest).toEqual({ text: `${"x".repeat(FACT_TEXT_LOG_MAX - 1)}…`, source: "devolver", nudges: 0 });
+  });
+
+  it("não altera o objeto original (o cérebro recebe os fatos inteiros)", () => {
+    const facts = { attendantRequest: { text: "y".repeat(300) } };
+    compactFactsForLog(facts);
+    expect(facts.attendantRequest.text).toHaveLength(300);
   });
 });

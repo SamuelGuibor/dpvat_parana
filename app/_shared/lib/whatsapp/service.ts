@@ -4,6 +4,7 @@ import { broadcastToRelay, isRelayConfigured } from "@/app/_shared/lib/chat-rela
 import { runAfterResponse } from "@/app/_shared/lib/background";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sameBrDay } from "@/app/_shared/utils/alert-policy";
+import { COLLECT_REQUEST_CLEARED } from "@/app/_shared/utils/collect-request";
 import { downloadMediaToS3, sendText } from "./client";
 import { isOptOutMessage, isExactOptOutCommand, isOptInMessage, OPT_OUT_CONFIRMATION } from "./opt-out";
 import { captureConversation } from "./brain";
@@ -500,7 +501,12 @@ export async function ingestIncomingMessage(
     });
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
-      data: { status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null },
+      // Pedido em aberto limpo sem âncora (collect-request.ts): o descadastro
+      // não é desfecho decidido pelo cérebro; o contato não recebe mais nada.
+      data: {
+        status: "closed", closedAt: new Date(), assignedToId: null, closeCategory: "nao_qualificado", botMemory: null, botState: null,
+        ...COLLECT_REQUEST_CLEARED,
+      },
     });
     // Tag do desfecho, como nos outros encerramentos (close-tags.ts). Nunca lança.
     await syncCloseTag(conversation.id, "nao_qualificado");

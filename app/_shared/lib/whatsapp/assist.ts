@@ -1,6 +1,7 @@
 import { db } from "@/app/_shared/lib/prisma";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { AssistError } from "@/app/_shared/utils/assist-errors";
+import { maskMemorySecrets, maskSecretsInSequence } from "@/app/_shared/utils/mask-secrets";
 import { findLinkedCard } from "./bot";
 import { transcribeStoredAudio } from "./transcribe";
 
@@ -85,7 +86,12 @@ interface HistoryTurn {
   text: string;
 }
 
-/** Histórico recente da conversa no formato que o cérebro entende. */
+/**
+ * Histórico recente da conversa no formato que o cérebro entende, com
+ * senha/código mascarados (mask-secrets.ts, decisão do dono de 30/09/2026): a
+ * sugestão e os resumos também vão à IA, e o valor nunca vai. O atendente vê
+ * o texto original na thread.
+ */
 async function loadHistory(contactId: string, take = 40): Promise<HistoryTurn[]> {
   const rows = await db.whatsAppMessage.findMany({
     where: { contactId, internal: false, deletedAt: null },
@@ -93,7 +99,7 @@ async function loadHistory(contactId: string, take = 40): Promise<HistoryTurn[]>
     take,
     select: { direction: true, sentByBot: true, body: true, transcript: true, mediaType: true },
   });
-  return rows
+  const turns = rows
     .reverse()
     .map((m) => {
       // Áudio já transcrito entra como texto — melhora sugestão e resumo.
@@ -111,6 +117,8 @@ async function loadHistory(contactId: string, take = 40): Promise<HistoryTurn[]>
       };
     })
     .filter((t): t is HistoryTurn => !!t);
+  const masked = maskSecretsInSequence(turns.map((t) => t.text));
+  return turns.map((t, i) => ({ ...t, text: masked[i] }));
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +145,7 @@ export async function suggestReplyForContact(
     contact: { name: contact.name, phone: contact.phone },
     processInfo: card ? { name: card.name, etapa: card.etapa, service: card.service } : null,
     history,
-    memory: conversation?.botMemory ?? null,
+    memory: maskMemorySecrets(conversation?.botMemory),
     agentName: agent.name,
   });
   const durationMs = Date.now() - t0;
@@ -181,7 +189,7 @@ export async function summarizeConversationForAgent(
   const out = await callAssist<{ summary?: unknown; usage?: object | null }>("/summarize", {
     contact: { name: contact.name, phone: contact.phone },
     history,
-    memory: conversation?.botMemory ?? null,
+    memory: maskMemorySecrets(conversation?.botMemory),
   });
   const durationMs = Date.now() - t0;
 
@@ -233,7 +241,7 @@ export async function summarizeConversationToCard(
     const out = await callAssist<{ summary: string; usage?: object | null }>("/summarize", {
       contact: { name: contact.name, phone: contact.phone },
       history,
-      memory: conversation?.botMemory ?? null,
+      memory: maskMemorySecrets(conversation?.botMemory),
     });
     const durationMs = Date.now() - t0;
 

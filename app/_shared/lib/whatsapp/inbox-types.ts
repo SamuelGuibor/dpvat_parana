@@ -7,6 +7,8 @@
 // entraria no bundle do cliente e o build da Vercel quebraria. Aqui não há
 // valor nenhum: no cliente, importe sempre com `import type`.
 
+import type { CollectRequestDTO } from '@/app/_shared/utils/collect-request';
+
 export interface WhatsAppConversationDTO {
   id: string;
   contactId: string;
@@ -58,6 +60,11 @@ export interface WhatsAppConversationDTO {
   // Provocações do ciclo de recuperação já enviadas (0-5) — exibido quando
   // status="standby" como "1ª de 5".
   recoveryAttempts: number;
+  // Pedido em aberto que a IA está recolhendo (30/09/2026): texto do Devolver,
+  // lista detectada do atendente ou fluxo de lista que a IA mandou. null =
+  // nada em aberto. Barra "IA recolhendo" na thread e pill "Lista" na linha.
+  // Aninhado de propósito: vazio custa ~20 bytes por linha nas 1.000 da lista.
+  collectRequest: CollectRequestDTO | null;
   // Não lida = o cliente mandou algo que ninguém da equipe viu (unreadCount >
   // 0) ou alguém usou "Marcar como não lida". Mensagem de SAÍDA não conta
   // (regra em computeUnread, app/_shared/utils/whatsapp-inbox.ts).

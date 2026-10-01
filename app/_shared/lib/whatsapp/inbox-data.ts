@@ -6,6 +6,7 @@ import { getInactiveNumberIdsCached } from '@/app/_shared/lib/whatsapp/numbers';
 import { LIST_PREVIEW_MAX_CHARS, computeUnread, listPreview } from '@/app/_shared/utils/whatsapp-inbox';
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { fallbackCloseLabel } from '@/app/_shared/utils/close-tag-plan';
+import { collectRequestPatch, isCollectSource } from '@/app/_shared/utils/collect-request';
 import { INBOX_LIST_PAGE } from '@/app/_shared/utils/inbox-delta';
 import {
   INBOX_FILTER_PAGE, buildInboxWhere, hasServerFilter, normalizeFilterTerm, type InboxServerFilter,
@@ -127,6 +128,11 @@ export async function loadConversations(
       id: true, contactId: true, numberId: true, status: true, qualified: true,
       closeCategory: true, assignedToId: true, lastMessageAt: true,
       createdAt: true, recoveryAttempts: true,
+      // Pedido em aberto (barra "IA recolhendo" + pill "Lista"). Quem grava é
+      // a própria conversa por Prisma update/updateMany, que toca o
+      // @updatedAt: o delta (?since=) já traz a mudança.
+      collectRequest: true, collectRequestAt: true, collectRequestById: true,
+      collectRequestSource: true, collectNudgeCount: true,
       contact: {
         select: {
           id: true, name: true, phone: true, optedOut: true, userId: true,
@@ -147,8 +153,10 @@ export async function loadConversations(
   const contactIds = conversations.map((c) => c.contactId);
   // Motivo do handoff só aparece na Fila — a nota do bot é buscada só pra elas.
   const queuedContactIds = conversations.filter((c) => c.status === 'queued').map((c) => c.contactId);
+  // Quem pediu a lista em aberto entra na MESMA consulta de nomes dos donos
+  // (nada de ida ao banco a mais).
   const assigneeIds = [...new Set(
-    conversations.map((c) => c.assignedToId).filter((id): id is string => !!id),
+    conversations.flatMap((c) => [c.assignedToId, c.collectRequestById]).filter((id): id is string => !!id),
   )];
   // Nome EXIBIDO: manda o nome do card quando o contato já está vinculado a um
   // cliente. O `whatsapp_contacts.name` nasce do perfil do WhatsApp (apelido,
@@ -343,6 +351,16 @@ export async function loadConversations(
       caseDataAcidente: ficha?.data_acidente?.trim() || null,
       hasCpf: !!ficha?.cpf?.trim(),
       recoveryAttempts: c.recoveryAttempts,
+      // Mesma função do otimista da tela (collectRequestPatch), senão a barra
+      // "pula" quando o delta chega. Origem desconhecida (linha antiga) vale
+      // como texto do Devolver.
+      ...collectRequestPatch(c.collectRequest ? {
+        text: c.collectRequest,
+        at: c.collectRequestAt ?? c.lastMessageAt,
+        byName: c.collectRequestById ? assigneeNameById.get(c.collectRequestById) ?? null : null,
+        source: isCollectSource(c.collectRequestSource) ? c.collectRequestSource : 'devolver',
+        nudges: c.collectNudgeCount,
+      } : null),
       unread,
       unreadCount,
       // Sentinela da época (epoch) = "Marcar como não lida" — a UI mostra um

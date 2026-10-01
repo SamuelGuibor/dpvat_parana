@@ -37,8 +37,8 @@
 | `app/nova-dash/DateFilter.tsx` | Presets/calendário (roda no navegador) | `DateFilter`, `getDefaultDateRange`, `DateRange` |
 | `app/nova-dash/KanbanFlowPanel.tsx` | UI do Fluxo do Kanban; exporta CSV (`;` + BOM) e JPEG do gráfico com helpers LOCAIS | `downloadBlob`, `exportCsv`, `exportJpeg` |
 | `app/nova-dash/form-leads.tsx` | Aba "Leads" do dashboard (formulário do site via `getContacts`) + botão "Exportar CSV" local | `LeadsTable` |
-| `app/nova-dash/workspace/manager/*` | UI: `BotFunnelSection`, `ChatbotDashboard`, `AiCorner`, `LeadOriginSection`, `ManagerDashboard`, `CollaboratorDetail`, `StaleDataVeil` (véu sobre números do período anterior); `SystemMap` está comentado (morto) | — |
-| `app/nova-dash/workspace/costs/*` | UI: `CostsPanel` (abas Consumo × Calendário, recharts), `CostFormDialog`, `PaymentCalendar` (grade do mês + marcar pago), `PaymentScheduleDialog` | — |
+| `app/nova-dash/workspace/manager/*` | UI: `BotFunnelSection`, `ChatbotDashboard`, `AiCorner`, `LeadOriginSection`, `ManagerDashboard`, `CollaboratorDetail`, `StaleDataVeil` (véu sobre números do período anterior); `SystemMap` (canvas no fim da aba Chatbot: 11 módulos/90 features em `CLUSTERS`/`NODES`/`LINKS` estáticos + núcleo de partículas interativo; dados à mão, sem query) | — |
+| `app/nova-dash/workspace/costs/*` | UI: `CostsPanel` (abas Consumo × Calendário, recharts; a barra de cada `ServiceCard` = fatia do serviço em `totals.mtdCents`), `CostFormDialog`, `PaymentCalendar` (grade do mês + marcar pago), `PaymentScheduleDialog` | — |
 | `app/api/costs/sync/route.ts` | Cron 03:30 UTC (`vercel.json`), `?days=` 1..62 (padrão 3), `maxDuration` 120 | `GET` |
 | `app/api/maintenance/retention/route.ts` | Cron 05:00 UTC, `maxDuration` 300 | `GET` |
 | `app/api/logs/route.ts` | Histórico de logs de um card (take 200, só equipe) | `GET` |
@@ -136,6 +136,7 @@
 - **Dado novo na carga única do dashboard** → `getStrategicDashboardData` + `StrategicDashboardData` · cuidado: só o que as abas Analytics/Fluxo do Kanban leem, filtrado no servidor (o payload vai ao navegador de toda a equipe); nada da aba Chatbot (ela busca ao abrir); corte de mês/ano por `date-br.ts`, nunca `getFullYear()` no servidor · valide: `npx tsc --noEmit` + DevTools › Network: tamanho da resposta da carga única no preset "Tudo".
 - **Painel/consulta nova no dashboard** → `usePanelSWR(chave, fetcher, rótulo)` + `StaleDataVeil` num wrapper `relative` só em volta do conteúdo · cuidado: chave com todos os parâmetros em string; erro troca o conteúdo pelo aviso com "Tentar novamente" (`retry`) · valide: trocar o período mostra o véu sem piscar branco; ir ao Kanban e voltar mostra o painel na hora.
 - **Aba nova na Gestão Estratégica** → `STRATEGIC_TABS` (`dashboard-view-state.ts`) + `TabsTrigger`/`TabsContent` no `StrategicDashboard` (+ `visibleStrategicTab` se for restrita) · cuidado: aba fora da lista não é restaurada no F5 · valide: `npx vitest run tests/dashboard-view-state.test.ts` + F5 na aba nova.
+- **Feature nova no Mapa do Sistema** → nó em `NODES` (+ pares em `LINKS`; cluster novo em `CLUSTERS`, cor `#rrggbb`) em `app/nova-dash/workspace/manager/SystemMap.tsx` · cuidado: `novo: true` só no que é recente, `hot` em 1–2 por módulo, nada desligado/removido como ativo; o loop do canvas precisa continuar pausando fora da tela (IntersectionObserver) · valide: aba Chatbot, hover no nó e no núcleo, legenda filtra.
 - **Ação de log nova que pode ser purgada** → só entra em `PURGEABLE_LOG_ACTIONS` se nenhuma tela lê sem limite de data.
 
 ## Testes e validação
