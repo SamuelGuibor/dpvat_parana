@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   AlertTriangle, BadgeCheck, Bot, Brain, FileText, Headset, HelpCircle, IdCard,
   Loader2, MessageSquare, Mic, RotateCcw, ScrollText, ShieldCheck, Sparkles, Timer,
@@ -8,6 +8,7 @@ import {
 import { Button } from '@/app/_shared/ui/button';
 import { getAiCorner, type AiCorner as AiCornerData, type AiOperation } from '@/app/_actions/analytics/get-ai-corner';
 import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
+import { StaleDataVeil } from './StaleDataVeil';
 
 /** Qualidade do bot no período do dashboard — vem do ChatbotDashboard. */
 export interface AiQuality {
@@ -21,11 +22,9 @@ export interface AiQuality {
   periodDays: number;
 }
 
-// Canto da IA: quanto a inteligência artificial custou, por operação.
-//
-// Duas janelas SEMPRE visíveis (mês corrente e últimos 30 dias) porque elas
-// divergem: o console da Anthropic mostra o mês corrente, e o painel antigo
-// chamava de "mês" os últimos 30 dias corridos — era metade da confusão.
+// Canto da IA: quanto a inteligência artificial custou, por operação, no
+// MESMO período e número do resto do painel do chatbot (calendário do
+// dashboard ou atalho 7/30/90 dias).
 
 const ICONS: Record<string, React.ElementType> = {
   bot: Bot,
@@ -116,17 +115,26 @@ function OperationRow({ op, share, color }: { op: AiOperation; share: number; co
   );
 }
 
-export function AiCorner({ quality }: { quality?: AiQuality }) {
-  const [scope, setScope] = useState<'month' | 'last30'>('month');
-  // Janelas fixas (mês corrente e 30 dias), sem parâmetro: uma chave só. Pelo
-  // cache curto (usePanelSWR), reabrir a aba Chatbot ou trocar o período do
-  // painel em até 60 s não refaz a consulta.
-  const { data, error, busy, retry } = usePanelSWR<AiCornerData>('ai-corner', () => getAiCorner(), 'CANTO DA IA');
-
-  const win = data ? (scope === 'month' ? data.month : data.last30) : null;
+export function AiCorner({
+  quality, fromISO, toISO, days, numberId = null,
+}: {
+  quality?: AiQuality;
+  /** Calendário do dashboard (ISO). Sem ele, vale `days` até agora. */
+  fromISO?: string;
+  toISO?: string;
+  days?: number;
+  numberId?: string | null;
+}) {
+  // Chave só com strings/números (regra do usePanelSWR): trocar período ou
+  // número refaz a consulta; voltar à aba em até 60 s usa o cache.
+  const { data, error, busy, retry, stale } = usePanelSWR<AiCornerData>(
+    ['ai-corner', fromISO ?? null, toISO ?? null, fromISO ? null : days ?? null, numberId ?? null],
+    () => getAiCorner({ fromISO, toISO, days, numberId }),
+    'CANTO DA IA',
+  );
 
   const peak = useMemo(
-    () => (data?.daily.length ? Math.max(...data.daily.map((d) => d.usd), 0.0001) : 1),
+    () => (data?.series.length ? Math.max(...data.series.map((d) => d.usd), 0.0001) : 1),
     [data],
   );
 
@@ -147,77 +155,58 @@ export function AiCorner({ quality }: { quality?: AiQuality }) {
       </section>
     );
   }
-  if (!win) {
-    return (
-      <section className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
-        Sem dados de consumo.
-      </section>
-    );
-  }
+
+  const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+  const periodLabel = `${fmtDay(data.fromISO)} a ${fmtDay(data.toISO)} · ${data.days} dia${data.days === 1 ? '' : 's'}`;
 
   return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <section className="relative mt-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <StaleDataVeil show={stale} />
       {/* ── Executivo ── */}
       <div className="border-b border-gray-100 p-5 dark:border-zinc-800 md:p-6">
         <div className="mb-4 flex items-center gap-2">
           <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white">
             <Sparkles className="h-4 w-4" />
           </span>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-base font-extrabold text-gray-900 dark:text-zinc-100">Canto da IA</h3>
-            <p className="text-[11px] text-gray-400">consumo da inteligência artificial, operação por operação</p>
+            <p className="text-[11px] text-gray-400">consumo da inteligência artificial, operação por operação · {periodLabel}</p>
           </div>
         </div>
 
-        {/* As duas janelas lado a lado — sem seletor escondendo nada. */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {([
-            { key: 'month' as const, w: data.month, extra: `projeção de fechamento: ${usd(data.monthProjectionUSD)}` },
-            { key: 'last30' as const, w: data.last30, extra: 'janela corrida — o que o painel antigo chamava de "mês"' },
-          ]).map(({ key, w, extra }) => (
-            <button
-              key={key}
-              onClick={() => setScope(key)}
-              className={`rounded-xl border p-4 text-left transition-all ${
-                scope === key
-                  ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
-                  : 'border-gray-200 hover:border-violet-300 dark:border-zinc-800'
-              }`}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{w.label}</p>
-              <p className="mt-0.5 text-3xl font-extrabold tabular-nums text-gray-900 dark:text-zinc-100">{usd(w.usd)}</p>
-              <p className="text-[11px] text-gray-400">
-                {w.runs.toLocaleString('pt-BR')} chamadas · {tokens(w.tokens)} tokens
-              </p>
-              <p className="mt-1 text-[11px] text-violet-600 dark:text-violet-400">{extra}</p>
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-gray-100 pt-4 dark:border-zinc-800">
-          <BigStat label="Hoje" value={usd(data.today.usd)} hint={`${data.today.runs} chamadas`} />
+        <div className="flex flex-wrap gap-x-8 gap-y-3">
+          <div className="min-w-[11rem] flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Gasto no período</p>
+            <p className="mt-0.5 text-3xl font-extrabold tabular-nums text-gray-900 dark:text-zinc-100">{usd(data.usd)}</p>
+            <p className="text-[11px] text-gray-400">
+              {data.runs.toLocaleString('pt-BR')} chamadas · {tokens(data.tokens)} tokens
+            </p>
+          </div>
+          <BigStat label="Média por dia" value={usd(data.avgDailyUSD)} hint={`um mês nesse ritmo: ${usd(data.monthPaceUSD)}`} />
           <BigStat
             label="Custo por decisão do bot"
             value={data.costPerBotDecision != null ? usd(data.costPerBotDecision, 4) : '—'}
-            hint="mês corrente ÷ decisões"
+            hint="gasto do bot ÷ decisões"
             tone="accent"
           />
-          <BigStat
-            label="Operações medidas"
-            value={String(win.operations.length)}
-            hint="tudo que grava consumo entra sozinho"
-          />
+          <BigStat label="Hoje" value={usd(data.today.usd)} hint={`${data.today.runs} chamadas`} />
         </div>
 
-        {/* Gasto por dia no mês */}
-        {data.daily.length > 1 && (
+        {data.numberFiltered && (
+          <p className="mt-3 text-[11px] text-amber-600">
+            Filtrado pelo número: só entram chamadas ligadas a um contato desse número (roteiro, auditoria e gerador de documento ficam de fora).
+          </p>
+        )}
+
+        {/* Gasto por dia (ou por mês, em períodos longos) */}
+        {data.series.length > 1 && (
           <div className="mt-4">
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-              gasto por dia · mês corrente
+              gasto por {data.seriesUnit}
             </p>
-            <div className="flex h-16 items-end gap-1">
-              {data.daily.map((d) => (
-                <div key={d.date} className="group relative flex h-full flex-1 items-end" title={`${d.label}: ${usd(d.usd)}`}>
+            <div className="flex h-16 items-end gap-px">
+              {data.series.map((d) => (
+                <div key={d.key} className="group relative flex h-full flex-1 items-end" title={`${d.label}: ${usd(d.usd)}`}>
                   <div
                     className="w-full rounded-t bg-violet-400 transition-colors group-hover:bg-violet-600 dark:bg-violet-600"
                     style={{ height: `${Math.max((d.usd / peak) * 100, 2)}%` }}
@@ -226,8 +215,8 @@ export function AiCorner({ quality }: { quality?: AiQuality }) {
               ))}
             </div>
             <div className="mt-1 flex justify-between text-[10px] text-gray-400">
-              <span>{data.daily[0]?.label}</span>
-              <span>{data.daily[data.daily.length - 1]?.label}</span>
+              <span>{data.series[0]?.label}</span>
+              <span>{data.series[data.series.length - 1]?.label}</span>
             </div>
           </div>
         )}
@@ -242,16 +231,16 @@ export function AiCorner({ quality }: { quality?: AiQuality }) {
         <span className="text-right">custo</span>
       </div>
 
-      {win.operations.length === 0 ? (
+      {data.operations.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-gray-400">
-          Nenhuma chamada de IA registrada nesta janela.
+          Nenhuma chamada de IA registrada neste período.
         </p>
       ) : (
-        win.operations.map((op, i) => (
+        data.operations.map((op, i) => (
           <OperationRow
             key={op.action}
             op={op}
-            share={win.usd > 0 ? (op.usd / win.usd) * 100 : 0}
+            share={data.usd > 0 ? (op.usd / data.usd) * 100 : 0}
             color={BAR_COLORS[i % BAR_COLORS.length]}
           />
         ))

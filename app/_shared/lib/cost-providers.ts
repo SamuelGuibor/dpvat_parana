@@ -77,6 +77,13 @@ export async function fetchUsdBrl(fallback = 5.1): Promise<{ rate: number; sourc
     const j = await getJson("https://economia.awesomeapi.com.br/json/last/USD-BRL");
     const bid = Number(j?.USDBRL?.bid);
     if (Number.isFinite(bid) && bid > 0) return { rate: bid, source: "awesomeapi" };
+  } catch { /* tenta a segunda fonte */ }
+  // A awesomeapi recusa parte dos IPs da Vercel: o painel ficou semanas no
+  // fallback de 5,10. Segunda fonte antes de desistir.
+  try {
+    const j = await getJson("https://open.er-api.com/v6/latest/USD");
+    const brl = Number(j?.rates?.BRL);
+    if (Number.isFinite(brl) && brl > 0) return { rate: brl, source: "open.er-api" };
   } catch { /* cai no fallback */ }
   return { rate: fallback, source: "fallback" };
 }

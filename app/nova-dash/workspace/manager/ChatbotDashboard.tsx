@@ -171,6 +171,10 @@ export function ChatbotDashboard({ numberId = null, range }: {
               (Qualificados/Não qualificados moraram aqui; agora vivem na
               Origem dos leads, por campanha — onde a pergunta é feita.) */}
           <AiCorner
+            fromISO={rangeFrom}
+            toISO={rangeTo}
+            days={periodDays}
+            numberId={numberId}
             quality={{
               doubts: data.bot.doubts,
               errors: data.bot.error,

@@ -1,5 +1,5 @@
 # Infra, deploy, crons, CI e integrações externas — mapa para IA
-> Verificado em 2026-09-26 · Escopo: `package.json`, `next.config.mjs`, `vercel.json`, `vercel/pro-checklist.md`, `railway/chat-relay.md`, `.github/workflows/ci.yml`, `vitest.config.mts`, `tests/**`, `scripts/**`, `knip.json`, `.eslintrc.json`, `tsconfig.json`, `.env.example`, `whatsapp-cron.cmd`, `middleware.ts` (allowlists de API), `app/api/**` (convenções), clientes externos em `app/_shared/lib/**`, `app/_shared/hooks/use-chat.ts` (EventSource do relay), `D:\chat_site\index.js` (relay, só leitura)
+> Verificado em 2026-10-01 · Escopo: `package.json`, `next.config.mjs`, `vercel.json`, `vercel/pro-checklist.md`, `railway/chat-relay.md`, `.github/workflows/ci.yml`, `vitest.config.mts`, `tests/**`, `scripts/**`, `knip.json`, `.eslintrc.json`, `tsconfig.json`, `.env.example`, `whatsapp-cron.cmd`, `middleware.ts` (allowlists de API), `app/api/**` (convenções), clientes externos em `app/_shared/lib/**`, `app/_shared/hooks/use-chat.ts` (EventSource do relay), `D:\chat_site\index.js` (relay, só leitura)
 
 ## TL;DR
 - Next 14.2 (App Router) na **Vercel Pro**. Banco Postgres no **Neon** via Prisma 6. Três serviços satélites no **Railway**, cada um com deploy próprio: o cérebro do bot (`CHATBOT_URL`, repo `D:\Chatbot_whatsapp`), o `docx-converter` (`DOCX_CONVERTER_URL`, `D:\docx-converter`) e o relay SSE do chat (`CHAT_RELAY_URL`, `D:\chat_site`).
@@ -107,7 +107,7 @@
 ## Dados
 - `AppSetting` (`app_settings`), mapa chave/valor em string:
   - `cost_fx_usd_brl` (`COST_FX_KEY`) e `cost_sync_status` (`COST_SYNC_STATUS_KEY`, status por provedor).
-  - `cost_credit_<service>` (em `app/_actions/costs/overview.ts`).
+  - `cost_credit_<service>`: crédito pré-pago do painel antigo, órfão (nenhum código lê).
   - `dashboard_allowed_ips` (`DASHBOARD_ALLOWED_IPS_KEY`). Sem essa linha, cai na env `DASHBOARD_ALLOWED_IPS`.
 - `CostSnapshot` (`cost_snapshots`): `@@unique([service, day])`. `day` é `YYYY-MM-DD` **de Brasília**. `amountCents` fica em centavos **da moeda do provedor**: `currency` é `USD` ou `BRL`, `source` é `api`, `logs` ou `estimate`. `ProjectCost` (`project_costs`) guarda as faturas manuais.
 - `WhatsAppNumber` (`whatsapp_numbers`):
@@ -200,7 +200,7 @@
 
 ## Fronteiras
 - **Auth e permissões** (`docs/ai/auth-permissoes.md`): `middleware.ts`, `requireTeam` / `requirePermission` / `getSessionPermissions`, `checkDashboardIpAccess`, `rateLimit`, `verifyWebhookSecret`.
-- **Analytics e custos** (`docs/ai/analytics-custos.md`): `runCostSync` → `CostSnapshot`; `app/_actions/costs/overview.ts` (`getCostOverview`, `syncCostsNow`); `app/_actions/analytics/get-ai-corner.ts` lê `metadata.usage`.
+- **Analytics e custos** (`docs/ai/analytics-custos.md`): `runCostSync` → `CostSnapshot`; `app/_actions/costs/overview.ts` (`getCostBreakdown`, `syncCostsNow`); `app/_actions/analytics/get-ai-corner.ts` lê `metadata.usage`.
 - **WhatsApp e bot** (`docs/ai/whatsapp-bot.md`): as fases em `app/_shared/lib/whatsapp/cron-tasks.ts`; o webhook chama `service.ts` (`ingestIncomingMessage`, `applyStatusUpdate`), `bot.ts` (`handleIncomingWhatsApp`), `ficha-ai.ts` (`autoFillClientInfo`) e `account-events.ts` (`handleAccountEvent`). Os tetos de recuperação ficam em `recovery-caps.ts` (`recoveryCapForPhoneNumberId`).
 - **Kanban e automações** (`docs/ai/kanban-cards.md`): `runTimeBasedAutomations` (`app/_shared/lib/automation-executor.ts`), cron `time-check`.
 - **Documentos** (`docs/ai/documentos-ia.md`): `purgeExpiredTrash` (`app/_shared/lib/trash-purge.ts`), presign em `app/_actions/documents/upload-s3.ts`.

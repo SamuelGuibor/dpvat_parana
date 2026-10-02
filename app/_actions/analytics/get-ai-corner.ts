@@ -1,10 +1,11 @@
 'use server';
 
+import { Prisma } from '@prisma/client';
 import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { canViewChatbotDashboard } from '@/app/_shared/lib/chatbot-access';
 import {
-  aiCornerBounds, buildAiWindowsFromGroups,
+  aiPeriodBounds, buildAiCorner,
   type AiCorner, type AiOperation, type AiUsageGroup, type AiWindow,
 } from '@/app/_shared/utils/ai-corner-agg';
 
@@ -15,10 +16,8 @@ import {
 // automática e a auditoria de documentos ficaram de fora do painel antigo,
 // que só somava wa_bot, wa_suggest e wa_summary.
 //
-// Duas janelas SEMPRE lado a lado, porque elas divergem e é isso que confunde
-// na hora de comparar com o console da Anthropic:
-//   - mês corrente (1º do mês, fuso de Brasília) — é o que o console mostra;
-//   - últimos 30 dias corridos — é o que o painel antigo chamava de "mês".
+// O período e o número são os MESMOS do painel do chatbot (calendário do
+// dashboard ou atalho 7/30/90 dias).
 //
 // A soma é feita no Postgres (grupos por ação × modelo × hora UTC); a montagem
 // das janelas e o corte de dia em Brasília ficam em ai-corner-agg.ts.
@@ -39,6 +38,7 @@ const OPERATION_LABELS: Record<string, string> = {
   wa_ficha_ai: 'Ficha automática',
   ai_audit: 'Auditoria de documentos',
   roteiro_ai: 'Roteiro (IA)',
+  doc_ia: 'Gerador de documento',
 };
 
 /** Ícone (chave lucide resolvida na UI) por operação. */
@@ -52,21 +52,32 @@ const OPERATION_ICONS: Record<string, string> = {
   wa_ficha_ai: 'id',
   ai_audit: 'shield',
   roteiro_ai: 'scroll',
+  doc_ia: 'file',
 };
 
 /**
- * Extrato completo do consumo de IA. Restrito à equipe (requireTeam: role do
+ * Extrato do consumo de IA no período. Restrito à equipe (requireTeam: role do
  * banco + trava de IP) E a quem enxerga o dashboard do chatbot (mesma
  * allowlist do painel de desempenho).
+ *
+ * Sem `fromISO`, vale `days` (atalhos do painel) até agora. Com `numberId`, só
+ * entram logs cujo `metadata.contactId` é de um contato do número (mesmo
+ * critério do getChatbotAnalytics): roteiro, auditoria e gerador de documento
+ * não têm contato e ficam de fora.
  */
-export async function getAiCorner(): Promise<AiCorner> {
+export async function getAiCorner(opts: {
+  fromISO?: string; toISO?: string; days?: number; numberId?: string | null;
+} = {}): Promise<AiCorner> {
   const ctx = await requireTeam();
   if (!canViewChatbotDashboard(ctx.email)) {
     throw new Error('Acesso restrito: você não está autorizado a ver o Canto da IA.');
   }
 
   const now = new Date();
-  const { since } = aiCornerBounds(now);
+  const bounds = aiPeriodBounds(opts, now);
+  const numberFilter = opts.numberId
+    ? Prisma.sql`AND metadata->>'contactId' IN (SELECT id FROM whatsapp_contacts WHERE "numberId" = ${opts.numberId})`
+    : Prisma.empty;
 
   // Agrega no banco em vez de trazer o metadata inteiro de cada chamada
   // (~22 mil linhas / ~9,5 MB por abertura). Detalhes que mantêm os números:
@@ -91,15 +102,19 @@ export async function getAiCorner(): Promise<AiCorner> {
            COALESCE(sum(CASE WHEN jsonb_typeof(metadata->'usage'->'cacheWriteTokens') = 'number'
                              THEN (metadata->'usage'->>'cacheWriteTokens')::numeric END), 0)::float8 AS "cacheWriteTokens"
     FROM logs
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${bounds.since}
+      AND "createdAt" <= ${bounds.until}
       AND jsonb_typeof(metadata->'usage') = 'object'
+      ${numberFilter}
     GROUP BY 1, 2, 3
     ORDER BY min("createdAt") ASC
   `;
 
-  return buildAiWindowsFromGroups(
+  return buildAiCorner(
     raw,
     { labels: OPERATION_LABELS, icons: OPERATION_ICONS },
+    bounds,
     now,
+    !!opts.numberId,
   );
 }

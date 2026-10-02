@@ -1,9 +1,12 @@
 // Preço dos modelos e cálculo de custo de uma chamada à IA.
 //
 // Fonte única: o Canto da IA e o dashboard do chatbot precisam bater no
-// centavo. Preço por 1M de tokens (USD), tabela oficial da Anthropic.
+// centavo. Preço por 1M de tokens (USD), tabela oficial da Anthropic
+// (conferida em 01/10/2026: o Sonnet 5 estava a US$ 3/15, mas custa US$ 2/10 —
+// o Canto da IA e a aba Custos inflavam o gasto do bot em ~38%).
 //
-// Cache: leitura ≈ 0,1× o input; escrita ≈ 1,25× o input com TTL de 5 min
+// Cache: leitura ≈ 0,1× o input (salvo `cacheRead` próprio do modelo: o
+// Opus 5.5 lê cache a US$ 0,20 com input de US$ 4); escrita ≈ 1,25× o input com TTL de 5 min
 // (o padrão do `cache_control: ephemeral`, que é o que o bot usa) e 2× com
 // TTL de 1 h. Se algum dia alguém ligar o cache de 1 h, o custo de escrita
 // aqui passa a subestimar — por isso o multiplicador é uma constante nomeada.
@@ -14,17 +17,24 @@ export const CACHE_WRITE_MULTIPLIER = 1.25;
 export interface ModelPrice {
   input: number;
   output: number;
+  /** Preço da leitura de cache, quando foge do 0,1× do input. */
+  cacheRead?: number;
   label: string;
 }
 
+// Ordem importa: `priceFor` casa por startsWith, então a chave mais
+// específica vem ANTES da genérica ("claude-opus-5-5" antes de "claude-opus-5").
 export const MODEL_PRICING: Record<string, ModelPrice> = {
+  "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, label: "Fable 5.1" },
   "claude-fable-5": { input: 10, output: 50, label: "Fable 5" },
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, label: "Opus 5.5" },
   "claude-opus-5": { input: 5, output: 25, label: "Opus 5" },
   "claude-opus-4-8": { input: 5, output: 25, label: "Opus 4.8" },
   "claude-opus-4-7": { input: 5, output: 25, label: "Opus 4.7" },
   "claude-opus-4-6": { input: 5, output: 25, label: "Opus 4.6" },
   "claude-opus-4-5": { input: 5, output: 25, label: "Opus 4.5" },
-  "claude-sonnet-5": { input: 3, output: 15, label: "Sonnet 5" },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, label: "Sonnet 5.5" },
+  "claude-sonnet-5": { input: 2, output: 10, label: "Sonnet 5" },
   "claude-sonnet-4-6": { input: 3, output: 15, label: "Sonnet 4.6" },
   "claude-sonnet-4-5": { input: 3, output: 15, label: "Sonnet 4.5" },
   "claude-haiku-4-5": { input: 1, output: 5, label: "Haiku 4.5" },
@@ -76,7 +86,7 @@ export function usageCostUSD(u: AiUsageRecord): number {
   return (
     ((u.inputTokens ?? 0) * price.input
       + (u.outputTokens ?? 0) * price.output
-      + (u.cacheReadTokens ?? 0) * price.input * CACHE_READ_MULTIPLIER
+      + (u.cacheReadTokens ?? 0) * (price.cacheRead ?? price.input * CACHE_READ_MULTIPLIER)
       + (u.cacheWriteTokens ?? 0) * price.input * CACHE_WRITE_MULTIPLIER)
     / 1_000_000
   );
