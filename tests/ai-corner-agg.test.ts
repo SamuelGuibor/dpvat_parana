@@ -223,10 +223,10 @@ describe("buildAiCorner", () => {
     expect(got.days).toBe(30);
     expect(got.seriesUnit).toBe("dia");
     expect(got.series).toHaveLength(30);
-    // Sonnet 5: US$ 2 por 1M de entrada, US$ 10 por 1M de saída.
-    expect(got.series[0]).toEqual({ key: "2026-09-01", label: "01/09", usd: 2 });
-    expect(got.series[29]).toEqual({ key: "2026-09-30", label: "30/09", usd: 10 });
-    expect(got.today).toEqual({ usd: 10, tokens: 1_000_000, runs: 1 });
+    // Sonnet 5: US$ 3 por 1M de entrada, US$ 15 por 1M de saída (o que a fatura cobra).
+    expect(got.series[0]).toEqual({ key: "2026-09-01", label: "01/09", usd: 3 });
+    expect(got.series[29]).toEqual({ key: "2026-09-30", label: "30/09", usd: 15 });
+    expect(got.today).toEqual({ usd: 15, tokens: 1_000_000, runs: 1 });
   });
 
   it("período longo vira série por mês e média por dia usa os dias até hoje", () => {
@@ -249,8 +249,8 @@ describe("buildAiCorner", () => {
       { action: "roteiro_ai", createdAt: at, usage: { model: "claude-sonnet-5", outputTokens: 1_000_000 } },
     ];
     const got = buildAiCorner(groupLikeSql(calls, b), NAMES, b, now);
-    expect(got.usd).toBe(16);
-    expect(got.costPerBotDecision).toBe(2);
+    expect(got.usd).toBe(24);
+    expect(got.costPerBotDecision).toBe(3);
   });
 
   it("modelo nulo ou fora da tabela marca 'estimado' e não entra na lista de modelos", () => {
@@ -277,7 +277,7 @@ describe("buildAiCorner", () => {
 
 describe("preços da tabela", () => {
   it("chave específica vence a genérica e o cache de leitura usa o preço próprio do modelo", () => {
-    expect(priceFor("claude-sonnet-5").price).toMatchObject({ input: 2, output: 10 });
+    expect(priceFor("claude-sonnet-5").price).toMatchObject({ input: 3, output: 15 });
     expect(modelLabel("claude-opus-5-5")).toBe("Opus 5.5");
     expect(modelLabel("claude-opus-5")).toBe("Opus 5");
     // Opus 5.5: cache lido a US$ 0,20 por 1M (não 0,1 × 4).

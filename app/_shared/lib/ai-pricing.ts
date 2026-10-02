@@ -1,9 +1,12 @@
 // Preço dos modelos e cálculo de custo de uma chamada à IA.
 //
 // Fonte única: o Canto da IA e o dashboard do chatbot precisam bater no
-// centavo. Preço por 1M de tokens (USD), tabela oficial da Anthropic
-// (conferida em 01/10/2026: o Sonnet 5 estava a US$ 3/15, mas custa US$ 2/10 —
-// o Canto da IA e a aba Custos inflavam o gasto do bot em ~38%).
+// centavo. Preço por 1M de tokens (USD), tabela oficial da Anthropic.
+//
+// Sonnet 5 fica em US$ 3/15 porque é o que a FATURA cobra: em 01/10/2026 as
+// recargas de crédito de 03/09 a 30/09 somaram US$ 400 e os logs davam
+// US$ 391 a 3/15 contra US$ 286 a 2/10 (a tabela pública de referência dizia
+// 2/10). Antes de mudar um preço aqui, confira contra as recargas do console.
 //
 // Cache: leitura ≈ 0,1× o input (salvo `cacheRead` próprio do modelo: o
 // Opus 5.5 lê cache a US$ 0,20 com input de US$ 4); escrita ≈ 1,25× o input com TTL de 5 min
@@ -34,7 +37,7 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
   "claude-opus-4-6": { input: 5, output: 25, label: "Opus 4.6" },
   "claude-opus-4-5": { input: 5, output: 25, label: "Opus 4.5" },
   "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, label: "Sonnet 5.5" },
-  "claude-sonnet-5": { input: 2, output: 10, label: "Sonnet 5" },
+  "claude-sonnet-5": { input: 3, output: 15, label: "Sonnet 5" },
   "claude-sonnet-4-6": { input: 3, output: 15, label: "Sonnet 4.6" },
   "claude-sonnet-4-5": { input: 3, output: 15, label: "Sonnet 4.5" },
   "claude-haiku-4-5": { input: 1, output: 5, label: "Haiku 4.5" },
