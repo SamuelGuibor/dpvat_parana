@@ -34,6 +34,14 @@ export const dynamic = "force-dynamic";
 // folga real — no Hobby ficava capado em 60s.
 export const maxDuration = 120;
 
+// Ficha automática no webhook (05/10/2026): teto da chamada ao Haiku, sem nova
+// tentativa, e o último instante (desde o início do POST) em que ela ainda cabe
+// na função. A folga de 15 s cobre o que vem antes do Haiku (até 4 anexos do
+// S3) e a gravação do log. Turno de bot que passou disso fica sem ficha nesta
+// rodada; a próxima rajada do cliente preenche.
+const FICHA_TIMEOUT_MS = 20_000;
+const FICHA_LATEST_START_MS = maxDuration * 1000 - FICHA_TIMEOUT_MS - 15_000;
+
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const mode = params.get("hub.mode");
@@ -65,7 +73,54 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/**
+ * Bot + ficha automática de UM contato do lote. Os contatos de um mesmo POST
+ * rodam em paralelo (05/10/2026): antes iam um depois do outro, e cada turno
+ * leva ~35-45 s (debounce de 8 s + cérebro + atraso humanizado, todos de
+ * propósito). Com 3 contatos no mesmo POST a função passava dos 120 s e
+ * morria: os de trás ficavam sem resposta até o cron mandar à Fila. O prazo do
+ * turno (BOT_TURN_BUDGET_MS) conta do início de cada um, então em paralelo
+ * todos cabem.
+ *
+ * Erro de um contato não derruba os outros e fica gravado com o contato (Log
+ * critical_error), como antes.
+ */
+async function runContactTurn(
+  contactId: string,
+  botTurn: IngestResult | undefined,
+  fichaTurn: IngestResult,
+  startedAt: number,
+): Promise<void> {
+  if (botTurn) {
+    try {
+      await handleIncomingWhatsApp(botTurn);
+    } catch (err) {
+      await reportCriticalError("WHATSAPP BOT", err, { contactId });
+    }
+  } else {
+    // Conversa fora do modo bot (fila, atendente): espera o mesmo debounce
+    // aqui, uma vez, e a ficha desiste se chegou mensagem mais nova (a
+    // invocação dela preenche). Uma chamada ao Haiku por RAJADA, não por balão.
+    await new Promise((r) => setTimeout(r, BURST_DEBOUNCE_MS));
+  }
+  // Ficha: DEPOIS do bot (a transcrição do áudio já existe) e best-effort —
+  // nunca quebra o webhook.
+  if (Date.now() - startedAt > FICHA_LATEST_START_MS) {
+    console.warn(`[WHATSAPP WEBHOOK] Ficha IA pulada (sem tempo na função): ${contactId}`);
+    return;
+  }
+  try {
+    await autoFillClientInfo(contactId, {
+      afterMessage: { id: fichaTurn.message.id, createdAt: fichaTurn.message.createdAt },
+      timeoutMs: FICHA_TIMEOUT_MS,
+    });
+  } catch (err) {
+    await reportCriticalError("WHATSAPP FICHA IA", err, { contactId });
+  }
+}
+
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const rawBody = await req.text();
 
   if (!verifySignature(rawBody, req.headers.get("x-hub-signature-256"))) {
@@ -100,6 +155,10 @@ export async function POST(req: NextRequest) {
   // DEPOIS de persistir (bot/ficha) continua 200 — a mensagem já está salva.
   let ingestFailed = false;
 
+  // Bot + ficha por contato, de TODOS os números do POST, em paralelo. Fora do
+  // try: mesmo que algo lance no meio do laço, os turnos já iniciados são
+  // esperados antes da resposta (promise solta congela quando a função responde).
+  const contactTurns: Promise<void>[] = [];
   try {
     for (const entry of payload?.entry ?? []) {
       for (const change of entry?.changes ?? []) {
@@ -154,34 +213,11 @@ export async function POST(req: NextRequest) {
             await reportCriticalError("WHATSAPP WEBHOOK ingest", err);
           }
         }
-        // Falha de um contato não derruba o bot dos outros, a ficha nem os
-        // status do lote, e fica gravada com o contato (Log critical_error).
-        // Antes subia para o catch geral abaixo, que não sabia de quem era: a
-        // conversa ficava órfã no bot sem causa investigável.
-        for (const result of botCandidates.values()) {
-          try {
-            await handleIncomingWhatsApp(result);
-          } catch (err) {
-            await reportCriticalError("WHATSAPP BOT", err, { contactId: result.contactId });
-          }
-        }
-        // Ficha automática: roda DEPOIS do bot (a transcrição do áudio já
-        // existe) e é best-effort — nunca quebra o webhook. Uma por RAJADA, não
-        // por balão: o bot já esperou o debounce; conversa fora do modo bot
-        // (fila, atendente) espera o mesmo tempo aqui, uma vez, e a ficha
-        // desiste se chegou mensagem mais nova (a invocação dela preenche).
-        // Custa ~8 s a mais no webhook (maxDuration 120) e no preenchimento.
-        if ([...fichaCandidates.keys()].some((contactId) => !botCandidates.has(contactId))) {
-          await new Promise((r) => setTimeout(r, BURST_DEBOUNCE_MS));
-        }
-        for (const [contactId, result] of fichaCandidates) {
-          try {
-            await autoFillClientInfo(contactId, {
-              afterMessage: { id: result.message.id, createdAt: result.message.createdAt },
-            });
-          } catch (err) {
-            await reportCriticalError("WHATSAPP FICHA IA", err, { contactId });
-          }
+        // Todo contato com mensagem nova é candidato à ficha; os que estão em
+        // modo bot passam pelo bot antes (runContactTurn). Começam já, em
+        // paralelo; o POST espera todos no fim.
+        for (const [contactId, fichaTurn] of fichaCandidates) {
+          contactTurns.push(runContactTurn(contactId, botCandidates.get(contactId), fichaTurn, startedAt));
         }
 
         for (const st of value.statuses ?? []) {
@@ -199,6 +235,8 @@ export async function POST(req: NextRequest) {
     // passa pelo reportCriticalError (registro centralizado).
     await reportCriticalError("WHATSAPP WEBHOOK", err);
   }
+  // runContactTurn não rejeita (cada etapa tem o próprio catch).
+  await Promise.all(contactTurns);
 
   if (ingestFailed) {
     // Mensagem NÃO persistida → 500 força o retry da Meta; o dedup por

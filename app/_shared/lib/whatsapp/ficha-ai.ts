@@ -131,6 +131,14 @@ export interface FichaAiOptions {
    * Copiloto não passa isto e roda sempre.
    */
   afterMessage?: { id: string; createdAt: string };
+  /**
+   * Teto da chamada ao Haiku, SEM nova tentativa (webhook). Sem isto vale o
+   * padrão do SDK (~10 min e 2 retries): a ficha roda depois do bot na mesma
+   * função de 120 s e um Haiku travado derrubava a invocação inteira. A rodada
+   * perdida não faz falta: a próxima rajada do cliente preenche. Medido em
+   * 05/10/2026: p50 1,4 s, p99 4,3 s, máx. 18 s.
+   */
+  timeoutMs?: number;
 }
 
 /** Uso de tokens no formato de metadata.usage (Canto da IA). */
@@ -162,6 +170,9 @@ export async function autoFillClientInfo(contactId: string, opts: FichaAiOptions
   // retorno e o catch dali em diante gravam o log com eles.
   let usage: Record<string, unknown> | undefined;
   let durationMs: number | undefined;
+  // Início da chamada ao Haiku: no timeout (`timeoutMs`) o create lança antes
+  // de medir, e o catch usa isto para o log não perder o tempo.
+  let callStartedAt: number | undefined;
   try {
     if (!process.env.CLAUDE_API_KEY) {
       return { filled: [], reason: "CLAUDE_API_KEY não configurada no servidor." };
@@ -276,8 +287,12 @@ Responda APENAS com JSON válido:
 
     content.push({ type: "text", text: prompt });
 
-    const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    const client = new Anthropic({
+      apiKey: process.env.CLAUDE_API_KEY,
+      ...(opts.timeoutMs ? { timeout: opts.timeoutMs, maxRetries: 0 } : {}),
+    });
     const t0 = Date.now();
+    callStartedAt = t0;
     const response = await client.messages.create({
       // Haiku: roda a cada lote de mensagens — leitura de documento + extração
       // simples não justifica modelo maior.
@@ -402,6 +417,10 @@ Responda APENAS com JSON válido:
     // Falha também vira log (visível na Atividade do dashboard) — antes só
     // aparecia no console efêmero da Vercel e o recurso "morria em silêncio".
     const detail = err instanceof Error ? err.message : String(err);
+    // Timeout do SDK: não há usage (a resposta não chegou); o log marca o caso
+    // e guarda o tempo até o corte.
+    const timedOut = err instanceof Anthropic.APIConnectionTimeoutError;
+    if (durationMs === undefined && callStartedAt !== undefined) durationMs = Date.now() - callStartedAt;
     try {
       await logWhatsAppEvent({
         action: "wa_ficha_ai",
@@ -410,7 +429,7 @@ Responda APENAS com JSON válido:
         authorName: "🤖 Bot WhatsApp",
         contactId,
         // Falha depois da chamada (JSON inválido, banco): a IA já cobrou.
-        metadata: { error: detail, usage, durationMs },
+        metadata: { error: detail, usage, durationMs, ...(timedOut ? { timeout: true } : {}) },
       });
     } catch { /* log é best-effort */ }
     return { filled: [], reason: detail };
