@@ -7,7 +7,7 @@ import { LIST_PREVIEW_MAX_CHARS, computeUnread, listPreview } from '@/app/_share
 import { CLOSE_CATEGORY_LABELS } from '@/app/_shared/lib/whatsapp/close-categories';
 import { fallbackCloseLabel } from '@/app/_shared/utils/close-tag-plan';
 import { collectRequestPatch, isCollectSource } from '@/app/_shared/utils/collect-request';
-import { INBOX_LIST_PAGE } from '@/app/_shared/utils/inbox-delta';
+import { INBOX_GROUP_CAPS, INBOX_LIST_PAGE } from '@/app/_shared/utils/inbox-delta';
 import {
   INBOX_FILTER_PAGE, buildInboxWhere, hasServerFilter, normalizeFilterTerm, type InboxServerFilter,
 } from '@/app/_shared/utils/inbox-filter';
@@ -31,9 +31,9 @@ import type {
 // rota GET as leituras correm em paralelo e a fila fica só com mutações.
 
 /**
- * Quantas conversas a lista do inbox carrega de uma vez (as mais recentes).
- * O valor mora em inbox-delta.ts: o cliente corta a lista fundida pelo delta
- * no mesmo teto.
+ * Quantas conversas ENCERRADAS a lista do inbox carrega (as mais recentes); as
+ * abertas têm teto próprio (`INBOX_GROUP_CAPS`). Os valores moram em
+ * inbox-delta.ts: o cliente corta a lista fundida pelo delta nos mesmos tetos.
  */
 export const LIST_PAGE = INBOX_LIST_PAGE;
 /** Quantas conversas a busca/filtro no servidor devolve por página ("Carregar mais" pede a próxima). */
@@ -377,17 +377,35 @@ export async function loadConversations(
 }
 
 /**
- * Lista do inbox: as conversas mais recentes. As pastas do rail e os filtros
- * de leitura/número contam em cima DESTA lista (o inbox avisa que é o recorte
- * recente). Busca, tag, data de entrada e coluna do Kanban vão ao banco
- * inteiro (`queryConversations`), com o total real.
+ * Lista do inbox: TODAS as conversas abertas (bot, Fila, atendente; standby
+ * com teto próprio) + as `LIST_PAGE` encerradas mais recentes. As pastas do
+ * rail e os filtros de leitura/número contam em cima DESTA lista; só as
+ * encerradas são recorte (o inbox avisa). Busca, tag, data de entrada e coluna
+ * do Kanban vão ao banco inteiro (`queryConversations`), com o total real.
  *
- * ~1,3 MB cru (~165 KB gzip) com 1.000 linhas: abaixo do teto de 4,5 MB de
- * resposta da função. Com o delta ela desce só na montagem e a cada 10 min,
- * mas `LIST_PAGE` continua preso a esse teto.
+ * Até 05/10/2026 era um corte único nas 1.000 mais recentes: conversa parada
+ * na Fila há mais de ~2 semanas sumia da pasta. Com 7 mil leads/mês o corte
+ * cairia para ~4 dias.
+ *
+ * Primeiro só os ids por grupo (3 leituras curtas em paralelo, sem
+ * hidratação) e depois UMA hidratação pela ordem de sempre. Tamanho: ~1,3 KB
+ * por linha cru; a soma dos tetos (~2.800) fica abaixo do teto de 4,5 MB de
+ * resposta da função. Com o delta ela desce só na montagem e a cada 10 min.
  */
-export function loadConversationList(): Promise<WhatsAppConversationDTO[]> {
-  return loadConversations(undefined, LIST_PAGE);
+export async function loadConversationList(): Promise<WhatsAppConversationDTO[]> {
+  const idsOf = (where: Prisma.WhatsAppConversationWhereInput, take: number) =>
+    db.whatsAppConversation.findMany({ where, orderBy: { lastMessageAt: 'desc' }, take, select: { id: true } });
+  // Mesmos grupos de `inboxListGroup` (status desconhecido = aberta).
+  const groups = await Promise.all([
+    idsOf({ status: { notIn: ['standby', 'closed'] } }, INBOX_GROUP_CAPS.open),
+    idsOf({ status: 'standby' }, INBOX_GROUP_CAPS.standby),
+    idsOf({ status: 'closed' }, INBOX_GROUP_CAPS.closed),
+  ]);
+  const ids = groups.flat().map((r) => r.id);
+  if (!ids.length) return [];
+  // Status que mudou entre as duas leituras não importa: o cliente reaplica os
+  // tetos (`trimInboxList`) e o delta seguinte corrige a pasta.
+  return loadConversations({ id: { in: ids } }, ids.length);
 }
 
 /**
@@ -411,7 +429,7 @@ async function readSyncMeta(): Promise<{ cursor: Date; total: number }> {
 }
 
 /**
- * Lista completa para a sincronização por delta: as `LIST_PAGE` mais recentes
+ * Lista completa para a sincronização por delta: abertas + encerradas recentes
  * + o cursor de onde o delta parte + o total. Só na montagem, a cada 10 min
  * (rede de segurança para o que o delta não vê) ou quando o delta pede
  * (`full: true`).

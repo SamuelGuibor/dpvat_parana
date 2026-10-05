@@ -17,7 +17,7 @@ import {
   readInboxColumns, readInboxDelta, readInboxFilter, readInboxItem, readInboxList,
 } from '@/app/_shared/utils/inbox-api';
 import {
-  INBOX_LIST_PAGE, lockedConversationIds, mergeConversationDelta, pruneLocalEdits, sinceWithOverlap,
+  lockedConversationIds, mergeConversationDelta, pruneLocalEdits, sinceWithOverlap, trimInboxList,
   type LocalEdit,
 } from '@/app/_shared/utils/inbox-delta';
 import {
@@ -288,7 +288,7 @@ export function useWhatsAppConversations(opts: {
         if (fresh.length || total !== cur.total) {
           void mutate((list) => {
             if (!list || list.gen !== base.gen) return list;
-            const items = fresh.length ? mergeConversationDelta(list.items, fresh, { cap: INBOX_LIST_PAGE }) : list.items;
+            const items = fresh.length ? mergeConversationDelta(list.items, fresh, { cap: trimInboxList }) : list.items;
             return items === list.items && total === list.total ? list : { ...list, items, total };
           }, { revalidate: false });
         }

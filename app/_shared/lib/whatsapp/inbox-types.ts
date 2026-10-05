@@ -93,8 +93,9 @@ export interface WhatsAppConversationDTO {
 }
 
 /**
- * GET /api/whatsapp/inbox/conversations (sem parâmetros): as conversas mais
- * recentes, até `LIST_PAGE`. `cursor` = now() do BANCO no início da leitura
+ * GET /api/whatsapp/inbox/conversations (sem parâmetros): todas as conversas
+ * abertas + as `LIST_PAGE` encerradas mais recentes (tetos por grupo em
+ * inbox-delta.ts). `cursor` = now() do BANCO no início da leitura
  * (ISO), o ponto de partida do delta (`?since=`); `null` só em servidor
  * antigo. `total` = conversas no banco (badge do topo; a lista é capada).
  */

@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   DELTA_MAX_AGE_MS,
   DELTA_OVERLAP_MS,
+  INBOX_GROUP_CAPS,
   LOCAL_EDIT_TTL_MS,
+  inboxListGroup,
   lockedConversationIds,
   mergeConversationDelta,
   parseDeltaSince,
   pruneLocalEdits,
   sinceWithOverlap,
+  trimInboxList,
   type LocalEdit,
 } from "@/app/_shared/utils/inbox-delta";
 
@@ -104,6 +107,51 @@ describe("mergeConversationDelta", () => {
   it("lastMessageAt inválido vai para o fim em vez de quebrar a ordem", () => {
     const out = mergeConversationDelta(base, [{ ...row("z", 0), lastMessageAt: "lixo" }], { cap: 1000 });
     expect(ids(out)).toEqual(["a", "b", "c", "z"]);
+  });
+});
+
+// Tetos por grupo (05/10/2026): o corte único nas 1.000 mais recentes tirava
+// da pasta conversa parada na Fila/standby há mais de ~2 semanas.
+describe("trimInboxList (tetos por grupo de status)", () => {
+  // n linhas de um status, da mais recente para a mais antiga.
+  const many = (prefix: string, n: number, status: string) =>
+    Array.from({ length: n }, (_, i) => row(`${prefix}${i}`, 0, {
+      status, lastMessageAt: new Date(Date.UTC(2026, 8, 26) - i * 60_000).toISOString(),
+    }));
+
+  it("grupos: closed, standby e o resto (inclusive status desconhecido) como aberta", () => {
+    expect(inboxListGroup("closed")).toBe("closed");
+    expect(inboxListGroup("standby")).toBe("standby");
+    for (const s of ["bot", "queued", "human", "outro"]) expect(inboxListGroup(s)).toBe("open");
+  });
+
+  it("abaixo dos tetos devolve a mesma referência", () => {
+    const list = [row("a", 50), row("b", 40, { status: "closed" })];
+    expect(trimInboxList(list)).toBe(list);
+  });
+
+  it("conversa aberta antiga sobrevive a mil encerradas mais novas", () => {
+    const closed = many("x", INBOX_GROUP_CAPS.closed + 5, "closed");
+    const queuedOld = row("fila", 0, { status: "queued", lastMessageAt: "2026-01-01T00:00:00.000Z" });
+    const out = trimInboxList([...closed, queuedOld]);
+    expect(out.filter((r) => r.status === "closed")).toHaveLength(INBOX_GROUP_CAPS.closed);
+    expect(out.at(-1)?.id).toBe("fila");
+    // Cortou as encerradas MAIS ANTIGAS.
+    expect(out.some((r) => r.id === `x${INBOX_GROUP_CAPS.closed}`)).toBe(false);
+  });
+
+  it("standby tem teto próprio", () => {
+    const out = trimInboxList(many("s", INBOX_GROUP_CAPS.standby + 3, "standby"));
+    expect(out).toHaveLength(INBOX_GROUP_CAPS.standby);
+  });
+
+  it("merge com cap em função: conversa nova não empurra a aberta antiga para fora", () => {
+    const closed = many("x", INBOX_GROUP_CAPS.closed, "closed");
+    const queuedOld = row("fila", 0, { status: "queued", lastMessageAt: "2026-01-01T00:00:00.000Z" });
+    const out = mergeConversationDelta([...closed, queuedOld], [row("n", 59, { status: "closed" })], { cap: trimInboxList });
+    expect(out[0].id).toBe("n");
+    expect(out.some((r) => r.id === "fila")).toBe(true);
+    expect(out.filter((r) => r.status === "closed")).toHaveLength(INBOX_GROUP_CAPS.closed);
   });
 });
 

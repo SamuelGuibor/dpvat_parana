@@ -1162,9 +1162,12 @@ export function WhatsAppInbox() {
 
   // Aviso da lista parcial: desde quando vão as conversas carregadas (a lista
   // vem por lastMessageAt desc; o mínimo protege de uma ordem trocada).
+  // Só as encerradas são recorte (as abertas vêm todas): a data é a da
+  // encerrada mais antiga carregada, não a de um standby velho.
   const loadedSinceLabel = useMemo(() => {
     let min = Number.POSITIVE_INFINITY;
     for (const c of conversations) {
+      if (c.status !== 'closed') continue;
       const t = Date.parse(c.lastMessageAt);
       if (t < min) min = t;
     }
@@ -2340,15 +2343,14 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Sem filtro no banco, pastas, leitura e número contam só as
-                conversas carregadas (as mais recentes): dizer isso em voz
-                alta evita a sensação de "sumiu conversa" e de contador
-                errado. Busca, tag, data e coluna vão ao histórico inteiro. */}
+            {/* Sem filtro no banco, a lista tem todas as abertas e só as
+                encerradas mais recentes: dizer isso em voz alta evita a
+                sensação de "sumiu conversa" e de contador errado. Busca, tag,
+                data e coluna vão ao histórico inteiro. */}
             {!globalView && conversationsTotal > conversations.length && conversations.length > 0 && (
               <p className="px-3 pb-1 pt-2 text-center text-[10px] leading-relaxed text-[#7fae9c]">
-                Mostrando as {conversations.length.toLocaleString('pt-BR')} conversas mais recentes
-                {loadedSinceLabel ? ` (desde ${loadedSinceLabel})` : ''} de {conversationsTotal.toLocaleString('pt-BR')} —
-                pastas e filtros de leitura/número valem só para elas.
+                Mostrando {conversations.length.toLocaleString('pt-BR')} de {conversationsTotal.toLocaleString('pt-BR')} conversas:
+                todas as abertas e as encerradas mais recentes{loadedSinceLabel ? ` (desde ${loadedSinceLabel})` : ''}.
                 <br />
                 <b>Busca</b>, <b>tags</b>, <b>data de entrada</b> e <b>coluna do Kanban</b> procuram em todo o histórico.
               </p>

@@ -17,12 +17,59 @@
  */
 export const DELTA_OVERLAP_MS = 5_000;
 /**
- * Quantas conversas a lista completa traz (as mais recentes). Mora aqui, e não
- * em inbox-data.ts (que importa o Prisma), porque o cliente corta a lista
- * fundida no MESMO teto: sem o corte ela cresceria a cada conversa nova e
- * deixaria de ser "as N mais recentes".
+ * Tetos da lista completa, POR GRUPO de status (05/10/2026). Até então era um
+ * corte único nas 1.000 mais recentes: a 1.000ª já tinha 15 dias e 203 das 373
+ * conversas abertas estavam fora (200 em standby e 3 na Fila/atendente, que
+ * sumiam da pasta e só apareciam pela busca). Agora as abertas vêm todas e o
+ * corte "as N mais recentes" vale por grupo.
+ *
+ * Moram aqui, e não em inbox-data.ts (que importa o Prisma), porque o cliente
+ * corta a lista fundida pelo delta nos MESMOS tetos (`trimInboxList`): sem o
+ * corte ela cresceria a cada conversa nova.
+ *
+ * Soma dos tetos ≈ 2.800 linhas ≈ 3,7 MB cru (~1,3 KB por linha), abaixo do
+ * teto de 4,5 MB de resposta da função. O normal é bem menos: as abertas em
+ * bot/fila/atendente giram em centenas.
  */
+/** Encerradas: as N mais recentes. */
 export const INBOX_LIST_PAGE = 1000;
+/** Standby (esperando a recuperação): acumula quando o teto diário segura as provocações. */
+export const INBOX_STANDBY_CAP = 600;
+/** Bot, Fila e atendente: rede de segurança do tamanho da resposta, não um recorte do dia a dia. */
+export const INBOX_OPEN_CAP = 1200;
+
+export type InboxListGroup = 'open' | 'standby' | 'closed';
+
+/** Grupo da conversa na lista completa. Status desconhecido conta como aberta (nunca some). */
+export function inboxListGroup(status: string): InboxListGroup {
+  if (status === 'closed') return 'closed';
+  if (status === 'standby') return 'standby';
+  return 'open';
+}
+
+export const INBOX_GROUP_CAPS: Readonly<Record<InboxListGroup, number>> = {
+  open: INBOX_OPEN_CAP,
+  standby: INBOX_STANDBY_CAP,
+  closed: INBOX_LIST_PAGE,
+};
+
+/**
+ * Aplica os tetos por grupo numa lista JÁ ordenada por `lastMessageAt` desc:
+ * fica com as N mais recentes de cada grupo, na mesma ordem. Nada a cortar →
+ * a mesma referência.
+ */
+export function trimInboxList<T extends { status: string }>(sorted: T[]): T[] {
+  const seen: Record<InboxListGroup, number> = { open: 0, standby: 0, closed: 0 };
+  let cut = false;
+  const out = sorted.filter((row) => {
+    const group = inboxListGroup(row.status);
+    seen[group]++;
+    if (seen[group] <= INBOX_GROUP_CAPS[group]) return true;
+    cut = true;
+    return false;
+  });
+  return cut ? out : sorted;
+}
 /** `since` mais velho que isto não vale delta: a rota manda buscar a lista inteira. */
 export const DELTA_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Folga para relógio adiantado: `since` no futuro além disto é lixo (lista inteira). */
@@ -65,8 +112,9 @@ function activityOf(row: DeltaRow): number {
  * - conversa nova entra na posição certa por `lastMessageAt` desc (a ordem do
  *   servidor); empate = a que acabou de chegar primeiro, como no patch local
  *   (`patchConversationList`);
- * - corta em `cap` (`LIST_PAGE`), para manter a semântica da lista completa
- *   ("as N mais recentes");
+ * - corta em `cap`: um número ("as N mais recentes") ou uma função que recebe
+ *   a lista ordenada e devolve o recorte (a lista do inbox usa
+ *   `trimInboxList`, com teto por grupo de status);
  * - `lockedIds`: conversas com patch otimista mais novo que o início do pedido
  *   (ou com ação em voo). A resposta foi lida ANTES do clique chegar ao banco,
  *   e sobrescrever faria a tag ou o encerramento "piscar";
@@ -79,7 +127,8 @@ function activityOf(row: DeltaRow): number {
 export function mergeConversationDelta<T extends DeltaRow>(
   current: T[],
   incoming: readonly T[],
-  opts: { cap: number; lockedIds?: ReadonlySet<string>; insertNew?: boolean },
+  // eslint-disable-next-line no-unused-vars
+  opts: { cap: number | ((sorted: NoInfer<T>[]) => NoInfer<T>[]); lockedIds?: ReadonlySet<string>; insertNew?: boolean },
 ): T[] {
   if (!incoming.length) return current;
   const insertNew = opts.insertNew ?? true;
@@ -98,6 +147,7 @@ export function mergeConversationDelta<T extends DeltaRow>(
   // de lastMessageAt eles ficam antes das linhas antigas.
   const merged = [...apply.values(), ...current.filter((c) => !apply.has(c.id))];
   merged.sort((a, b) => activityOf(b) - activityOf(a));
+  if (typeof opts.cap === 'function') return opts.cap(merged);
   const cap = Math.max(0, opts.cap);
   return merged.length > cap ? merged.slice(0, cap) : merged;
 }
