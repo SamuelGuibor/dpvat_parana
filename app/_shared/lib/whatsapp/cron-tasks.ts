@@ -43,8 +43,6 @@ import { runSignatureReminders } from '@/app/_shared/lib/signature/core';
 // sequência — é o disparo manual de dev (whatsapp-cron.cmd) e o fallback.
 
 const NUDGE_30MIN = 'Você precisa de mais alguma coisa?';
-const FAREWELL =
-  'Como não tivemos retorno, vou encerrar nosso atendimento por aqui, tá bom? Qualquer coisa é só mandar uma mensagem que a gente continua.';
 
 const NUDGE_AFTER_MS = 30 * 60_000; // 30min sem resposta → pergunta
 // +60min (era +10min) sem resposta → encerra. O ritmo antigo mandava nudge e
@@ -421,46 +419,92 @@ function cronBrainHistory(
   }));
 }
 
-/**
- * Despedida CONTEXTUAL via IA; qualquer falha cai no texto fixo.
- */
-async function buildFarewell(contactId: string, contactName: string | null): Promise<string> {
-  if (!CHATBOT_URL || !CHATBOT_SECRET) return FAREWELL;
-  try {
-    const [history, conv] = await Promise.all([
-      db.whatsAppMessage.findMany({
-        where: { contactId, internal: false, deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-        select: { direction: true, sentByBot: true, body: true },
-      }),
-      db.whatsAppConversation.findUnique({ where: { contactId }, select: { botMemory: true } }),
-    ]);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15_000);
-    try {
-      const res = await fetch(`${CHATBOT_URL}/farewell`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHATBOT_SECRET },
-        body: JSON.stringify({
-          contact: { name: contactName },
-          memory: maskMemorySecrets(conv?.botMemory),
-          history: cronBrainHistory(history),
-        }),
-        signal: controller.signal,
-        cache: 'no-store',
+// ---- CLIENTE DA CASA EM SILÊNCIO (passo 2 do nudge, 11/10/2026) --------------
+// Cliente com card no kanban (ou lead já qualificado) que parou de responder
+// não recebe despedida: a cutucada de 30 min já perguntou se ele precisa de
+// algo mais. Só quando ficou um pedido NOSSO em aberto (documento, prazo —
+// collectRequest) ele recebe UMA provocação no dia seguinte, em texto livre
+// dentro da janela de 24 h (janela fechada = encerra calado, nada de template
+// MARKETING), e depois encerra calado.
+// Marcadores, sem coluna nova: botNudge24At > botNudge30At = provocação
+// agendada (botNudge30At vai para hora - CLOSE_AFTER_MS, então o passo 2 só
+// reseleciona na hora marcada); botNudge24At <= botNudge30At = já provocou.
+// A mensagem do cliente zera os dois (ingestão) e a conversa volta ao bot.
+const CLIENT_FOLLOWUP_AFTER_MS = 16 * 60 * 60_000;
+
+function isHouseClient(conv: { qualified: boolean | null; contact: { optedOut: boolean; userId: string | null } }): boolean {
+  return !conv.contact.optedOut && (conv.contact.userId !== null || conv.qualified === true);
+}
+
+function clientFollowupText(name: string | null): string {
+  const first = (name ?? '').trim().split(/\s+/)[0] ?? '';
+  return `${first ? `Oi, ${first}!` : 'Oi!'} Passando pra lembrar daquilo que te pedimos ontem. Quando conseguir, é só mandar por aqui que a gente dá sequência no seu processo. 😊`;
+}
+
+async function settleClientSilence(
+  conv: {
+    id: string;
+    contactId: string;
+    qualified: boolean | null;
+    closeCategory: string | null;
+    botState: string | null;
+    botNudge30At: Date | null;
+    botNudge24At: Date | null;
+    collectRequest: string | null;
+    collectRequestAt: Date | null;
+    contact: { phone: string; name: string | null };
+  },
+  now: number,
+  pacer: Pacer,
+): Promise<'closed' | 'scheduled' | 'nudged' | 'waiting' | 'changed'> {
+  const where = { id: conv.id, status: 'bot', botNudge30At: conv.botNudge30At };
+  const scheduledAt = conv.botNudge24At;
+  if (!scheduledAt) {
+    if (conv.collectRequest && isCollectRequestLive(conv.collectRequestAt, now)) {
+      const at = nextBrBusinessSlot(now + CLIENT_FOLLOWUP_AFTER_MS);
+      const { count } = await db.whatsAppConversation.updateMany({
+        where,
+        data: { botNudge24At: at, botNudge30At: new Date(at.getTime() - CLOSE_AFTER_MS) },
       });
-      if (!res.ok) throw new Error(`farewell HTTP ${res.status}`);
-      const data = await res.json();
-      const text = String(data?.farewell ?? '').trim();
-      return text || FAREWELL;
-    } finally {
-      clearTimeout(timer);
+      return count > 0 ? 'scheduled' : 'changed';
     }
-  } catch (err) {
-    console.warn('[WHATSAPP CRON] Despedida por IA indisponível (usando texto fixo):', err);
-    return FAREWELL;
+  } else if (conv.botNudge30At && scheduledAt.getTime() > conv.botNudge30At.getTime()) {
+    // Hora da provocação agendada. Janela fechada → encerra calado abaixo.
+    if (await isWindowOpen(conv.contactId)) {
+      if (!(await pacer.slot())) return 'waiting';
+      const sent = await sendSystemWhatsApp({
+        phone: conv.contact.phone,
+        contactId: conv.contactId,
+        clientName: conv.contact.name,
+        text: clientFollowupText(conv.contact.name),
+        authorId: 'whatsapp-bot',
+        authorName: '🤖 Bot WhatsApp',
+        source: 'client_followup',
+      });
+      if (sent.sent) {
+        await recordCodeIntervention({
+          contactId: conv.contactId,
+          contactName: conv.contact.name,
+          botState: conv.botState,
+          action: 'provocacao_cliente',
+          detail: `Cliente cadastrado em silêncio com pedido em aberto: 1 provocação no dia seguinte (${conv.collectRequest ?? 'pedido'}).`,
+        });
+        const stamp = new Date();
+        const { count } = await db.whatsAppConversation.updateMany({
+          where,
+          data: { botNudge30At: stamp, botNudge24At: stamp },
+        });
+        return count > 0 ? 'nudged' : 'changed';
+      }
+    }
   }
+  return (await finalizeClose(conv, {
+    fromStatus: 'bot',
+    botNudge30At: conv.botNudge30At,
+    closeCategory: silentCloseCategory(conv),
+  }))
+    ? 'closed'
+    : 'changed';
 }
 
 // Heurística local de fecho (rede de segurança quando a IA está fora).
@@ -1441,27 +1485,21 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
           return;
         }
       }
-      try {
-        // Só se despede se a ÚLTIMA mensagem foi do PRÓPRIO BOT (caso Víctor).
-        if (kind === 'bot_asked' && lastMsg && (await isWindowOpen(conv.contactId))) {
-          // Sem vaga na fila de envio: adia a conversa inteira (a despedida
-          // faz parte do encerramento, não pode sair "solta" depois).
-          if (!(await pacer.slot())) return;
-          const farewell = await buildFarewell(conv.contactId, conv.contact.name);
-          // Releitura DEPOIS da IA da despedida (até 15 s) e logo antes do
-          // envio: é a janela em que a pergunta do cliente cruzava com o
-          // "vou encerrar seu atendimento" (BOT-5).
-          if (await inboundSince(conv.contactId, lastMsg.createdAt)) return;
-          await sendBotReply(conv.contactId, conv.contact.phone, conv.contact.name, farewell);
-        }
-      } catch (err) {
-        console.error('[WHATSAPP CRON] Despedida não entregue (encerrando mesmo assim):', conv.contactId, err);
-      }
+      // SEM DESPEDIDA (11/10/2026): o "vou encerrar nosso atendimento por aqui"
+      // saía ANTES das provocações e anunciava um fim que não acontecia. Agora
+      // o lead da triagem vai calado pro standby (a recuperação provoca), o
+      // cliente da casa segue settleClientSilence e o resto encerra calado.
       // Standby e encerramento só valem com o marcador visto na seleção: a
       // mensagem nova do cliente zera o botNudge30At (ingestão) e a conversa
       // fica com o bot, que responde.
       const guard = { botNudge30At: conv.botNudge30At };
       const block = await standbyBlockReason(conv);
+      if (block && isHouseClient(conv)) {
+        const settled = await settleClientSilence(conv, now, pacer);
+        if (settled === 'closed') results.closed++;
+        if (settled === 'nudged') results.nudged30++;
+        return;
+      }
       if (!block) {
         if (await enterStandby(conv, guard)) results.standby++;
         else console.log(`[WHATSAPP CRON] ${conv.contactId}: mudou durante o encerramento (mensagem nova ou atendente) — conversa não foi para standby.`);

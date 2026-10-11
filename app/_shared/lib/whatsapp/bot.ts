@@ -133,6 +133,9 @@ const SYSTEM_SOURCE_LABELS: Record<string, string> = {
   // micro e as instruções v22 citam este texto exato para reconhecer a
   // resposta do cliente à cobrança.
   collect_nudge: "cobrança automática do pedido em aberto",
+  // Provocação única do dia seguinte ao cliente cadastrado com pedido nosso
+  // em aberto (passo 2 do nudge, 11/10/2026).
+  client_followup: "lembrete do dia seguinte sobre o pedido em aberto",
 };
 
 function systemSourceLabel(source: string): string {
