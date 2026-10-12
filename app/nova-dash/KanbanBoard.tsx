@@ -705,21 +705,21 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
           <div className="pointer-events-none absolute -top-2 left-1 right-1 z-10 h-1.5 rounded-full bg-blue-500/80 shadow-[0_0_6px_rgba(59,130,246,0.6)]" />
         )}
         <Card className={cn(
-          "mb-3 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white dark:bg-zinc-900",
+          "mb-2 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white dark:bg-zinc-900",
           card.isProcess ? "ring-1 ring-blue-100" : "ring-1 ring-gray-100"
         )}>
-          <div className={cn("absolute top-0 left-0 w-1.5 h-full", card.isProcess ? "bg-blue-600" : "bg-gray-400 dark:bg-zinc-600")} />
-          <CardContent className="p-4 pl-6">
-            <div className="flex items-start justify-between mb-2">
-              <h4 className="font-bold text-sm text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
+          <div className={cn("absolute top-0 left-0 w-1 h-full", card.isProcess ? "bg-blue-600" : "bg-gray-400 dark:bg-zinc-600")} />
+          <CardContent className="p-2.5 pl-4">
+            <div className="flex items-start justify-between mb-1.5">
+              <h4 className="font-bold text-[13px] text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
                 {card.cardNumber != null && (
-                  <span className="mr-1.5 inline-block px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[14px] font-mono font-bold align-middle">
+                  <span className="mr-1 inline-block px-1 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[12px] font-mono font-bold align-middle">
                     #{card.cardNumber}
                   </span>
                 )}
                 {card.title}
               </h4>
-              <div className="shrink-0 ml-2">
+              <div className="shrink-0 ml-1.5">
                 {card.isProcess ? (
                   <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-100">
                     <Briefcase className="w-3 h-3 text-blue-600" />
@@ -731,13 +731,10 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 )}
               </div>
             </div>
-            <div className="mb-3">
-              <div className="text-[11px] text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-950/50 p-2 rounded-lg border border-gray-100 dark:border-zinc-800/50 line-clamp-2 italic">
-                {card.description || 'Nenhuma descrição detalhada.'}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              <Badge variant="outline" className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
+            {/* Sem a observação no card: na coluna de 6cm ela só ocupava
+                altura; continua visível no CardDialog. */}
+            <div className="flex flex-wrap items-center gap-1 mb-2">
+              <Badge variant="outline" className="px-1.5 py-0 rounded-full text-[9px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
                 {card.service}
               </Badge>
               {/* Tags do card: mostra as 2 primeiras; o resto vira "+N" com
@@ -746,7 +743,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 <span
                   key={tag.id}
                   title={tag.name}
-                  className="max-w-[90px] truncate rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                  className="max-w-[80px] truncate rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm"
                   style={{ backgroundColor: tag.color }}
                 >
                   {tag.name}
@@ -758,7 +755,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                     <button
                       onClick={(e) => e.stopPropagation()}
                       title="Ver todas as tags"
-                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600 shadow-sm hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-600 shadow-sm hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                     >
                       +{(card.tags?.length ?? 0) - 2}
                     </button>
@@ -784,13 +781,13 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 </DropdownMenu>
               )}
               <div className="relative flex items-center gap-1 ml-auto">
-                <Clock className="w-4 h-4" />
+                <Clock className="w-3.5 h-3.5" />
                 {renderTimerBadge(card)}
               </div>
               {renderAfastamentoBadge(card)}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-50 pt-3">
-              <div className="flex items-center gap-3 text-gray-400 dark:text-zinc-500">
+            <div className="flex items-center justify-between border-t border-gray-50 pt-2">
+              <div className="flex items-center gap-2.5 text-gray-400 dark:text-zinc-500">
                 <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span className="text-[11px] font-extrabold">{card.commentCount ?? card.comments.length}</span>
@@ -1228,9 +1225,9 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   return (
     <>
       <div ref={ref} className={cn(
-        // No celular a coluna ocupa ~88% da tela (uma por vez, com scroll
-        // lateral); no desktop mantém os 450px de sempre.
-        "flex-shrink-0 w-[min(88vw,450px)] rounded-2xl flex flex-col h-full transition-all duration-300 border shadow-sm",
+        // Coluna de 6cm (~227px): cabem ~2x mais colunas na tela; no celular
+        // nunca passa de 88% da largura.
+        "flex-shrink-0 w-[min(88vw,6cm)] rounded-2xl flex flex-col h-full transition-all duration-300 border shadow-sm",
         isDraggingColumn && "opacity-40",
         isOver && "border-blue-400 ring-2 ring-blue-100"
       )}
@@ -1238,15 +1235,15 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           ? { backgroundColor: 'rgb(239 246 255)' }
           : { backgroundColor: hexToRgba(columnColor, 0.10), borderColor: hexToRgba(columnColor, 0.28) }}
       >
-        <div className="p-4 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
-          <div className="flex items-center gap-2 overflow-hidden">
+        <div className="px-2.5 py-3 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
+          <div className="flex items-center gap-1.5 overflow-hidden min-w-0">
             <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors shrink-0">
               <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
             </div>
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: columnColor, boxShadow: `0 0 8px ${columnColor}66` }} />
             <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 dark:text-zinc-300 truncate">{column.title}</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
             <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
               {column.cards.length}
             </Badge>
@@ -1299,7 +1296,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           </div>
         </div>
 
-        <div ref={cardListRef} onDragEnter={cacheDragRect} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-2 p-4">
+        <div ref={cardListRef} onDragEnter={cacheDragRect} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-1.5 py-3">
           {column.cards.map((card) => (
             <DraggableCard
               key={card.id}

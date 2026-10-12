@@ -300,11 +300,11 @@ export const CardDialog: React.FC<CardDialogProps> = ({
       {/* Desktop: classes originais intactas. Só NO CELULAR (max-sm) o dialog
           vira tela cheia — centralizado ele quebrava com as abas largas. */}
       <DialogContent
-        className="max-w-7xl h-[90%] overflow-y-auto flex flex-col max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4"
+        className="max-w-7xl h-[90%] overflow-y-auto flex flex-col gap-2 p-4 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4"
         autoFocus={false}
       >
-        <DialogHeader>
-          <DialogTitle>{editedCard.title}</DialogTitle>
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="text-base">{editedCard.title}</DialogTitle>
           <a href="/nova-dash/instructions" className="absolute text-blue-600 hover:text-blue-500 right-12 font-semibold" target="_blank" rel="noopener noreferrer">
             Manual de Instruções <Link className="w-4 h-4 inline-block" />
           </a>
@@ -314,7 +314,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
               <button
                 onClick={openWhatsAppConversation}
                 title="Abrir a conversa deste cliente no WhatsApp (aba nova)"
-                className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
+                className="flex w-fit items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
               >
                 <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa no WhatsApp
               </button>
@@ -323,7 +323,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
               <button
                 onClick={() => setDocIaOpen(true)}
                 title="Gerar documento a partir de um modelo .docx com tags + IA"
-                className="mt-1 flex w-fit items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-violet-700"
+                className="flex w-fit items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-xs font-bold text-white transition-colors hover:bg-violet-700"
               >
                 <Sparkles className="h-3.5 w-3.5" /> Gerar Documento (IA)
               </button>
@@ -355,7 +355,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         )}
 
         <Tabs defaultValue="details" className="flex-1 overflow-y-auto flex flex-col">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-7 h-8 mb-2">
             <TabsTrigger value="details">Detalhes</TabsTrigger>
             <TabsTrigger value="checklist">Progresso</TabsTrigger>
             <TabsTrigger value="files">Arquivos</TabsTrigger>
@@ -388,7 +388,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
           </TabsContent>
         </Tabs>
 
-        <div className="flex flex-wrap items-start justify-between gap-3 mt-4 pt-4 border-t">
+        <div className="flex flex-wrap items-start justify-between gap-3 mt-2 pt-2 border-t">
           {perms.delete_cards ? (
             <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => setConfirmDelete(true)}>
               <Trash2 className="w-4 h-4 mr-2" />

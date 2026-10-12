@@ -32,7 +32,7 @@ interface Props {
   isProcess?: boolean;
 }
 
-const labelClass = 'text-xs font-medium text-gray-600 dark:text-zinc-400';
+const labelClass = 'text-[10.5px] font-medium text-gray-500 dark:text-zinc-400';
 // Cada serviço ganha uma cor fixa só para a bolinha do select — ajuda a bater o
 // olho e ver que serviço é sem ler o texto.
 const SERVICE_COLORS: Record<string, string> = {
@@ -44,16 +44,16 @@ const SERVICE_COLORS: Record<string, string> = {
   'TRABALHISTA': '#db2777',
 };
 const inputClass =
-  'h-9 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:border-zinc-800 dark:placeholder:text-zinc-500';
+  'h-7 px-2 text-[13px] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:border-zinc-800 dark:placeholder:text-zinc-500';
 const selectClass =
-  'w-full h-9 px-3 py-1.5 text-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
+  'w-full h-7 px-2 py-0.5 text-[13px] bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
 // Seção visual: agrupa campos relacionados num cartão com título discreto,
 // deixando o formulário mais fácil de escanear.
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) {
   return (
-    <section className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-4 shadow-sm">
-      <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">{title}</h3>
+    <section className={`rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-2.5 shadow-sm ${className}`}>
+      <h3 className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">{title}</h3>
       {children}
     </section>
   );
@@ -71,7 +71,7 @@ function Field({ id, label, value, onChange, type = 'text', mask, error }: {
   error?: string | null;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <Label htmlFor={id} className={labelClass}>{label}</Label>
       <Input
         id={id}
@@ -98,7 +98,7 @@ function DateFlexField({ id, label, value, onChange }: {
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <Label htmlFor={id} className={labelClass}>
         {label}
       </Label>
@@ -125,7 +125,7 @@ function TextAreaField({ id, label, value, onChange, placeholder, rows = 4 }: {
   rows?: number;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <Label htmlFor={id} className={labelClass}>{label}</Label>
       <textarea
         id={id}
@@ -134,7 +134,7 @@ function TextAreaField({ id, label, value, onChange, placeholder, rows = 4 }: {
         onChange={(e) => onChange(id, e.target.value)}
         placeholder={placeholder}
         rows={rows}
-        className={`w-full rounded-md border border-gray-300 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 px-3 py-2 text-sm leading-relaxed resize-y shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+        className={`w-full rounded-md border border-gray-300 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 px-2 py-1 text-[13px] leading-snug resize-y shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
       />
     </div>
   );
@@ -149,7 +149,7 @@ function SelectField({ id, label, value, options, onChange, placeholder }: {
   placeholder: string;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <Label htmlFor={id} className={labelClass}>{label}</Label>
       <select
         id={id}
@@ -286,14 +286,14 @@ function ClientAccessPassword({ cardId, isProcess }: { cardId?: string; isProces
 
 export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: Props) {
   return (
-    <div className="space-y-4 px-1 pb-2">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 px-1 pb-2">
       {/* Organização do card — Serviço e Coluna são CONFIGURAÇÃO, não dado
           pessoal do cliente. Ficavam no fim de "Dados Pessoais", onde só quem
           rolava a ficha inteira achava; mas os dados são preenchidos uma vez, no
           começo, e quem abre o card depois (outro setor) quase sempre vem só
           para MOVER de coluna. Por isso o bloco vem primeiro. */}
-      <Section title="Organização do card">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+      <Section title="Organização do card" className="lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2.5 gap-y-1.5">
           <SoftSelect
             id="service"
             label="Serviço"
@@ -320,8 +320,8 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
       </Section>
 
       {/* Dados Pessoais */}
-      <Section title="Dados Pessoais">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+      <Section title="Dados Pessoais" className="lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-2.5 gap-y-1.5">
           <Field id="title" label="Nome" value={editedCard.title} onChange={onChange} />
           <Field id="rg" label="RG" value={editedCard.rg} onChange={onChange} />
 
@@ -347,7 +347,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
 
       {/* Endereço */}
       <Section title="Endereço">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2.5 gap-y-1.5">
           <Field id="cep" label="CEP" value={maskCep(editedCard.cep ?? '')} onChange={onChange} mask={maskCep} />
           <Field id="bairro" label="Bairro" value={editedCard.bairro} onChange={onChange} />
 
@@ -362,7 +362,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
 
       {/* Contato */}
       <Section title="Contato">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
           <Field id="telefone_secundario" label="Telefone Secundário" value={displayPhone(editedCard.telefone_secundario)} onChange={onChange} mask={maskPhone} />
           <Field id="email" label="E-mail" type="email" value={editedCard.email} onChange={onChange} />
           <Field id="rede_social" label="Rede Social" value={editedCard.rede_social} onChange={onChange} />
@@ -370,7 +370,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
       </Section>
 
       {/* Observação */}
-      <Section title="Observação">
+      <Section title="Observação" className="lg:col-span-2">
         <TextAreaField
           id="obs"
           label="Observação geral"
@@ -382,41 +382,41 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
       </Section>
 
       {/* Dados do Acidente */}
-      <Section title="Dados do Acidente">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+      <Section title="Dados do Acidente" className="lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
           <DateFlexField id="data_acidente" label="Data do Acidente" value={editedCard.data_acidente} onChange={onChange} />
           {/* <SelectField id="atendimento_via" label="Atendimento Via" value={editedCard.atendimento_via}
             options={ATENDIMENTO_VIA} onChange={onChange} placeholder="Selecione o atendimento via" /> */}
           <HospitalCombobox id="hospital" label="Hospital" value={editedCard.hospital} onChange={onChange} />
           <Field id="outro_hospital" label="Outro Hospital" value={editedCard.outro_hospital} onChange={onChange} />
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <Field id="lesoes" label="Lesões" value={editedCard.lesoes} onChange={onChange} />
           </div>
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <TextAreaField
               id="otherObs"
               label="Descrição do Acidente"
               value={editedCard.otherObs}
               onChange={onChange}
               placeholder="Descreva como o acidente ocorreu, circunstâncias, detalhes relevantes..."
-              rows={5}
+              rows={3}
             />
           </div>
         </div>
       </Section>
 
       {/* Controle do Card */}
-      <Section title="Controle do Card">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
-          <div className="space-y-1">
+      <Section title="Controle do Card" className="lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
+          <div className="space-y-0.5">
             <Label htmlFor="status" className={labelClass}>Status Atual</Label>
-            <Input id="status" value={editedCard.status || ''} disabled className="h-9 text-sm" />
+            <Input id="status" value={editedCard.status || ''} disabled className="h-7 px-2 text-[13px]" />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <Label htmlFor="cardNumber" className={labelClass}>Nº do Card</Label>
-            <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled className="h-9 text-sm" />
+            <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled className="h-7 px-2 text-[13px]" />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <Label htmlFor="afastadoAte" className={labelClass}>Vencimento do Card</Label>
             <Input
               id="afastadoAte"
@@ -427,13 +427,13 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
             />
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-gray-500 dark:text-zinc-400">
+        <p className="mt-1 text-[10.5px] text-gray-500 dark:text-zinc-400">
           Vencimento: data em que o card termina. A notificação avisa quando se aproxima/vence.
         </p>
 
         <ClientAccessPassword cardId={cardId} isProcess={isProcess} />
 
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-zinc-400">
+        <div className="mt-1.5 flex flex-wrap items-center gap-4 text-[11px] text-gray-500 dark:text-zinc-400">
           <div className="flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5" />
             <span>Criado: {new Date(editedCard.createdAt).toLocaleDateString('pt-BR')}</span>

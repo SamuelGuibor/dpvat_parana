@@ -77,14 +77,14 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
   }
 
   return (
-    <div ref={containerRef} className="space-y-2 relative">
+    <div ref={containerRef} className="space-y-0.5 relative">
       <Label htmlFor={id}>{label}</Label>
 
       <button
         id={id}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-md flex items-center justify-between gap-2 hover:border-gray-400 dark:hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        className="w-full h-8 px-2.5 py-1 text-[13px] bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 rounded-md flex items-center justify-between gap-2 hover:border-gray-400 dark:hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
       >
         <span className={cn('truncate flex-1 text-left', !value && 'text-gray-400 dark:text-zinc-500')}>
           {value || 'Selecione ou adicione um hospital'}

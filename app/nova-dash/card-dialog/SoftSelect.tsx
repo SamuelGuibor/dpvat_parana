@@ -80,8 +80,8 @@ export function SoftSelect({ id, label, value, options, placeholder, onSelect, i
   }
 
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">
+    <div className="space-y-0.5">
+      <label htmlFor={id} className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">
         {label}
       </label>
 
@@ -96,7 +96,7 @@ export function SoftSelect({ id, label, value, options, placeholder, onSelect, i
           onClick={() => setOpen((v) => !v)}
           onKeyDown={onKeyDown}
           className={cn(
-            'group flex h-10 w-full items-center gap-2.5 rounded-xl border px-3 text-sm transition-all duration-150',
+            'group flex h-8 w-full items-center gap-2 rounded-lg border px-2.5 text-[13px] transition-all duration-150',
             'bg-gradient-to-b from-white to-gray-50 dark:from-zinc-900 dark:to-zinc-900/60',
             'border-gray-200/90 dark:border-zinc-800 shadow-[0_1px_2px_rgba(16,24,40,0.04)]',
             'hover:border-gray-300 hover:shadow-[0_2px_6px_rgba(16,24,40,0.07)]',
