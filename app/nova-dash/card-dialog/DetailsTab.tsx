@@ -216,7 +216,7 @@ function ClientAccessPassword({ cardId, isProcess }: { cardId?: string; isProces
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-zinc-800 dark:bg-zinc-950/50">
+    <div className="mt-1.5 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-zinc-800 dark:bg-zinc-950/50">
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-zinc-300">
           <KeyRound className="h-3.5 w-3.5" /> Senha de acesso do cliente
@@ -292,7 +292,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
           rolava a ficha inteira achava; mas os dados são preenchidos uma vez, no
           começo, e quem abre o card depois (outro setor) quase sempre vem só
           para MOVER de coluna. Por isso o bloco vem primeiro. */}
-      <Section title="Organização do card" className="lg:col-span-2">
+      <Section title="Organização do card">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2.5 gap-y-1.5">
           <SoftSelect
             id="service"
@@ -319,9 +319,33 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
         </div>
       </Section>
 
+      {/* Controle do Card — vencimento/status no topo, ao lado da Organização */}
+      <Section title="Controle do Card">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
+          <div className="space-y-0.5">
+            <Label htmlFor="status" className={labelClass}>Status Atual</Label>
+            <Input id="status" value={editedCard.status || ''} disabled className="h-7 px-2 text-[13px]" />
+          </div>
+          <div className="space-y-0.5">
+            <Label htmlFor="cardNumber" className={labelClass}>Nº do Card</Label>
+            <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled className="h-7 px-2 text-[13px]" />
+          </div>
+          <div className="space-y-0.5">
+            <Label htmlFor="afastadoAte" className={labelClass}>Vencimento do Card</Label>
+            <Input
+              id="afastadoAte"
+              type="date"
+              value={editedCard.afastadoAte ? editedCard.afastadoAte.slice(0, 10) : ''}
+              onChange={(e) => onChange('afastadoAte', e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        </div>
+      </Section>
+
       {/* Dados Pessoais */}
       <Section title="Dados Pessoais" className="lg:col-span-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-2.5 gap-y-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-2.5 gap-y-1.5">
           <Field id="title" label="Nome" value={editedCard.title} onChange={onChange} />
           <Field id="rg" label="RG" value={editedCard.rg} onChange={onChange} />
 
@@ -362,37 +386,23 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
 
       {/* Contato */}
       <Section title="Contato">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2.5 gap-y-1.5">
           <Field id="telefone_secundario" label="Telefone Secundário" value={displayPhone(editedCard.telefone_secundario)} onChange={onChange} mask={maskPhone} />
           <Field id="email" label="E-mail" type="email" value={editedCard.email} onChange={onChange} />
           <Field id="rede_social" label="Rede Social" value={editedCard.rede_social} onChange={onChange} />
         </div>
       </Section>
 
-      {/* Observação */}
-      <Section title="Observação" className="lg:col-span-2">
-        <TextAreaField
-          id="obs"
-          label="Observação geral"
-          value={editedCard.obs}
-          onChange={onChange}
-          placeholder="Anotações gerais sobre o card..."
-          rows={2}
-        />
-      </Section>
-
       {/* Dados do Acidente */}
-      <Section title="Dados do Acidente" className="lg:col-span-2">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
+      <Section title="Dados do Acidente e Observação" className="lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-x-2.5 gap-y-1.5">
           <DateFlexField id="data_acidente" label="Data do Acidente" value={editedCard.data_acidente} onChange={onChange} />
           {/* <SelectField id="atendimento_via" label="Atendimento Via" value={editedCard.atendimento_via}
             options={ATENDIMENTO_VIA} onChange={onChange} placeholder="Selecione o atendimento via" /> */}
           <HospitalCombobox id="hospital" label="Hospital" value={editedCard.hospital} onChange={onChange} />
           <Field id="outro_hospital" label="Outro Hospital" value={editedCard.outro_hospital} onChange={onChange} />
-          <div className="sm:col-span-3">
-            <Field id="lesoes" label="Lesões" value={editedCard.lesoes} onChange={onChange} />
-          </div>
-          <div className="sm:col-span-3">
+          <Field id="lesoes" label="Lesões" value={editedCard.lesoes} onChange={onChange} />
+          <div className="sm:col-span-2">
             <TextAreaField
               id="otherObs"
               label="Descrição do Acidente"
@@ -402,32 +412,22 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
               rows={3}
             />
           </div>
-        </div>
-      </Section>
-
-      {/* Controle do Card */}
-      <Section title="Controle do Card" className="lg:col-span-2">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-2.5 gap-y-1.5">
-          <div className="space-y-0.5">
-            <Label htmlFor="status" className={labelClass}>Status Atual</Label>
-            <Input id="status" value={editedCard.status || ''} disabled className="h-7 px-2 text-[13px]" />
-          </div>
-          <div className="space-y-0.5">
-            <Label htmlFor="cardNumber" className={labelClass}>Nº do Card</Label>
-            <Input id="cardNumber" value={editedCard.cardNumber ? `#${editedCard.cardNumber}` : '—'} disabled className="h-7 px-2 text-[13px]" />
-          </div>
-          <div className="space-y-0.5">
-            <Label htmlFor="afastadoAte" className={labelClass}>Vencimento do Card</Label>
-            <Input
-              id="afastadoAte"
-              type="date"
-              value={editedCard.afastadoAte ? editedCard.afastadoAte.slice(0, 10) : ''}
-              onChange={(e) => onChange('afastadoAte', e.target.value)}
-              className={inputClass}
+          <div className="sm:col-span-2">
+            <TextAreaField
+              id="obs"
+              label="Observação geral"
+              value={editedCard.obs}
+              onChange={onChange}
+              placeholder="Anotações gerais sobre o card..."
+              rows={3}
             />
           </div>
         </div>
-        <p className="mt-1 text-[10.5px] text-gray-500 dark:text-zinc-400">
+      </Section>
+
+      {/* Acesso do cliente + datas: raramente usado, fica no fim. */}
+      <Section title="Acesso do cliente" className="lg:col-span-2">
+        <p className="text-[10.5px] text-gray-500 dark:text-zinc-400">
           Vencimento: data em que o card termina. A notificação avisa quando se aproxima/vence.
         </p>
 
