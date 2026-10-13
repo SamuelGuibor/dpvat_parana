@@ -160,9 +160,12 @@ export function CreateNewCard() {
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        <Button className="h-12 rounded-2xl text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40">
-          <Copy className="w-4 h-4 mr-2" />
-          Duplicar Card
+        <Button
+          title="Duplicar Card"
+          className="h-[34px] w-[34px] gap-1.5 rounded-[10px] px-0 text-[12.5px] whitespace-nowrap 2xl:w-auto 2xl:px-2.5 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40"
+        >
+          <Copy className="w-4 h-4" />
+          <span className="hidden 2xl:inline">Duplicar Card</span>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent className="max-w-[100vw] sm:max-w-lg md:max-w-2xl lg:max-w-4xl max-h-[90vh] overflow-hidden rounded-3xl p-0 gap-0 border-none">

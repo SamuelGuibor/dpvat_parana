@@ -7,7 +7,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
-  Clock, MessageSquare, Paperclip, Edit, User as UserIcon, Briefcase,
+  MessageSquare, Paperclip, Edit, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
   User, GripVertical, Zap, CheckSquare, Minimize2, Maximize2,
   Archive, DollarSign, XCircle,
@@ -264,9 +264,9 @@ const renderTimerBadge = (card: KanbanCard) => {
   const limit = card.label?.timeLimitDays ?? null
   const overdue = limit !== null && days > limit
   return (
-    <Badge variant="outline" className={`px-2 text-xs ${overdue ? 'text-red-600 font-semibold' : 'text-blue-700 font-semibold'}`}>
+    <Badge variant="outline" className={`px-2 py-0 text-[10.5px] ${overdue ? 'text-red-600 font-semibold' : 'text-blue-700 font-semibold'}`}>
       {days} dias
-      {overdue && <span className="ml-1 text-[10px] font-bold">(Excedeu {days - limit!} dias)</span>}
+      {overdue && <span className="ml-0.5 text-[9px] font-bold">(Excedeu {days - limit!} dias)</span>}
     </Badge>
   )
 }
@@ -441,10 +441,11 @@ const CreateLabelButton: React.FC<{ onCreate: (data: LabelInput) => Promise<void
       <Button
         variant="outline"
         onClick={() => setOpen(true)}
-        className="h-12 rounded-2xl text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40"
+        title="Criar Coluna"
+        className="h-[34px] w-[34px] gap-1.5 rounded-[10px] px-0 text-[12.5px] whitespace-nowrap 2xl:w-auto 2xl:px-2.5 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40"
       >
-        <Tag className="w-4 h-4 mr-2" />
-        Criar Coluna
+        <Tag className="w-4 h-4" />
+        <span className="hidden 2xl:inline">Criar Coluna</span>
       </Button>
       <LabelDialog
         open={open}
@@ -531,9 +532,9 @@ const CreatePerson: React.FC<{ labels: Label[]; onCreated: () => void }> = ({ la
       <Button
         variant="outline"
         onClick={() => setOpen(true)}
-        className="h-12 rounded-2xl text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40"
+        className="h-[34px] gap-1.5 rounded-[10px] px-2.5 text-[12.5px] whitespace-nowrap text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40"
       >
-        <User className="w-4 h-4 mr-2" />
+        <User className="w-4 h-4" />
         Criar Card Cliente
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -708,35 +709,36 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
           <div className="pointer-events-none absolute -top-2 left-1 right-1 z-10 h-1.5 rounded-full bg-blue-500/80 shadow-[0_0_6px_rgba(59,130,246,0.6)]" />
         )}
         <Card className={cn(
-          "mb-2 border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white dark:bg-zinc-900",
+          "mb-1.5 rounded-[10px] border-none shadow-sm hover:shadow-lg transition-all duration-200 relative overflow-hidden bg-white dark:bg-zinc-900",
           card.isProcess ? "ring-1 ring-blue-100" : "ring-1 ring-gray-100"
         )}>
           <div className={cn("absolute top-0 left-0 w-1 h-full", card.isProcess ? "bg-blue-600" : "bg-gray-400 dark:bg-zinc-600")} />
-          <CardContent className="p-2.5 pl-4">
-            <div className="flex items-start justify-between mb-1.5">
-              <h4 className="font-bold text-[13px] text-gray-900 dark:text-zinc-100 leading-tight flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
+          {/* O `[&:last-child]:pb-1.5` anula o `pb-6` do CardContent base, que
+              deixava 24px vazios no pé do card. */}
+          <CardContent className="pt-[7px] pr-2 pb-1.5 pl-[11px] [&:last-child]:pb-1.5">
+            <div className="flex items-start justify-between mb-1">
+              <h4 className="font-bold text-[12.5px] text-gray-900 dark:text-zinc-100 leading-[1.25] flex-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onCardClick(card)}>
                 {card.cardNumber != null && (
-                  <span className="mr-1 inline-block px-1 py-0.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[12px] font-mono font-bold align-middle">
+                  <span className="mr-1 inline-block px-1 py-0 rounded-md bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[10.5px] font-mono font-bold align-middle">
                     #{card.cardNumber}
                   </span>
                 )}
                 {card.title}
               </h4>
-              <div className="shrink-0 ml-1.5">
-                {card.isProcess ? (
-                  <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-100">
+              {/* Só card de Process leva ícone: o bonequinho do card de cliente
+                  não carregava informação (nem atribuía responsável) e roubava
+                  largura do nome. */}
+              {card.isProcess && (
+                <div className="shrink-0 ml-1.5">
+                  <div className="bg-blue-50 p-[3px] rounded-lg border border-blue-100">
                     <Briefcase className="w-3 h-3 text-blue-600" />
                   </div>
-                ) : (
-                  <div className="bg-gray-50 dark:bg-zinc-950 p-1.5 rounded-lg border border-gray-100 dark:border-zinc-800">
-                    <UserIcon className="w-3 h-3 text-gray-600 dark:text-zinc-400" />
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
             {/* Sem a observação no card: na coluna de 6cm ela só ocupava
                 altura; continua visível no CardDialog. */}
-            <div className="flex flex-wrap items-center gap-1 mb-2">
+            <div className="flex flex-wrap items-center gap-[3px] mb-1">
               <Badge variant="outline" className="px-1.5 py-0 rounded-full text-[9px] font-black uppercase tracking-wider border-none shadow-sm hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800" style={{ backgroundColor: style.bgColor, color: style.textColor }}>
                 {card.service}
               </Badge>
@@ -783,20 +785,19 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <div className="relative flex items-center gap-1 ml-auto">
-                <Clock className="w-3.5 h-3.5" />
+              <div className="relative flex items-center ml-auto">
                 {renderTimerBadge(card)}
               </div>
               {renderAfastamentoBadge(card)}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-50 pt-2">
+            <div className="relative flex items-center justify-between border-t border-gray-50 pt-1">
               <div className="flex items-center gap-2.5 text-gray-400 dark:text-zinc-500">
                 <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
-                  <MessageSquare className="w-3.5 h-3.5" />
+                  <MessageSquare className="w-3 h-3" />
                   <span className="text-[11px] font-extrabold">{card.commentCount ?? card.comments.length}</span>
                 </div>
                 <div className="flex items-center gap-1 hover:text-blue-500 transition-colors">
-                  <Paperclip className="w-3.5 h-3.5" />
+                  <Paperclip className="w-3 h-3" />
                   <span className="text-[11px] font-extrabold">{card.attachmentCount ?? card.attachments.length}</span>
                 </div>
                 {(() => {
@@ -807,19 +808,20 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                   const allDone = done === total && done > 0;
                   return (
                     <div className={`flex items-center gap-1 transition-colors ${allDone ? 'text-green-500' : 'hover:text-blue-500'}`}>
-                      <CheckSquare className="w-3.5 h-3.5" />
+                      <CheckSquare className="w-3 h-3" />
                       <span className="text-[11px] font-extrabold">{done}/{total}</span>
                     </div>
                   );
                 })()}
               </div>
               {/* No touch não existe hover — os botões ficam sempre visíveis
-                  no mobile e continuam aparecendo só no hover no desktop. */}
-              <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200">
+                  (no fluxo) no mobile. No desktop aparecem só no hover, por cima
+                  do canto do rodapé (absolute): sem reservar altura no card. */}
+              <div className="flex gap-0.5 rounded-lg bg-white opacity-100 md:absolute md:right-[-4px] md:bottom-[-3px] md:opacity-0 md:group-hover:opacity-100 transition-all duration-200">
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600"
+                  className="h-6 w-6 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-blue-50 hover:text-blue-600"
                   onClick={() => onCardClick(card)}
                 >
                   <Edit className="w-3.5 h-3.5" />
@@ -833,7 +835,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                       size="icon"
                       variant="secondary"
                       title="Mover para outra coluna"
-                      className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-indigo-50 hover:text-indigo-600"
+                      className="h-6 w-6 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-indigo-50 hover:text-indigo-600"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <ArrowRightLeft className="w-3.5 h-3.5" />
@@ -860,7 +862,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                       <Button
                         size="icon"
                         variant="secondary"
-                        className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                        className="h-6 w-6 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="w-3.5 h-3.5" />
@@ -987,7 +989,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                   <Button
                     size="icon"
                     variant="secondary"
-                    className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600"
+                    className="h-6 w-6 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-red-50 hover:text-red-600"
                     onClick={(e) => {
                       e.stopPropagation();
                       setConfirmDelete(true);
@@ -1157,7 +1159,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   if (isCollapsed) {
     return (
       <div ref={ref} className={cn(
-        "flex-shrink-0 w-14 rounded-2xl p-2 transition-all duration-300 border h-full shadow-sm",
+        "flex-shrink-0 w-[42px] rounded-2xl px-[3px] py-1.5 transition-all duration-300 border h-full shadow-sm",
         isDraggingColumn && "opacity-40",
         isOver && "ring-2 ring-blue-200"
       )}
@@ -1169,11 +1171,12 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors mb-1">
             <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
           </div>
-          <Button variant="ghost" size="icon" className="mb-4 h-10 w-10 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800" onClick={toggleCollapse}>
+          {/* Botão e selo cabem nos 36px úteis da coluna de 42px. */}
+          <Button variant="ghost" size="icon" className="mb-2 h-8 w-8 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800" onClick={toggleCollapse}>
             <ChevronRight className="w-5 h-5 text-gray-400 dark:text-zinc-500" />
           </Button>
-          <div className="flex-1 flex flex-col items-center gap-4 overflow-hidden">
-            <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-black h-8 w-8 flex items-center justify-center rounded-xl hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800">
+          <div className="flex-1 flex flex-col items-center gap-3 overflow-hidden">
+            <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-black h-7 w-7 flex items-center justify-center rounded-xl px-0 hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800">
               {column.cards.length}
             </Badge>
             <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 dark:text-zinc-500 [writing-mode:vertical-rl] whitespace-nowrap text-center">
@@ -1241,15 +1244,16 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
           ? { backgroundColor: 'rgb(239 246 255)' }
           : { backgroundColor: hexToRgba(columnColor, 0.10), borderColor: hexToRgba(columnColor, 0.28) }}
       >
-        <div className="px-2.5 py-3 rounded-t-2xl flex items-center justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
+        <div className="px-2 py-1.5 rounded-t-2xl flex items-start justify-between border-b bg-white dark:bg-zinc-900 shadow-sm" style={{ borderTop: `4px solid ${columnColor}` }}>
           <div className="flex items-center gap-1.5 overflow-hidden min-w-0">
             <div ref={(node) => { columnDrag(node); }} className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800 transition-colors shrink-0">
               <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
             </div>
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: columnColor, boxShadow: `0 0 8px ${columnColor}66` }} />
-            <h3 className="font-black text-xs uppercase tracking-tight text-gray-700 dark:text-zinc-300 truncate">{column.title}</h3>
+            {/* Sem `truncate`: o nome inteiro cabe em até 2 linhas (title mantém o texto completo). */}
+            <h3 title={column.title} className="font-black text-[10.5px] uppercase tracking-tight text-gray-700 dark:text-zinc-300 line-clamp-2 whitespace-normal leading-tight break-words min-w-0">{column.title}</h3>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0">
             <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
               {column.cards.length}
             </Badge>
@@ -1258,7 +1262,7 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="h-7 w-7 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800"
+                  className="h-[22px] w-[22px] p-0 rounded-lg bg-gray-50 dark:bg-zinc-950 hover:bg-gray-100 dark:hover:bg-zinc-800 dark:bg-zinc-800"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
@@ -1296,13 +1300,13 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 dark:text-zinc-100" onClick={toggleCollapse}>
-              <ChevronLeft className="w-4 h-4" />
+            <Button variant="ghost" size="icon" className="h-[22px] w-[22px] p-0 rounded-lg text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 dark:text-zinc-100" onClick={toggleCollapse}>
+              <ChevronLeft className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
 
-        <div ref={cardListRef} onDragEnter={cacheDragRect} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-1.5 py-3">
+        <div ref={cardListRef} onDragEnter={cacheDragRect} onDragOver={handleDragOverAutoScroll} className="flex-1 overflow-y-auto px-[5px] py-1.5">
           {column.cards.map((card) => (
             <DraggableCard
               key={card.id}
@@ -2131,9 +2135,9 @@ export const KanbanBoard: React.FC = () => {
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="px-2 md:px-6 bg-[#f8fafc] min-h-screen">
-        <div ref={boardTopRef} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-6 mb-3 bg-white dark:bg-zinc-900 p-3 md:p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
-          <div className="flex flex-col md:flex-row flex-1 gap-4">
-            <div ref={searchBoxRef} className="relative flex items-center flex-1">
+        <div ref={boardTopRef} className="flex flex-row flex-wrap items-center gap-2 px-2.5 py-2 mb-2 bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800">
+          <div className="flex flex-row gap-2 flex-[1_1_360px] min-w-0">
+            <div ref={searchBoxRef} className="relative flex items-center flex-1 min-w-0">
               <Search className="absolute left-3 text-gray-400 dark:text-zinc-500 w-4 h-4 z-10" />
               <Input
                 value={searchQuery}
@@ -2141,7 +2145,7 @@ export const KanbanBoard: React.FC = () => {
                 onFocus={() => { if (searchQuery.trim()) setSearchOpen(true); }}
                 type="text"
                 placeholder="Pesquisar por nome ou nº do card (ex: 4001)..."
-                className="pl-10 h-12 w-full rounded-2xl border-gray-200 dark:border-zinc-800 focus:ring-blue-500 bg-gray-50 dark:bg-zinc-950/50"
+                className="pl-10 h-[34px] text-[13px] w-full rounded-xl border-gray-200 dark:border-zinc-800 focus:ring-blue-500 bg-gray-50 dark:bg-zinc-950/50"
               />
               {searchOpen && searchQuery.trim() && (
                 <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
@@ -2234,7 +2238,7 @@ export const KanbanBoard: React.FC = () => {
               )}
             </div>
             <Select value={serviceFilter} onValueChange={setServiceFilter}>
-              <SelectTrigger className="w-full md:w-[280px] h-12 rounded-2xl border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50">
+              <SelectTrigger className="w-[180px] shrink-0 h-[34px] text-[13px] rounded-xl border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/50">
                 <SelectValue placeholder="Filtrar Etapa" />
               </SelectTrigger>
               <SelectContent className="rounded-2xl">
@@ -2246,25 +2250,26 @@ export const KanbanBoard: React.FC = () => {
             </Select>
           </div>
 
-          {/* Ações quebram linha no mobile em vez de estourar a largura. */}
-          <div className="flex flex-wrap items-center gap-2 md:gap-3 shrink-0">
-            <div className="h-10 w-[1px] bg-gray-100 dark:bg-zinc-800 mx-2 hidden lg:block" />
+          {/* Ações sem quebra entre si (a barra inteira quebra de linha se faltar
+              espaço). Abaixo de 2xl viram só ícone, com tooltip no `title`;
+              "Criar Card Cliente" mantém o texto. */}
+          <div className="flex flex-nowrap items-center gap-1.5 shrink-0">
             <button
               onClick={toggleAllColumns}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-zinc-300 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors"
+              className="flex h-[34px] w-[34px] items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-0 text-[12.5px] font-medium text-gray-600 dark:text-zinc-300 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors 2xl:w-auto 2xl:px-2.5"
               title={allColumnsCollapsed ? 'Expandir todas as colunas' : 'Minimizar todas as colunas'}
             >
               {allColumnsCollapsed ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-              <span className="hidden sm:inline">{allColumnsCollapsed ? 'Expandir todas' : 'Minimizar todas'}</span>
+              <span className="hidden 2xl:inline">{allColumnsCollapsed ? 'Expandir todas' : 'Minimizar todas'}</span>
             </button>
             {boardPerms.manage_automations && (
               <button
                 onClick={() => setAutomationsPanelOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition-colors"
+                className="flex h-[34px] w-[34px] items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-0 text-[12.5px] font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition-colors 2xl:w-auto 2xl:px-2.5"
                 title="Automações"
               >
                 <Zap className="w-4 h-4" />
-                <span className="hidden sm:inline">Automações</span>
+                <span className="hidden 2xl:inline">Automações</span>
               </button>
             )}
             {boardPerms.create_columns && <CreateLabelButton onCreate={createLabel} />}
@@ -2336,7 +2341,7 @@ export const KanbanBoard: React.FC = () => {
               style={{ height: columnsHeight ? `${columnsHeight}px` : undefined }}
             >
               <ColumnDropZone onDropEnd={persistColumnOrder}>
-                <div className="flex gap-6 pb-6 min-w-max h-full">
+                <div className="flex gap-2 pb-2 min-w-max h-full">
                   {columns.map((column, idx) => (
                     <DroppableColumn
                       key={column.id}

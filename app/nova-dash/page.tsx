@@ -218,7 +218,7 @@ function PageInner() {
                 width={200}
                 height={200}
                 alt="Logo"
-                className="h-auto w-[140px] md:w-[200px]"
+                className="h-auto w-[140px]"
               />
             </Link>
             <div className="flex items-center gap-1.5 md:gap-3">
