@@ -226,13 +226,16 @@ function PageInner() {
               <Button
                 variant="ghost"
                 size="icon"
+                data-tour="help"
                 title="Rever tutorial"
                 aria-label="Rever tutorial"
                 onClick={() => window.dispatchEvent(new Event(START_DASH_TOUR_EVENT))}
               >
                 <HelpCircle className="h-5 w-5 text-gray-500" />
               </Button>
-              <EventsButton count={eventsSoon} onOpen={() => setEventsOpen(true)} />
+              <span data-tour="events" className="inline-flex">
+                <EventsButton count={eventsSoon} onOpen={() => setEventsOpen(true)} />
+              </span>
               <span data-tour="dark-mode" className="inline-flex">
                 <DarkModeToggle />
               </span>
@@ -285,6 +288,7 @@ function PageInner() {
             {canViewArchived && (
               <TabsTrigger
                 value="arquivados"
+                data-tour="tab-arquivados"
                 className={tabCls}
               >
                 <Archive className="w-4 h-4 mr-2" />
@@ -358,6 +362,7 @@ function PageInner() {
             )}
             <TabsTrigger
               value="ponto"
+              data-tour="tab-ponto"
               className={tabCls}
             >
               <Clock className="w-4 h-4 mr-2" />
