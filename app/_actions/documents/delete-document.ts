@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { createLog } from "../../_shared/lib/log";
 import { requireTeam } from "../../_shared/lib/permissions-server";
@@ -11,6 +12,7 @@ import { requireTeam } from "../../_shared/lib/permissions-server";
  * purga em trash.ts (botão "excluir de vez" ou o cron dos 30 dias).
  */
 export const deletDoc = async (docId: string) => {
+  await assertCanWrite();
   const ctx = await requireTeam();
   try {
     const document = await db.document.findFirst({

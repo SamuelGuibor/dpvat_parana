@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { getSessionPermissions } from '@/app/_shared/lib/permissions-server';
@@ -50,6 +51,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const ctx = await requireManager();
   if (!ctx) return NextResponse.json({ error: 'Sem permissão para o banco de horas.' }, { status: 403 });
 
@@ -84,6 +87,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const ctx = await requireManager();
   if (!ctx) return NextResponse.json({ error: 'Sem permissão para o banco de horas.' }, { status: 403 });
 

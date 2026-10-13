@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from '@/app/_shared/lib/prisma';
 import { requirePermission, requireTeam } from '@/app/_shared/lib/permissions-server';
 import { encryptSecret } from '@/app/_shared/lib/whatsapp/crypto';
@@ -92,6 +93,7 @@ export async function createWaNumber(input: {
   accessToken: string;
   apiVersion?: string;
 }): Promise<{ ok: boolean; error?: string }> {
+  await assertCanWrite();
   await requirePermission('manage_wa_numbers');
   const label = input.label.trim();
   const phoneNumberId = input.phoneNumberId.trim();
@@ -133,6 +135,7 @@ export async function updateWaNumber(input: {
   active?: boolean;
   templatesPaused?: boolean; // pausa só os envios de template (pagos)
 }): Promise<{ ok: boolean; error?: string }> {
+  await assertCanWrite();
   await requirePermission('manage_wa_numbers');
   const row = await db.whatsAppNumber.findUnique({ where: { id: input.id } });
   if (!row) return { ok: false, error: 'Número não encontrado.' };
@@ -160,6 +163,7 @@ export async function updateWaNumber(input: {
 
 /** Marca o número default (fallback de envio sem numberId). */
 export async function setDefaultWaNumber(id: string): Promise<{ ok: boolean; error?: string }> {
+  await assertCanWrite();
   await requirePermission('manage_wa_numbers');
   const row = await db.whatsAppNumber.findUnique({ where: { id }, select: { id: true, active: true } });
   if (!row?.active) return { ok: false, error: 'Número não encontrado ou inativo.' };
@@ -177,6 +181,7 @@ export async function setDefaultWaNumber(id: string): Promise<{ ok: boolean; err
  * eventos, templates). Idempotente — rodar de novo só pega o que ficou nulo.
  */
 export async function importEnvNumber(): Promise<{ ok: boolean; error?: string; adopted?: Record<string, number> }> {
+  await assertCanWrite();
   await requirePermission('manage_wa_numbers');
   const result = await ensureDefaultNumber();
   if ('error' in result) return { ok: false, error: result.error };

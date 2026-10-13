@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "@/app/_shared/lib/prisma";
 
@@ -16,6 +17,8 @@ export async function GET() {
 
 // POST — create a new prompt
 export async function POST(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const { title, content } = await request.json();
 

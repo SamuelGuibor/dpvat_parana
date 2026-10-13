@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "../../_shared/lib/permissions-server";
@@ -11,6 +12,7 @@ export async function deleteCard({
   id: string;
   isProcess: boolean;
 }) {
+  await assertCanWrite();
   await requirePermission("delete_cards");
 
   if (isProcess) {

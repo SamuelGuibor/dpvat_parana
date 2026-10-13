@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { db } from '../../_shared/lib/prisma'
@@ -10,6 +11,8 @@ import {
 } from '../../_shared/lib/document-categories'
 
 export async function POST(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const { userId, processId, documents } = await request.json()
 

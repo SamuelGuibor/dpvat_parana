@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
 import { writeFile, unlink } from "fs/promises";
@@ -8,6 +9,8 @@ import { tmpdir } from "os";
 const fileManager = new GoogleAIFileManager(process.env.GOOGLE_API_KEY!);
 
 export async function POST(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   let tempPath: string | null = null;
 
   try {

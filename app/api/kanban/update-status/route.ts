@@ -1,8 +1,11 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { revalidatePath } from 'next/cache'
 
 export async function POST(req: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const body = await req.json();
 

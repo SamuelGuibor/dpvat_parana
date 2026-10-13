@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { Prisma } from "@prisma/client";
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
@@ -15,6 +16,7 @@ interface ReorderCardsProps {
 const MAX_CARDS_PER_REORDER = 1000;
 
 export async function reorderCards({ cards }: ReorderCardsProps) {
+  await assertCanWrite();
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) throw new Error("Não autenticado");
 

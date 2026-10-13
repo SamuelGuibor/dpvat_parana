@@ -13,6 +13,7 @@
 // Acesso: HARDCODED via doc-ia-access.ts — fora do sistema de permissões.
 // IA: Gemini (GOOGLE_API_KEY, mesma chave do chat). Sem log de consumo.
 
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -212,6 +213,8 @@ ${cardSummary(card)}`;
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const session = await getServerSession(authOptions);
   const sUser = session?.user as { id?: string; email?: string; name?: string } | undefined;
   if (!canUseDocIa(sUser)) {

@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { ensureDocExtension } from "../../_shared/utils/doc-name";
 
@@ -17,6 +18,7 @@ export async function updateDocumentName({
   id: string;
   newName: string;
 }) {
+  await assertCanWrite();
   if (!id || !newName.trim()) {
     throw new Error("ID ou nome inválido.");
   }

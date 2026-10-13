@@ -43,6 +43,25 @@ const DOCS_FINGERPRINT = 'RG ou da sua CNH';
 const GOAL_KEY = 'monthly_hired_goal';
 const GOAL_DEFAULT = 60;
 
+// Contratados do BotConversa lançados à mão pela gestão (13/10/2026): o
+// webhook antigo não registrou esses fechamentos, então entram como parcela
+// legada fixa do mês (meta, card Contratados e gráfico Mensal). Chave =
+// mês Brasília 'AAAA-MM'. Só na visão "todos os números".
+const BOTCONVERSA_HIRED_ADJUST: Record<string, number> = {
+  '2026-08': 120,
+  '2026-09': 120,
+  '2026-10': 120,
+};
+
+/** Soma os ajustes dos meses (AAAA-MM) entre `fromKey` e `toKey`, inclusive. */
+function hiredAdjustBetween(fromKey: string, toKey: string): number {
+  let total = 0;
+  for (const [month, n] of Object.entries(BOTCONVERSA_HIRED_ADJUST)) {
+    if (month >= fromKey && month <= toKey) total += n;
+  }
+  return total;
+}
+
 export type BotStage =
   | 'iniciado'
   | 'em_conversa'
@@ -194,6 +213,8 @@ interface FunnelTotals {
   monthGoal: number;
   hiredLegacy: number;
   yearHiredAt: Date[];
+  /** Ajuste manual do BotConversa por mês do ano de referência (gráfico Mensal). */
+  yearHiredAdjust: { monthIndex: number; n: number }[];
   yearRejectedAt: Date[];
   yearOpenAt: Date[];
 }
@@ -260,11 +281,19 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
         : db.botconversa.count({ where: { evento: 'contratado', createdAt: periodRange } }),
     ]);
 
+  const goalMonthKey = brDayKey(ref).slice(0, 7);
+  const yearAdjust = numberId
+    ? []
+    : Object.entries(BOTCONVERSA_HIRED_ADJUST).filter(([m]) => m.startsWith(`${refYear}-`));
+
   return {
     monthHiredBot,
-    monthHiredLegacy,
+    monthHiredLegacy: numberId ? 0 : monthHiredLegacy + hiredAdjustBetween(goalMonthKey, goalMonthKey),
     monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
-    hiredLegacy,
+    hiredLegacy: numberId
+      ? 0
+      : hiredLegacy + hiredAdjustBetween(brDayKey(since).slice(0, 7), brDayKey(until).slice(0, 7)),
+    yearHiredAdjust: yearAdjust.map(([m, n]) => ({ monthIndex: Number(m.slice(5, 7)) - 1, n })),
     yearHiredAt: yearHiredConvs.map((c) => c.createdAt),
     yearRejectedAt: yearRejected.flatMap((c) => (c.closedAt ? [c.closedAt] : [])),
     yearOpenAt: yearOpen.map((c) => c.createdAt),
@@ -275,6 +304,7 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
 function computeFunnel(cohort: Cohort, totals: FunnelTotals): BotFunnelData {
   const monthly = MONTHS.map((month) => ({ month, aprovados: 0, indeferidos: 0, emAndamento: 0 }));
   for (const at of totals.yearHiredAt) monthly[brMonthIndex(at)].aprovados++;
+  for (const a of totals.yearHiredAdjust) monthly[a.monthIndex].aprovados += a.n;
   for (const at of totals.yearRejectedAt) monthly[brMonthIndex(at)].indeferidos++;
   for (const at of totals.yearOpenAt) monthly[brMonthIndex(at)].emAndamento++;
 

@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "../../_shared/lib/prisma";
 import { DEFAULT_CHECKLIST_ITEMS } from "../../_shared/lib/admin-checklist";
@@ -89,6 +90,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const body = await request.json();
     const { processId, userId, text, section } = body as {
@@ -138,6 +141,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const { searchParams } = new URL(request.url);
     const processId = searchParams.get("processId");

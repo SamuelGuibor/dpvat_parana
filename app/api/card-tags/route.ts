@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/app/_shared/lib/prisma";
 
@@ -24,6 +25,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const body = await req.json().catch(() => ({}));
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const color = typeof body.color === "string" && /^#[0-9a-fA-F]{6}$/.test(body.color)
@@ -43,6 +46,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const body = await req.json().catch(() => ({}));
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return NextResponse.json({ error: "id é obrigatório." }, { status: 400 });
@@ -65,6 +70,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id é obrigatório." }, { status: 400 });
   try {

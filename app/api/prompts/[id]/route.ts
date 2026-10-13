@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "@/app/_shared/lib/prisma";
 
@@ -6,6 +7,8 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const { id } = await params;
     const { title, content } = await request.json();
@@ -37,6 +40,8 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const { id } = await params;
 

@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET(_req: Request, { params }: { params: { contactId: string } }) {
-  const auth = await teamRoute();
+  const auth = await teamRoute("view_whatsapp");
   if ('res' in auth) return auth.res;
 
   const contactId = (params.contactId ?? '').trim();

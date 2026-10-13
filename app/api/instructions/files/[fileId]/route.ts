@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "../../../../_shared/lib/prisma";
 import { deleteS3Object } from "../../_s3";
@@ -5,6 +6,8 @@ import { deleteS3Object } from "../../_s3";
 type Ctx = { params: { fileId: string } };
 
 export async function DELETE(_req: Request, { params }: Ctx) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const file = await db.instructionFile.findUnique({
       where: { id: params.fileId },

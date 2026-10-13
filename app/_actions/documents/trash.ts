@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { createLog } from "../../_shared/lib/log";
 import { requireTeam } from "../../_shared/lib/permissions-server";
@@ -53,6 +54,7 @@ export async function listTrashedDocs(cardId: string, isProcess: boolean): Promi
 
 /** Tira o documento da lixeira — volta pra lista de arquivos do card. */
 export async function restoreDoc(docId: string): Promise<void> {
+  await assertCanWrite();
   const ctx = await requireTeam();
   const doc = await db.document.findFirst({
     where: { id: docId, deletedAt: { not: null } },
@@ -78,6 +80,7 @@ export async function restoreDoc(docId: string): Promise<void> {
 
 /** Exclusão DEFINITIVA de um item da lixeira (S3 + banco). Irreversível. */
 export async function purgeDoc(docId: string): Promise<void> {
+  await assertCanWrite();
   const ctx = await requireTeam();
   const doc = await db.document.findFirst({
     where: { id: docId, deletedAt: { not: null } },

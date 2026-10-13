@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { db } from '../../../_shared/lib/prisma'
@@ -9,6 +10,8 @@ import { categoryLabel, isDocumentCategory } from '../../../_shared/lib/document
 // A categoria é o dado real da organização — mudar aqui muda a pasta pra todo
 // mundo, então fica atrás do mesmo papel de equipe da listagem.
 export async function PUT(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.role?.startsWith('ADMIN')) {

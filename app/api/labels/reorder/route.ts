@@ -1,9 +1,12 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { db } from '../../../_shared/lib/prisma';
 import { getSessionPermissions } from '../../../_shared/lib/permissions-server';
 
 export async function PUT(req: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const ctx = await getSessionPermissions();
     if (!ctx?.permissions.edit_columns) {

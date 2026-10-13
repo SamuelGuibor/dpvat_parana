@@ -6,7 +6,7 @@ import { getServerSession } from 'next-auth';
 import type { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { requireTeam } from '@/app/_shared/lib/permissions-server';
+import { requirePermission, requireTeam } from '@/app/_shared/lib/permissions-server';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
@@ -127,7 +127,7 @@ export async function countWhatsAppConversationsTotal(): Promise<number> {
 
 /** @deprecated bundle antigo: a lista vem de GET /api/whatsapp/inbox/conversations. */
 export async function listWhatsAppConversations(): Promise<WhatsAppConversationDTO[]> {
-  await requireTeam();
+  await requirePermission('view_whatsapp');
   return loadConversationList();
 }
 
@@ -139,7 +139,7 @@ export async function getWhatsAppInboxVersion(): Promise<string> {
 
 /** @deprecated bundle antigo: a busca vem de GET /api/whatsapp/inbox/search?q=. */
 export async function searchWhatsAppConversations(term: string): Promise<WhatsAppConversationDTO[]> {
-  await requireTeam();
+  await requirePermission('view_whatsapp');
   return searchConversations(term);
 }
 
@@ -147,7 +147,7 @@ export async function searchWhatsAppConversations(term: string): Promise<WhatsAp
 export async function getWhatsAppConversationByContact(
   contactId: string,
 ): Promise<WhatsAppConversationDTO | null> {
-  await requireTeam();
+  await requirePermission('view_whatsapp');
   return loadConversationByContact(contactId);
 }
 

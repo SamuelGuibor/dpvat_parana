@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 import { getSessionPermissions } from '@/app/_shared/lib/permissions-server';
@@ -333,6 +334,8 @@ export async function POST(req: NextRequest) {
 /* ------------------------------------------------------------------ */
 
 export async function PATCH(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const ctx = await getSessionPermissions();
   if (!ctx) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
   if (!canManagePonto(ctx.userId, ctx.permissions)) {
@@ -432,6 +435,8 @@ export async function PATCH(req: NextRequest) {
 /* ------------------------------------------------------------------ */
 
 export async function DELETE(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const ctx = await getSessionPermissions();
   if (!ctx) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
   if (!canManagePonto(ctx.userId, ctx.permissions)) {

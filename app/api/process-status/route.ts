@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getProcessStatus, updateProcessStatus } from "../../_actions/users/user-stats";
 
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
     const { processId, newStatus } = await req.json();
     const updated = await updateProcessStatus(processId, newStatus);
     return NextResponse.json(updated);

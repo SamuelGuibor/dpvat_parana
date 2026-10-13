@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { unstable_noStore as noStore } from "next/cache";
 import { createLog } from "../../_shared/lib/log";
@@ -44,6 +45,7 @@ interface SetArchiveStatusProps {
 // Arquiva (status != null) ou desarquiva (status = null) um card.
 // Mantém o labelId para que ao desarquivar o card volte para a coluna original.
 export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStatusProps) {
+  await assertCanWrite();
   const ctx = await requirePermission("archive_cards");
 
   const data = {

@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { fetchAutomations, createAutomation } from "@/app/_shared/lib/db/automations";
 
@@ -12,6 +13,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const body = await req.json();
     const { name, category, triggerLabelId, cardType, conditionLogic, conditions, actions } = body;

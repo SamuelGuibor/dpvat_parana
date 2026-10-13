@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireTeam, type SessionPermissions } from "./permissions-server";
+import { assertCanWrite, requirePermission, requireTeam, type SessionPermissions } from "./permissions-server";
+import type { PermissionKey } from "./permissions";
 import { guardFailure, isSameOrigin } from "@/app/_shared/utils/route-guards";
 
 // Guardas dos route handlers da EQUIPE (leituras do inbox e do cabeçalho que
@@ -32,9 +33,11 @@ export function noStoreJson<T>(data: T, init?: ResponseInit): NextResponse<T> {
  * motivo; qualquer outra falha (banco, rede) → 500 com texto próprio e o erro
  * no log, para a UI não dizer "sem acesso" quando o problema é o Neon.
  */
-export async function teamRoute(): Promise<{ ctx: SessionPermissions } | { res: NextResponse }> {
+export async function teamRoute(
+  permission?: PermissionKey,
+): Promise<{ ctx: SessionPermissions } | { res: NextResponse }> {
   try {
-    return { ctx: await requireTeam() };
+    return { ctx: permission ? await requirePermission(permission) : await requireTeam() };
   } catch (err) {
     const failure = guardFailure(err);
     if (failure.status === 500) console.error("[teamRoute] falha ao conferir o acesso:", err);
@@ -52,4 +55,18 @@ export function sameOrigin(req: Request): NextResponse | null {
   const h = req.headers;
   if (isSameOrigin(h.get("origin"), h.get("x-forwarded-host"), h.get("host"))) return null;
   return noStoreJson({ error: "Origem da requisição não permitida." }, { status: 403 });
+}
+
+/**
+ * Rotas que ALTERAM dado: recusa (403) quem está em "Somente visualização".
+ * `null` = pode seguir; senão devolva a resposta.
+ */
+export async function readOnlyBlock(): Promise<NextResponse | null> {
+  try {
+    await assertCanWrite();
+    return null;
+  } catch (err) {
+    const failure = guardFailure(err);
+    return noStoreJson({ error: failure.error }, { status: failure.status });
+  }
 }

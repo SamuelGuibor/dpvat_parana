@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "@/app/_shared/lib/prisma";
 import { getServerSession } from "next-auth";
@@ -185,6 +186,8 @@ const HEARTBEAT_CHAR = "​";
 const HEARTBEAT_INTERVAL_MS = 4000;
 
 export async function POST(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const body = await request.json();
   const { messages, cardId, isProcess, attachments, attachment, s3Keys } = body;
 

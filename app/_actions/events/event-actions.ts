@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
@@ -142,6 +143,7 @@ function sanitizeInput(input: EventInput) {
 }
 
 export async function createEvent(input: EventInput): Promise<EventDTO> {
+  await assertCanWrite();
   const me = await requireTeamMember();
   const data = sanitizeInput(input);
   const created = await db.event.create({
@@ -151,6 +153,7 @@ export async function createEvent(input: EventInput): Promise<EventDTO> {
 }
 
 export async function updateEvent(id: string, input: EventInput): Promise<EventDTO> {
+  await assertCanWrite();
   const me = await requireTeamMember();
   const current = await db.event.findUnique({ where: { id }, select: { createdById: true } });
   if (!current) throw new Error('Evento não encontrado.');
@@ -162,6 +165,7 @@ export async function updateEvent(id: string, input: EventInput): Promise<EventD
 }
 
 export async function deleteEvent(id: string): Promise<void> {
+  await assertCanWrite();
   const me = await requireTeamMember();
   const current = await db.event.findUnique({ where: { id }, select: { createdById: true } });
   if (!current) return;

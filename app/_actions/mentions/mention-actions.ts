@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from '@/app/_shared/lib/prisma';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { getServerSession } from 'next-auth';
@@ -176,6 +177,7 @@ export async function countPendingMentions(): Promise<number> {
  * primeiro resolve para todas as cópias do setor (e reabrir reabre pra todos).
  */
 export async function setMentionStatus(id: string, status: MentionStatus): Promise<void> {
+  await assertCanWrite();
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado');
 
@@ -211,6 +213,7 @@ export async function setMentionStatus(id: string, status: MentionStatus): Promi
 
 /** Marca em lote (usado pelos botões "dar ciência em todas" / "concluir"). */
 export async function setManyMentionsStatus(ids: string[], status: MentionStatus): Promise<void> {
+  await assertCanWrite();
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado');
   if (!ids.length) return;
@@ -244,6 +247,7 @@ export async function setManyMentionsStatus(ids: string[], status: MentionStatus
 
 /** Apaga as menções já concluídas (faxina da caixa). */
 export async function clearDoneMentions(): Promise<number> {
+  await assertCanWrite();
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Não autenticado');
 

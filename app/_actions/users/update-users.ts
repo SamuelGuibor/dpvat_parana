@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
@@ -48,6 +49,7 @@ interface UpdateUserData {
 }
 
 export async function updateUser(data: UpdateUserData) {
+  await assertCanWrite();
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {

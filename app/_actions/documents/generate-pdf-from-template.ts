@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { PDFDocument, rgb, PDFPage } from "pdf-lib";
 
 interface PDFData {
@@ -26,6 +27,7 @@ export async function generatePDFFromTemplate(
   data: PDFData,
   titulo: string = "Roteiro Processual"
 ): Promise<Buffer> {
+  await assertCanWrite();
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]); // A4 size
 
@@ -117,6 +119,7 @@ export async function generatePDFFromText(
   content: string,
   titulo: string = "Documento"
 ): Promise<Buffer> {
+  await assertCanWrite();
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]); // A4 size
   const { height } = page.getSize();

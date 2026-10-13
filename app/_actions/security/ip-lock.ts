@@ -26,7 +26,9 @@ export interface IpLockSettings {
 
 export async function getIpLockSettings(): Promise<IpLockSettings> {
   noStore();
-  await requirePermission("manage_team");
+  // Leitura: view_security (só leitura, concedível por override); gravar
+  // continua exclusivo do manage_team (setDashboardAllowedIps).
+  await requirePermission("view_security");
   const [ips, currentIp] = await Promise.all([getDashboardAllowedIps(), getClientIp()]);
   return { ips, currentIp };
 }

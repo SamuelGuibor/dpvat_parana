@@ -7,6 +7,7 @@
 //
 // Acesso: HARDCODED via doc-ia-access.ts (mesma trava do /api/doc-ia).
 
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/_shared/lib/auth";
@@ -18,6 +19,8 @@ const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
 const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 
 export async function POST(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const session = await getServerSession(authOptions);
   const sUser = session?.user as { id?: string; email?: string } | undefined;
   if (!canUseDocIa(sUser)) {

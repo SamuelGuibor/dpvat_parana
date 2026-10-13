@@ -12,7 +12,8 @@ import { Button } from '@/app/_shared/ui/button';
 import { cn } from '@/app/_shared/lib/utils';
 import { getIpLockSettings, setDashboardAllowedIps } from '@/app/_actions/security/ip-lock';
 
-export function SecurityPanel() {
+/** `readOnly`: quem tem só view_security vê a lista; alterar é do manage_team. */
+export function SecurityPanel({ readOnly = false }: { readOnly?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ips, setIps] = useState<string[]>([]);
@@ -130,7 +131,7 @@ export function SecurityPanel() {
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        {!readOnly && <div className="flex flex-wrap gap-2">
           {networkPrefix && !ips.includes(networkPrefix) && (
             <Button
               size="sm"
@@ -149,7 +150,7 @@ export function SecurityPanel() {
               Adicionar meu IP
             </Button>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Lista */}
@@ -180,19 +181,19 @@ export function SecurityPanel() {
                     </span>
                   )}
                 </span>
-                <button
+                {!readOnly && <button
                   onClick={() => setIps((prev) => prev.filter((x) => x !== ip))}
                   className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
                   title="Remover"
                 >
                   <Trash2 className="h-4 w-4" />
-                </button>
+                </button>}
               </div>
             ))}
           </div>
         )}
         {/* Adicionar */}
-        <div className="flex gap-2 border-t border-gray-100 p-3 dark:border-zinc-800">
+        {!readOnly && <div className="flex gap-2 border-t border-gray-100 p-3 dark:border-zinc-800">
           <input
             value={newIp}
             onChange={(e) => setNewIp(e.target.value)}
@@ -203,14 +204,18 @@ export function SecurityPanel() {
           <Button variant="outline" className="rounded-xl" onClick={() => addIp(newIp)} disabled={!newIp.trim()}>
             <Plus className="h-4 w-4" />
           </Button>
-        </div>
+        </div>}
       </div>
 
-      <div className="mt-4 flex justify-end">
-        <Button className="rounded-xl" onClick={handleSave} disabled={!dirty || saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
-        </Button>
-      </div>
+      {readOnly ? (
+        <p className="mt-4 text-right text-xs text-gray-400">Somente leitura — alterar a lista é exclusivo do Super Admin.</p>
+      ) : (
+        <div className="mt-4 flex justify-end">
+          <Button className="rounded-xl" onClick={handleSave} disabled={!dirty || saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -101,3 +101,23 @@ export async function requirePermission(key: PermissionKey): Promise<SessionPerm
   }
   return ctx;
 }
+
+/**
+ * Bloqueia escrita de quem está em "Somente visualização" (read_only).
+ * Não exige equipe — as actions antigas que só olham a sessão (cards,
+ * comentários, documentos) também atendem a área do cliente; aqui só se
+ * recusa o membro da equipe travado em leitura.
+ */
+export async function assertCanWrite(): Promise<void> {
+  const ctx = await getSessionPermissions();
+  if (ctx?.permissions.read_only) {
+    throw new AccessError("Seu acesso é somente de visualização.");
+  }
+}
+
+/** requireTeam + recusa quem está em "Somente visualização". */
+export async function requireTeamWrite(): Promise<SessionPermissions> {
+  const ctx = await requireTeam();
+  if (ctx.permissions.read_only) throw new AccessError("Seu acesso é somente de visualização.");
+  return ctx;
+}

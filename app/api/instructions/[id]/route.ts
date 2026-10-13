@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "../../../_shared/lib/prisma";
 import { deleteS3Folder } from "../_s3";
@@ -40,6 +41,8 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 export async function PUT(request: Request, { params }: Ctx) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const body = await request.json();
     const { title, description, text, color, tags } = body as {
@@ -91,6 +94,8 @@ export async function PUT(request: Request, { params }: Ctx) {
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const existing = await db.instruction.findUnique({
       where: { id: params.id },

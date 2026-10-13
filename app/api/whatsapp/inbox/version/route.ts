@@ -14,7 +14,7 @@ import { ROUTE_FAILURE_MESSAGE } from '@/app/_shared/utils/route-guards';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const auth = await teamRoute();
+  const auth = await teamRoute("view_whatsapp");
   if ('res' in auth) return auth.res;
 
   try {

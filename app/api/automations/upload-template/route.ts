@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
@@ -11,6 +12,8 @@ const s3 = new S3Client({
 });
 
 export async function POST(req: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;

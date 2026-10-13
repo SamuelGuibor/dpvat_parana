@@ -1,9 +1,12 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "../../../_shared/lib/prisma";
 
 type Ctx = { params: { id: string } };
 
 export async function PATCH(request: Request, { params }: Ctx) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const body = await request.json();
     const data: { text?: string; checked?: boolean; order?: number } = {};
@@ -27,6 +30,8 @@ export async function PATCH(request: Request, { params }: Ctx) {
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     await db.adminChecklistItem.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });

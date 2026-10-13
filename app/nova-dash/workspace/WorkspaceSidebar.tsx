@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck, Network } from 'lucide-react';
 import type { WorkspaceSectionKey } from '@/app/_shared/utils/dashboard-view-state';
 import { TEAM_CHAT_ENABLED } from './chat/chat-flags';
 
@@ -19,8 +19,10 @@ interface Props {
   canViewCosts: boolean;
   /** Permissão manage_wa_numbers — gestão de números/API keys do WhatsApp. */
   canManageNumbers: boolean;
-  /** manage_team (ADMIN++) — trava de IP e configurações de segurança. */
-  canManageSecurity: boolean;
+  /** view_security (ou manage_team) — aba Segurança (trava de IP). */
+  canViewSecurity: boolean;
+  /** view_ai_brain — mapa mental do bot (Cérebro da IA). */
+  canViewAiBrain: boolean;
   chatUnread: number;
   reviewPending: number;
 }
@@ -38,7 +40,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canManageSecurity, chatUnread, reviewPending }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canViewSecurity, canViewAiBrain, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -65,9 +67,13 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
         ...(canManageNumbers
           ? [{ key: 'numeros' as const, label: 'Números', desc: 'WhatsApp e API keys', icon: Phone }]
           : []),
-        // Trava de IP da dashboard — exclusivo do manage_team (ADMIN++).
-        ...(canManageSecurity
+        // Trava de IP da dashboard — ver: view_security; alterar: manage_team.
+        ...(canViewSecurity
           ? [{ key: 'seguranca' as const, label: 'Segurança', desc: 'IPs liberados', icon: ShieldCheck }]
+          : []),
+        // Mapa mental do bot (saiu do dashboard do Chatbot em 13/10/2026).
+        ...(canViewAiBrain
+          ? [{ key: 'cerebro-ia' as const, label: 'Cérebro da IA', desc: 'Mapa mental do bot', icon: Network }]
           : []),
       ],
     },

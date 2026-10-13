@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getServerSession } from "next-auth";
@@ -43,6 +44,7 @@ async function requireTeamMember() {
  * S3 (prefixo dev-tickets/), contornando o limite de 4.5MB de body da Vercel.
  */
 export async function getTicketImageUploadUrl(file: { name: string; type: string; size: number }) {
+  await assertCanWrite();
   try {
     await requireTeamMember();
 
@@ -125,6 +127,7 @@ function sanitizeImages(images: TicketImageInput[] | null | undefined): TicketIm
 }
 
 export async function createDevTicket({ title, description, type, images }: CreateDevTicketProps) {
+  await assertCanWrite();
   const me = await requireTeamMember();
 
   if (!title?.trim()) throw new Error("Informe o título do ticket");
@@ -153,6 +156,7 @@ export async function createDevTicket({ title, description, type, images }: Crea
 
 /** Acrescenta fotos a um ticket já criado (qualquer membro da equipe pode complementar). */
 export async function addDevTicketImages(ticketId: string, images: TicketImageInput[]) {
+  await assertCanWrite();
   await requireTeamMember();
 
   const ticket = await db.devTicket.findUnique({ where: { id: ticketId } });
@@ -173,6 +177,7 @@ export async function addDevTicketImages(ticketId: string, images: TicketImageIn
 
 /** Remove uma foto do ticket (banco + S3). */
 export async function removeDevTicketImage(ticketId: string, key: string) {
+  await assertCanWrite();
   const me = await requireTeamMember();
 
   const ticket = await db.devTicket.findUnique({ where: { id: ticketId } });
@@ -199,6 +204,7 @@ export async function removeDevTicketImage(ticketId: string, key: string) {
 
 /** Dev assume o ticket: vira responsável e, se ainda em distribuição, avança para análise. */
 export async function assumeDevTicket(ticketId: string) {
+  await assertCanWrite();
   const me = await requireTeamMember();
 
   const ticket = await db.devTicket.findUnique({ where: { id: ticketId } });
@@ -218,6 +224,7 @@ export async function assumeDevTicket(ticketId: string) {
 }
 
 export async function setDevTicketStatus(ticketId: string, status: string) {
+  await assertCanWrite();
   const me = await requireTeamMember();
 
   if (!TICKET_STATUSES.includes(status as (typeof TICKET_STATUSES)[number])) {
@@ -244,6 +251,7 @@ export async function setDevTicketStatus(ticketId: string, status: string) {
 }
 
 export async function deleteDevTicket(ticketId: string) {
+  await assertCanWrite();
   const me = await requireTeamMember();
 
   const ticket = await db.devTicket.findUnique({ where: { id: ticketId } });

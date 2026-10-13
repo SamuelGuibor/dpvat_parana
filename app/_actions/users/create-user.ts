@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
@@ -23,6 +24,7 @@ async function nextCardNumber(): Promise<number> {
 }
 
 export const createUser = async ({ name, cpf, password, email, labelId, role, senha_inss }: CreateUserProps) => {
+  await assertCanWrite();
   // CPF entra no banco SEM máscara (só dígitos) — a UI formata na exibição.
   cpf = (cpf ?? "").replace(/\D/g, "");
   const finalEmail = email?.trim() || `${cpf}@inserir-email.com`;

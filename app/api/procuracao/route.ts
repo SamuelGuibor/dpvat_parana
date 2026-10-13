@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { gerarProcuracaoById } from "@/app/_shared/utils/gerarProcuracaoById";
 
 const CONVERTER_URL = process.env.DOCX_CONVERTER_URL || "http://localhost:3001";
@@ -8,6 +9,8 @@ const CONVERTER_API_KEY = process.env.CONVERTER_API_KEY || "";
 export const maxDuration = 120;
 
 export async function POST(req: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
     try {
         const { id, type, template } = await req.json();
         const docxBuffer = await gerarProcuracaoById(id, type, template);

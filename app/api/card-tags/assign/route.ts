@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/app/_shared/lib/prisma";
 
@@ -7,6 +8,8 @@ import { db } from "@/app/_shared/lib/prisma";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   const body = await req.json().catch(() => ({}));
   const cardId = typeof body.cardId === "string" ? body.cardId : "";
   const tagId = typeof body.tagId === "string" ? body.tagId : "";

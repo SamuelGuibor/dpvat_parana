@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 
@@ -34,6 +35,8 @@ export async function GET() {
 }
 
 export async function DELETE(req: NextRequest) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const { name } = await req.json() as { name: string };
     if (!name?.trim()) return NextResponse.json({ error: 'Nome obrigatório' }, { status: 400 });

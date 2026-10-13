@@ -173,6 +173,32 @@ export const PERMISSION_DEFS = [
     category: "Segurança",
   },
   {
+    key: "view_security",
+    label: "Ver Segurança",
+    description:
+      "Vê a aba Segurança (IPs liberados do escritório) — só leitura; alterar a lista continua exclusivo do Super Admin.",
+    category: "Segurança",
+  },
+  {
+    key: "view_ai_brain",
+    label: "Cérebro da IA",
+    description: "Vê o mapa mental do bot (Cérebro da IA) no Espaço de Trabalho.",
+    category: "WhatsApp e IA",
+  },
+  {
+    key: "view_whatsapp",
+    label: "Whats IA (inbox)",
+    description: "Acessa o inbox do WhatsApp (conversas, envio de mensagens e templates).",
+    category: "WhatsApp e IA",
+  },
+  {
+    key: "read_only",
+    label: "Somente visualização",
+    description:
+      "Trava o usuário em modo leitura: vê as telas liberadas, mas não move/edita cards, comenta, sobe documentos, nem altera números, ponto, tickets ou menções.",
+    category: "Segurança",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -217,6 +243,12 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_contracts: true,
     manage_templates: false,
     bypass_ip_lock: false,
+    view_security: false,
+    view_ai_brain: false,
+    // Inbox nasce liberado pra toda a equipe (comportamento histórico);
+    // revogável por override para quem não atende WhatsApp.
+    view_whatsapp: true,
+    read_only: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -258,6 +290,10 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_templates: false,
     // Fora do escritório só com liberação individual do Super Admin.
     bypass_ip_lock: false,
+    view_security: false,
+    view_ai_brain: false,
+    view_whatsapp: true,
+    read_only: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -283,6 +319,10 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_contracts: true,
     manage_templates: true,
     bypass_ip_lock: true,
+    view_security: true,
+    view_ai_brain: true,
+    view_whatsapp: true,
+    read_only: false,
     manage_team: true,
   },
 };

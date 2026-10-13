@@ -67,7 +67,7 @@ function PageInner() {
   const [open, setOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const { isDark: darkReaderOn } = useDarkMode();
-  const { perms } = usePermissions();
+  const { perms, loading: permsLoading } = usePermissions();
   const { data: session, status } = useSession();
   const router = useRouter();
   // Badges do cabeçalho (WhatsApp, Menções, Eventos e o pop-up do dev no
@@ -99,6 +99,12 @@ function PageInner() {
     document.documentElement.classList.remove('dark');
     try { localStorage.removeItem('nova-dash-theme'); } catch { /* noop */ }
   }, []);
+
+  // Sem acesso ao inbox (view_whatsapp revogado): aba salva, ?wa= ou clique
+  // em notificação que caiam no WhatsApp voltam pro Kanban.
+  useEffect(() => {
+    if (!permsLoading && !perms.view_whatsapp && activeTab === 'whatsapp') setActiveTab('kanban');
+  }, [permsLoading, perms.view_whatsapp, activeTab]);
 
   // Link "Abrir conversa no WhatsApp" do CardDialog (aba nova): o contato vem
   // no ?wa= porque sessionStorage/CustomEvent não atravessam abas do navegador.
@@ -193,6 +199,7 @@ function PageInner() {
   const canViewArchived = perms.view_archived;
   const canViewTickets = perms.view_tickets;
   const canViewContracts = perms.manage_contracts;
+  const canViewWhatsApp = perms.view_whatsapp;
   // Aba Contratos (assinatura eletrônica) DESATIVADA em 14/09/2026 — decisão
   // do escritório: os clientes não entendiam o fluxo pelo site, a coleta
   // voltou pro WhatsApp. Código preservado; pra voltar, mudar pra `true`.
@@ -325,6 +332,7 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
+            {canViewWhatsApp && (
             <TabsTrigger
               value="whatsapp"
               data-tour="tab-whatsapp"
@@ -338,6 +346,7 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
+            )}
             {CONTRACTS_TAB_ENABLED && canViewContracts && (
               <TabsTrigger
                 value="contratos"
@@ -385,10 +394,12 @@ function PageInner() {
           <TabsContent value="mencoes">
             <MentionsInbox />
           </TabsContent>
-          <TabsContent value="whatsapp" className="min-h-0">
-            {/* No celular o inbox ocupa a tela inteira (sem moldura de 16px). */}
-            <div className="h-full p-0 sm:p-4"><WhatsAppInbox /></div>
-          </TabsContent>
+          {canViewWhatsApp && (
+            <TabsContent value="whatsapp" className="min-h-0">
+              {/* No celular o inbox ocupa a tela inteira (sem moldura de 16px). */}
+              <div className="h-full p-0 sm:p-4"><WhatsAppInbox /></div>
+            </TabsContent>
+          )}
           <TabsContent value="tickets-dev">
             <TicketsBoard />
           </TabsContent>

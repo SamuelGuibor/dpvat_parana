@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { db } from '../../../_shared/lib/prisma'
@@ -8,6 +9,8 @@ import { authOptions } from '../../../_shared/lib/auth'
 // Feito em UMA query (unnest) — um UPDATE por arquivo deixava cada clique
 // nas setas lento com banco remoto.
 export async function PUT(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {

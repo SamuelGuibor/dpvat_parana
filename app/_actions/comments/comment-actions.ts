@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { authOptions } from "../../_shared/lib/auth";
 import { getServerSession } from "next-auth";
@@ -18,6 +19,7 @@ export async function createComment({
   userId,
   processId,
 }: CreateCommentProps) {
+  await assertCanWrite();
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {

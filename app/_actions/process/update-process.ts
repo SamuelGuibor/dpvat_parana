@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../_shared/lib/auth";
@@ -48,6 +49,7 @@ interface UpdateProcessData {
 }
 
 export async function updateProcess(data: UpdateProcessData) {
+  await assertCanWrite();
   // O banco guarda CPF/telefone/CEP SEM máscara (só dígitos) — a UI formata
   // na exibição. Normaliza antes do update e do diff de log.
   data.cpf = stripFormat(data.cpf);

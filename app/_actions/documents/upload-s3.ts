@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireTeam } from "../../_shared/lib/permissions-server";
@@ -44,6 +45,7 @@ async function teamGuard(): Promise<string | null> {
 }
 
 export async function getPresignedUrls(fileInfos: FileInfo[], itemId: string, isProcess: boolean): Promise<PresignedUrlResponse> {
+  await assertCanWrite();
   const denied = await teamGuard();
   if (denied) return { success: false, error: denied };
   try {
@@ -90,6 +92,7 @@ export async function getPresignedUrls(fileInfos: FileInfo[], itemId: string, is
  * repassa ao converter e os apaga. Não criam registro de Document no banco.
  */
 export async function getRoteiroUploadUrls(fileInfos: FileInfo[], cardId: string): Promise<PresignedUrlResponse> {
+  await assertCanWrite();
   const denied = await teamGuard();
   if (denied) return { success: false, error: denied };
   try {

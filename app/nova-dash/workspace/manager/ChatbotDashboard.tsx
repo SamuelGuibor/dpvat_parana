@@ -14,7 +14,6 @@ import { Button } from '@/app/_shared/ui/button';
 import { getChatbotAnalytics, type ChatbotAnalytics } from '@/app/_actions/analytics/get-chatbot-analytics';
 import { usePanelSWR } from '@/app/_shared/hooks/use-panel-swr';
 import { StaleDataVeil } from './StaleDataVeil';
-import { SystemMap } from './SystemMap';
 import { AiCorner } from './AiCorner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -363,7 +362,6 @@ export function ChatbotDashboard({ numberId = null, range }: {
           </div>
         </div>
       )}
-      <SystemMap />
     </div>
   );
 }

@@ -649,11 +649,16 @@ interface DraggableCardProps {
 }
 
 const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCardClick, onQuickAction, onDelete, onArchive, onCardDrop, moveTargets, onMoveTo }) => {
+  // Permissões vêm do cargo + overrides do ADMIN++ (PermissionsProvider).
+  const { perms } = usePermissions();
+  // "Somente visualização": card não arrasta (o servidor também recusa).
+  const readOnly = perms.read_only;
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
     item: { cardId: card.id, sourceColumnId: columnId },
+    canDrag: () => !readOnly,
     collect: (monitor) => ({ isDragging: !!monitor.isDragging() }),
-  }));
+  }), [readOnly, card.id, columnId]);
   // Cada card também é alvo de drop: soltar outro card aqui o insere ACIMA
   // deste. Soltar no corpo vazio da coluna continua mandando pro fim.
   const [{ isOverCard }, dropOnCard] = useDrop(() => ({
@@ -675,8 +680,6 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Permissões vêm do cargo + overrides do ADMIN++ (PermissionsProvider).
-  const { perms } = usePermissions();
   const canArchive = perms.archive_cards;
   const canDelete = perms.delete_cards;
 
@@ -823,6 +826,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 </Button>
 
                 {/* Mover sem arrastar (única forma no celular) */}
+                {!readOnly && (
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -848,6 +852,7 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
 
                 {canArchive && (
                   <DropdownMenu modal={true}>
@@ -1127,8 +1132,9 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   const [{ isDraggingColumn }, columnDrag, columnPreview] = useDrag(() => ({
     type: 'COLUMN',
     item: { index },
+    canDrag: () => !colPerms.read_only,
     collect: (monitor) => ({ isDraggingColumn: !!monitor.isDragging() }),
-  }), [index]);
+  }), [index, colPerms.read_only]);
 
   drop(ref);
   columnDrop(ref);
@@ -1444,11 +1450,23 @@ export const KanbanBoard: React.FC = () => {
       setColumnsHeight(Math.max(320, window.innerHeight - bottom - 24));
     }
     measure();
+    // O ResizeObserver no boardTop só pega mudança de TAMANHO dele, não de
+    // POSIÇÃO: no primeiro paint algo acima (header, banners, fontes) ainda
+    // não assentou e o board nasce mais baixo — a altura ficava errada até um
+    // resize (zoom). Observar o body e re-medir após o load/fontes resolve.
+    const raf = requestAnimationFrame(measure);
+    const late = window.setTimeout(measure, 500);
     window.addEventListener('resize', measure);
+    window.addEventListener('load', measure);
+    document.fonts?.ready.then(measure).catch(() => {});
     const ro = new ResizeObserver(measure);
     if (boardTopRef.current) ro.observe(boardTopRef.current);
+    ro.observe(document.body);
     return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(late);
       window.removeEventListener('resize', measure);
+      window.removeEventListener('load', measure);
       ro.disconnect();
     };
   }, []);

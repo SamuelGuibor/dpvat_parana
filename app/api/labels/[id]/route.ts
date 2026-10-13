@@ -1,9 +1,12 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { db } from '../../../_shared/lib/prisma';
 import { getSessionPermissions } from '../../../_shared/lib/permissions-server';
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const ctx = await getSessionPermissions();
     if (!ctx?.permissions.edit_columns) {
@@ -23,6 +26,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const ctx = await getSessionPermissions();
     if (!ctx?.permissions.delete_columns) {

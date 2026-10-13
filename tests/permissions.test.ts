@@ -25,7 +25,8 @@ describe("isTeamRole", () => {
 describe("resolvePermissions", () => {
   it("ADMIN++ tem tudo, sempre (overrides ignorados)", () => {
     const map = resolvePermissions("ADMIN++", { view_archived: false });
-    for (const key of PERMISSION_KEYS) expect(map[key]).toBe(true);
+    // read_only é restrição (Somente visualização): o Super Admin nunca fica travado.
+    for (const key of PERMISSION_KEYS) expect(map[key]).toBe(key !== "read_only");
   });
 
   it("ADMIN começa sem Arquivados/Tickets/Gestor", () => {

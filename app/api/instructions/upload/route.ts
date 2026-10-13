@@ -1,3 +1,4 @@
+import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
 import { NextResponse } from "next/server";
 import { db } from "../../../_shared/lib/prisma";
 import {
@@ -8,6 +9,8 @@ import {
 } from "../_s3";
 
 export async function POST(request: Request) {
+  const blocked = await readOnlyBlock();
+  if (blocked) return blocked;
   try {
     const formData = await request.formData();
     const instructionId = formData.get("instructionId") as string | null;
