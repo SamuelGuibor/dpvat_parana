@@ -77,8 +77,8 @@ export function HospitalCombobox({ id, label, value, onChange }: Props) {
   }
 
   return (
-    <div ref={containerRef} className="space-y-0.5 relative">
-      <Label htmlFor={id}>{label}</Label>
+    <div ref={containerRef} className="space-y-px relative min-w-0">
+      <Label htmlFor={id} className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">{label}</Label>
 
       <button
         id={id}

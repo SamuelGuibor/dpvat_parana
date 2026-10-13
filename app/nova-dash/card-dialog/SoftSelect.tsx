@@ -80,8 +80,8 @@ export function SoftSelect({ id, label, value, options, placeholder, onSelect, i
   }
 
   return (
-    <div className="space-y-0.5">
-      <label htmlFor={id} className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">
+    <div className="space-y-px min-w-0">
+      <label htmlFor={id} className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">
         {label}
       </label>
 

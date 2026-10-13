@@ -303,12 +303,13 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         className="max-w-7xl h-[90%] overflow-y-auto flex flex-col gap-2 p-4 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4"
         autoFocus={false}
       >
-        <DialogHeader className="space-y-1">
-          <DialogTitle className="text-base">{editedCard.title}</DialogTitle>
+        {/* Nome, WhatsApp e Tags numa linha só; pr-48 reserva o "Manual de Instruções" (absolute). */}
+        <DialogHeader className="flex flex-row flex-wrap items-center gap-x-2.5 gap-y-1.5 space-y-0 pr-48 [&>*]:!mt-0">
+          <DialogTitle className="text-[15px]">{editedCard.title}</DialogTitle>
           <a href="/nova-dash/instructions" className="absolute text-blue-600 hover:text-blue-500 right-12 font-semibold" target="_blank" rel="noopener noreferrer">
             Manual de Instruções <Link className="w-4 h-4 inline-block" />
           </a>
-          <DialogDescription>Edição detalhada do processo</DialogDescription>
+          <DialogDescription className="sr-only">Edição detalhada do processo</DialogDescription>
           <div className="flex flex-wrap items-center gap-2">
             {waContactId && (
               <button
@@ -355,7 +356,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
         )}
 
         <Tabs defaultValue="details" className="flex-1 overflow-y-auto flex flex-col">
-          <TabsList className="grid w-full grid-cols-7 h-8 mb-2">
+          <TabsList className="grid w-full grid-cols-7 h-[30px] mb-1.5">
             <TabsTrigger value="details">Detalhes</TabsTrigger>
             <TabsTrigger value="checklist">Progresso</TabsTrigger>
             <TabsTrigger value="files">Arquivos</TabsTrigger>
@@ -365,7 +366,7 @@ export const CardDialog: React.FC<CardDialogProps> = ({
             <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="details">
+          <TabsContent value="details" className="flex flex-col">
             <DetailsTab editedCard={editedCard} onChange={updateField} labels={labels} cardId={cardId} isProcess={isProcess} />
           </TabsContent>
           <TabsContent value="checklist">
