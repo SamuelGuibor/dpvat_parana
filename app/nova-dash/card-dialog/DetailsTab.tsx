@@ -357,24 +357,24 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
       {/* Dados Pessoais — 48 colunas para dosar a largura de cada campo */}
       <Section title="Dados Pessoais" className="lg:col-span-2">
         <div className={`${g2} sm:grid-cols-2 lg:grid-cols-[repeat(48,minmax(0,1fr))]`}>
-          <Field id="title" label="Nome" value={editedCard.title} onChange={onChange} className="lg:col-span-[16]" />
-          <Field id="rg" label="RG" value={editedCard.rg} onChange={onChange} className="lg:col-span-[7]" />
-          <DateFlexField id="data_nasc" label="Data de Nascimento" value={editedCard.data_nasc} onChange={onChange} className="lg:col-span-[5]" />
+          <Field id="title" label="Nome" value={editedCard.title} onChange={onChange} className="lg:[grid-column:span_16/span_16]" />
+          <Field id="rg" label="RG" value={editedCard.rg} onChange={onChange} className="lg:[grid-column:span_7/span_7]" />
+          <DateFlexField id="data_nasc" label="Data de Nascimento" value={editedCard.data_nasc} onChange={onChange} className="lg:[grid-column:span_5/span_5]" />
           <Field
             id="cpf" label="CPF" value={maskCpf(editedCard.cpf ?? '')} onChange={onChange} mask={maskCpf}
             error={editedCard.cpf && editedCard.cpf.replace(/\D/g, '').length === 11 && !isValidCpf(editedCard.cpf)
               ? 'CPF inválido — confira os dígitos.' : null}
-            className="lg:col-span-[6]"
+            className="lg:[grid-column:span_6/span_6]"
           />
-          <Field id="nome_mae" label="Nome da Mãe" value={editedCard.nome_mae} onChange={onChange} className="lg:col-span-[14]" />
+          <Field id="nome_mae" label="Nome da Mãe" value={editedCard.nome_mae} onChange={onChange} className="lg:[grid-column:span_14/span_14]" />
 
-          <Field id="telefone" label="Telefone" value={displayPhone(editedCard.telefone)} onChange={onChange} mask={maskPhone} className="lg:col-span-[8]" />
+          <Field id="telefone" label="Telefone" value={displayPhone(editedCard.telefone)} onChange={onChange} mask={maskPhone} className="lg:[grid-column:span_8/span_8]" />
           <SelectField id="nacionalidade" label="Nacionalidade" value={editedCard.nacionalidade}
-            options={toOptions(NACIONALIDADES)} onChange={onChange} placeholder="Selecione a nacionalidade" className="lg:col-span-[8]" />
+            options={toOptions(NACIONALIDADES)} onChange={onChange} placeholder="Selecione a nacionalidade" className="lg:[grid-column:span_8/span_8]" />
           <SelectField id="estado_civil" label="Estado Civil" value={editedCard.estado_civil}
-            options={toOptions(ESTADO_CIVIL)} onChange={onChange} placeholder="Selecione o estado civil" className="lg:col-span-[8]" />
-          <Field id="profissao" label="Profissão" value={editedCard.profissao} onChange={onChange} className="lg:col-span-[14]" />
-          <Field id="senha_inss" label="Senha INSS" value={editedCard.senha_inss} onChange={onChange} className="lg:col-span-[10]" />
+            options={toOptions(ESTADO_CIVIL)} onChange={onChange} placeholder="Selecione o estado civil" className="lg:[grid-column:span_8/span_8]" />
+          <Field id="profissao" label="Profissão" value={editedCard.profissao} onChange={onChange} className="lg:[grid-column:span_14/span_14]" />
+          <Field id="senha_inss" label="Senha INSS" value={editedCard.senha_inss} onChange={onChange} className="lg:[grid-column:span_10/span_10]" />
         </div>
       </Section>
 
