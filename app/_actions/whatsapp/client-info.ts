@@ -188,7 +188,7 @@ export async function addClientFromConversation(contactId: string, input: Client
         summarizeConversationToCard(contactId, { userId: existing.id }, me));
     }
     // Vincular a um card também conta como lead qualificado pra Meta.
-    void reportLeadStageToMeta(contactId, 'qualificado');
+    runAfterResponse('meta capi qualificado', () => reportLeadStageToMeta(contactId, 'qualificado'));
     return saveClientInfo(contactId, input);
   }
 
@@ -246,7 +246,7 @@ export async function addClientFromConversation(contactId: string, input: Client
 
   // Entrou no kanban = lead qualificado de fato → devolve pra Meta (API de
   // Conversões). O dedupe evita duplicar se a IA/atendente já reportou.
-  void reportLeadStageToMeta(contactId, 'qualificado');
+  runAfterResponse('meta capi qualificado', () => reportLeadStageToMeta(contactId, 'qualificado'));
 
   return loadClientInfo(contactId, me);
 }

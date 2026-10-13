@@ -1,4 +1,7 @@
 import { db } from "@/app/_shared/lib/prisma";
+import { runAfterResponse } from "@/app/_shared/lib/background";
+import { reportBusinessMessagingEvent } from "@/app/_shared/lib/meta-conversions";
+import { HIRED_TAG_NAME } from "./close-categories";
 
 /**
  * Aplica as tags configuradas num fluxo à conversa do contato (apply-only,
@@ -24,6 +27,11 @@ export async function applyFlowTagsToContact(contactId: string, tagIds: unknown)
       data: tags.map((t) => ({ conversationId: conversation.id, tagId: t.id })),
       skipDuplicates: true,
     });
+    // Fluxo que marca "Contratados" fecha a pasta como o clique manual na tag:
+    // Purchase na API de Conversões (o envio ignora orgânico e repetição).
+    if (tags.some((t) => t.name === HIRED_TAG_NAME)) {
+      runAfterResponse("meta capi purchase (fluxo)", () => reportBusinessMessagingEvent(contactId, "Purchase"));
+    }
     return tags.map((t) => t.name);
   } catch (err) {
     console.error("[FLOW TAGS] Falha ao aplicar tags do fluxo:", err);

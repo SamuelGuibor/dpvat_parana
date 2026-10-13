@@ -849,7 +849,7 @@ export async function qualifyToQueue(
   void createCardTaskForTeam(contactId, contactLabel, reason);
   // Devolve pra Meta (API de Conversões) que este lead qualificou — otimiza
   // as campanhas por qualidade. Fire-and-forget, nunca quebra o fluxo.
-  void reportLeadStageToMeta(contactId, "qualificado");
+  runAfterResponse("meta capi qualificado", () => reportLeadStageToMeta(contactId, "qualificado"));
   return true;
 }
 
@@ -917,7 +917,7 @@ async function disqualifyAndClose(contactId: string, category?: string | null): 
   // Tag do motivo ("Não qualificada — Acidente muito antigo"), como no
   // encerramento manual: sem ela o filtro por motivo não trazia o bot.
   await syncCloseTag(conv.id, closeCategory);
-  void reportLeadStageToMeta(contactId, "nao_qualificado");
+  runAfterResponse("meta capi nao_qualificado", () => reportLeadStageToMeta(contactId, "nao_qualificado"));
   return closeCategory;
 }
 

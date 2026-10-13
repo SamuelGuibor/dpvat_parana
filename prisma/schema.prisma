@@ -666,6 +666,10 @@ model WhatsAppContact {
   // não reenvia o mesmo estágio pro mesmo lead). Ex.: LeadQualificado.
   metaLeadStage     String?
   metaLeadStageAt   DateTime?
+  // Eventos de mensagens comerciais (atribuição ao anúncio Click-to-WhatsApp)
+  // aceitos pela Meta: no máximo um de cada por contato. Null = não enviado.
+  metaLeadSubmittedAt DateTime? // LeadSubmitted (lead qualificado)
+  metaPurchaseAt      DateTime? // Purchase R$ 1.500 (tag "Contratados")
   // Origem de importação em massa ("botconversa" = planilha da migração de
   // 18/08/2026). Contato marcado NUNCA cai no bot: vai direto pra fila humana
   // com a nota de validação (ver service.ts).

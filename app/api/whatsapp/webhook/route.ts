@@ -42,6 +42,9 @@ export const maxDuration = 120;
 const FICHA_TIMEOUT_MS = 20_000;
 const FICHA_LATEST_START_MS = maxDuration * 1000 - FICHA_TIMEOUT_MS - 15_000;
 
+// phone_number_id já avisados de entry.id ≠ wabaId cadastrado (um aviso por instância).
+const wabaMismatchWarned = new Set<string>();
+
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const mode = params.get("hub.mode");
@@ -188,6 +191,15 @@ export async function POST(req: NextRequest) {
           continue;
         }
         const numberId = creds.numberId;
+        // entry.id = WABA que a Meta diz ter recebido a mensagem. A API de
+        // Conversões manda o wabaId cadastrado no número; a Graph responde a
+        // dois ids de "Paraná Seguros" (1578… e 1049…), então divergência aqui
+        // indica que o cadastro do número está com o id errado (atribuição
+        // dos anúncios some sem erro).
+        if (entry?.id && creds.wabaId && String(entry.id) !== creds.wabaId && !wabaMismatchWarned.has(phoneNumberId)) {
+          wabaMismatchWarned.add(phoneNumberId);
+          console.warn(`[WHATSAPP WEBHOOK] entry.id ${entry.id} ≠ wabaId cadastrado ${creds.wabaId} (número ${creds.label})`);
+        }
 
         // Nome de perfil do remetente (quando a Meta manda os contatos).
         const profileName: string | undefined = value.contacts?.[0]?.profile?.name;

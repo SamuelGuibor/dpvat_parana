@@ -6,6 +6,8 @@ import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam, type SessionPermissions } from '@/app/_shared/lib/permissions-server';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { HIRED_TAG_NAME } from '@/app/_shared/lib/whatsapp/close-categories';
+import { reportBusinessMessagingEvent } from '@/app/_shared/lib/meta-conversions';
+import { runAfterResponse } from '@/app/_shared/lib/background';
 
 // Tags livres pra organizar conversas de WhatsApp (ex.: "Urgente", "VIP",
 // "Recontato"), independente do status (fila/meus/bot/encerradas).
@@ -122,6 +124,12 @@ async function applyConversationTag(
     db.whatsAppTag.findUnique({ where: { id: tagId }, select: { name: true } }),
   ]);
   const changed = write.count > 0;
+
+  // Pasta fechada → Purchase na API de Conversões (atribuição ao anúncio).
+  // Só quando a tag entrou agora; o próprio envio ignora orgânico e repetição.
+  if (changed && on && conv && tag?.name === HIRED_TAG_NAME) {
+    runAfterResponse('meta capi purchase', () => reportBusinessMessagingEvent(conv.contactId, 'Purchase'));
+  }
 
   const [rows] = await Promise.all([
     db.whatsAppConversationTag.findMany({
