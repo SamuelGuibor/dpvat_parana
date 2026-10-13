@@ -6,10 +6,6 @@
  * Abre sozinho na primeira visita (User.onboarding.dash.done = false) e
  * retoma do passo salvo. Pode ser reaberto a qualquer momento pelo botão
  * de ajuda do cabeçalho, que dispara o evento 'start-tour-dash'.
- *
- * Abas que dependem de permissão (Arquivados, WhatsApp) só entram no tour
- * se estiverem na tela — senão o passo apareceria centralizado falando de
- * algo que a pessoa não enxerga.
  */
 
 import { useEffect, useState } from 'react';
@@ -23,15 +19,11 @@ interface Props {
   onNavigate: (tab: string) => void;
 }
 
-/** Passo que só aparece quando o alvo existe (aba liberada por permissão). */
-type DashStep = TourStep & { optional?: boolean };
-
 export function DashboardTour({ onNavigate }: Props) {
   const [open, setOpen] = useState(false);
   const [initialStep, setInitialStep] = useState(0);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
 
-  const allSteps: DashStep[] = [
+  const steps: TourStep[] = [
     {
       emoji: '👋',
       title: 'Bem-vindo(a) ao CRM Seguros Paraná',
@@ -63,15 +55,6 @@ export function DashboardTour({ onNavigate }: Props) {
         'Clique em um cartão para abrir a ficha completa: dados pessoais e do acidente, documentos organizados em pastas, comentários com @menções, etiquetas, prazos e o histórico de tudo o que aconteceu com o cliente.',
     },
     {
-      target: '[data-tour="tab-arquivados"]',
-      optional: true,
-      emoji: '🗄️',
-      title: 'Arquivados',
-      description:
-        'Cartões finalizados ou encerrados saem do quadro e ficam aqui, com filtros para consulta. Nada se perde: é possível reabrir um cartão quando necessário.',
-      placement: 'bottom',
-    },
-    {
       target: '[data-tour="tab-workspace"]',
       emoji: '🏠',
       title: 'Espaço de Trabalho',
@@ -85,15 +68,6 @@ export function DashboardTour({ onNavigate }: Props) {
       title: 'Menções e Tarefas',
       description:
         'Quando alguém te marca com @ em um comentário ou envia uma tarefa ao seu setor, ela chega aqui. Marque como vista ou concluída — o contador vermelho mostra o que ainda está pendente.',
-      placement: 'bottom',
-    },
-    {
-      target: '[data-tour="tab-whatsapp"]',
-      optional: true,
-      emoji: '💬',
-      title: 'WhatsApp',
-      description:
-        'Caixa de entrada dos números da empresa. O assistente de IA faz a triagem inicial e transfere para a fila quando precisa de uma pessoa. Assuma a conversa, responda, envie arquivos e áudios e devolva ao bot quando terminar.',
       placement: 'bottom',
     },
     {
@@ -151,35 +125,23 @@ export function DashboardTour({ onNavigate }: Props) {
     },
   ];
 
-  // Descobre quais alvos opcionais não estão na tela (sem permissão).
-  const computeHidden = () => {
-    const missing = new Set<string>();
-    for (const s of allSteps) {
-      if (s.optional && s.target && !document.querySelector(s.target)) missing.add(s.target);
-    }
-    setHidden(missing);
-  };
-
   useEffect(() => {
     let cancelled = false;
     fetchOnboarding().then((state) => {
       if (cancelled || !state) return;
       if (!state.dash.done) {
-        computeHidden();
         setInitialStep(state.dash.step ?? 0);
         setOpen(true);
       }
     });
-    const restart = () => { computeHidden(); setInitialStep(0); setOpen(true); };
+    const restart = () => { setInitialStep(0); setOpen(true); };
     window.addEventListener(START_DASH_TOUR_EVENT, restart);
     return () => {
       cancelled = true;
       window.removeEventListener(START_DASH_TOUR_EVENT, restart);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const steps: TourStep[] = allSteps.filter((s) => !(s.target && hidden.has(s.target)));
 
   return (
     <Tour
