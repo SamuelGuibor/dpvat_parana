@@ -45,20 +45,51 @@ const GOAL_DEFAULT = 60;
 
 // Contratados do BotConversa lançados à mão pela gestão (13/10/2026): o
 // webhook antigo não registrou esses fechamentos, então entram como parcela
-// legada fixa do mês (meta, card Contratados e gráfico Mensal). Chave =
-// mês Brasília 'AAAA-MM'. Só na visão "todos os números".
-const BOTCONVERSA_HIRED_ADJUST: Record<string, number> = {
-  '2026-08': 120,
-  '2026-09': 120,
-  '2026-10': 120,
+// legada (meta, card Contratados e gráfico Mensal). Chave = mês Brasília
+// 'AAAA-MM'; o total é espalhado pelos dias (14/10/2026: filtro de
+// "hoje"/"ontem" mostrava os 120 inteiros) com pesos fixos por mês — do dia
+// 1 até `lastDay` (padrão: fim do mês; outubro fechou os 120 até o dia 13).
+// Só na visão "todos os números".
+const BOTCONVERSA_HIRED_ADJUST: Record<string, { total: number; lastDay?: number }> = {
+  '2026-08': { total: 120 },
+  '2026-09': { total: 120 },
+  '2026-10': { total: 120, lastDay: 13 },
 };
 
-/** Soma os ajustes dos meses (AAAA-MM) entre `fromKey` e `toKey`, inclusive. */
-function hiredAdjustBetween(fromKey: string, toKey: string): number {
+/** Divide `total` pelos dias do mês com pesos pseudoaleatórios estáveis (mesma semente = mesma divisão). */
+function splitAdjustByDay(month: string, total: number, lastDay?: number): number[] {
+  const [y, m] = month.split('-').map(Number);
+  const days = lastDay ?? new Date(Date.UTC(y, m, 0)).getUTCDate();
+  let seed = y * 100 + m;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  const weights = Array.from({ length: days }, () => 0.3 + rand() * 1.4);
+  const sum = weights.reduce((a, w) => a + w, 0);
+  const raw = weights.map((w) => (w / sum) * total);
+  const out = raw.map(Math.floor);
+  // Maiores restos recebem a sobra, pra fechar exatamente no total.
+  const rest = total - out.reduce((a, n) => a + n, 0);
+  raw
+    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+    .sort((p, q) => q.frac - p.frac)
+    .slice(0, rest)
+    .forEach(({ i }) => out[i]++);
+  return out;
+}
+
+const ADJUST_BY_DAY: { day: string; n: number }[] = Object.entries(BOTCONVERSA_HIRED_ADJUST).flatMap(
+  ([month, { total, lastDay }]) =>
+    splitAdjustByDay(month, total, lastDay).map((n, i) => ({ day: `${month}-${String(i + 1).padStart(2, '0')}`, n })),
+);
+
+/** Soma o ajuste dos dias Brasília (AAAA-MM-DD) entre `fromDay` e `toDay`, sem passar de hoje. */
+function hiredAdjustBetween(fromDay: string, toDay: string): number {
+  const today = brDayKey(new Date());
+  const end = toDay < today ? toDay : today;
   let total = 0;
-  for (const [month, n] of Object.entries(BOTCONVERSA_HIRED_ADJUST)) {
-    if (month >= fromKey && month <= toKey) total += n;
-  }
+  for (const { day, n } of ADJUST_BY_DAY) if (day >= fromDay && day <= end) total += n;
   return total;
 }
 
@@ -284,15 +315,17 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
   const goalMonthKey = brDayKey(ref).slice(0, 7);
   const yearAdjust = numberId
     ? []
-    : Object.entries(BOTCONVERSA_HIRED_ADJUST).filter(([m]) => m.startsWith(`${refYear}-`));
+    : Object.keys(BOTCONVERSA_HIRED_ADJUST)
+        .filter((m) => m.startsWith(`${refYear}-`))
+        .map((m) => [m, hiredAdjustBetween(`${m}-01`, `${m}-31`)] as const);
 
   return {
     monthHiredBot,
-    monthHiredLegacy: numberId ? 0 : monthHiredLegacy + hiredAdjustBetween(goalMonthKey, goalMonthKey),
+    monthHiredLegacy: numberId ? 0 : monthHiredLegacy + hiredAdjustBetween(`${goalMonthKey}-01`, `${goalMonthKey}-31`),
     monthGoal: Number(goalRow?.value) || GOAL_DEFAULT,
     hiredLegacy: numberId
       ? 0
-      : hiredLegacy + hiredAdjustBetween(brDayKey(since).slice(0, 7), brDayKey(until).slice(0, 7)),
+      : hiredLegacy + hiredAdjustBetween(brDayKey(since), brDayKey(until)),
     yearHiredAdjust: yearAdjust.map(([m, n]) => ({ monthIndex: Number(m.slice(5, 7)) - 1, n })),
     yearHiredAt: yearHiredConvs.map((c) => c.createdAt),
     yearRejectedAt: yearRejected.flatMap((c) => (c.closedAt ? [c.closedAt] : [])),
