@@ -399,7 +399,9 @@ function PageInner() {
             <StrategicDashboard />
           </TabsContent> */}
           <TabsContent value="kanban">
-            <KanbanBoard />
+            {/* Só monta com as permissões resolvidas: o Somente Dashboard não
+                pode ver o board nem por um instante. */}
+            {!permsLoading && !perms.dashboard_only && <KanbanBoard />}
           </TabsContent>
           <TabsContent value="arquivados">
             <ArchivedCards />
