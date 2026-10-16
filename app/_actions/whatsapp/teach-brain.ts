@@ -110,7 +110,8 @@ export async function analyzeBrainTeaching(input: {
     const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY, timeout: TEACH_TIMEOUT_MS, maxRetries: 0 });
     const response = await client.messages.create({
       model: TEACH_MODEL,
-      max_tokens: 2000,
+      // 2000 cortava o JSON no meio (16/10: 3 análises seguidas paradas em 2000 tokens).
+      max_tokens: 8000,
       system: TEACH_SYSTEM,
       messages: [{
         role: 'user',

@@ -100,6 +100,7 @@ Um atendente leu uma conversa e escreveu o que o bot deveria fazer. Sua tarefa
      proposedText = "".
 Regras são escritas no imperativo, em português, 1 a 3 frases.
 
+Seja breve: no máximo 6 botActions e 3 existing, cada texto em 1 frase.
 Responda SOMENTE com um JSON, sem texto em volta:
 {"request":"","existing":[{"id":"R1","relation":"parecida"}],"botActions":[{"at":"dd/mm hh:mm","what":"","verdict":"neutro","ruleId":"R1"}],"expected":"","diagnosis":"","recommendation":"nova","targetRuleId":"","proposedText":""}`;
 
