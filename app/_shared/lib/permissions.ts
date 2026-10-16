@@ -104,6 +104,13 @@ export const PERMISSION_DEFS = [
     category: "WhatsApp e IA",
   },
   {
+    key: "teach_bot",
+    label: "Ensinar o bot pelo inbox",
+    description:
+      "Mostra no Copiloto do WhatsApp o campo de regra para o cérebro do bot: a IA confere a regra contra o playbook e o que o bot fez na conversa, e permite publicar.",
+    category: "WhatsApp e IA",
+  },
+  {
     key: "manage_wa_contacts",
     label: "Excluir/bloquear contatos (WhatsApp)",
     description:
@@ -234,6 +241,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     delete_columns: true,
     manager_dashboard: false,
     review_ai: false,
+    teach_bot: false,
     manage_wa_contacts: false,
     manage_wa_numbers: false,
     view_costs: false,
@@ -270,6 +278,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Revisão da IA nasce exclusiva do ADMIN++ (a curadoria do cérebro é
     // manual nos primeiros meses). Concedível ao ADMIN+ por override.
     review_ai: false,
+    teach_bot: false,
     // Excluir/bloquear contato é destrutivo — nasce exclusivo do ADMIN++,
     // concedível ao ADMIN+ por override.
     manage_wa_contacts: false,
@@ -311,6 +320,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     delete_columns: true,
     manager_dashboard: true,
     review_ai: true,
+    teach_bot: true,
     manage_wa_contacts: true,
     manage_wa_numbers: true,
     view_costs: true,

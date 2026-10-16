@@ -40,6 +40,7 @@ export type LogAction =
   | "ficha_ai_fill"  // o mesmo preenchimento, registrado no HISTÓRICO do card
   | "roteiro_ai"     // gasto de IA do roteiro (docx-converter → sentinela no stream)
   | "wa_review"      // humano julgou um atendimento da IA (cérebro/aprendizado)
+  | "wa_teach_brain" // Copiloto: IA conferiu uma regra pedida pelo atendente (com o gasto), ou a regra foi publicada/enviada à revisão
   | "wa_signature"   // ciclo de assinatura eletrônica (geração, envio, assinatura, validação)
   | "wa_account"     // evento administrativo da Meta (violação, restrição, qualidade, template)
   | "wa_contact"     // bloqueio/desbloqueio/exclusão de contato (ação destrutiva com permissão)

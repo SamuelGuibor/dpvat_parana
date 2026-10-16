@@ -23,6 +23,8 @@ import { describeFetchError } from '@/app/_shared/utils/fetch-json';
 import { latestBotNote, latestMediaMessageId, mergeNotes } from '@/app/_shared/utils/contact-files';
 import { sendWhatsAppInternalNote } from '@/app/_actions/whatsapp/send-message';
 import { ArquivosTab } from './ArquivosTab';
+import { TeachBrainCard } from './TeachBrainCard';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { maskCpf, isValidCpf, maskCep, formatPhone } from '@/app/_shared/utils/format';
 import { HospitalCombobox } from '@/app/nova-dash/card-dialog/HospitalCombobox';
 import { ESTADOS, ESTADO_CIVIL } from '@/app/nova-dash/card-dialog/constants';
@@ -55,6 +57,8 @@ export function CopilotPanel({
 }: Props) {
   const contactId = conversation.contactId;
   const [tab, setTab] = useState<CopilotTab>('copiloto');
+  // Campo "Ensinar o cérebro": só aparece com teach_bot (o guard real é o da action).
+  const canTeach = !!usePermissions().perms.teach_bot;
 
   // Clique no nome do contato (fora deste painel) força a aba Ficha — ignora
   // o primeiro render (focusFicha começa em 0/undefined, sem token ainda).
@@ -286,25 +290,46 @@ export function CopilotPanel({
                 {(() => {
                   const origem = conversation.adPlatform === 'instagram' ? 'anúncio (Instagram)'
                     : conversation.adPlatform === 'facebook' ? 'anúncio (Facebook)' : 'orgânico';
-                  const chegou = new Date(conversation.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                  const fichaOk = !!(conversation.caseLesoes || (docs?.length ?? 0) > 0);
+                  const triagem = [conversation.caseLesoes, conversation.caseCidade, conversation.caseDataAcidente].filter(Boolean).join(' · ');
                   const statusLabel: Record<string, string> = {
                     bot: 'bot atendendo', queued: 'na fila de espera', human: 'em atendimento',
-                    standby: 'em recuperação', closed: 'encerrada',
+                    standby: 'em recuperação', closed: conversation.closeCategoryLabel ? `encerrada · ${conversation.closeCategoryLabel}` : 'encerrada',
                   };
                   const contratoOk = conversation.hasCpf && (docs?.length ?? 0) > 0;
-                  const steps: { label: string; on: boolean }[] = [
-                    { label: `chegou por ${origem} · ${chegou}`, on: true },
-                    { label: 'bot coletou ficha', on: fichaOk },
-                    { label: statusLabel[conversation.status] ?? conversation.status, on: true },
-                    { label: 'contrato', on: contratoOk },
+                  // Instante da transferência = nota do bot ao passar pra fila.
+                  const handoffNote = windowHandoff ?? latestBotNote(notes);
+                  const steps: { label: string; tone: 'on' | 'off' | 'warn' | 'now'; action?: React.ReactNode }[] = [
+                    { label: `chegou por ${origem} · ${timeStamp(conversation.createdAt)}`, tone: 'on' },
+                    { label: triagem ? `triagem: ${triagem}` : 'triagem do caso pendente', tone: triagem ? 'on' : 'off' },
+                    { label: (docs?.length ?? 0) > 0 ? `ficha com ${docs?.length} documento(s)` : 'bot ainda sem documentos', tone: (docs?.length ?? 0) > 0 ? 'on' : 'off' },
+                    ...(handoffText ? [{
+                      label: `caiu na fila${handoffNote ? ` · ${timeStamp(handoffNote.createdAt)}` : ''}`,
+                      tone: 'warn' as const,
+                      action: (
+                        <button onClick={() => setTab('notas')} className="rounded-full bg-amber-100 px-2 text-[11px] font-bold text-amber-700 hover:bg-amber-200">
+                          ver motivo
+                        </button>
+                      ),
+                    }] : []),
+                    {
+                      label: `${statusLabel[conversation.status] ?? conversation.status}${
+                        conversation.assignedToName && conversation.status === 'human' ? ` · ${conversation.assignedToName}` : ''}`,
+                      tone: 'now',
+                    },
+                    { label: 'contrato', tone: contratoOk ? 'on' : 'off' },
                   ];
-                  return steps.map((s) => (
-                    <span key={s.label} className={`flex items-center gap-2 text-sm ${s.on ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400'}`}>
-                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.on ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-zinc-600'}`} />
-                      {s.label}
-                    </span>
-                  ));
+                  const dot = { on: 'bg-emerald-500', off: 'bg-gray-300', warn: 'bg-amber-500', now: 'bg-sky-500' };
+                  return (
+                    <div className="relative ml-[3px] border-l border-gray-200 pl-3">
+                      {steps.map((s) => (
+                        <span key={s.label} className={`relative flex items-center gap-2 py-0.5 text-sm ${s.tone === 'off' ? 'text-gray-400' : 'text-gray-700'}`}>
+                          <span className={`absolute -left-[16.5px] h-2 w-2 shrink-0 rounded-full ring-2 ring-gray-50 ${dot[s.tone]}`} />
+                          <span className="min-w-0">{s.label}</span>
+                          {s.action}
+                        </span>
+                      ))}
+                    </div>
+                  );
                 })()}
               </div>
             </CopilotCard>
@@ -369,14 +394,8 @@ export function CopilotPanel({
               )}
             </CopilotCard>
 
-            {handoffText && (conversation.status === 'queued' || conversation.status === 'human') && (
-              <CopilotCard title="Por que caiu na fila">
-                <p className="flex items-start gap-1.5 text-sm leading-relaxed text-gray-700">
-                  <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600" />
-                  <span className="whitespace-pre-wrap">{handoffText}</span>
-                </p>
-              </CopilotCard>
-            )}
+            {canTeach && <TeachBrainCard contactId={contactId} />}
+
 
             <CopilotCard title="Ficha coletada">
               <div className="flex flex-col gap-1">
@@ -522,6 +541,15 @@ export function CopilotPanel({
                 <button onClick={() => { void reloadNotes(); }} className="flex shrink-0 items-center gap-1 font-bold hover:underline">
                   <RefreshCw className="h-3 w-3" /> Tentar de novo
                 </button>
+              </div>
+            )}
+            {/* Motivo da fila: nota de transferência do bot, fixada no topo (saiu do Copiloto). */}
+            {handoffText && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-2.5">
+                <p className="mb-1 flex items-center gap-1 text-[11px] font-bold text-sky-700">
+                  <Bot className="h-3 w-3" /> Por que caiu na fila
+                </p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{handoffText}</p>
               </div>
             )}
             {notes.length === 0 && !notesLoading && (
