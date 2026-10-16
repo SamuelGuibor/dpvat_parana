@@ -106,6 +106,13 @@ function PageInner() {
     if (!permsLoading && !perms.view_whatsapp && activeTab === 'whatsapp') setActiveTab('kanban');
   }, [permsLoading, perms.view_whatsapp, activeTab]);
 
+  // "Somente Dashboard" (dashboard_only): quem só acompanha os leads de
+  // tráfego fica preso no Espaço de Trabalho (lá, só o Analytics).
+  const dashboardOnly = !permsLoading && perms.dashboard_only;
+  useEffect(() => {
+    if (dashboardOnly && activeTab !== 'meu-espaco') setActiveTab('meu-espaco');
+  }, [dashboardOnly, activeTab]);
+
   // Link "Abrir conversa no WhatsApp" do CardDialog (aba nova): o contato vem
   // no ?wa= porque sessionStorage/CustomEvent não atravessam abas do navegador.
   // Grava no sessionStorage DESTA aba (o inbox lê no mount) e vai pro WhatsApp.
@@ -277,6 +284,7 @@ function PageInner() {
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard Estratégico
             </TabsTrigger> */}
+            {!dashboardOnly && (<>
             <TabsTrigger
               value="kanban"
               data-tour="tab-kanban"
@@ -304,6 +312,7 @@ function PageInner() {
                 Tickets Dev
               </TabsTrigger>
             )}
+            </>)}
             <TabsTrigger
               value="meu-espaco"
               data-tour="tab-workspace"
@@ -317,6 +326,7 @@ function PageInner() {
                 </span>
               )}
             </TabsTrigger>
+            {!dashboardOnly && (<>
             <TabsTrigger
               value="mencoes"
               data-tour="tab-mencoes"
@@ -368,6 +378,7 @@ function PageInner() {
               <Clock className="w-4 h-4 mr-2" />
               Controle de Ponto
             </TabsTrigger>
+            </>)}
           </TabsList>
         </Tabs>
       </header>

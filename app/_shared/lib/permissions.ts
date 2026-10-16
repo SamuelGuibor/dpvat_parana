@@ -180,6 +180,13 @@ export const PERMISSION_DEFS = [
     category: "Segurança",
   },
   {
+    key: "dashboard_only",
+    label: "Somente Dashboard (Analytics)",
+    description:
+      "Restringe o usuário à aba Analytics do Dashboard no Espaço de Trabalho: sem Kanban, WhatsApp, Menções, Ponto e demais abas. Pensado para quem só acompanha os leads de tráfego.",
+    category: "Segurança",
+  },
+  {
     key: "view_security",
     label: "Ver Segurança",
     description:
@@ -257,6 +264,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // revogável por override para quem não atende WhatsApp.
     view_whatsapp: true,
     read_only: false,
+    dashboard_only: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -303,6 +311,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_ai_brain: false,
     view_whatsapp: true,
     read_only: false,
+    dashboard_only: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -333,6 +342,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_ai_brain: true,
     view_whatsapp: true,
     read_only: false,
+    dashboard_only: false,
     manage_team: true,
   },
 };

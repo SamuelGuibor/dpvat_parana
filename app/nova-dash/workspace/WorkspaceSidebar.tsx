@@ -13,6 +13,7 @@ interface Props {
   active: WorkspaceSection;
   onChange: (section: WorkspaceSection) => void;
   isManager: boolean;
+  dashboardOnly?: boolean;
   /** Permissão review_ai — hoje só o ADMIN++ enxerga a Revisão da IA. */
   canReviewAi: boolean;
   /** Permissão view_costs — hoje só o ADMIN++ enxerga os custos do projeto. */
@@ -40,7 +41,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canViewSecurity, canViewAiBrain, chatUnread, reviewPending }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canViewSecurity, canViewAiBrain, dashboardOnly, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -102,7 +103,9 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
   // Grupo sem item nenhum não aparece (16/09/2026): pra quem não tem
   // review_ai, o grupo "Chats" ficava só com o título solto na sidebar — o
   // Chat geral foi desativado e a Revisão da IA é exclusiva do ADMIN++.
-  const visibleGroups = groups.filter((g) => g.items.length > 0);
+  const visibleGroups = dashboardOnly
+    ? [{ title: 'Dashboards', items: groups[1].items.filter((i) => i.key === 'dashboard') }]
+    : groups.filter((g) => g.items.length > 0);
 
   // Todos os itens achatados para a barra horizontal do mobile.
   const flatItems = visibleGroups.flatMap((g) => g.items);

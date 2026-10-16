@@ -38,6 +38,8 @@ export function Workspace() {
   const canManageSecurity = !permsLoading && perms.manage_team;
   const canViewSecurity = canManageSecurity || (!permsLoading && perms.view_security);
   const canViewAiBrain = !permsLoading && perms.view_ai_brain;
+  // Somente Dashboard: a sidebar mostra só o Dashboard (e nada de Meu Espaço).
+  const dashboardOnly = !permsLoading && perms.dashboard_only;
 
   // A aba Chatbot do dashboard resolve a própria allowlist na carga única
   // (get-strategic-dashboard) — nada a pré-buscar aqui.
@@ -87,7 +89,7 @@ export function Workspace() {
   }, []);
 
   // Guarda extra: sem a permissão, cair numa seção restrita volta para o início.
-  const effective: WorkspaceSection =
+  const effective: WorkspaceSection = dashboardOnly ? 'dashboard' :
     (section === 'gestao' && !manager)
     || (section === 'chat' && !TEAM_CHAT_ENABLED)
     || (section === 'revisao-ia' && !canReviewAi)
@@ -104,7 +106,7 @@ export function Workspace() {
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} canViewSecurity={canViewSecurity} canViewAiBrain={canViewAiBrain} chatUnread={chatUnread} reviewPending={reviewPending} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} canViewSecurity={canViewSecurity} canViewAiBrain={canViewAiBrain} dashboardOnly={dashboardOnly} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {showContent && (
           <>

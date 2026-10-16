@@ -26,6 +26,7 @@ import { ChatbotPanel } from './workspace/chatbot/ChatbotPanel';
 import { BotFunnelSection } from './workspace/manager/BotFunnelSection';
 import { LeadOriginSection } from './workspace/manager/LeadOriginSection';
 import { StaleDataVeil } from './workspace/manager/StaleDataVeil';
+import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 
 const NO_NUMBERS: WaNumberOption[] = [];
 const NO_LEADS: BotKanbanLead[] = [];
@@ -52,6 +53,9 @@ type FunnelAndLeads = Awaited<ReturnType<typeof getBotFunnelAndLeads>>;
 // chegarem, e voltar do Kanban mostra o dashboard na hora, revalidando em
 // segundo plano. A aba escolhida fica no sessionStorage ('strategic-tab').
 export const StrategicDashboard: React.FC = () => {
+  // Somente Dashboard (dashboard_only): só a aba Analytics.
+  const { perms, loading: permsLoading } = usePermissions();
+  const analyticsOnly = !permsLoading && perms.dashboard_only;
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const fromISO = dateRange.from.toISOString();
   const toISO = dateRange.to.toISOString();
@@ -194,12 +198,14 @@ export const StrategicDashboard: React.FC = () => {
           <p className="text-sm">Carregando os dados do dashboard…</p>
         </div>
       ) : (
-      <Tabs value={visibleStrategicTab(tab, data.canViewChatbot)} onValueChange={handleTabChange} className="space-y-4">
+      <Tabs value={analyticsOnly ? 'analytics' : visibleStrategicTab(tab, data.canViewChatbot)} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          {!analyticsOnly && (<>
           <TabsTrigger value="fluxo">Fluxo do Kanban</TabsTrigger>
           {data.canViewChatbot && <TabsTrigger value="chatbot">Chatbot</TabsTrigger>}
           <TabsTrigger value="form-leads">Leads</TabsTrigger>
+          </>)}
           {/* <TabsTrigger value="calendario">Calendário</TabsTrigger> */}
         </TabsList>
 
