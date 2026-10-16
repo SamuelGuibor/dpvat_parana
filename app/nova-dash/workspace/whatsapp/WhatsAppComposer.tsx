@@ -514,7 +514,7 @@ export function WhatsAppComposer({
               <span className={iconPillLabelCls}>Fluxos</span>
             </button>
           </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuContent align="start" className="w-[26rem] max-w-[92vw]">
               <DropdownMenuLabel className="text-sm">Fluxos de mensagens</DropdownMenuLabel>
               {flows.length > 0 && (
                 <div className="relative px-2 pb-1.5">

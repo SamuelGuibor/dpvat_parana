@@ -20,7 +20,7 @@ import {
 import { checkFileForWhatsApp } from './media-rules';
 import { listWhatsAppTags, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
 import { Tag, Check } from 'lucide-react';
-import { ManagedListSelect } from './ManagedListSelect';
+import { Search, Copy } from 'lucide-react';
 
 // Gerenciador dos fluxos de mensagens pré-setadas: sequência de passos de
 // texto, imagem, vídeo, áudio ou documento, com delay antes de cada envio.
@@ -56,6 +56,18 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
   const [editing, setEditing] = useState<EditingFlow>(EMPTY);
   // Tags de conversa disponíveis (para etiquetar o contato no disparo do fluxo).
   const [allTags, setAllTags] = useState<WhatsAppTagDTO[]>([]);
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const visibleFlows = q ? flows.filter((f) => f.name.toLowerCase().includes(q)) : flows;
+
+  function selectFlow(f: WhatsAppFlowDTO) {
+    setEditing({ id: f.id, name: f.name, description: f.description ?? '', steps: f.steps.length ? f.steps.map((s) => ({ ...s })) : [emptyStep('text', 0)], tagIds: f.tagIds ?? [] });
+  }
+  // Duplicar: vira um fluxo novo (sem id) já com os passos copiados.
+  function duplicateFlow() {
+    setEditing((f) => ({ ...f, id: undefined, name: `${f.name} (cópia)`, steps: f.steps.map((s) => ({ ...s })) }));
+    toast.info('Cópia pronta — ajuste e clique em "Criar fluxo".');
+  }
 
   async function reload() {
     setLoading(true);
@@ -135,126 +147,174 @@ export function WhatsAppFlowsModal({ open, onOpenChange, onChanged }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {confirmDialog}
-      <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2.5 text-xl">
             <Workflow className="h-6 w-6 text-emerald-600" /> Fluxos de mensagens
           </DialogTitle>
           <DialogDescription className="text-base">
-            Sequências prontas de texto, imagem, vídeo, áudio ou documento. O delay é a espera antes de cada passo.
-            Dica: áudio <b>.ogg</b> chega como mensagem de voz no WhatsApp do cliente.
+            Sequências prontas de texto, imagem, vídeo, áudio ou documento. Dica: áudio <b>.ogg</b> chega como mensagem de voz no WhatsApp do cliente.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Fluxos existentes — lista suspensa: 1 linha, não importa quantos. */}
-        <div className="flex items-center gap-2">
-          <ManagedListSelect
-            items={flows.map((f) => ({
-              id: f.id,
-              title: f.name,
-              subtitle: `${f.steps.length} ${f.steps.length === 1 ? 'passo' : 'passos'}`,
-            }))}
-            selectedId={editing.id ?? null}
-            loading={loading}
-            placeholder="Escolha um fluxo para editar..."
-            emptyText="Nenhum fluxo criado ainda."
-            onSelect={(id) => {
-              const f = flows.find((x) => x.id === id);
-              if (!f) return;
-              setEditing({ id: f.id, name: f.name, description: f.description ?? '', steps: f.steps.length ? f.steps.map((s) => ({ ...s })) : [emptyStep('text', 0)], tagIds: f.tagIds ?? [] });
-            }}
-            onDelete={handleDelete}
-          />
-          <button
-            onClick={() => setEditing(EMPTY)}
-            className={`flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-dashed px-3.5 text-base font-semibold ${!editing.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-gray-300 text-gray-500 hover:border-gray-400 dark:border-zinc-700 dark:text-zinc-400'}`}
-          >
-            <Plus className="h-4 w-4" /> Novo fluxo
-          </button>
-        </div>
-
-        {/* Editor */}
-        <div className="space-y-3 rounded-xl border border-gray-100 p-3 dark:border-zinc-800">
-          <label className="block">
-            <span className="mb-1.5 block text-base font-semibold text-gray-600 dark:text-zinc-300">Nome do fluxo</span>
-            <Input value={editing.name} onChange={(e) => setEditing((f) => ({ ...f, name: e.target.value }))} placeholder="Ex.: Boas-vindas" className="h-11 text-base" />
-          </label>
-
-          <label className="block">
-            <span className="mb-1.5 block text-base font-semibold text-gray-600 dark:text-zinc-300">
-              Descrição <span className="font-normal text-gray-400">(quando o bot deve usar este fluxo)</span>
-            </span>
-            <textarea
-              value={editing.description}
-              onChange={(e) => setEditing((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Ex.: Enviar quando o cliente cadastrado pergunta sobre a etapa de perícia médica do processo."
-              rows={2}
-              className="w-full resize-none rounded-lg border border-gray-200 bg-white p-2.5 text-base outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            />
-            <span className="mt-1 block text-sm text-gray-400">
-              A IA lê esta descrição para decidir, sozinha, se este fluxo se encaixa na situação do cliente. Sem descrição, o bot não dispara o fluxo automaticamente.
-            </span>
-          </label>
-
-          {/* Tags aplicadas ao contato no disparo do fluxo */}
-          <div>
-            <span className="mb-1.5 flex items-center gap-1.5 text-base font-semibold text-gray-600 dark:text-zinc-300">
-              <Tag className="h-4 w-4 text-emerald-600" />
-              Etiquetar contato ao disparar
-              <span className="font-normal text-gray-400">(opcional)</span>
-            </span>
-            {allTags.length === 0 ? (
-              <p className="text-sm text-gray-400">
-                Nenhuma tag de conversa criada ainda — crie em Tags, no inbox do WhatsApp.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {allTags.map((t) => {
-                  const active = editing.tagIds.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleTag(t.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm font-semibold transition-colors ${active ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-700'}`}
-                      style={active ? { background: t.color } : undefined}
-                    >
-                      {active ? <Check className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />}
-                      {t.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <span className="mt-1 block text-sm text-gray-400">
-              Ao enviar o fluxo (pelo atendente ou pelo bot), estas tags são aplicadas automaticamente à conversa do cliente — útil para filtrar no chat depois (ex.: dispensados).
-            </span>
+        <div className="grid min-h-[460px] gap-4 md:grid-cols-[220px_minmax(0,1fr)_230px]">
+          {/* Coluna 1 — lista de fluxos */}
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar fluxo..." className="h-9 pl-8 text-sm" />
+            </div>
+            <button
+              onClick={() => setEditing(EMPTY)}
+              className={`flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed text-sm font-semibold ${!editing.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20' : 'border-gray-300 text-gray-500 hover:border-gray-400 dark:border-zinc-700 dark:text-zinc-400'}`}
+            >
+              <Plus className="h-4 w-4" /> Novo fluxo
+            </button>
+            <div className="max-h-[400px] space-y-1.5 overflow-y-auto pr-1">
+              {loading && <p className="flex items-center gap-2 p-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</p>}
+              {!loading && flows.length === 0 && <p className="p-2 text-sm text-gray-400">Nenhum fluxo criado ainda.</p>}
+              {!loading && flows.length > 0 && visibleFlows.length === 0 && <p className="p-2 text-sm text-gray-400">Nenhum fluxo encontrado.</p>}
+              {visibleFlows.map((f) => {
+                const active = editing.id === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => selectFlow(f)}
+                    className={`w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${active ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 hover:border-gray-300 dark:border-zinc-700'}`}
+                  >
+                    <span className="block truncate text-sm font-semibold">{f.name}</span>
+                    <span className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
+                      {f.steps.slice(0, 6).map((s, i) => {
+                        const Icon = KIND_META[s.kind]?.icon ?? FileText;
+                        return <Icon key={i} className="h-3 w-3" />;
+                      })}
+                      <span className="ml-1">{f.steps.length} {f.steps.length === 1 ? 'passo' : 'passos'}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="space-y-2">
-            {editing.steps.map((step, idx) => (
-              <StepCard
-                key={idx}
-                step={step}
-                index={idx}
-                total={editing.steps.length}
-                onChange={(patch) => setStep(idx, patch)}
-                onMove={(dir) => moveStep(idx, dir)}
-                onRemove={() => setEditing((f) => ({ ...f, steps: f.steps.filter((_, i) => i !== idx) }))}
+          {/* Coluna 2 — editor */}
+          <div className="min-w-0 space-y-3">
+            <div className="flex items-center gap-2">
+              <Input value={editing.name} onChange={(e) => setEditing((f) => ({ ...f, name: e.target.value }))} placeholder="Nome do fluxo (ex.: Boas-vindas)" className="h-10 flex-1 text-base font-semibold" />
+              {editing.id && (
+                <>
+                  <Button variant="outline" onClick={duplicateFlow} title="Duplicar fluxo"><Copy className="mr-1.5 h-4 w-4" /> Duplicar</Button>
+                  <Button variant="outline" onClick={() => handleDelete(editing.id!)} title="Excluir fluxo" className="text-red-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></Button>
+                </>
+              )}
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-gray-600 dark:text-zinc-300">
+                Quando usar <span className="font-normal text-gray-400">(a IA lê isto para decidir sozinha; sem descrição o bot não dispara)</span>
+              </span>
+              <textarea
+                value={editing.description}
+                onChange={(e) => setEditing((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Ex.: Enviar quando o cliente cadastrado pergunta sobre a etapa de perícia médica."
+                rows={2}
+                className="w-full resize-none rounded-lg border border-gray-200 bg-white p-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
               />
-            ))}
+            </label>
+
+            <div>
+              <span className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-zinc-300">
+                <Tag className="h-4 w-4 text-emerald-600" /> Etiquetar contato ao disparar <span className="font-normal text-gray-400">(opcional)</span>
+              </span>
+              {allTags.length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhuma tag de conversa criada ainda — crie em Tags, no inbox do WhatsApp.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {allTags.map((t) => {
+                    const active = editing.tagIds.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleTag(t.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm font-semibold transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300'}`}
+                        style={active ? { background: t.color } : undefined}
+                      >
+                        {active ? <Check className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />}
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Linha do tempo: passos ligados por um trilho, com o delay entre eles */}
+            <div>
+              {editing.steps.map((step, idx) => (
+                <div key={idx}>
+                  {idx > 0 && (
+                    <div className="ml-[13px] flex items-center gap-2 border-l border-gray-300 py-1.5 pl-5 dark:border-zinc-600">
+                      <span className="flex items-center gap-1.5 rounded-full border border-dashed border-gray-300 px-2.5 py-0.5 text-xs text-gray-500 dark:border-zinc-600 dark:text-zinc-400">
+                        <Clock className="h-3.5 w-3.5" /> espera
+                        <input
+                          type="number" min={0} max={120} step={0.5}
+                          value={step.delayMs / 1000}
+                          onChange={(e) => setStep(idx, { delayMs: Math.round(Number(e.target.value) * 1000) })}
+                          className="h-6 w-14 rounded border border-gray-200 bg-white px-1 text-center text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                        s
+                      </span>
+                    </div>
+                  )}
+                  <StepCard
+                    step={step}
+                    index={idx}
+                    total={editing.steps.length}
+                    onChange={(patch) => setStep(idx, patch)}
+                    onMove={(dir) => moveStep(idx, dir)}
+                    onRemove={() => setEditing((f) => ({ ...f, steps: f.steps.filter((_, i) => i !== idx) }))}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={() => setEditing((f) => ({ ...f, steps: [...f.steps, emptyStep('text', f.steps.length ? 1000 : 0)] }))}
+              className="w-full border-dashed text-sm"
+            >
+              <Plus className="mr-1.5 h-4 w-4" /> Adicionar passo
+            </Button>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => setEditing((f) => ({ ...f, steps: [...f.steps, emptyStep('text', f.steps.length ? 1000 : 0)] }))}
-            className="text-base"
-          >
-            <Plus className="mr-1.5 h-4 w-4" /> Adicionar passo
-          </Button>
+          {/* Coluna 3 — como o cliente vê */}
+          <div className="min-w-0 rounded-xl bg-gray-50 p-3 dark:bg-zinc-900/60">
+            <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-zinc-400">Como o cliente vê</p>
+            <div className="flex max-h-[420px] flex-col gap-1.5 overflow-y-auto">
+              {editing.steps.map((s, i) => {
+                const Icon = KIND_META[s.kind]?.icon ?? FileText;
+                return (
+                  <div key={i}>
+                    {i > 0 && <p className="mb-1 text-center text-[11px] text-gray-400">{s.delayMs / 1000}s</p>}
+                    <div className="rounded-xl rounded-bl-sm border border-gray-200 bg-white px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                      {s.kind !== 'text' && (
+                        <p className="flex items-center gap-1 text-gray-500 dark:text-zinc-400">
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{s.fileName ?? KIND_META[s.kind].label}</span>
+                        </p>
+                      )}
+                      {s.kind !== 'audio' && s.body && <p className="whitespace-pre-wrap break-words">{s.body}</p>}
+                      {s.kind === 'text' && !s.body && <p className="text-gray-400">(vazio)</p>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="text-base">Fechar</Button>
           <Button size="lg" onClick={handleSave} disabled={saving} className="bg-emerald-600 text-base hover:bg-emerald-700">
             {saving ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
             {editing.id ? 'Salvar alterações' : 'Criar fluxo'}
@@ -320,20 +380,6 @@ function StepCard({
             );
           })}
         </div>
-
-        {/* Delay */}
-        {index > 0 && (
-          <span className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-400">
-            <Clock className="h-4 w-4" />
-            <Input
-              type="number" min={0} max={120} step={0.5}
-              value={step.delayMs / 1000}
-              onChange={(e) => onChange({ delayMs: Math.round(Number(e.target.value) * 1000) })}
-              className="h-8 w-20 px-2 text-base"
-            />
-            s antes
-          </span>
-        )}
 
         <span className="ml-auto flex items-center gap-1">
           <button onClick={() => onMove(-1)} disabled={index === 0} title="Mover para cima" className="rounded-md p-1.5 text-gray-400 hover:bg-gray-200 disabled:opacity-30 dark:hover:bg-zinc-800">
