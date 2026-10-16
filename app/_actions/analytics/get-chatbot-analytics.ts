@@ -120,6 +120,17 @@ async function requireChatbotDashboard(): Promise<void> {
 }
 
 /**
+ * Origem dos leads: allowlist do chatbot OU "Somente Dashboard" (quem cuida
+ * dos leads de tráfego vê a origem sem abrir as métricas/custos da IA).
+ */
+async function requireLeadOriginAccess(): Promise<void> {
+  const ctx = await requireTeam();
+  if (!canViewChatbotDashboard(ctx.email) && !ctx.permissions.dashboard_only) {
+    throw new Error('Acesso restrito: você não está autorizado a ver a Origem dos leads.');
+  }
+}
+
+/**
  * Janela do período. Todo corte de dia é no fuso de Brasília: em produção o
  * Node roda em UTC e das 21h em diante o servidor já virava o dia.
  * from/to (ISO) têm prioridade sobre periodDays — o calendário do dashboard
@@ -333,7 +344,7 @@ export async function getLeadOrigins(
   fromISO?: string,
   toISO?: string,
 ): Promise<LeadOriginsData> {
-  await requireChatbotDashboard();
+  await requireLeadOriginAccess();
   const { since, until, seriesDays, seriesUntil } = resolveWindow(periodDays, fromISO, toISO);
   const createdIn = until ? { gte: since, lte: until } : { gte: since };
   // Contatos têm numberId (indexado); null = todos os números.
@@ -480,7 +491,7 @@ export async function getAdLeadOutcomes(
   fromISO?: string,
   toISO?: string,
 ): Promise<AdLeadOutcome[]> {
-  await requireChatbotDashboard();
+  await requireLeadOriginAccess();
 
   // from/to (ISO) têm prioridade sobre periodDays (calendário do dashboard).
   let createdAt: { gte: Date; lte?: Date } = { gte: brStartOfDaysAgo(periodDays - 1) };

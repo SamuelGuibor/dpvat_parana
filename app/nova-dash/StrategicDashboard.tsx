@@ -223,7 +223,7 @@ export const StrategicDashboard: React.FC = () => {
               chatbot). Fora da allowlist a seção nem monta, em vez de mostrar
               a caixa de erro na aba padrão. A UI só esconde: o guard continua
               no servidor. */}
-          {data.canViewChatbot && (
+          {data.canViewLeadOrigin && (
             <LeadOriginSection numberId={numberId} range={rangeISO} />
           )}
 

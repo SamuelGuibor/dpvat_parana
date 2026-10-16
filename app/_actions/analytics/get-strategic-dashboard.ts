@@ -48,6 +48,8 @@ export interface StrategicDashboardData {
    * Chatbot e a Origem dos leads. A UI só esconde; o guard é o das actions.
    */
   canViewChatbot: boolean;
+  /** Origem dos leads: allowlist do chatbot ou "Somente Dashboard". */
+  canViewLeadOrigin: boolean;
 }
 
 export async function getStrategicDashboardData(
@@ -83,5 +85,6 @@ export async function getStrategicDashboardData(
     })),
     kanbanFlow,
     canViewChatbot,
+    canViewLeadOrigin: canViewChatbot || ctx.permissions.dashboard_only,
   };
 }
