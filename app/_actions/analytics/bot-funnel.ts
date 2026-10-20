@@ -45,22 +45,23 @@ const GOAL_DEFAULT = 60;
 
 // Contratados do BotConversa lançados à mão pela gestão (13/10/2026): o
 // webhook antigo não registrou esses fechamentos, então entram como parcela
-// legada (meta, card Contratados e gráfico Mensal). Chave = mês Brasília
-// 'AAAA-MM'; o total é espalhado pelos dias (14/10/2026: filtro de
-// "hoje"/"ontem" mostrava os 120 inteiros) com pesos fixos por mês — do dia
-// 1 até `lastDay` (padrão: fim do mês; outubro fechou os 120 até o dia 13).
-// Só na visão "todos os números".
-const BOTCONVERSA_HIRED_ADJUST: Record<string, { total: number; lastDay?: number }> = {
-  '2026-08': { total: 120 },
-  '2026-09': { total: 120 },
-  '2026-10': { total: 120, lastDay: 13 },
-};
+// legada (meta, card Contratados e gráfico Mensal). Cada lote é um mês
+// Brasília 'AAAA-MM' com o total espalhado pelos dias `firstDay`..`lastDay`
+// (padrão: mês inteiro) com pesos fixos (14/10/2026: filtro de "hoje"/"ontem"
+// mostrava o lote inteiro). Dia futuro não conta. Só na visão "todos os números".
+const BOTCONVERSA_HIRED_ADJUST: { month: string; total: number; firstDay?: number; lastDay?: number }[] = [
+  { month: '2026-08', total: 120 },
+  { month: '2026-09', total: 120 },
+  { month: '2026-10', total: 120, lastDay: 13 },
+  { month: '2026-10', total: 80, firstDay: 14, lastDay: 20 },
+];
 
 /** Divide `total` pelos dias do mês com pesos pseudoaleatórios estáveis (mesma semente = mesma divisão). */
-function splitAdjustByDay(month: string, total: number, lastDay?: number): number[] {
+function splitAdjustByDay(month: string, total: number, firstDay = 1, lastDay?: number): number[] {
   const [y, m] = month.split('-').map(Number);
-  const days = lastDay ?? new Date(Date.UTC(y, m, 0)).getUTCDate();
-  let seed = y * 100 + m;
+  const days = (lastDay ?? new Date(Date.UTC(y, m, 0)).getUTCDate()) - firstDay + 1;
+  // Semente do 1º lote do mês igual à original (não mexe nos números já publicados).
+  let seed = y * 100 + m + (firstDay - 1) * 7919;
   const rand = () => {
     seed = (seed * 1103515245 + 12345) % 2147483648;
     return seed / 2147483648;
@@ -79,9 +80,12 @@ function splitAdjustByDay(month: string, total: number, lastDay?: number): numbe
   return out;
 }
 
-const ADJUST_BY_DAY: { day: string; n: number }[] = Object.entries(BOTCONVERSA_HIRED_ADJUST).flatMap(
-  ([month, { total, lastDay }]) =>
-    splitAdjustByDay(month, total, lastDay).map((n, i) => ({ day: `${month}-${String(i + 1).padStart(2, '0')}`, n })),
+const ADJUST_BY_DAY: { day: string; n: number }[] = BOTCONVERSA_HIRED_ADJUST.flatMap(
+  ({ month, total, firstDay = 1, lastDay }) =>
+    splitAdjustByDay(month, total, firstDay, lastDay).map((n, i) => ({
+      day: `${month}-${String(firstDay + i).padStart(2, '0')}`,
+      n,
+    })),
 );
 
 /** Soma o ajuste dos dias Brasília (AAAA-MM-DD) entre `fromDay` e `toDay`, sem passar de hoje. */
@@ -315,7 +319,7 @@ async function loadFunnelTotals(numberId: string | null, since: Date, until: Dat
   const goalMonthKey = brDayKey(ref).slice(0, 7);
   const yearAdjust = numberId
     ? []
-    : Object.keys(BOTCONVERSA_HIRED_ADJUST)
+    : [...new Set(BOTCONVERSA_HIRED_ADJUST.map((a) => a.month))]
         .filter((m) => m.startsWith(`${refYear}-`))
         .map((m) => [m, hiredAdjustBetween(`${m}-01`, `${m}-31`)] as const);
 
