@@ -1,7 +1,8 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useMemo, useDeferredValue, useCallback, useEffect } from 'react';
 import { Badge } from '@/app/_shared/ui/badge';
-import { Calendar, Phone, User, Clock, Trash2, Copy } from 'lucide-react';
+import { Calendar, Phone, User, Clock, Trash2, Copy, Download } from 'lucide-react';
+import { brDayKey } from '@/app/_shared/utils/date-br';
 import { toast } from 'sonner';
 import { formatPhone } from '@/app/_shared/utils/format';
 import { ScrollArea, ScrollBar } from '@/app/_shared/ui/scroll-area';
@@ -40,6 +41,31 @@ const STAGE_KEYS = STAGE_DEFS.map((s) => s.key);
 const STAGE_COLORS = STAGE_DEFS.map((s) => s.color);
 
 
+// CSV do Fluxo Rápido (21/10/2026): só nome + telefone, pedido do comercial.
+// ";" + BOM pro Excel pt-BR abrir acentos e colunas certas; telefone entre
+// aspas pra não virar notação científica nem perder dígito.
+function downloadLeadsCsv(rows: KanbanItem[], suffix: string) {
+    const esc = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
+    const seen = new Set<string>();
+    const body: string[] = [];
+    for (const r of rows) {
+        // Mesmo telefone pode vir do sistema e do legado (ou de 2 números).
+        const phone = (r.telefone ?? '').replace(/\D/g, '');
+        if (phone && seen.has(phone)) continue;
+        if (phone) seen.add(phone);
+        body.push([r.nome, phone].map(esc).join(';'));
+    }
+    const blob = new Blob(['﻿' + [['Nome', 'Telefone'].map(esc).join(';'), ...body].join('\r\n')], {
+        type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clientes-${suffix}-${brDayKey()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 function formatDate(date: string | null) {
     if (!date) return '—';
     return new Date(date).toLocaleDateString('pt-BR');
@@ -49,9 +75,11 @@ interface MiniKanbanProps {
     data?: KanbanItem[];
     /** Leads do sistema próprio (WhatsApp multi-número), somente-leitura. */
     systemItems?: KanbanItem[];
+    /** Permissão export_leads_csv (lista de dado pessoal em massa). */
+    canExportCsv?: boolean;
 }
 
-export const MiniKanban: React.FC<MiniKanbanProps> = ({ data, systemItems }) => {
+export const MiniKanban: React.FC<MiniKanbanProps> = ({ data, systemItems, canExportCsv }) => {
     const [items, setItems] = useState<KanbanItem[]>([]);
     const [search, setSearch] = useState('');
 
@@ -184,9 +212,21 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data, systemItems }) => 
                     <h3 className="text-xl font-bold">Fluxo de Eventos Rápidos</h3>
                     <p className="text-sm text-gray-500 dark:text-zinc-400">Acompanhamento de {STAGES.length} etapas</p>
                 </div>
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                    {STAGES.length} Colunas
-                </Badge>
+                <div className="flex items-center gap-2">
+                    {canExportCsv && (
+                        <button
+                            type="button"
+                            onClick={() => downloadLeadsCsv(filteredItems, 'todos')}
+                            title="Baixar nome e telefone de todas as colunas (respeita a busca)"
+                            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-gray-100"
+                        >
+                            <Download className="h-3.5 w-3.5" /> CSV
+                        </button>
+                    )}
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        {STAGES.length} Colunas
+                    </Badge>
+                </div>
             </div>
 
             <div className="mb-4">
@@ -212,9 +252,21 @@ export const MiniKanban: React.FC<MiniKanbanProps> = ({ data, systemItems }) => 
                                         <div className={`w-2.5 h-2.5 rounded-full ${stageColor} shadow-[0_0_8px_rgba(0,0,0,0.3)]`}></div>
                                         {stageName}
                                     </h3>
-                                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-gray-100 dark:bg-zinc-800">
-                                        {stageItems.length}
-                                    </Badge>
+                                    <div className="flex items-center gap-1.5">
+                                        {canExportCsv && stageItems.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => downloadLeadsCsv(stageItems, stageKey)}
+                                                title={`Baixar CSV de ${stageName}`}
+                                                className="inline-flex items-center gap-1 rounded border px-1.5 h-5 text-[10px] font-medium hover:bg-gray-100"
+                                            >
+                                                <Download className="h-3 w-3" /> CSV
+                                            </button>
+                                        )}
+                                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-gray-100 dark:bg-zinc-800">
+                                            {stageItems.length}
+                                        </Badge>
+                                    </div>
                                 </div>
 
                                 <VirtualColumn

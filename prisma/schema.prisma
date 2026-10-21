@@ -595,23 +595,23 @@ model Goal {
 // Enquanto não houver linha aqui, o sistema segue nas envs WHATSAPP_* (o
 // runtime cria/casa o número default automaticamente — ver numbers.ts).
 model WhatsAppNumber {
-  id             String   @id @default(cuid())
-  phoneNumberId  String   @unique // id do número na Meta (metadata.phone_number_id do webhook)
-  wabaId         String? // conta WhatsApp Business dona do número (templates são por WABA)
-  displayPhone   String? // E.164 exibido (display_phone_number)
-  label          String // nome amigável na UI ("Comercial PR", "Leads Meta Ads"...)
-  accessTokenEnc String // token de System User, criptografado
-  appSecretEnc   String? // app secret p/ HMAC do webhook (null = usa WHATSAPP_APP_SECRET global)
-  apiVersion     String   @default("v21.0")
-  active         Boolean  @default(true)
+  id              String   @id @default(cuid())
+  phoneNumberId   String   @unique // id do número na Meta (metadata.phone_number_id do webhook)
+  wabaId          String? // conta WhatsApp Business dona do número (templates são por WABA)
+  displayPhone    String? // E.164 exibido (display_phone_number)
+  label           String // nome amigável na UI ("Comercial PR", "Leads Meta Ads"...)
+  accessTokenEnc  String // token de System User, criptografado
+  appSecretEnc    String? // app secret p/ HMAC do webhook (null = usa WHATSAPP_APP_SECRET global)
+  apiVersion      String   @default("v21.0")
+  active          Boolean  @default(true)
   // Pausa SÓ os envios de template (pagos) por este número: texto livre na
   // janela de 24h e o webhook seguem normais. Usado quando o pagamento da
   // WABA está configurado errado e cada template vira custo indevido.
-  templatesPaused Boolean @default(false)
+  templatesPaused Boolean  @default(false)
   // O número "original" (fallback de envio quando a conversa não tem numberId).
-  isDefault      Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("whatsapp_numbers")
 }
@@ -622,50 +622,50 @@ model WhatsAppNumber {
 // são referências soltas, sem FK, para não criar cascade com dados de
 // clientes).
 model WhatsAppContact {
-  id                String                @id @default(cuid())
-  phone             String // E.164, ex: 5541999999999
+  id                  String                @id @default(cuid())
+  phone               String // E.164, ex: 5541999999999
   // Número da empresa que atende este contato. Null só em linha legada ainda
   // não backfillada (o ingest "adota" a linha na primeira mensagem nova).
-  numberId          String?
-  name              String?
-  userId            String?
-  processId         String?
-  optedOut          Boolean               @default(false)
+  numberId            String?
+  name                String?
+  userId              String?
+  processId           String?
+  optedOut            Boolean               @default(false)
   // Opt-in documentado (exigência anti-spam da Meta): quando e como o cliente
   // aceitou receber mensagens. Preenchido automaticamente na 1ª mensagem
   // recebida ("inbound"). Sem opt-in, envio proativo fora da janela de 24h é
   // pulado (dentro da janela sempre pode, pois o cliente acabou de escrever).
-  optedInAt         DateTime?
-  optInSource       String? // inbound | manual
+  optedInAt           DateTime?
+  optInSource         String? // inbound | manual
   // Rascunho da ficha do cliente preenchida no atendimento, quando o contato
   // ainda não tem User vinculado. Vira User no "Adicionar cliente".
-  clientDraft       Json?
+  clientDraft         Json?
   // Documentos pessoais anexados na ficha antes do contato virar cliente:
   // [{ key, name, uploadedAt }]. Migram para Document real quando o contato é
   // vinculado a um card (telefone ao abrir a conversa ou "Adicionar cliente").
-  draftDocuments    Json?
+  draftDocuments      Json?
   // Atribuição de origem (Click-to-WhatsApp ads): preenchido na PRIMEIRA
   // mensagem que chega com objeto `referral` da Meta e nunca sobrescrito
   // (first touch). adPlatform é derivado da source_url (facebook | instagram).
-  adPlatform        String?
-  adSourceType      String? // ad | post | page
-  adSourceId        String? // ID do anúncio/post na Meta
-  adSourceUrl       String?
-  adHeadline        String?
-  ctwaClid          String? // click id p/ API de Conversões
-  adReferral        Json? // payload cru do referral, para auditoria
+  adPlatform          String?
+  adSourceType        String? // ad | post | page
+  adSourceId          String? // ID do anúncio/post na Meta
+  adSourceUrl         String?
+  adHeadline          String?
+  ctwaClid            String? // click id p/ API de Conversões
+  adReferral          Json? // payload cru do referral, para auditoria
   // Ficha por IA: quais campos foram preenchidos pela IA (e quando) —
   // { "cidade": "2026-08-06T22:10:00.000Z" }. Serve só para marcar a origem na
   // ficha; quando um humano edita o campo, a marca sai.
-  aiFilledFields    Json?
+  aiFilledFields      Json?
   // Hospital citado pelo cliente. A IA NUNCA preenche o campo hospital (é um
   // select com cadastro próprio) — deixa a dica aqui para o atendente escolher
   // a opção certa na mão.
-  hospitalHint      String?
+  hospitalHint        String?
   // Último estágio do funil reportado à API de Conversões da Meta (dedupe:
   // não reenvia o mesmo estágio pro mesmo lead). Ex.: LeadQualificado.
-  metaLeadStage     String?
-  metaLeadStageAt   DateTime?
+  metaLeadStage       String?
+  metaLeadStageAt     DateTime?
   // Eventos de mensagens comerciais (atribuição ao anúncio Click-to-WhatsApp)
   // aceitos pela Meta: no máximo um de cada por contato. Null = não enviado.
   metaLeadSubmittedAt DateTime? // LeadSubmitted (lead qualificado)
@@ -673,12 +673,12 @@ model WhatsAppContact {
   // Origem de importação em massa ("botconversa" = planilha da migração de
   // 18/08/2026). Contato marcado NUNCA cai no bot: vai direto pra fila humana
   // com a nota de validação (ver service.ts).
-  importSource      String?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  conversation      WhatsAppConversation?
-  messages          WhatsAppMessage[]
-  signatureRequests SignatureRequest[]
+  importSource        String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  conversation        WhatsAppConversation?
+  messages            WhatsAppMessage[]
+  signatureRequests   SignatureRequest[]
 
   @@unique([numberId, phone])
   @@index([phone])
@@ -754,39 +754,49 @@ model SignatureRequest {
 }
 
 model WhatsAppConversation {
-  id               String                     @id @default(cuid())
-  contactId        String                     @unique
+  id                    String                     @id @default(cuid())
+  contactId             String                     @unique
   // Denormalizado do contato (o dashboard filtra conversas por número direto).
-  numberId         String?
+  numberId              String?
   // "standby" (28/07/2026): cliente sumiu no meio da triagem — em vez de
   // fechar, entra no ciclo de recuperação (até 3 provocações em ~3 dias).
-  status           String                     @default("bot") // bot | queued | human | standby | closed
-  assignedToId     String?
+  status                String                     @default("bot") // bot | queued | human | standby | closed
+  assignedToId          String?
   // Só relevante quando status="closed": null/false = não qualificada
   // (default), true = qualificada. Decidido no botão de encerrar ou pela IA.
-  qualified        Boolean?
+  qualified             Boolean?
   // Desfecho do atendimento (categoria de encerramento decidida pela IA ou
   // pelo atendente): qualificado | nao_qualificado | perguntas | novo_acidente
   // | transferido | sem_resposta (esgotou o ciclo de recuperação sem retorno).
   // Null enquanto em andamento.
-  closeCategory    String?
+  closeCategory         String?
   // Quando o ÚLTIMO encerramento aconteceu (03/09/2026). Antes as métricas
   // usavam updatedAt como proxy, e qualquer tag/nota depois "reencerrava" a
   // conversa no mês corrente. Só faz sentido lida junto com status="closed".
-  closedAt         DateTime?
+  closedAt              DateTime?
   // Ciclo de RECUPERAÇÃO (status "standby"): provocações enviadas pelo cron
   // pra resgatar quem sumiu no meio da triagem. O contador NÃO zera quando o
   // cliente responde (pausa e retoma se ele sumir de novo); só zera no
   // desfecho real (qualificou/encerrou). Máx. 3 tentativas.
-  recoveryAttempts Int                        @default(0)
-  recoveryNextAt   DateTime? // quando o cron pode disparar a próxima provocação
-  recoveryOutcome  String? // recuperado | esgotado | opt_out (último desfecho do ciclo)
+  recoveryAttempts      Int                        @default(0)
+  recoveryNextAt        DateTime? // quando o cron pode disparar a próxima provocação
+  recoveryOutcome       String? // recuperado | esgotado | opt_out (último desfecho do ciclo)
+  // Recuperação MANUAL (21/10/2026): atendente que pôs a conversa em
+  // recuperação (null = ciclo automático) e o teto que ele escolheu. A IA
+  // cobra a partir de onde a conversa REALMENTE parou (não do botState), e a
+  // resposta do cliente volta pra esse atendente, não pro bot.
+  recoveryManualById    String?
+  recoveryManualMax     Int?
+  // Nota interna FIXADA no topo da conversa (21/10/2026): id de uma
+  // WhatsAppMessage internal:true do mesmo contato. Sem FK, como collectRequest.
+  pinnedNoteId          String?
+  pinnedNoteAt          DateTime?
   // Cérebro da IA (persistido por conversa; o microserviço é stateless):
-  botMemory        String? // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
-  botState         String? // etapa da conversa (triagem_seguro, coleta_cpf...)
-  botFailCount     Int                        @default(0) // "não entendi" seguidos; 2 → escala pra humano
-  botNudge30At     DateTime? // "ainda está aí?" enviado (silêncio de 30min)
-  botNudge24At     DateTime? // follow-up de ~24h enviado
+  botMemory             String? // ficha de fatos extraída pela IA ("Nome: João | Cidade: Curitiba")
+  botState              String? // etapa da conversa (triagem_seguro, coleta_cpf...)
+  botFailCount          Int                        @default(0) // "não entendi" seguidos; 2 → escala pra humano
+  botNudge30At          DateTime? // "ainda está aí?" enviado (silêncio de 30min)
+  botNudge24At          DateTime? // follow-up de ~24h enviado
   // PEDIDO EM ABERTO (30/09/2026): o que a IA deve recolher até completar
   // (lista de documentos, prints, dados). Vai ao cérebro como FATO
   // (conversationFacts.attendantRequest); quem decide o que fazer é ele.
@@ -807,32 +817,32 @@ model WhatsAppConversation {
   // avaliação que terminou em cobrança ou silêncio (backoff de 6 h) e quantas
   // cobranças saíram no pedido atual (zera quando o pedido abre ou é limpo).
   collectNudgeAt        DateTime?
-  collectNudgeCount     Int       @default(0)
+  collectNudgeCount     Int                        @default(0)
   // Último "Devolver ao bot" (NUNCA limpo): fato priorOutcome.returnedByAttendant
   // do cérebro (até 7 dias e depois do último encerramento) e rede do cron
   // de silêncio para contato com card.
   returnedToBotAt       DateTime?
   // Urgência detectada pela IA — destaca a conversa no inbox até um atendente
   // assumir ou encerrar.
-  urgent           Boolean                    @default(false)
+  urgent                Boolean                    @default(false)
   // SLA da fila de espera: quando entrou na fila e quando o último alerta de
   // "cliente esperando demais" foi disparado pelo cron (evita spam).
-  queuedAt         DateTime?
-  queueAlertAt     DateTime?
+  queuedAt              DateTime?
+  queueAlertAt          DateTime?
   // Último alerta de FALHA DE ENTREGA (status "failed" da Meta ou mensagem
   // parada em "sent" sem "delivered" = provável bloqueio/número errado) —
   // debounce para não repetir o aviso. O envio ao número NÃO é bloqueado:
   // a equipe é avisada para verificar número/bloqueio/janela de 24h.
-  deliveryAlertAt  DateTime?
-  lastMessageAt    DateTime                   @default(now())
+  deliveryAlertAt       DateTime?
+  lastMessageAt         DateTime                   @default(now())
   // Legado: marcador global de leitura (mantido como fallback na migração
   // para leitura POR ATENDENTE — ver WhatsAppConversationRead).
-  lastReadAt       DateTime?
-  createdAt        DateTime                   @default(now())
-  updatedAt        DateTime                   @updatedAt
-  contact          WhatsAppContact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  tags             WhatsAppConversationTag[]
-  reads            WhatsAppConversationRead[]
+  lastReadAt            DateTime?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  contact               WhatsAppContact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tags                  WhatsAppConversationTag[]
+  reads                 WhatsAppConversationRead[]
 
   @@index([status])
   @@index([assignedToId])
@@ -1380,18 +1390,18 @@ model CostSnapshot {
 }
 
 model ProjectCost {
-  id             String   @id @default(cuid())
+  id             String           @id @default(cuid())
   // Chave do serviço (vercel, neon, claude, ...) — ver SERVICES em _actions/costs.
   service        String
   // Do que foi a cobrança: "Plano Pro", "créditos de API", "S3 + SES"...
   description    String?
   chargedAt      DateTime
   amountCents    Int
-  currency       String   @default("BRL") // BRL | USD
+  currency       String           @default("BRL") // BRL | USD
   amountBrlCents Int
   createdById    String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @default(now()) @updatedAt
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
   // Quando o lançamento é o "marcar pago" do calendário de pagamentos: de qual
   // conta recorrente e de qual mês ("YYYY-MM"). Um pagamento por conta/mês.
   scheduleId     String?
@@ -1408,24 +1418,24 @@ model ProjectCost {
 // 10 a 12, R$ 100–120"). O pagamento em si vira uma ProjectCost vinculada,
 // então já soma nos totais do painel de Custos sem contar duas vezes.
 model PaymentSchedule {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   service     String // chave de COST_SERVICES
   description String?
   dayFrom     Int // 1..31 — dia em que a janela de vencimento abre
   dayTo       Int // 1..31 — fecha; menor que dayFrom = vira o mês ("28 a 3")
   minCents    Int
   maxCents    Int
-  currency    String   @default("BRL") // BRL | USD
-  recurrence  String   @default("MONTHLY") // MONTHLY | YEARLY | ONCE
+  currency    String        @default("BRL") // BRL | USD
+  recurrence  String        @default("MONTHLY") // MONTHLY | YEARLY | ONCE
   // YEARLY/ONCE: mês (1..12) do vencimento; ONCE usa também startMonth como ano.
   month       Int?
   // "YYYY-MM": a partir de quando a conta existe (ONCE = o único mês).
   startMonth  String
-  active      Boolean  @default(true)
+  active      Boolean       @default(true)
   notes       String?
   createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @default(now()) @updatedAt
   payments    ProjectCost[]
 
   @@index([active])

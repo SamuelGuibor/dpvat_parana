@@ -13,7 +13,7 @@ import {
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
   UserCheck, Columns3, Users, Phone, BookUser, Smile,
-  Lock, ArrowDown, UserX,
+  Lock, ArrowDown, UserX, Pin, PinOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -40,7 +40,7 @@ import {
 import { closedFolderOf, type ClosedFolderKey } from '@/app/_shared/utils/inbox-folders';
 import {
   assumeConversation, returnConversationToBot, closeConversation, markConversationRead, markConversationUnread,
-  setConversationCollectRequest,
+  setConversationCollectRequest, startManualRecovery, pinWhatsAppNote,
 } from '@/app/_actions/whatsapp/conversations';
 import { collectRequestPatch, sameCollectRequest } from '@/app/_shared/utils/collect-request';
 // Só tipo: o módulo de dados (inbox-data.ts) importa o Prisma e não pode
@@ -672,6 +672,25 @@ export function WhatsAppInbox() {
   // Clique na citação (quote) pula pra mensagem original, se ela estiver carregada.
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Fixar/desafixar nota interna: uma por conversa; fixar outra substitui.
+  function togglePinNote(messageId: string) {
+    const base = active;
+    if (!base) return;
+    const unpin = base.pinnedNote?.id === messageId;
+    const note = displayMessages.find((m) => m.id === messageId);
+    void runAction(() => pinWhatsAppNote(base.contactId, unpin ? null : messageId), unpin ? 'Nota desafixada.' : 'Nota fixada.', {
+      base,
+      optimistic: {
+        pinnedNote: unpin || !note ? null : {
+          id: note.id,
+          body: (note.body ?? '').slice(0, 300),
+          authorName: note.sentByBot ? 'Bot' : note.authorName ?? null,
+          at: note.createdAt,
+        },
+      },
+      errorMsg: 'Não foi possível fixar a nota. Recarregue a página (F5) e tente de novo.',
+    });
+  }
   function jumpToMessage(id: string | null | undefined) {
     if (!id) return;
     const el = rowRefs.current.get(id);
@@ -2485,6 +2504,36 @@ export function WhatsAppInbox() {
                   }}
                 />
               )}
+              {/* Recuperação MANUAL (21/10/2026): a automática foi desligada; o
+                  atendente escolhe quem a IA deve cobrar — pela etapa em que
+                  a conversa REALMENTE parou, e a resposta volta pra ele. */}
+              {active.status !== 'standby' && !active.optedOut && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button title="Colocar em recuperação (a IA cobra o cliente)" className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      <RotateCcw className="h-3.5 w-3.5" /> <span className="hidden lg:inline">Recuperação</span> <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuLabel className="text-xs text-gray-400">A IA cobra a partir de onde a conversa parou</DropdownMenuLabel>
+                    {MANUAL_RECOVERY_OPTIONS.map((o) => (
+                      <DropdownMenuItem
+                        key={o.label}
+                        onClick={() => {
+                          const base = active;
+                          void runAction(() => startManualRecovery(base.id, { attempts: o.attempts, firstInHours: o.firstInHours }), 'Conversa em recuperação.', {
+                            base,
+                            optimistic: { status: 'standby', assignedToId: meId, recoveryAttempts: 0, recoveryManualMax: o.attempts },
+                            errorMsg: 'Não foi possível colocar em recuperação (o contato pediu SAIR?). Recarregue a página (F5) e tente de novo.',
+                          });
+                        }}
+                      >
+                        {o.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               {/* Devolver abre o diálogo do pedido ("O que a IA deve
                   recolher?"). Também na Fila: a IA transferiu por uma dúvida
                   no meio da coleta e o atendente respondeu sem assumir. */}
@@ -2635,6 +2684,29 @@ export function WhatsAppInbox() {
 
             {/* Invólucro relativo só para o chip "Nova mensagem ↓" flutuar sobre o rodapé da thread. */}
             <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Nota interna fixada (21/10/2026): clique pula até ela na thread. */}
+            {active.pinnedNote && (
+              <div className="flex shrink-0 items-start gap-2 border-b border-amber-300 bg-amber-100 px-4 py-2 text-xs text-amber-900">
+                <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <button
+                  type="button"
+                  onClick={() => jumpToMessage(active.pinnedNote?.id)}
+                  title="Ir até a nota na conversa"
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="font-bold">{active.pinnedNote.authorName ?? 'Equipe'} · nota fixada: </span>
+                  <span className="line-clamp-2 whitespace-pre-wrap break-words">{renderFormattedText(active.pinnedNote.body)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => togglePinNote(active.pinnedNote!.id)}
+                  title="Desafixar"
+                  className="shrink-0 rounded p-0.5 hover:bg-amber-200"
+                >
+                  <PinOff className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             {/* Poll da thread falhou (403 da trava de IP, 500, rede): as
                 mensagens que já estavam ficam (o SWR guarda o último dado) e
                 o aviso diz o motivo, em vez de a conversa esvaziar calada. */}
@@ -2717,6 +2789,8 @@ export function WhatsAppInbox() {
                       onJumpToReply={() => jumpToMessage(msg.replyToId)}
                       onAttachToCard={() => handleAttachMedia(msg)}
                       onReact={(emoji) => handleReact(msg, emoji)}
+                      pinned={active?.pinnedNote?.id === msg.id}
+                      onTogglePin={() => togglePinNote(msg.id)}
                       contactName={active?.contactName}
                     />
                   </Fragment>
@@ -3182,6 +3256,11 @@ function ConversationGroup({
   // Etiqueta do número da empresa (multi-número) — null com menos de 2 linhas.
   const numberBadges = useContext(NumberBadgeContext);
   const recoveryCapOf = useContext(RecoveryCapContext);
+  // Manual: o teto do atendente, nunca acima do teto do número (mesma regra do cron).
+  const recoveryMaxOf = (conv: WhatsAppConversationDTO) => {
+    const cap = recoveryCapOf(conv.numberId);
+    return conv.recoveryManualMax ? Math.max(1, Math.min(conv.recoveryManualMax, cap)) : cap;
+  };
   if (!items.length && !forceShow && !hideTitle) return null;
   const colors = accent ? GROUP_ACCENT[accent] : { header: 'text-[#8fbcac]', chip: 'bg-[#2e5749] text-[#cfe6db]' };
   const visible = limit != null ? items.slice(0, limit) : items;
@@ -3257,7 +3336,7 @@ function ConversationGroup({
               </span>
               {c.status === 'standby' && c.recoveryAttempts > 0 && (
                 <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8.5px] font-bold text-violet-300 ring-1 ring-violet-400/30">
-                  {Math.min(c.recoveryAttempts, recoveryCapOf(c.numberId))}ª de {recoveryCapOf(c.numberId)}
+                  {Math.min(c.recoveryAttempts, recoveryMaxOf(c))}ª de {recoveryMaxOf(c)}
                 </span>
               )}
               {/* Pedido em aberto: a IA está recolhendo uma lista (resumo no title). */}
@@ -3363,9 +3442,19 @@ function parseReactionBody(body: string | null): { emoji: string | null; removed
 // Paleta de reações (mesma do chat interno; whitelist replicada no servidor).
 const WA_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
 
+// Recuperação manual: tetos até 3 (o cron ainda corta pelo teto do número).
+const MANUAL_RECOVERY_OPTIONS = [
+  { label: '1 cobrança daqui a 4h', attempts: 1, firstInHours: 4 },
+  { label: '1 cobrança amanhã (24h)', attempts: 1, firstInHours: 24 },
+  { label: '2 cobranças (1ª daqui a 4h)', attempts: 2, firstInHours: 4 },
+  { label: '3 cobranças (1ª daqui a 8h)', attempts: 3, firstInHours: 8 },
+] as const;
+
 function ThreadMessageRow({
   msg, grouped, meId, highlighted, setRowRef, onReply, onEdit, onDelete, onRetry, canRetryMedia, onDiscard, onJumpToReply, onAttachToCard, onReact, contactName,
+  pinned, onTogglePin,
 }: {
+  pinned?: boolean; onTogglePin?: () => void;
   msg: WhatsAppThreadMessage; grouped: boolean; meId: string; highlighted: boolean; contactName?: string | null;
   setRowRef: (el: HTMLDivElement | null) => void;
   onReply: () => void; onEdit: () => void; onDelete: () => void;
@@ -3399,12 +3488,22 @@ function ThreadMessageRow({
   // atendentes etc.
   if (msg.internal) {
     return (
-      <div ref={setRowRef} className="mt-2 flex justify-center">
-        <div className="max-w-[85%] rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+      <div ref={setRowRef} className={`mt-2 flex justify-center ${highlighted ? 'rounded-xl bg-amber-100/70' : ''}`}>
+        <div className={`group max-w-[85%] rounded-xl border bg-amber-50 px-3 py-1.5 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200 ${pinned ? 'border-amber-400 ring-1 ring-amber-300' : 'border-amber-200'}`}>
           <span className="mr-1.5 inline-flex items-center gap-1 align-middle font-bold">
-            <StickyNote className="h-3 w-3" />
-            {msg.sentByBot ? 'Bot' : msg.authorName ?? 'Equipe'} · nota interna
+            {pinned ? <Pin className="h-3 w-3" /> : <StickyNote className="h-3 w-3" />}
+            {msg.sentByBot ? 'Bot' : msg.authorName ?? 'Equipe'} · nota {pinned ? 'fixada' : 'interna'}
             <span className="font-normal opacity-60">{timeShort(msg.createdAt)}</span>
+            {onTogglePin && !msg.id.startsWith('temp-') && (
+              <button
+                type="button"
+                onClick={onTogglePin}
+                title={pinned ? 'Desafixar nota' : 'Fixar nota no topo da conversa'}
+                className={`ml-1 rounded p-0.5 font-normal hover:bg-amber-200 ${pinned ? '' : 'opacity-0 group-hover:opacity-100'}`}
+              >
+                {pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+              </button>
+            )}
           </span>
           <span className="whitespace-pre-wrap break-words">{renderFormattedText(msg.body ?? '')}</span>
         </div>

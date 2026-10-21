@@ -91,6 +91,22 @@ const OVERDUE_MAX_CARDS = 60; // teto por rodada (os mais atrasados primeiro)
 // NÚMERO desde 19/08/2026 (aviso de spam da Meta) — padrão e overrides moram
 // em recovery-caps.ts, compartilhado com a pill do inbox.
 const RECOVERY_EARLY_ATTEMPTS = 3;                // texto livre na janela de 24h
+// Recuperação AUTOMÁTICA só pra quem CONVERSOU (21/10/2026): cada provocação
+// chama a IA (/recovery-message) e quase nenhuma tinha retorno no lead que só
+// mandou a 1ª mensagem (anúncio) e nunca respondeu o bot. Esse recebe só a
+// resposta inicial + o nudge de 30min e fecha como "sem resposta"; quem
+// respondeu o bot ao menos uma vez segue o ciclo normal. WA_AUTO_RECOVERY=1
+// devolve o ciclo a todos.
+const AUTO_RECOVERY_ALL = process.env.WA_AUTO_RECOVERY === '1';
+const FIRST_MESSAGE_ONLY = 'cliente só mandou a primeira mensagem e não respondeu o bot';
+async function onlyFirstMessage(contactId: string): Promise<boolean> {
+  if (AUTO_RECOVERY_ALL) return false;
+  const inbound = await db.whatsAppMessage.count({
+    where: { contactId, direction: 'in', internal: false, deletedAt: null },
+    take: 2,
+  });
+  return inbound <= 1;
+}
 
 // Resolve o teto de provocações pelo número da conversa. Conversa sem
 // numberId (linha legada) sai pelo número DEFAULT — herda o teto dele. O
@@ -112,6 +128,12 @@ async function recoveryMaxAttempts(numberId: string | null): Promise<number> {
     recoveryCapCache = { byNumberId, defaultCap };
   }
   return (numberId ? recoveryCapCache.byNumberId.get(numberId) : undefined) ?? recoveryCapCache.defaultCap;
+}
+// Teto da conversa: o manual usa o que o atendente escolheu, mas nunca acima
+// do teto do número (aviso de spam da Meta — só pode apertar, nunca afrouxar).
+async function conversationRecoveryMax(conv: { numberId: string | null; recoveryManualMax?: number | null }): Promise<number> {
+  const cap = await recoveryMaxAttempts(conv.numberId);
+  return conv.recoveryManualMax ? Math.max(1, Math.min(conv.recoveryManualMax, cap)) : cap;
 }
 // Cadência afrouxada (18/08/2026): 8h → 15h → 22h. Antes 4h/12h/20h — três
 // cutucadas em menos de um dia liam como spam. As três continuam DENTRO da
@@ -245,10 +267,15 @@ async function standbyBlockReason(conv: {
   qualified: boolean | null;
   closeCategory: string | null;
   recoveryAttempts: number;
+  recoveryManualById?: string | null;
+  recoveryManualMax?: number | null;
   contact: { optedOut: boolean; userId: string | null };
 }): Promise<string | null> {
   if (conv.contact.optedOut) return 'contato em opt-out';
-  if (conv.recoveryAttempts >= (await recoveryMaxAttempts(conv.numberId))) return 'ciclo de recuperação já esgotado';
+  if (conv.recoveryAttempts >= (await conversationRecoveryMax(conv))) return 'ciclo de recuperação já esgotado';
+  // Recuperação MANUAL: o atendente decidiu cobrar este cliente (qualificado,
+  // com card, conversa humana...) — as travas abaixo são do ciclo automático.
+  if (conv.recoveryManualById) return null;
   if (conv.qualified === true) return 'lead já qualificado';
   // Lead DESQUALIFICADO nunca entra (nem continua) no ciclo de recuperação.
   // A recuperação existe pra quem SUMIU no meio da triagem (qualified null);
@@ -1068,6 +1095,8 @@ async function finalizeClose(
       queuedAt: null,
       queueAlertAt: null,
       recoveryNextAt: null,
+      recoveryManualById: null,
+      recoveryManualMax: null,
       ...(opts.closeCategory ? { closeCategory: opts.closeCategory } : {}),
       ...(opts.recoveryOutcome ? { recoveryOutcome: opts.recoveryOutcome } : {}),
       // Encerramento por silêncio LIMPA o pedido em aberto sem âncora (não o
@@ -1124,6 +1153,8 @@ async function enterStandby(
       queueAlertAt: null,
       recoveryNextAt: nextBrBusinessSlot(Math.max(base, Date.now() + 60_000)),
       recoveryOutcome: null,
+      recoveryManualById: null,
+      recoveryManualMax: null,
       // Standby limpa o pedido em aberto sem âncora, como o encerramento (com
       // WA_PENDING_FOLLOWUP desligado é por aqui que ele sai).
       ...COLLECT_REQUEST_CLEARED,
@@ -1198,6 +1229,7 @@ async function buildRecoveryMessage(
   attempt: number,
   botState: string | null,
   maxAttempts: number,
+  opts: { manual?: boolean; numberId?: string | null; phone?: string } = {},
 ): Promise<{ message: string; pending: string }> {
   const first = (contactName ?? '').trim().split(/\s+/)[0] ?? '';
   const oi = first ? `Oi, ${first}!` : 'Oi!';
@@ -1235,9 +1267,12 @@ async function buildRecoveryMessage(
         body: JSON.stringify({
           contact: { name: contactName },
           memory: maskMemorySecrets(conv?.botMemory),
-          state: conv?.botState ?? null,
+          // Manual: a etapa do bot ficou velha (o atendente andou com o
+          // assunto) — a IA cobra pelo fim real da conversa.
+          state: opts.manual ? null : conv?.botState ?? null,
           attempt,
           maxAttempts,
+          manual: !!opts.manual,
           history: cronBrainHistory(history),
         }),
         signal: controller.signal,
@@ -1245,6 +1280,25 @@ async function buildRecoveryMessage(
       });
       if (!res.ok) throw new Error(`recovery-message HTTP ${res.status}`);
       const data = await res.json();
+      // Toda chamada de IA grava usage, senão o gasto some do Canto da IA
+      // (a provocação não logava nada até 21/10/2026).
+      await logWhatsAppEvent({
+        action: 'wa_followup',
+        message: `IA do cron (provocação de recuperação${opts.manual ? ' manual' : ''}, tentativa ${attempt})`,
+        authorId: 'whatsapp-bot',
+        authorName: '🤖 Bot WhatsApp',
+        contactId,
+        numberId: opts.numberId ?? null,
+        contactName,
+        contactPhone: opts.phone ?? null,
+        metadata: {
+          usage: data?.usage && typeof data.usage === 'object' ? data.usage : undefined,
+          mode: 'recovery',
+          manual: !!opts.manual,
+          attempt,
+          bySystem: true,
+        },
+      }).catch((err) => console.error('[WHATSAPP CRON] log da provocação falhou:', err));
       return {
         message: String(data?.message ?? '').trim() || fallback.message,
         pending: String(data?.pending ?? '').trim() || fallback.pending,
@@ -1396,7 +1450,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
         // Silêncio SEM desfecho real não pode virar "sem resposta" direto: é
         // lead que sumiu na triagem, tem que passar pelo ciclo de recuperação.
         // (13/08/2026 — caso Ambrosio, encerrado com 0 provocações.)
-        if (!conv.closeCategory && !(await standbyBlockReason(conv))) {
+        if (!conv.closeCategory && !(await onlyFirstMessage(conv.contactId)) && !(await standbyBlockReason(conv))) {
           if (await enterStandby(conv, { botNudge30At: null })) results.standby++;
           return;
         }
@@ -1493,7 +1547,7 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
       // mensagem nova do cliente zera o botNudge30At (ingestão) e a conversa
       // fica com o bot, que responde.
       const guard = { botNudge30At: conv.botNudge30At };
-      const block = await standbyBlockReason(conv);
+      const block = (await onlyFirstMessage(conv.contactId)) ? FIRST_MESSAGE_ONLY : await standbyBlockReason(conv);
       if (block && isHouseClient(conv)) {
         const settled = await settleClientSilence(conv, now, pacer);
         if (settled === 'closed') results.closed++;
@@ -1504,7 +1558,9 @@ export async function runNudgePhase(budgetMs?: number): Promise<CronResults> {
         if (await enterStandby(conv, guard)) results.standby++;
         else console.log(`[WHATSAPP CRON] ${conv.contactId}: mudou durante o encerramento (mensagem nova ou atendente) — conversa não foi para standby.`);
       } else if (await finalizeClose(conv, { fromStatus: 'bot', ...guard, closeCategory: silentCloseCategory(conv) })) {
-        await recordCodeIntervention({
+        // Lead só da 1ª mensagem: o fecho é o caminho normal, não uma
+        // intervenção — logar inundaria as métricas do Cérebro.
+        if (block !== FIRST_MESSAGE_ONLY) await recordCodeIntervention({
           contactId: conv.contactId,
           contactName: conv.contact.name,
           botState: conv.botState,
@@ -1580,7 +1636,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
       }
       // Ciclo completo (teto do número da conversa) e mais 24h de silêncio →
       // não há o que fazer.
-      const maxAttempts = await recoveryMaxAttempts(conv.numberId);
+      const maxAttempts = await conversationRecoveryMax(conv);
       if (conv.recoveryAttempts >= maxAttempts) {
         await recordRecoveryEvent({
           contactId: conv.contactId,
@@ -1588,9 +1644,12 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
           botState: conv.botState,
           action: 'exhausted',
           attempt: conv.recoveryAttempts,
-          detail: 'ciclo completo sem resposta do cliente',
+          detail: conv.recoveryManualById ? 'recuperação manual completa sem resposta do cliente' : 'ciclo completo sem resposta do cliente',
         });
-        if (await finalizeClose(conv, { fromStatus: 'standby', closeCategory: 'sem_resposta', recoveryOutcome: 'esgotado' })) results.closed++;
+        // Manual: o lead pode já ser qualificado/cliente — não rebaixa pra
+        // "sem resposta" um desfecho que o atendente já tinha.
+        const exhaustedCategory = conv.recoveryManualById ? silentCloseCategory(conv) : 'sem_resposta';
+        if (await finalizeClose(conv, { fromStatus: 'standby', closeCategory: exhaustedCategory, recoveryOutcome: 'esgotado' })) results.closed++;
         return;
       }
       // Rede de segurança: nunca deveria ter entrado no ciclo.
@@ -1635,6 +1694,7 @@ export async function runRecoveryPhase(budgetMs?: number): Promise<CronResults> 
         attempt,
         conv.botState,
         maxAttempts,
+        { manual: !!conv.recoveryManualById, numberId: conv.numberId, phone: conv.contact.phone },
       );
       const firstName = (conv.contact.name ?? '').trim().split(/\s+/)[0] || 'amigo(a)';
       const isFinal = attempt >= maxAttempts;

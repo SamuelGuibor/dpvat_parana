@@ -216,7 +216,7 @@ export const StrategicDashboard: React.FC = () => {
               lista a cada troca dela. Véu enquanto o legado (carga única) ou
               os leads do sistema (funil) ainda são do período anterior. */}
           <div className="relative">
-            <MiniKanban data={data.kanban} systemItems={systemLeads} />
+            <MiniKanban data={data.kanban} systemItems={systemLeads} canExportCsv={!permsLoading && perms.export_leads_csv} />
             <StaleDataVeil show={dashQ.stale || funnelQ.stale} />
           </div>
           {/* Origem dos leads usa getLeadOrigins (allowlist do painel do

@@ -6,7 +6,8 @@ import { getServerSession } from 'next-auth';
 import type { Prisma } from '@prisma/client';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
-import { requirePermission, requireTeam } from '@/app/_shared/lib/permissions-server';
+import { requirePermission, requireTeam, requireTeamWrite } from '@/app/_shared/lib/permissions-server';
+import { nextBrBusinessSlot } from '@/app/_shared/utils/date-br';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import { markMessageRead } from '@/app/_shared/lib/whatsapp/client';
@@ -188,7 +189,7 @@ export async function assumeConversation(conversationId: string): Promise<Partia
     // e abandonada pelo cliente, o cron a tratava como triagem incompleta e
     // disparava o ciclo de recuperação em cima de quem já estava com a equipe
     // (caso Daniel). Quem reclassifica o desfecho é o encerramento.
-    data: { status: 'human', assignedToId: me.id, queuedAt: null, queueAlertAt: null, recoveryNextAt: null },
+    data: { status: 'human', assignedToId: me.id, queuedAt: null, queueAlertAt: null, recoveryNextAt: null, recoveryManualById: null, recoveryManualMax: null },
   });
   if (before) {
     // "Assumir" reabre quando estava encerrada; senão é uma atribuição normal.
@@ -582,4 +583,102 @@ export async function markConversationUnread(conversationId: string): Promise<vo
     where: { id: conversationId },
     data: { lastReadAt: new Date(0) },
   });
+}
+
+// ---- RECUPERAÇÃO MANUAL (21/10/2026) ----------------------------------------
+// A automática foi desligada (gasto de IA sem retorno); quem decide cobrar é o
+// atendente. A conversa vai pro standby marcada com ele: o cron provoca pelo
+// fim REAL da conversa (não pelo botState) e a resposta volta pra ele.
+
+const MANUAL_RECOVERY_DELAYS_H = [1, 4, 8, 24] as const;
+
+/** Atendente coloca a conversa em recuperação (a IA cobra o cliente). */
+export async function startManualRecovery(
+  conversationId: string,
+  opts: { attempts: number; firstInHours: number },
+): Promise<Partial<WhatsAppConversationDTO>> {
+  const ctx = await requireTeamWrite();
+  if (!ctx.permissions.view_whatsapp) throw new Error('Sem permissão para o atendimento de WhatsApp.');
+  const attempts = Math.round(opts.attempts);
+  if (!(attempts >= 1 && attempts <= 3)) throw new Error('Escolha de 1 a 3 cobranças.');
+  if (!MANUAL_RECOVERY_DELAYS_H.includes(opts.firstInHours as (typeof MANUAL_RECOVERY_DELAYS_H)[number])) {
+    throw new Error('Prazo da primeira cobrança inválido.');
+  }
+  const conv = await db.whatsAppConversation.findUnique({
+    where: { id: conversationId },
+    select: { contactId: true, contact: { select: { name: true, phone: true, optedOut: true } } },
+  });
+  if (!conv) throw new Error('Conversa não encontrada.');
+  if (conv.contact.optedOut) throw new Error('O contato pediu para não receber mensagens (SAIR).');
+
+  const nextAt = nextBrBusinessSlot(Date.now() + opts.firstInHours * 60 * 60_000);
+  await db.whatsAppConversation.update({
+    where: { id: conversationId },
+    data: {
+      status: 'standby',
+      assignedToId: ctx.userId,
+      queuedAt: null,
+      queueAlertAt: null,
+      botNudge30At: null,
+      botNudge24At: null,
+      // Ciclo novo: o contador do automático não conta pro teto do atendente.
+      recoveryAttempts: 0,
+      recoveryNextAt: nextAt,
+      recoveryOutcome: null,
+      recoveryManualById: ctx.userId,
+      recoveryManualMax: attempts,
+    },
+  });
+  const at = new Date();
+  runAfterResponse('log wa_assign (recuperação manual)', () => logWhatsAppEvent({
+    action: 'wa_assign',
+    message: `colocou ${conv.contact.name ?? conv.contact.phone} em recuperação (${attempts} cobrança(s), 1ª em ${opts.firstInHours}h)`,
+    authorId: ctx.userId,
+    authorName: ctx.name ?? 'Atendente',
+    contactId: conv.contactId,
+    contactName: conv.contact.name,
+    contactPhone: conv.contact.phone,
+    metadata: { manualRecovery: true, attempts, firstInHours: opts.firstInHours },
+    at,
+  }));
+  return {
+    status: 'standby',
+    assignedToId: ctx.userId,
+    assignedToName: ctx.name ?? 'Atendente',
+    recoveryAttempts: 0,
+    recoveryManualMax: attempts,
+  };
+}
+
+/** Fixa (ou desafixa, com messageId null) uma nota interna no topo da conversa. */
+export async function pinWhatsAppNote(
+  contactId: string,
+  messageId: string | null,
+): Promise<Partial<WhatsAppConversationDTO>> {
+  const ctx = await requireTeamWrite();
+  if (!ctx.permissions.view_whatsapp) throw new Error('Sem permissão para o atendimento de WhatsApp.');
+  let pinnedNote: WhatsAppConversationDTO['pinnedNote'] = null;
+  if (messageId) {
+    const note = await db.whatsAppMessage.findFirst({
+      where: { id: messageId, contactId, internal: true, deletedAt: null },
+      select: { id: true, body: true, createdAt: true, sentByBot: true, authorId: true },
+    });
+    if (!note) throw new Error('Só dá para fixar nota interna desta conversa.');
+    const author = note.authorId
+      ? await db.user.findUnique({ where: { id: note.authorId }, select: { name: true } })
+      : null;
+    pinnedNote = {
+      id: note.id,
+      body: (note.body ?? '').slice(0, 300),
+      authorName: note.sentByBot ? 'Bot' : author?.name ?? null,
+      at: note.createdAt.toISOString(),
+    };
+  }
+  // update toca o @updatedAt → o delta leva o pin às outras abas; lastMessageAt
+  // fica intacto (fixar não reordena a lista nem marca não lida).
+  await db.whatsAppConversation.update({
+    where: { contactId },
+    data: { pinnedNoteId: messageId, pinnedNoteAt: messageId ? new Date() : null },
+  });
+  return { pinnedNote };
 }

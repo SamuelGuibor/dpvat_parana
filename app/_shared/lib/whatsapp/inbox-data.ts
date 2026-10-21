@@ -105,6 +105,9 @@ export async function countUnreadConversations(): Promise<number> {
 // mensagens recebidas dos 1.000 contatos + GROUP BY, ~83 ms). Hoje são ~5-6 em
 // série: o findMany com contact + tags ainda custa ~4 internas, porque o
 // schema não liga `relationJoins` (próxima alavanca, fora desta mudança).
+// Faixa da nota fixada: 1.000 linhas por poll — o texto inteiro vem da thread.
+const PINNED_NOTE_MAX_CHARS = 300;
+
 export async function loadConversations(
   where: Prisma.WhatsAppConversationWhereInput | undefined,
   take: number,
@@ -127,7 +130,9 @@ export async function loadConversations(
     select: {
       id: true, contactId: true, numberId: true, status: true, qualified: true,
       closeCategory: true, assignedToId: true, lastMessageAt: true,
-      createdAt: true, recoveryAttempts: true,
+      createdAt: true, recoveryAttempts: true, recoveryManualMax: true,
+      // Nota fixada: o pin é update na conversa (toca @updatedAt) → vai no delta.
+      pinnedNoteId: true,
       // Pedido em aberto (barra "IA recolhendo" + pill "Lista"). Quem grava é
       // a própria conversa por Prisma update/updateMany, que toca o
       // @updatedAt: o delta (?since=) já traz a mudança.
@@ -166,7 +171,8 @@ export async function loadConversations(
     conversations.map((c) => c.contact.userId).filter((id): id is string => !!id),
   )];
 
-  const [lastRows, assignees, handoffNotes, linkedUsers, readRows, reasonRows, inactiveIds, labels] = await Promise.all([
+  const pinnedIds = conversations.map((c) => c.pinnedNoteId).filter((id): id is string => !!id);
+  const [lastRows, assignees, handoffNotes, linkedUsers, readRows, reasonRows, inactiveIds, labels, pinnedRows] = await Promise.all([
     // Última mensagem (preview) e última mensagem RECEBIDA (janela de 24h) por
     // contato. ATENÇÃO (14/09/2026): isto era `findMany` + `distinct:['contactId']`
     // + `orderBy createdAt`. O Prisma NÃO traduz esse distinct pra DISTINCT ON —
@@ -268,7 +274,29 @@ export async function loadConversations(
     // board): sem o `label` aninhado no findMany acima, que sem relationJoins
     // seria mais uma ida ao banco em série.
     fetchLabels(),
+    // Por id (sem distinct): só as notas fixadas da página, já com o autor.
+    pinnedIds.length
+      ? db.whatsAppMessage.findMany({
+          where: { id: { in: pinnedIds }, internal: true, deletedAt: null },
+          select: { id: true, contactId: true, body: true, createdAt: true, sentByBot: true, authorId: true },
+        })
+      : Promise.resolve([]),
   ]);
+  // Autor da nota fixada (WhatsAppMessage não tem relação com User): ida
+  // extra só quando há nota fixada fora dos donos já carregados.
+  const knownNames = new Map(assignees.map((u) => [u.id, u.name ?? null]));
+  const missingAuthors = [...new Set(pinnedRows.map((m) => m.authorId).filter((id): id is string => !!id && !knownNames.has(id)))];
+  if (missingAuthors.length) {
+    const rows = await db.user.findMany({ where: { id: { in: missingAuthors } }, select: { id: true, name: true } });
+    for (const u of rows) knownNames.set(u.id, u.name ?? null);
+  }
+  // Só vale a nota do PRÓPRIO contato (o ponteiro não tem FK).
+  const pinnedByContact = new Map(pinnedRows.map((m) => [m.contactId, {
+    id: m.id,
+    body: (m.body ?? '').slice(0, PINNED_NOTE_MAX_CHARS),
+    authorName: m.sentByBot ? 'Bot' : (m.authorId ? knownNames.get(m.authorId) ?? null : null),
+    at: m.createdAt.toISOString(),
+  }]));
 
   const previewByContact = new Map(
     lastRows.filter((r) => r.direction !== null).map((r) => [r.contactId, r]),
@@ -351,6 +379,8 @@ export async function loadConversations(
       caseDataAcidente: ficha?.data_acidente?.trim() || null,
       hasCpf: !!ficha?.cpf?.trim(),
       recoveryAttempts: c.recoveryAttempts,
+      recoveryManualMax: c.recoveryManualMax,
+      pinnedNote: c.pinnedNoteId ? pinnedByContact.get(c.contactId) ?? null : null,
       // Mesma função do otimista da tela (collectRequestPatch), senão a barra
       // "pula" quando o delta chega. Origem desconhecida (linha antiga) vale
       // como texto do Devolver.

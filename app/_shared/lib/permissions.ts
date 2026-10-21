@@ -213,6 +213,12 @@ export const PERMISSION_DEFS = [
     category: "Segurança",
   },
   {
+    key: "export_leads_csv",
+    label: "Baixar CSV de clientes",
+    description: "Baixa o CSV (nome e telefone) dos leads no Fluxo de Eventos Rápidos da dashboard.",
+    category: "Gestão e equipe",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -265,6 +271,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_whatsapp: true,
     read_only: false,
     dashboard_only: false,
+    // Lista de nome+telefone é dado pessoal em massa — nasce exclusiva do
+    // ADMIN++, concedível por override.
+    export_leads_csv: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -312,6 +321,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_whatsapp: true,
     read_only: false,
     dashboard_only: false,
+    export_leads_csv: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -343,6 +353,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     view_whatsapp: true,
     read_only: false,
     dashboard_only: false,
+    export_leads_csv: true,
     manage_team: true,
   },
 };

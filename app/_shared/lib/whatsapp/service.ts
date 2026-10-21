@@ -343,13 +343,17 @@ export async function ingestIncomingMessage(
   // pegajoso igual à reabertura de encerrada (último atendente da janela).
   if (conversation.status === "standby" && !contact.optedOut && !wantsOptOut) {
     const rescuedAt = conversation.recoveryAttempts;
+    // Recuperação MANUAL: quem respondeu foi cobrado a pedido do atendente —
+    // volta pra ele (humano), não pro bot atropelar a conversa.
+    const manualOwner = conversation.recoveryManualById;
     conversation = await db.whatsAppConversation.update({
       where: { id: conversation.id },
       data: {
-        status: "bot",
-        assignedToId: await resolveConversationOwner(contact.id, conversation.assignedToId),
+        status: manualOwner ? "human" : "bot",
+        assignedToId: manualOwner ?? await resolveConversationOwner(contact.id, conversation.assignedToId),
         lastReadAt: null,
         recoveryNextAt: null, recoveryOutcome: "recuperado",
+        recoveryManualById: null, recoveryManualMax: null,
       },
     });
     // Só conta como "recuperado" se alguma provocação já tinha saído — quem

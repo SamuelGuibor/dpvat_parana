@@ -60,6 +60,11 @@ export interface WhatsAppConversationDTO {
   // Provocações do ciclo de recuperação já enviadas (0-5) — exibido quando
   // status="standby" como "1ª de 5".
   recoveryAttempts: number;
+  // Recuperação MANUAL (21/10/2026): teto escolhido pelo atendente que pôs a
+  // conversa em recuperação; null = ciclo automático (teto do número).
+  recoveryManualMax: number | null;
+  // Nota interna FIXADA no topo da conversa (21/10/2026). body já cortado.
+  pinnedNote: PinnedNoteDTO | null;
   // Pedido em aberto que a IA está recolhendo (30/09/2026): texto do Devolver,
   // lista detectada do atendente ou fluxo de lista que a IA mandou. null =
   // nada em aberto. Barra "IA recolhendo" na thread e pill "Lista" na linha.
@@ -158,3 +163,10 @@ export interface InboxColumnOption {
 export interface InboxColumnsResponse {
   items: InboxColumnOption[];
 }
+
+export type PinnedNoteDTO = {
+  id: string;
+  body: string;
+  authorName: string | null;
+  at: string;
+};
