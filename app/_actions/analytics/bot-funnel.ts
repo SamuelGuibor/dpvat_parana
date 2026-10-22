@@ -54,6 +54,7 @@ const BOTCONVERSA_HIRED_ADJUST: { month: string; total: number; firstDay?: numbe
   { month: '2026-09', total: 120 },
   { month: '2026-10', total: 120, lastDay: 13 },
   { month: '2026-10', total: 80, firstDay: 14, lastDay: 20 },
+  { month: '2026-10', total: 30, firstDay: 21, lastDay: 21 },
 ];
 
 /** Divide `total` pelos dias do mês com pesos pseudoaleatórios estáveis (mesma semente = mesma divisão). */
