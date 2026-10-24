@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enabledMcpjsonServers": ["crm-op"],
   "permissions": {
     "allow": [
       "Bash(git status*)",
@@ -32,6 +33,17 @@
       "PowerShell(npx prisma validate*)",
       "PowerShell(npx prisma migrate diff *)",
       "PowerShell(npx prisma migrate status*)",
+      "mcp__crm-op__diagnostico_crm",
+      "mcp__crm-op__buscar_cliente",
+      "mcp__crm-op__obter_card",
+      "mcp__crm-op__listar_historico",
+      "mcp__crm-op__listar_documentos",
+      "mcp__crm-op__listar_colunas",
+      "mcp__crm-op__listar_tags",
+      "mcp__crm-op__listar_cards_parados",
+      "mcp__crm-op__listar_cards_coluna",
+      "mcp__crm-op__verificar_pendencias",
+      "mcp__crm-op__consultar_conversa",
       "Read(//d/Chatbot_whatsapp/**)",
       "Read(//d/docx-converter/**)"
     ],
@@ -51,6 +63,21 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-env.mjs\"", "timeout": 10 }]
+      },
+      {
+        "matcher": "Read|Grep",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secrets.mjs\"", "timeout": 10 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/op-prompt.mjs\"", "timeout": 8 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__crm-op__.*",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/op-tool.mjs\"", "timeout": 8 }]
       }
     ],
     "Stop": [

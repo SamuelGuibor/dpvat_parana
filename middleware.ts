@@ -45,6 +45,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/documents/trash/purge", // CRON_SECRET (validado na rota)
   "/api/botconversa/contratado", // shared secret (validado na rota)
   "/api/costs/sync", // CRON_SECRET (validado na rota) — Vercel Cron chega sem cookie
+  "/api/op", // token do operador (Bearer, hash em operator_tokens) validado na rota — o Claude Code não tem cookie
 ];
 
 /** GETs consumidos pela área do cliente sem login (consulta de status). */

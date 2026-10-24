@@ -5,7 +5,7 @@
 - Next 14.2 (App Router) na **Vercel Pro**. Banco Postgres no **Neon** via Prisma 6. Três serviços satélites no **Railway**, cada um com deploy próprio: o cérebro do bot (`CHATBOT_URL`, repo `D:\Chatbot_whatsapp`), o `docx-converter` (`DOCX_CONVERTER_URL`, `D:\docx-converter`) e o relay SSE do chat (`CHAT_RELAY_URL`, `D:\chat_site`).
 - 8 crons no `vercel.json` (horário **UTC**). Todos são GET e se autenticam por `CRON_SECRET`, via `Authorization: Bearer` ou `?secret=`.
 - As funções rodam fixas em `cle1` (Cleveland, AWS us-east-2), a mesma região do Neon, pelo `regions` do `vercel.json`. O bucket S3 fica em us-east-1.
-- **Quebra nº 1 (ativa):** o `middleware.ts` só deixa passar sem sessão as rotas em `PUBLIC_API_PREFIXES`. `/api/automations/cron/time-check`, `/api/costs/sync` e `/api/maintenance/retention` **não estão na lista**. O Vercel Cron recebe 401 ("Não autenticado") antes de a rota rodar. Isso bate com a memória "cost sync parado desde 14/09".
+- **Quebra nº 1 (ativa):** o `middleware.ts` só deixa passar sem sessão as rotas em `PUBLIC_API_PREFIXES`. `/api/automations/cron/time-check` e `/api/maintenance/retention` **não estão na lista**. O Vercel Cron recebe 401 ("Não autenticado") antes de a rota rodar (`/api/costs/sync` já foi liberado). `/api/op` (API de operação por IA) está na lista e valida o token do operador dentro da rota (`docs/ai/operacao-ia.md`).
 - **Quebra nº 2:** o body de uma função da Vercel tem limite de **4,5 MB** em qualquer plano. Arquivo vai por URL pré-assinada do S3, nunca pelo body.
 - **Quebra nº 3:** o banco Neon tem drift de migrations, e `prisma migrate dev` propõe **resetar produção**. Use o fluxo diff → execute → resolve (ver Receitas).
 
@@ -92,7 +92,7 @@
 | `/api/afastamentos/check` | `*/30 * * * *` | — | padrão | sim | `Notification` para admins |
 | `/api/automations/cron/time-check` | `*/30 * * * *` | — | 120 | **NÃO** | automações por tempo e prazo |
 | `/api/documents/trash/purge` | `0 6 * * *` | 03:00 | 300 | sim | apaga no banco o que tem mais de 30 dias; no S3 só o objeto que nada mais usa |
-| `/api/costs/sync` | `30 3 * * *` | 00:30 | 120 | **NÃO** | grava `cost_snapshots` |
+| `/api/costs/sync` | `30 3 * * *` | 00:30 | 120 | sim | grava `cost_snapshots` |
 | `/api/maintenance/retention` | `0 5 * * *` | 02:00 | 300 | **NÃO** | purga `Notification` e logs `wa_*` |
 
 1. **Cron:** o Vercel Cron faz GET com `Authorization: Bearer $CRON_SECRET`. Em `middleware.ts`, se o path casa com `PUBLIC_API_PREFIXES`, a requisição passa. Senão, `getToken` tenta decodificar o Bearer como JWT, falha e devolve 401. Passando, a rota checa `isCronAuthorized(req)`, chama a função de domínio (Prisma, Meta ou S3) e responde JSON.
@@ -125,7 +125,7 @@
 - **Segredo do NextAuth:** `authOptions.secret` lê `NEXT_AUTH_SECRET` (se vazio, o NextAuth cai sozinho em `NEXTAUTH_SECRET`). O middleware usa `NEXT_AUTH_SECRET ?? NEXTAUTH_SECRET`. `whatsapp/crypto.ts` e o login legado `app/api/auth/route.ts` leem **só** `NEXT_AUTH_SECRET`. O `.env.example` diz "prefira `NEXTAUTH_SECRET`": com só ela definida, o login legado e a cifra de tokens (sem `WHATSAPP_CRED_KEY`) quebram.
 
 ## Regras invioláveis e armadilhas
-- **Rota chamada por máquina (cron, webhook, microserviço) tem que entrar em `PUBLIC_API_PREFIXES`** no `middleware.ts`. Motivo: sem cookie o middleware dá 401 antes da rota. Hoje 3 crons estão barrados (ver tabela).
+- **Rota chamada por máquina (cron, webhook, microserviço) tem que entrar em `PUBLIC_API_PREFIXES`** no `middleware.ts`. Motivo: sem cookie o middleware dá 401 antes da rota. Hoje 2 crons estão barrados (ver tabela). Vale também para cliente que não é navegador: a API de operação `/api/op` (Claude Code com token) está na lista e se autentica na rota com `opAuth`.
 - **Rota de cron segue um padrão:** GET, `export const dynamic = 'force-dynamic'`, `isCronAuthorized` de `app/api/whatsapp/cron/auth.ts`, idempotente e com `maxDuration` ≤ 300 (teto adotado no projeto; o `RUN_BUDGET_MS` de 240s supõe isso). Motivo: a Vercel pode repetir ou pular rodada. Hoje há 4 cópias locais de `isCronAuthorized`; não crie a quinta.
 - **Nunca hardcode `CRON_SECRET`.** Sem a env, todo cron responde 401. Motivo: um valor antigo já vazou no git via `whatsapp-cron.cmd`.
 - **Cron é UTC e o Node da Vercel também.** Corte por dia, mês ou hora só via `app/_shared/utils/date-br.ts`. Motivo: das 21h em diante em Brasília, o UTC já está no dia seguinte.
@@ -154,7 +154,7 @@
 
 ## Receitas
 - **Criar cron novo.** Mexa em: rota GET com `isCronAuthorized` importado de `app/api/whatsapp/cron/auth.ts`, entrada em `vercel.json` e prefixo em `PUBLIC_API_PREFIXES`. Cuidado com idempotência, UTC e `maxDuration`. Valide com `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/<path>` **sem cookie**. Se vier `{"error":"Não autenticado"}`, o middleware barrou.
-- **Destravar os 3 crons barrados.** Mexa em `PUBLIC_API_PREFIXES` e adicione `/api/automations/cron`, `/api/costs/sync` e `/api/maintenance/retention`. Cuidado: as 3 rotas já validam o `CRON_SECRET` sozinhas. Valide pela aba Cron Jobs da Vercel e pela `app_settings.cost_sync_status`.
+- **Destravar os 2 crons barrados.** Mexa em `PUBLIC_API_PREFIXES` e adicione `/api/automations/cron` e `/api/maintenance/retention`. Cuidado: as 2 rotas já validam o `CRON_SECRET` sozinhas. Valide pela aba Cron Jobs da Vercel.
 - **Webhook externo novo.** Mexa em `verifyWebhookSecret(req, '<ENV>')` (o chamador manda header `x-webhook-secret` ou `?secret=`), no prefixo do middleware e no nome no `.env.example`. Cuidado: sem a env, a rota fica aberta. Valide com uma chamada sem o secret, que deve dar 401.
 - **Rota longa (IA, conversor, S3 em lote).** Use `export const maxDuration` (até 300). Upload maior que 4,5 MB vai por `getPresignedUrls` / `getRoteiroUploadUrls`. Valide com um arquivo grande em produção (erro `FUNCTION_PAYLOAD_TOO_LARGE` indica que passou pelo body).
 - **Nova env.** Registre nome e comentário no `.env.example` e configure na Vercel em Production e Preview. Se for de custo, adicione também em `COST_PROVIDER_INFO[...].envVars`. Cuidado: env nova só vale no próximo deploy.

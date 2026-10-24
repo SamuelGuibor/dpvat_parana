@@ -25,8 +25,9 @@ describe("isTeamRole", () => {
 describe("resolvePermissions", () => {
   it("ADMIN++ tem tudo, sempre (overrides ignorados)", () => {
     const map = resolvePermissions("ADMIN++", { view_archived: false });
-    // read_only é restrição (Somente visualização): o Super Admin nunca fica travado.
-    for (const key of PERMISSION_KEYS) expect(map[key]).toBe(key !== "read_only");
+    // read_only e dashboard_only são restrições: o Super Admin nunca fica travado.
+    const restrictive = new Set(["read_only", "dashboard_only"]);
+    for (const key of PERMISSION_KEYS) expect(map[key]).toBe(!restrictive.has(key));
   });
 
   it("ADMIN começa sem Arquivados/Tickets/Gestor", () => {
@@ -53,6 +54,29 @@ describe("resolvePermissions", () => {
   it("quem não é da equipe não tem nada", () => {
     const map = resolvePermissions("GHOST", { view_archived: true });
     for (const key of PERMISSION_KEYS) expect(map[key]).toBe(false);
+  });
+});
+
+describe("operação por IA", () => {
+  it("leitura (op_use) liberada para os três cargos", () => {
+    for (const role of ["ADMIN", "ADMIN+", "ADMIN++"] as const) {
+      expect(resolvePermissions(role).op_use).toBe(true);
+    }
+  });
+
+  it("escrever, aprovar e publicar conhecimento nascem só no ADMIN++", () => {
+    for (const role of ["ADMIN", "ADMIN+"] as const) {
+      const map = resolvePermissions(role);
+      expect(map.op_write).toBe(false);
+      expect(map.op_approve).toBe(false);
+      expect(map.manage_knowledge).toBe(false);
+    }
+    const sa = resolvePermissions("ADMIN++");
+    expect(sa.op_write && sa.op_approve && sa.manage_knowledge).toBe(true);
+  });
+
+  it("op_write é concedível por override", () => {
+    expect(resolvePermissions("ADMIN+", { op_write: true }).op_write).toBe(true);
   });
 });
 

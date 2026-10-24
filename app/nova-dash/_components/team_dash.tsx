@@ -42,6 +42,7 @@ import {
     FileSignature,
     Briefcase,
     Lock,
+    Bot,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
@@ -64,6 +65,7 @@ import {
     type TeamRole,
 } from "@/app/_shared/lib/permissions";
 import { usePermissions } from "@/app/nova-dash/_components/PermissionsProvider";
+import OperatorTokensDialog from "@/app/nova-dash/_components/OperatorTokensDialog";
 import { cn } from "@/app/_shared/lib/utils";
 
 interface CardDialogProps {
@@ -113,6 +115,7 @@ const CATEGORY_ICONS: Record<PermissionCategory, React.ElementType> = {
     "WhatsApp e IA": MessageCircle,
     "Documentos e contratos": FileSignature,
     "Gestão e equipe": Briefcase,
+    "Operação por IA": Bot,
     "Segurança": Lock,
 };
 
@@ -146,6 +149,7 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
     const canManage = myPerms.manage_team;
     const [permTarget, setPermTarget] = useState<Member | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
+    const [tokenTarget, setTokenTarget] = useState<Member | null>(null);
 
     const [newMember, setNewMember] = useState({
         name: "",
@@ -503,6 +507,16 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                                                 )}
                                                 <Button
                                                     size="sm"
+                                                    variant="outline"
+                                                    className="rounded-xl h-9 text-xs font-bold"
+                                                    title="Token do app (Claude Code)"
+                                                    onClick={() => setTokenTarget(member)}
+                                                >
+                                                    <Bot className="w-3.5 h-3.5 mr-1.5 text-violet-600" />
+                                                    Token do app
+                                                </Button>
+                                                <Button
+                                                    size="sm"
                                                     variant="ghost"
                                                     className="rounded-xl h-9 w-9 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                                                     title="Remover da equipe"
@@ -552,6 +566,10 @@ export default function TeamDialog({ open, onClose }: CardDialogProps) {
                             )
                         }
                     />
+                )}
+
+                {tokenTarget && (
+                    <OperatorTokensDialog member={tokenTarget} onClose={() => setTokenTarget(null)} />
                 )}
 
                 {/* Confirmação de remoção */}

@@ -37,19 +37,19 @@ model StatusMessageConfig {
 }
 
 model User {
-  id                  String         @id @default(cuid())
+  id                  String          @id @default(cuid())
   name                String?
   cpf                 String?
-  email               String         @unique
+  email               String          @unique
   password            String?
   rua                 String?
   bairro              String?
   numero              String?
   cep                 String?
   image               String?
-  role                String         @default("Filtro de Cartões")
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  role                String          @default("Filtro de Cartões")
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
   emailVerified       DateTime?
   cidade              String?
   estado              String?
@@ -73,16 +73,16 @@ model User {
   obs                 String?
   service             String?
   otherObs            String?
-  fixed               Boolean?       @default(true)
-  roleFixed           String?        @default("Acompanhamento de fluxo 1")
+  fixed               Boolean?        @default(true)
+  roleFixed           String?         @default("Acompanhamento de fluxo 1")
   labelId             String?
-  apto                Boolean        @default(false)
+  apto                Boolean         @default(false)
   data_nasc           String?
   data_acidente       String?
   senha_inss          String?
-  cardNumber          Int?           @unique
+  cardNumber          Int?            @unique
   afastadoAte         DateTime?
-  afastadoNotificado  Boolean        @default(false)
+  afastadoNotificado  Boolean         @default(false)
   lastSeenAt          DateTime?
   telefone_secundario String?
   rede_social         String?
@@ -95,20 +95,21 @@ model User {
   // Jornada esperada no controle de ponto: { dailyMinutes: 480, days: [1,2,3,4,5] }
   workSchedule        Json?
   sectorId            String?
-  sector              Sector?        @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
+  sector              Sector?         @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
   accounts            Account[]
-  commentsAsAuthor    Comment[]      @relation("CommentAuthor")
-  commentsOnCard      Comment[]      @relation("UserComments")
+  commentsAsAuthor    Comment[]       @relation("CommentAuthor")
+  commentsOnCard      Comment[]       @relation("UserComments")
   document            Document[]
-  notifications       Notification[] @relation("UserNotifications")
-  mentions            Mention[]      @relation("UserMentions")
+  notifications       Notification[]  @relation("UserNotifications")
+  mentions            Mention[]       @relation("UserMentions")
   processes           Process[]
   sessions            Session[]
-  label               Label?         @relation("UserLabel", fields: [labelId], references: [id])
-  chatMessages        ChatMessage[]  @relation("ChatAuthor")
-  chatReactions       ChatReaction[] @relation("ReactionAuthor")
-  logs                Log[]          @relation("UserLogs")
-  cardTags            CardTag[]      @relation("UserCardTags")
+  label               Label?          @relation("UserLabel", fields: [labelId], references: [id])
+  chatMessages        ChatMessage[]   @relation("ChatAuthor")
+  chatReactions       ChatReaction[]  @relation("ReactionAuthor")
+  logs                Log[]           @relation("UserLogs")
+  cardTags            CardTag[]       @relation("UserCardTags")
+  operatorTokens      OperatorToken[] @relation("OperatorTokens")
 }
 
 // Setor/função da pessoa (Comercial, Financeiro, Desenvolvedor…). Diferente de
@@ -1469,4 +1470,89 @@ model Event {
 
   @@index([startsAt])
   @@map("events")
+}
+
+// ── Operação por IA (AI-First, Etapa 1) ────────────────────────────────────
+// O operador trabalha dentro do Claude Code; o CRM expõe ferramentas tipadas
+// em /api/op/* (app/_shared/lib/op/). A identidade vem de um token por membro
+// da equipe (só o hash fica no banco). Cada prompt e cada ferramenta ficam
+// registrados aqui para o dashboard "Operação por IA" e a auditoria.
+//
+// operatorId das tabelas de registro NÃO é FK (como Log.authorId): excluir um
+// membro da equipe não pode apagar a auditoria do que ele fez pela IA.
+
+model OperatorToken {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("OperatorTokens", fields: [userId], references: [id], onDelete: Cascade)
+  // sha256 hex do token em claro (o claro só é mostrado uma vez, ao gerar).
+  tokenHash   String    @unique
+  label       String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@map("operator_tokens")
+}
+
+// Uma por conversa do Claude Code (clientSessionId = id da sessão do app).
+model OpSession {
+  id              String       @id @default(cuid())
+  operatorId      String
+  clientSessionId String       @unique
+  cwd             String?
+  startedAt       DateTime     @default(now())
+  lastSeenAt      DateTime     @default(now())
+  requests        OpRequest[]
+  toolCalls       OpToolCall[]
+
+  @@index([operatorId, lastSeenAt])
+  @@map("op_sessions")
+}
+
+// Prompt do operador (texto completo — decisão 7; leitura só manager_dashboard).
+model OpRequest {
+  id         String       @id @default(cuid())
+  sessionId  String
+  session    OpSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  operatorId String
+  text       String
+  skill      String?
+  // Reservado ao estado de workflow com retomada (Etapa 6).
+  state      Json?
+  createdAt  DateTime     @default(now())
+  toolCalls  OpToolCall[]
+
+  @@index([operatorId, createdAt])
+  @@index([sessionId])
+  @@map("op_requests")
+}
+
+// Cada ferramenta executada (ou recusada) pela API de operação.
+model OpToolCall {
+  id         String     @id @default(cuid())
+  requestId  String?
+  request    OpRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  sessionId  String?
+  session    OpSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  operatorId String
+  tool       String
+  // 1 leitura · 2 preparar · 3 interno reversível · 4 externo/sensível.
+  level      Int
+  // Argumentos já sem PII sensível (stripSensitiveArgs em op/policy.ts).
+  args       Json
+  ok         Boolean
+  code       String?
+  // Resumo do resultado (≤ 300 caracteres).
+  summary    String
+  cardIds    String[]
+  durationMs Int
+  createdAt  DateTime   @default(now())
+
+  @@index([operatorId, createdAt])
+  @@index([tool, createdAt])
+  @@index([sessionId])
+  @@map("op_tool_calls")
 }

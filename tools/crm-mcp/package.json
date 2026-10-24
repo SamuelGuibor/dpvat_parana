@@ -1,0 +1,11 @@
+{
+  "name": "crm-op-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MCP fino (stdio, sem dependências) que expõe a API de operação do CRM ao Claude Code.",
+  "type": "module",
+  "main": "index.mjs",
+  "engines": {
+    "node": ">=18"
+  }
+}

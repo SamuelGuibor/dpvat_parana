@@ -23,6 +23,7 @@ export const PERMISSION_CATEGORIES = [
   "WhatsApp e IA",
   "Documentos e contratos",
   "Gestão e equipe",
+  "Operação por IA",
   "Segurança",
 ] as const;
 export type PermissionCategory = (typeof PERMISSION_CATEGORIES)[number];
@@ -219,6 +220,34 @@ export const PERMISSION_DEFS = [
     category: "Gestão e equipe",
   },
   {
+    key: "op_use",
+    label: "Usar a IA de operação",
+    description:
+      "Consulta clientes, processos, pendências e parados pelo Claude Code com o token do app (ferramentas de leitura e de preparo).",
+    category: "Operação por IA",
+  },
+  {
+    key: "op_write",
+    label: "IA altera o CRM",
+    description:
+      "Deixa a IA de operação mover cards, aplicar tags, comentar e criar tarefas em nome do operador.",
+    category: "Operação por IA",
+  },
+  {
+    key: "op_approve",
+    label: "Aprovar envios da IA",
+    description:
+      "Aprova pelo chat o que a IA preparou para sair do escritório (e-mail, WhatsApp, mudança de etapa que avisa o cliente).",
+    category: "Operação por IA",
+  },
+  {
+    key: "manage_knowledge",
+    label: "Base de conhecimento",
+    description:
+      "Publica e revisa as notas da base de conhecimento da operação (procedimentos de hospital, etapas, serviços).",
+    category: "Operação por IA",
+  },
+  {
     key: "manage_team",
     label: "Gerenciar equipe",
     description: "Altera cargos e permissões — exclusivo do Super Admin (ADMIN++).",
@@ -274,6 +303,12 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Lista de nome+telefone é dado pessoal em massa — nasce exclusiva do
     // ADMIN++, concedível por override.
     export_leads_csv: false,
+    // IA de operação: leitura liberada pra equipe; escrever no CRM, aprovar
+    // envio e publicar conhecimento nascem exclusivos do ADMIN++.
+    op_use: true,
+    op_write: false,
+    op_approve: false,
+    manage_knowledge: false,
     manage_team: false,
   },
   "ADMIN+": {
@@ -322,6 +357,10 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     read_only: false,
     dashboard_only: false,
     export_leads_csv: false,
+    op_use: true,
+    op_write: false,
+    op_approve: false,
+    manage_knowledge: false,
     manage_team: false,
   },
   "ADMIN++": {
@@ -354,6 +393,10 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     read_only: false,
     dashboard_only: false,
     export_leads_csv: true,
+    op_use: true,
+    op_write: true,
+    op_approve: true,
+    manage_knowledge: true,
     manage_team: true,
   },
 };
