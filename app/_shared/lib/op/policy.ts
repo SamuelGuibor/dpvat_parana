@@ -62,20 +62,9 @@ export function canonicalHash(tool: string, args: unknown): string {
   return createHash("sha256").update(canonicalJson({ tool, args })).digest("hex");
 }
 
-/** CPF em lista: "***.456.789-**". Menos de 11 dígitos → só os 3 do meio que existirem. */
-export function maskCpf(cpf: string | null | undefined): string | null {
-  if (!cpf) return null;
-  const d = cpf.replace(/\D/g, "");
-  if (d.length !== 11) return d.length ? "***" : null;
-  return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
-}
-
-/** Telefone em registro de auditoria: só os 4 últimos dígitos. */
-export function maskPhone(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-  const d = phone.replace(/\D/g, "");
-  return d.length > 4 ? `***${d.slice(-4)}` : "***";
-}
+// CPF e telefone saem completos (decisão do dono, 24/10/2026): a equipe já vê
+// os dois no card e precisa deles para atender. O que nunca sai são senhas e
+// credenciais (abaixo).
 
 // Campos que NUNCA saem de uma ferramenta, em qualquer profundidade: senha do
 // login, senha do INSS do cliente, hashes e credenciais da Meta.
@@ -101,25 +90,6 @@ export function stripSensitive<T>(value: T): T {
     return out as T;
   }
   return value;
-}
-
-/**
- * Args para gravar em op_tool_calls: CPF e telefone mascarados (o prompt
- * completo já fica em op_requests; o registro da ferramenta não precisa
- * repetir o documento do cliente).
- */
-export function stripSensitiveArgs(args: unknown): unknown {
-  const clean = stripSensitive(args);
-  if (!clean || typeof clean !== "object" || Array.isArray(clean)) return clean ?? {};
-  const out: Record<string, unknown> = { ...(clean as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(out)) {
-    if (typeof v !== "string") continue;
-    if (/cpf/i.test(k)) out[k] = maskCpf(v);
-    else if (/telefone|phone/i.test(k)) out[k] = maskPhone(v);
-    else if (/^\D*\d{3}\.?\d{3}\.?\d{3}-?\d{2}\D*$/.test(v)) out[k] = maskCpf(v);
-    else if (/^[\d\s.\-()+]+$/.test(v) && /^\d{10,13}$/.test(v.replace(/\D/g, ""))) out[k] = maskPhone(v);
-  }
-  return out;
 }
 
 /** Corta texto para caber num campo de resumo (padrão 300 chars). */

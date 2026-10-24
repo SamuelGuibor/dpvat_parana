@@ -28,6 +28,7 @@ export const cardListSelect = {
   cardNumber: true,
   name: true,
   cpf: true,
+  telefone: true,
   service: true,
   status: true,
   role: true,

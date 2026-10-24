@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import { db } from "../../prisma";
 import { defineTool, OpToolError } from "../registry";
-import { maskCpf } from "../policy";
 import { brDate } from "../resolve";
 import { CARD_WHERE, cardIdsByCpf, cardIdsByPhone, cardListSelect, columnName, etapaLabel } from "../cards";
 
@@ -20,7 +19,7 @@ const schema = z
 export const buscarCliente = defineTool({
   name: "buscar_cliente",
   description:
-    "Procura cards de cliente por CPF, nome, telefone ou número do processo. Devolve até 20 cards (ativos e arquivados) com número, coluna, etapa, serviço e CPF mascarado. Use antes de obter_card quando o operador não deu o número.",
+    "Procura cards de cliente por CPF, nome, telefone ou número do processo. Devolve até 20 cards (ativos e arquivados) com número, coluna, etapa, serviço, CPF e telefone. Use antes de obter_card quando o operador não deu o número.",
   level: 1,
   permission: "op_use",
   schema,
@@ -54,7 +53,8 @@ export const buscarCliente = defineTool({
       id: r.id,
       cardNumber: r.cardNumber,
       nome: r.name,
-      cpf: maskCpf(r.cpf),
+      cpf: r.cpf,
+      telefone: r.telefone,
       servico: r.service,
       coluna: columnName(r),
       etapa: etapaLabel(r.service, r.status),

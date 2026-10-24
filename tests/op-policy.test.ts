@@ -3,10 +3,7 @@ import {
   canRun,
   canonicalHash,
   canonicalJson,
-  maskCpf,
-  maskPhone,
   stripSensitive,
-  stripSensitiveArgs,
   truncate,
   OP_MAX_LEVEL,
 } from "@/app/_shared/lib/op/policy";
@@ -66,20 +63,6 @@ describe("hash canônico", () => {
   });
 });
 
-describe("máscaras", () => {
-  it("CPF em lista mostra só o meio", () => {
-    expect(maskCpf("123.456.789-09")).toBe("***.456.789-**");
-    expect(maskCpf("12345678909")).toBe("***.456.789-**");
-    expect(maskCpf("123")).toBe("***");
-    expect(maskCpf(null)).toBeNull();
-  });
-
-  it("telefone mostra os 4 últimos", () => {
-    expect(maskPhone("(41) 99786-2323")).toBe("***2323");
-    expect(maskPhone("")).toBeNull();
-  });
-});
-
 describe("stripSensitive", () => {
   it("remove senha, senha do INSS e hashes em qualquer profundidade", () => {
     const out = stripSensitive({
@@ -93,15 +76,12 @@ describe("stripSensitive", () => {
     expect(out).toEqual({ nome: "Fulano", cadastro: { cpf: "1" }, lista: [{ ok: 1 }], quando: new Date(0) });
   });
 
-  it("args para auditoria mascaram CPF e telefone", () => {
-    expect(stripSensitiveArgs({ cpf: "12345678909", telefone: "41997862323", nome: "Ana" })).toEqual({
-      cpf: "***.456.789-**",
-      telefone: "***2323",
+  it("CPF e telefone saem completos (decisão do dono); só senha/credencial some", () => {
+    expect(stripSensitive({ cpf: "12345678909", telefone: "(41) 99786-2323", nome: "Ana", senha_inss: "x" })).toEqual({
+      cpf: "12345678909",
+      telefone: "(41) 99786-2323",
       nome: "Ana",
     });
-    expect(stripSensitiveArgs({ card: "123.456.789-09" })).toEqual({ card: "***.456.789-**" });
-    expect(stripSensitiveArgs({ card: "2342" })).toEqual({ card: "2342" });
-    expect(stripSensitiveArgs({ card: "(41) 99786-2323" })).toEqual({ card: "***2323" });
   });
 
   it("truncate respeita o teto", () => {

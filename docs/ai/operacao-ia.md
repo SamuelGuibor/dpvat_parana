@@ -12,7 +12,7 @@
 | Arquivo | Responsabilidade | Símbolos-chave |
 |---|---|---|
 | `app/_shared/lib/op/auth.ts` | Token do operador: gerar, hash, Bearer, resolver para `User` + permissões, rate limit | `generateOperatorToken`, `hashOperatorToken`, `parseBearer`, `operatorFromTokenRow`, `resolveOperator`, `issueOperatorToken`, `requireOpPermission`, `OpAuthError`, `OperatorContext`, `OP_TOKEN_PREFIX` |
-| `app/_shared/lib/op/policy.ts` | Puro: níveis, decisão de execução, hash canônico (aprovação L4 futura), máscaras, remoção de campos sensíveis | `OP_MAX_LEVEL`, `canRun`, `canonicalJson`, `canonicalHash`, `maskCpf`, `maskPhone`, `stripSensitive`, `stripSensitiveArgs`, `truncate` |
+| `app/_shared/lib/op/policy.ts` | Puro: níveis, decisão de execução, hash canônico (aprovação L4 futura), remoção de senhas/credenciais | `OP_MAX_LEVEL`, `canRun`, `canonicalJson`, `canonicalHash`, `stripSensitive`, `truncate` |
 | `app/_shared/lib/op/resolve.ts` | Puro: referência de card, CPF × telefone, nome de coluna, dias em Brasília | `parseCardRef`, `isValidCpf`, `normalizeColumnName`, `matchColumn`, `brDaysBetween`, `brDateTime`, `brDate` |
 | `app/_shared/lib/op/registry.ts` | Contrato da ferramenta + zod → JSON Schema (`zod/v4`) | `defineTool`, `OpTool`, `OpToolResult`, `OpToolError`, `catalogEntry`, `toJsonSchema`, `describeZodError` |
 | `app/_shared/lib/op/cards.ts` | Consultas de card compartilhadas (filtro de card, busca por CPF/telefone, referência → 1 card) | `CARD_WHERE`, `ACTIVE_CARD_WHERE`, `NOT_CARD_ROLES`, `cardListSelect`, `cardIdsByCpf`, `cardIdsByPhone`, `resolveOneCardId`, `etapaLabel`, `columnName` |
@@ -26,12 +26,14 @@
 | `app/nova-dash/_components/OperatorTokensDialog.tsx` | Botão "Token do app" na tela Equipe (`team_dash.tsx`): mostra o token uma vez | default `OperatorTokensDialog` |
 | `tools/crm-mcp/index.mjs` · `.mcp.json` | MCP stdio sem dependências: `initialize`, `ping`, `tools/list`, `tools/call`; ferramenta local `diagnostico_crm` | — |
 | `.claude/hooks/op-prompt.mjs` · `op-tool.mjs` | `UserPromptSubmit` → evento `prompt` + grava `~/.claude/crm-op/session.json`; `PostToolUse` (`mcp__crm-op__.*`) → `tool_error` só para falha de transporte | — |
+| `scripts/op-relatorio.mjs` | Relatório de uso de `op_*` em transação READ ONLY | — |
+| `scripts/mapa-etapas.mjs` | Mapa do que cada coluna recebe e do que o card tem ao sair, pelos `logs` (só leitura, só números agregados); base das notas de etapa da Etapa 2 | — |
 | `.claude/hooks/guard-secrets.mjs` · `guard-bash.mjs` + `bash-rules.mjs` | Bloqueiam ler `.env*`, imprimir segredo, listar o ambiente, `psql`, Prisma Studio, `prisma db execute` fora de `prisma/migrations/`, `node -e` com Prisma e arquivo com Prisma fora de `scripts/` | `checkCommand` |
 
 Ferramentas (todas L1, permissão `op_use`, salvo indicação):
 | nome | arquivo | o que devolve |
 |---|---|---|
-| `buscar_cliente` | `tools/buscar-cliente.ts` | até 20 cards (ativos + arquivados) por CPF/nome/telefone/nº; CPF mascarado |
+| `buscar_cliente` | `tools/buscar-cliente.ts` | até 20 cards (ativos + arquivados) por CPF/nome/telefone/nº, com CPF e telefone completos |
 | `obter_card` | `tools/obter-card.ts` | ficha: coluna, dias na coluna × prazo, etapa, tags, hospital, afastamento, cadastro; `senhaInssCadastrada` (booleano) |
 | `listar_historico` | `tools/listar-historico.ts` | logs + comentários, mais novo primeiro (≤ 50) |
 | `listar_documentos` | `tools/listar-documentos.ts` | arquivos por pasta (`deletedAt: null`), link `trySignGetUrl` (~90 min) |
@@ -78,7 +80,7 @@ flowchart LR
 - **`OperatorToken`** (`operator_tokens`): `userId` (FK `User`, cascade), `tokenHash` sha256 `@unique`, `label`, `lastUsedAt` (regravado no máx. a cada 5 min, via `runAfterResponse`), `revokedAt`, `createdById`. Token em claro = `crmop_` + 32 bytes base64url.
 - **`OpSession`** (`op_sessions`): uma por conversa do Claude Code (`clientSessionId @unique`), `operatorId` (sem FK), `cwd`, `startedAt`, `lastSeenAt`.
 - **`OpRequest`** (`op_requests`): prompt **completo** (decisão 7; corte em 20.000 chars), `skill` deduzida de `/nome` no início, `state` Json reservado à Etapa 6. Leitura no futuro dashboard só com `manager_dashboard`.
-- **`OpToolCall`** (`op_tool_calls`): `tool`, `level`, `args` (passados por `stripSensitiveArgs`: CPF/telefone mascarados), `ok`, `code`, `summary` ≤ 300, `cardIds[]`, `durationMs`, `requestId?`/`sessionId?` (SetNull).
+- **`OpToolCall`** (`op_tool_calls`): `tool`, `level`, `args` (passados por `stripSensitive`: sem senha/credencial; CPF e telefone ficam como vieram), `ok`, `code`, `summary` ≤ 300, `cardIds[]`, `durationMs`, `requestId?`/`sessionId?` (SetNull).
 - `operatorId` das três tabelas de registro **não é FK** (como `Log.authorId`): excluir o membro não apaga a auditoria.
 - Permissões (categoria "Operação por IA"): `op_use` (3 cargos), `op_write`, `op_approve`, `manage_knowledge` (só ADMIN++). Só `op_use` e `view_whatsapp` são checadas nesta etapa.
 
@@ -86,6 +88,7 @@ flowchart LR
 - **`/api/op` está em `PUBLIC_API_PREFIXES`** (o app não tem cookie). Toda rota nova ali começa com `opAuth(req, ...)` — sem isso a rota fica pública.
 - **"Somente Dashboard" (`dashboard_only`) não usa a IA de operação**: `canRun` recusa mesmo com o `op_use` padrão do cargo — senão quem só acompanha leads leria a ficha completa do cliente.
 - **Trava de IP não se aplica ao token** (decisão 3). Por isso só `manage_team` emite token (`operator-tokens.ts`): o próprio membro não gera o seu.
+- **CPF e telefone saem sem máscara** (decisão do dono, 24/10): a equipe já vê os dois no card. Não reintroduza máscara sem pedido.
 - **Nunca devolver `password`/`senha_inss`**: não selecione esses campos; quando precisar saber da senha do INSS, devolva só o booleano. `stripSensitive` é a segunda barreira, não a primeira.
 - **Ferramenta de leitura não escreve** — nem "seed" de checklist: `verificar_pendencias` trata checklist sem linhas como os `DEFAULT_CHECKLIST_ITEMS` desmarcados, sem gravar (a rota da aba Arquivos é que semeia).
 - **Subir o nível é decisão de etapa**: ferramenta L3/L4 nova exige mexer em `OP_MAX_LEVEL`, em `canRun` e no teste `tests/op-registry.test.ts` (que hoje exige todas L1). L4 vai usar `canonicalHash` para amarrar a aprovação aos args.
@@ -102,12 +105,12 @@ flowchart LR
 - **Ferramenta que precisa de permissão de domínio** → `permission: "<chave>"` no `defineTool` (ex.: `view_whatsapp`); `canRun` exige `op_use` **e** a chave.
 - **Gerar o primeiro token** → logado como ADMIN++: Equipe → membro → "Token do app" → copiar → no computador da pessoa, variável de ambiente do usuário `CRM_OP_TOKEN` (Windows: Configurações → Variáveis de ambiente) → reiniciar o Claude Code → `diagnostico_crm`.
 - **Revogar** → mesmo diálogo, "Revogar"; a próxima chamada leva 401 `token_revogado`.
-- **Ver o que um operador fez** (até a tela da Etapa 7) → consulta de leitura em `op_requests`/`op_tool_calls` por `operatorId` + `createdAt`.
+- **Ver o que um operador fez** (até a tela da Etapa 7) → `node -r dotenv/config scripts/op-relatorio.mjs --dias=7` (tokens, sessões, prompts por skill, ferramentas com ok/falhas/latência; `--prompts` mostra o começo de cada prompt, que pode ter dado pessoal). Avisa se algum prompt contém um token `crmop_…`.
 - **Apontar o MCP para o dev server local** → `CRM_OP_URL=http://localhost:3000` no ambiente do usuário (o banco local é o de produção).
 - **Nova skill de operação** → `.claude/skills/<nome>/SKILL.md` copiando o bloco "Regras de operação" de `.claude/skills/cliente/SKILL.md`.
 
 ## Testes e validação
-- `tests/op-policy.test.ts` (níveis, `read_only` em L1, hash canônico, máscaras, `stripSensitive`), `tests/op-resolve.test.ts` (referências, CPF × telefone, colunas, dias em Brasília), `tests/op-registry.test.ts` (10 ferramentas L1, JSON Schema, validação), `tests/op-auth.test.ts` (Prisma mockado: hash, revogado, cliente 403, rate limit 429), `tests/guard-bash.test.ts` (regras do hook).
+- `tests/op-policy.test.ts` (níveis, `read_only` em L1, `dashboard_only`, hash canônico, `stripSensitive`), `tests/op-resolve.test.ts` (referências, CPF × telefone, colunas, dias em Brasília), `tests/op-registry.test.ts` (10 ferramentas L1, JSON Schema, validação), `tests/op-auth.test.ts` (Prisma mockado: hash, revogado, cliente 403, rate limit 429), `tests/guard-bash.test.ts` (regras do hook).
 - Manual: `curl <base>/api/op/tools` sem token → `{"ok":false,"code":"sem_token"}` (se vier "Não autenticado", o middleware barrou); token falso → `token_invalido`; com token: `/cliente <card de teste>` no Claude Code e conferir as linhas novas em `op_requests`/`op_tool_calls`.
 
 ## Fronteiras
@@ -118,4 +121,4 @@ flowchart LR
 - **Erros/background**: `reportCriticalError`, `runAfterResponse`, `rateLimit`.
 
 ## Backlog
-- Etapa 2: vault `docs/operacao/` + `consultar_hospital`; Etapa 3: ferramentas L3 (`mover_card`, tags, comentário, tarefa) com `op_write`; Etapa 5: `op_approvals` + `executar_aprovado`; Etapa 7: tela "Operação por IA" no Espaço de Trabalho sobre `op_*`.
+- Etapa 2 (plano em `docs/ai-first/02-plano-etapa-2.md`): vault `docs/operacao/` + `consultar_hospital`, publicação por agente redator + agente validador; Etapa 3: ferramentas L3 (`mover_card`, tags, comentário, tarefa) com `op_write`; Etapa 5: `op_approvals` + `executar_aprovado`; Etapa 7: tela "Operação por IA" no Espaço de Trabalho sobre `op_*`.

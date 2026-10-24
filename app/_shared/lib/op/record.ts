@@ -4,7 +4,7 @@
 
 import { Prisma } from "@prisma/client";
 import { db } from "../prisma";
-import { stripSensitiveArgs, truncate } from "./policy";
+import { stripSensitive, truncate } from "./policy";
 
 /** Prompts mais antigos que isso não são ligados a uma ferramenta nova. */
 const REQUEST_LINK_WINDOW_MS = 30 * 60_000;
@@ -99,7 +99,7 @@ export async function recordToolCall(input: ToolCallRecord): Promise<void> {
         operatorId: input.operatorId,
         tool: input.tool.slice(0, 100),
         level: input.level,
-        args: (stripSensitiveArgs(input.args) ?? {}) as Prisma.InputJsonValue,
+        args: (stripSensitive(input.args) ?? {}) as Prisma.InputJsonValue,
         ok: input.ok,
         code: input.code ?? null,
         summary: truncate(input.summary),

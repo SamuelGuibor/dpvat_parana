@@ -7,6 +7,7 @@
 // nunca escolhe sozinha.
 
 import { BR_TZ, brDateBR, brStartOfDay } from "@/app/_shared/utils/date-br";
+import { isValidCpf } from "@/app/_shared/utils/format";
 
 export type CardRef =
   | { kind: "cardNumber"; value: number }
@@ -14,18 +15,6 @@ export type CardRef =
   | { kind: "cpf"; value: string }
   | { kind: "phone"; value: string }
   | { kind: "name"; value: string };
-
-/** Dígito verificador do CPF — separa CPF de telefone celular (os dois têm 11 dígitos). */
-export function isValidCpf(digits: string): boolean {
-  if (!/^\d{11}$/.test(digits) || /^(\d)\1{10}$/.test(digits)) return false;
-  const calc = (len: number) => {
-    let sum = 0;
-    for (let i = 0; i < len; i++) sum += Number(digits[i]) * (len + 1 - i);
-    const rest = (sum * 10) % 11;
-    return rest === 10 ? 0 : rest;
-  };
-  return calc(9) === Number(digits[9]) && calc(10) === Number(digits[10]);
-}
 
 const CUID_RE = /^c[a-z0-9]{20,32}$/;
 

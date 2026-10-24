@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   brDaysBetween,
-  isValidCpf,
   matchColumn,
   normalizeColumnName,
   parseCardRef,
@@ -31,10 +30,9 @@ describe("parseCardRef", () => {
     expect(parseCardRef("  ")).toBeNull();
   });
 
-  it("isValidCpf", () => {
-    expect(isValidCpf("12345678909")).toBe(true);
-    expect(isValidCpf("12345678900")).toBe(false);
-    expect(isValidCpf("11111111111")).toBe(false);
+  it("CPF com dígito errado ou repetido não é CPF", () => {
+    expect(parseCardRef("12345678900")).toEqual({ kind: "phone", value: "12345678900" });
+    expect(parseCardRef("11111111111")).toEqual({ kind: "phone", value: "11111111111" });
   });
 });
 

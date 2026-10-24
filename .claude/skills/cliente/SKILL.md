@@ -10,7 +10,7 @@ Entrada: `$ARGUMENTS` = CPF, nome, telefone ou número do processo.
 ## Passos
 1. `buscar_cliente` com o campo certo: 11 dígitos com máscara ou dígito de CPF válido → `cpf`; número curto (até 7 dígitos, "#2342", "processo 2342") → `cardNumber`; telefone → `telefone`; texto → `nome`.
 2. **Nenhum resultado** → diga isso e sugira outra forma de busca (nome completo, telefone). Pare.
-3. **Vários resultados** → mostre a lista (nº do processo, nome, CPF mascarado, coluna, etapa, arquivado sim/não) e pergunte qual. Pare até o operador responder.
+3. **Vários resultados** → mostre a lista (nº do processo, nome, CPF, telefone, coluna, etapa, arquivado sim/não) e pergunte qual. Pare até o operador responder.
 4. **Um resultado** (ou o escolhido) →
    - `obter_card` (coluna, dias na coluna × prazo, etapa, serviço, tags, hospital, afastamento);
    - `listar_historico` com `limite: 5`;

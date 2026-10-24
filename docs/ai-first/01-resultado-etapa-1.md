@@ -1,6 +1,6 @@
 # AI-First — Etapa 1: resultado (24/10/2026)
 
-> Execução de `docs/ai-first/01-plano-etapa-1.md` na ordem do arquivo. Mapa técnico vivo: `docs/ai/operacao-ia.md`. Nada foi commitado nem publicado na Vercel: o código está no working tree, a migration já está aplicada no Neon.
+> Execução de `docs/ai-first/01-plano-etapa-1.md` na ordem do arquivo. Mapa técnico vivo: `docs/ai/operacao-ia.md`. Commit `ea0de1f`, publicado na Vercel e testado pelo dono em 24/10/2026 (ver "Evidências em produção"). Próxima etapa: `docs/ai-first/02-plano-etapa-2.md`.
 
 ## Resumo
 - O operador já pode, **depois do deploy e de receber um token**, perguntar no Claude Code sobre clientes, processos, parados e pendências; as respostas vêm só de 10 ferramentas de **leitura** do CRM, que respeitam as permissões do banco.
@@ -37,16 +37,48 @@
 
 ### Revisão de regras (`revisor-regras`)
 - **Corrigido — `dashboard_only`**: quem está em "Somente Dashboard" herdava `op_use` do cargo e poderia ler a ficha completa (CPF, RG, endereço) pelo `obter_card`. `canRun` agora recusa esse perfil (`sem_permissao`); teste em `tests/op-policy.test.ts`.
-- **Corrigido — telefone nos args**: telefone formatado passado no campo `card` era gravado em claro em `op_tool_calls.args`; agora sai mascarado (4 últimos dígitos).
+- ~~Telefone nos args mascarado~~ — corrigido na revisão e depois **revertido por decisão do dono** (CPF e telefone sem máscara; ver "Mudanças depois do teste").
 - Sem ação: o botão "Token do app" já fica dentro do bloco `canManage` da tela Equipe (o revisor achou que aparecia para todos); `rateLimit` por instância (já documentado em `rate-limit.ts`; token de 32 bytes torna chute inviável); `session.json` único por máquina (desvio 9 abaixo).
 - Conferido sem violação: as 3 rotas começam com `opAuth`; permissões lidas do banco; `password` nunca selecionado e `senha_inss` só vira booleano; as 10 ferramentas só leem; `$queryRaw` parametrizado; cortes de dia por `date-br`; `Document` com `deletedAt: null`; sem `distinct`+`orderBy` em tabela grande; único pós-resposta via `runAfterResponse`; hooks sempre saem 0; migration aditiva.
 
-**Não verificado ainda (depende de você):** chamada real com token válido → `/cliente` com card de teste → linhas em `op_requests`/`op_tool_calls`; token revogado → 401 numa chamada real; a tela Equipe com o botão novo (o login é seu). Isso exige gerar um token para um membro de verdade em produção.
+## Evidências em produção (24/10/2026)
+- **Deploy**: push `b9c6c1d..ea0de1f` na `main`; a Vercel publicou em ~2 min. Sem token, `GET https://segurosparana.com.br/api/op/tools` → `{"ok":false,"code":"sem_token",…}` (a rota responde; o middleware não barra).
+- **Antes do deploy**, `diagnostico_crm` com token configurado → `conectado: false`, `"O CRM respondeu 401"` (site ainda sem a rota). **Depois**: `conectado: true`, operador **Samuel Guibor (ADMIN++)**, as 10 ferramentas `permitido: true`.
+- **Testes do dono numa sessão da aba Code** (pasta do repo): `/cliente`, `/processo`, `/parados`, `/pendencias`, pedido de alteração recusado — reportados ok.
+- **Registro no banco** (`node -r dotenv/config scripts/op-relatorio.mjs --dias=2`, transação READ ONLY):
+
+  | item | valor |
+  |---|---|
+  | tokens | 1 (Samuel, "Claude Code", criado 17:23, último uso 18:01) — **não revogado** |
+  | sessões do app | 4 |
+  | prompts (`op_requests`) | 9 — `/processo` 2, `/cliente` 1, `/parados` 1, `/pendencias` 1, texto livre 4 |
+  | chamadas (`op_tool_calls`) | **11, todas ok, todas ligadas ao prompt que as pediu**; 94 cards distintos lidos |
+  | por ferramenta | `verificar_pendencias` 3 (155 ms) · `obter_card` 2 (76 ms) · `listar_historico` 2 (129 ms) · `buscar_cliente` 1 (230 ms) · `listar_cards_parados` 1 (144 ms) · `listar_documentos` 1 (34 ms) · `consultar_conversa` 1 (58 ms) |
+  | prompt contendo token (`crmop_…`) | nenhum |
+
+- **Não aparece no banco, e é esperado**: recusa por token inválido/revogado (401 acontece antes de saber quem é o operador, não vira `op_tool_calls`); pedido de "mover card" (a skill recusa sem chamar ferramenta).
+- **Lacuna da evidência**: o relatório mostra o único token **ativo**, então o teste de revogação não ficou registrado como revogação (ou foi feito com outro caminho). Ver pendências.
+
+## Conclusões
+1. **A arquitetura funciona ponta a ponta**: prompt → hook → `op_requests`; skill → MCP → `/api/op` → permissões do banco → ferramenta → `op_tool_calls`, com a ligação prompt↔ferramenta funcionando (11/11).
+2. **Latência baixa** (34–230 ms por ferramenta): as consultas com `select` mínimo e `take` baixo não pesam no Neon.
+3. **O ponto de atrito foi o ambiente, não o código**: skills e MCP só existem numa sessão da **aba Code aberta na pasta do repo**; na aba de chat o `/cliente` "não existe". Isso precisa estar no material de cada operador.
+4. **O token é o elo sensível**: colado num chat, fica no histórico. O hook não gravou o token no banco (não estava ligado na hora), mas o token segue válido até ser revogado.
+5. A Etapa 2 pode começar: a base de dados de leitura está provada; falta a base de **conhecimento** (como se faz), que é o vault.
+
+## Mudanças depois do teste
+- **CPF e telefone sem máscara** (decisão do dono, 24/10): `buscar_cliente` devolve CPF e telefone completos; `op_tool_calls.args` grava os args como vieram (só senha/credencial removidas por `stripSensitive`). `maskCpf`/`maskPhone`/`stripSensitiveArgs` saíram de `app/_shared/lib/op/policy.ts`; `parseCardRef` passou a usar o `isValidCpf` de `app/_shared/utils/format.ts` (era duplicado).
+- `scripts/op-relatorio.mjs`: relatório de uso de `op_*` (só leitura), com alarme para prompt que contenha token.
+
+## Pendências
+- **Revogar o token colado no chat e gerar outro** (Equipe → Token do app) e trocar `CRM_OP_TOKEN`.
+- Distribuir token para 1–2 operadores e orientar: aba Code + pasta do repo.
+- Bug fora do escopo: `findLinkedCard` com `'\D'` (ver "Achados").
 
 ## Critérios de aceite (§9 do diagnóstico)
 | # | Critério | Situação |
 |---|---|---|
-| 1 | CPF → cards ativos e arquivados, CPF mascarado | implementado (`buscar_cliente` + `/cliente`); falta teste real |
+| 1 | CPF → cards ativos e arquivados (CPF mascarado no plano original) | ok em produção (`buscar_cliente` + `/cliente`); máscara removida depois, por decisão do dono |
 | 2 | "Processo 2342: status atual" | implementado (`obter_card` + `listar_historico` 5–10) |
 | 3 | Parados há mais de 7 dias, por coluna | implementado (`listar_cards_parados`, dias em Brasília) |
 | 4 | Documentos que faltam, avisando que a lista oficial não existe | implementado (`verificar_pendencias`, campo `aviso`) |
