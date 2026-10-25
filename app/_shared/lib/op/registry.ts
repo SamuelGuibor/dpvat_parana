@@ -10,6 +10,7 @@ import { z } from "zod/v4";
 import type { PermissionKey } from "../permissions";
 import type { OpLevel } from "./policy";
 import type { OperatorContext } from "./auth";
+import type { OpTrace } from "../cards/types";
 
 export interface OpToolResult {
   data: unknown;
@@ -25,7 +26,8 @@ export interface OpTool<S extends z.ZodType = z.ZodType> {
   level: OpLevel;
   permission: PermissionKey;
   schema: S;
-  run(ctx: { op: OperatorContext }, args: z.output<S>): Promise<OpToolResult>;
+  /** `trace` liga a escrita (metadata.op do Log) à linha de op_tool_calls. */
+  run(ctx: { op: OperatorContext; trace: OpTrace }, args: z.output<S>): Promise<OpToolResult>;
 }
 
 /** Erro esperado de ferramenta (card não achado, coluna ambígua…): vira {ok:false, code, message}. */

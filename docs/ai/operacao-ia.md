@@ -1,10 +1,10 @@
 # Operação por IA (Claude Code → CRM) — mapa para IA
-> Verificado em 2026-10-24 · Escopo: `app/_shared/lib/op/**`, `app/api/op/**`, `app/_actions/team/operator-tokens.ts`, `app/nova-dash/_components/OperatorTokensDialog.tsx`, `tools/crm-mcp/` (fora do Next), `.mcp.json`, `.claude/hooks/{op-prompt,op-tool,guard-secrets,guard-bash,bash-rules}.mjs`, `.claude/skills/{cliente,processo,parados,pendencias}/`, `prisma/schema.prisma` (`OperatorToken`, `OpSession`, `OpRequest`, `OpToolCall`), `tests/{op-policy,op-resolve,op-registry,op-auth,guard-bash,vault}.test.ts`; Etapa 2: `docs/operacao/` (vault), `app/_shared/utils/vault.ts`, `scripts/{vault-seed-hospitais,vault-check,vault-publicar,sync-vault-s3,mapa-etapas}.mjs`, `.claude/agents/{redator,validador}-conhecimento.md`, `.claude/skills/{hospital,conhecimento,publicar-conhecimento}/`. Plano e decisões: `docs/ai-first/00-diagnostico-etapa-zero.md`, `docs/ai-first/01-plano-etapa-1.md`, `docs/ai-first/02-plano-etapa-2.md`.
+> Verificado em 2026-10-25 · Escopo: Etapa 3: `app/_shared/lib/cards/*`, `app/_shared/lib/notifications.ts`, `app/_shared/lib/op/{preview,switches}.ts`, `app/_shared/lib/op/tools/{_escrita,mover-card,tags-card,comentar-card,notificar-pessoa,arquivar-card,meu-dia}.ts`, `app/_actions/op/switches.ts`, `app/nova-dash/workspace/operacao/`, `.claude/skills/meu-dia/`, `tests/{card-writes,op-preview,meu-dia}.test.ts`; Etapas 1–2: `app/_shared/lib/op/**`, `app/api/op/**`, `app/_actions/team/operator-tokens.ts`, `app/nova-dash/_components/OperatorTokensDialog.tsx`, `tools/crm-mcp/` (fora do Next), `.mcp.json`, `.claude/hooks/{op-prompt,op-tool,guard-secrets,guard-bash,bash-rules}.mjs`, `.claude/skills/{cliente,processo,parados,pendencias}/`, `prisma/schema.prisma` (`OperatorToken`, `OpSession`, `OpRequest`, `OpToolCall`), `tests/{op-policy,op-resolve,op-registry,op-auth,guard-bash,vault}.test.ts`; Etapa 2: `docs/operacao/` (vault), `app/_shared/utils/vault.ts`, `scripts/{vault-seed-hospitais,vault-check,vault-publicar,sync-vault-s3,mapa-etapas}.mjs`, `.claude/agents/{redator,validador}-conhecimento.md`, `.claude/skills/{hospital,conhecimento,publicar-conhecimento}/`. Plano e decisões: `docs/ai-first/00-diagnostico-etapa-zero.md`, `docs/ai-first/01-plano-etapa-1.md`, `docs/ai-first/02-plano-etapa-2.md`.
 
 ## TL;DR
 - O operador trabalha **dentro do Claude Code neste repositório**. As skills `/cliente`, `/processo`, `/parados`, `/pendencias` chamam ferramentas `crm-op` (MCP fino em `tools/crm-mcp/index.mjs`), que viram `POST /api/op/tools/<nome>` no CRM com o token do operador.
 - Toda regra mora no CRM: token → `User` da equipe → permissões **do banco** (`resolvePermissions`) → nível da ferramenta (`canRun`) → args validados por zod → execução → registro em `op_tool_calls`. O MCP só transporta.
-- Etapas 1–2 = **só leitura** (12 ferramentas L1). `OP_MAX_LEVEL = 2` em `app/_shared/lib/op/policy.ts`; nada de L3/L4 existe ainda.
+- Etapas 1–2 = leitura (12 ferramentas L1). **Etapa 3** = `meu_dia` (L1) + 6 ferramentas de escrita L3 (`mover_card`, `adicionar_tag`, `remover_tag`, `comentar_card`, `notificar_pessoa`, `arquivar_card`). `OP_MAX_LEVEL = 3`. Toda L3: sem `confirmar` só devolve a **prévia + `previa_hash`**; com `confirmar: true` + hash executa se o estado não mudou (`estado_mudou` 409); exige `op_write` (padrão só ADMIN++) e o **interruptor** da ferramenta ligado (`app_settings` `op_l3_switches`, seção "IA de operação" do Espaço de Trabalho; desligado por padrão). Autor = `"<nome> (via IA)"`, `metadata.source = "op"` + `metadata.op = {sessionId, requestId}`.
 - Cada prompt vira `op_requests` (hook `UserPromptSubmit`), cada ferramenta vira `op_tool_calls` (pela rota). É a base do futuro dashboard "Operação por IA".
 - **Base de conhecimento (Etapa 2)**: vault `docs/operacao/` (notas `.md` com frontmatter, abre no Obsidian). Notas de hospital nascem do seed das automações de "DISTRIBUIÇÃO DE SOLICITAÇÕES" (bloco `## Fonte` literal + `fonte_hash`); agente redator escreve, `vault-check` + agente validador conferem, script muda o status; publicadas sobem para o S3 (`operacao-vault/`) e a ferramenta `consultar_hospital` lê de lá junto com o texto vivo da automação.
 - O que mais quebra: (1) rota nova em `app/api/op/` que esquece `opAuth` (está em `PUBLIC_API_PREFIXES`: sem `opAuth`, fica **aberta**); (2) ferramenta que seleciona `senha_inss`/`password` e devolve; (3) ferramenta que escreve no CRM sem subir de nível.
@@ -39,7 +39,7 @@
 | `.claude/skills/publicar-conhecimento/` · `hospital/` · `conhecimento/` | Lote redator→check→validador→relatório · procedimento com fonte · sugerir × implementar com checagem de conflito | — |
 | `.claude/hooks/guard-secrets.mjs` · `guard-bash.mjs` + `bash-rules.mjs` | Bloqueiam ler `.env*`, imprimir segredo, listar o ambiente, `psql`, Prisma Studio, `prisma db execute` fora de `prisma/migrations/`, `node -e` com Prisma e arquivo com Prisma fora de `scripts/` | `checkCommand` |
 
-Ferramentas (todas L1, permissão `op_use`, salvo indicação):
+Ferramentas (L1, permissão `op_use`, salvo indicação):
 | nome | arquivo | o que devolve |
 |---|---|---|
 | `buscar_cliente` | `tools/buscar-cliente.ts` | até 20 cards (ativos + arquivados) por CPF/nome/telefone/nº, com CPF e telefone completos |
@@ -53,6 +53,16 @@ Ferramentas (todas L1, permissão `op_use`, salvo indicação):
 | `consultar_conversa` (`view_whatsapp`) | `tools/consultar-conversa.ts` | contato(s) do card, linha, status, atendente, opt-out, últimas mensagens não internas (texto/transcrição) |
 | `consultar_hospital` | `tools/consultar-hospital.ts` | por nome (via `matchColumn`) ou card: texto vivo das automações do hospital, nota publicada do S3 (cache de 5 min do manifesto index.json) com `desatualizado`, `aviso`, GHOST, cards ativos |
 | `minhas_permissoes` | `tools/minhas-permissoes.ts` | nome, cargo e as permissões de operação do dono do token (a skill `/conhecimento` checa `manage_knowledge`) |
+| `meu_dia` | `tools/meu-dia.ts` (+ `app/_shared/utils/meu-dia.ts`) | menções/tarefas `PENDING` do operador, cards que ele conduziu em N dias (`op_tool_calls.cardIds` + `Log move` dele), parados além do prazo, pendências resumidas (≤ 15 cards, via `verificar_pendencias`) |
+
+Ferramentas de escrita (L3, `op_write`; prévia → "sim" → execução; lib em `app/_shared/lib/cards/`):
+| nome | estado no hash | executa | recusa |
+|---|---|---|---|
+| `mover_card` (`card`, `coluna` exata, `enviar_whatsapp?`) | `labelId`, `archiveStatus` | `moveCardToLabel` (automações em `runAfterResponse`; `skipActionTypes: ["whatsapp"]` **sempre** que `enviar_whatsapp` ≠ true — a prévia não segue cadeias de `move`). `enviar_whatsapp` fica **fora** do hash (a prévia já pergunta) | card arquivado (`card_arquivado`) |
+| `adicionar_tag` / `remover_tag` (`card`, `tag` exata) | ids das tags | `setCardTag` | — |
+| `comentar_card` (`card`, `texto`, `mencionar?`) | `cardId` | `addCardComment` (texto sem `[[`; só equipe mencionável); mesmo texto do mesmo operador em 10 min = `noop` | pessoa inexistente |
+| `notificar_pessoa` (`para` pessoa **ou** setor, `texto`, `card?`) | destinatários | pessoa → `notifyUser` (sino + Menções `source: "op"`); setor → `createSectorTask` (`groupId` compartilhado; setor vazio → ADMIN*) | a si mesmo |
+| `arquivar_card` (`archive_cards` + `op_write`; `destino` ou `desarquivar`) | `archiveStatus` | `setCardArchive` | `DESTRUCTIVE_ARCHIVE` → `requer_aprovacao` |
 
 ## Fluxo principal
 ```mermaid
@@ -78,6 +88,8 @@ flowchart LR
 | 401 | `sem_token` · `token_invalido` · `token_revogado` | Bearer ausente, desconhecido ou revogado | manda rodar `diagnostico_crm` / pedir token novo |
 | 403 | `sem_permissao` | dono do token não é equipe, ou falta `op_use`/permissão da ferramenta | diz que não tem permissão e para |
 | 403 | `nivel_bloqueado` | ferramenta acima de `OP_MAX_LEVEL` | diz que ainda não está liberado |
+| 403 | `ferramenta_desligada` · `somente_leitura` · `requer_aprovacao` | L3 com interruptor desligado / operador `read_only` / destino de arquivo destrutivo | diz e para |
+| 409 | `estado_mudou` | card mudou entre prévia e "sim" (`details.previa` = prévia nova) | mostra a prévia nova e pergunta de novo |
 | 429 | `limite` | > 120 chamadas/min no token (ou 300/min no IP) | espera e tenta de novo |
 | 400 | `argumentos_invalidos` | zod recusou (mensagem diz o campo) | corrige os args |
 | 404 | `ferramenta_desconhecida` · `nao_encontrado` · `coluna_nao_encontrada` | nome errado / card ou coluna inexistente (`details` traz as colunas) | pergunta ao operador |
@@ -102,7 +114,12 @@ flowchart LR
 - **CPF e telefone saem sem máscara** (decisão do dono, 24/10): a equipe já vê os dois no card. Não reintroduza máscara sem pedido.
 - **Nunca devolver `password`/`senha_inss`**: não selecione esses campos; quando precisar saber da senha do INSS, devolva só o booleano. `stripSensitive` é a segunda barreira, não a primeira.
 - **Ferramenta de leitura não escreve** — nem "seed" de checklist: `verificar_pendencias` trata checklist sem linhas como os `DEFAULT_CHECKLIST_ITEMS` desmarcados, sem gravar (a rota da aba Arquivos é que semeia).
-- **Subir o nível é decisão de etapa**: ferramenta L3/L4 nova exige mexer em `OP_MAX_LEVEL`, em `canRun` e no teste `tests/op-registry.test.ts` (que hoje exige todas L1). L4 vai usar `canonicalHash` para amarrar a aprovação aos args.
+- **Subir o nível é decisão de etapa**: L4 exige mexer em `OP_MAX_LEVEL`, em `canRun` e na lista do `tests/op-registry.test.ts` (L3 só na lista `ETAPA_3`). L4 vai usar `canonicalHash` para amarrar a aprovação aos args.
+- **O servidor prova a prévia, não o "sim"**: quem garante a confirmação do operador são as skills, o pedido de permissão do Claude Code e os interruptores. Aprovação digitada no app só na Etapa 5 (L4).
+- **L3 nunca escreve sem `confirmar` + hash**: toda ferramenta L3 passa por `previewOrExecute` (`op/preview.ts`); o `execute` só roda depois da comparação. Ferramenta L3 nova que grave fora do `execute` quebra o contrato.
+- **Interruptor é kill switch com cache de 15 s por instância** (`op/switches.ts`); falha ao ler `app_settings` = tudo desligado. L3 **não** entra no `allow` do `.claude/settings.json`: o Claude Code pede permissão a cada chamada (segunda trava).
+- **Escrita da IA = mesmas libs do site** (`app/_shared/lib/cards/*`): nada de `db.user.update` direto numa ferramenta. O site, o executor de automações e a IA geram os mesmos logs.
+- **`fetchLabels` usa `unstable_cache`**: fora do Next (script `op-testar-ferramenta.mjs`) `listar_colunas`/`mover_card` falham com "incrementalCache missing" — teste essas pelo app.
 - **Card = `User` só**: as ferramentas ignoram `Process` (tabela vazia em produção). Se `Process` voltar a ter linhas, `resolveOneCardId` e os selects de `cards.ts` precisam do segundo caminho.
 - **`Prisma.sql` cozinha a string**: `'\D'` vira `'D'`. Escreva `'\\D'` em `regexp_replace` (como `cardIdsByCpf`/`cardIdsByPhone`).
 - **Coluna sem slug**: `matchColumn` só devolve `exact` com nome normalizado idêntico; parcial com uma candidata é aceito em leitura (`resolveColumn`), mais de uma → `coluna_ambigua` e a skill pergunta.
@@ -126,10 +143,14 @@ flowchart LR
 - **Atualizar o vault depois de mexer em automação** → `node -r dotenv/config scripts/vault-seed-hospitais.mjs` (dry-run mostra criar/atualizar/desatualizar) → `--apply` → `node scripts/vault-check.mjs`.
 - **Publicar notas** → `/publicar-conhecimento` (lote de 20) → dono confere a amostra do `_relatorios/publicacao-*.md` → commit → `node -r dotenv/config scripts/sync-vault-s3.mjs --apply` (só então o `consultar_hospital` enxerga).
 - **Notas de etapa/serviço INSS** → `node -r dotenv/config scripts/mapa-etapas.mjs --vault --apply` (rascunho com perguntas sim/não; não reescreve nota confirmada).
-- **Nova skill de operação** → `.claude/skills/<nome>/SKILL.md` copiando o bloco "Regras de operação" de `.claude/skills/cliente/SKILL.md`.
+- **Nova skill de operação** → `.claude/skills/<nome>/SKILL.md` copiando o bloco "Regras de operação" de `.claude/skills/cliente/SKILL.md` (e "Regras de escrita" se a skill oferecer ação).
+- **Nova ferramenta L3** → lib em `app/_shared/lib/cards/` (autor explícito, idempotente, log com `sourceMeta`) + arquivo em `tools/` com `...confirmSchema` no schema e `previewOrExecute` (estado mínimo no hash; noop antes da prévia) + entrada em `OP_TOOLS` + nome em `ETAPA_3` do `tests/op-registry.test.ts` + rótulo em `LABELS` do `OpSwitchesPanel.tsx`. Descrição começa com "ESCRITA.". Não pôr em `allow`.
+- **Ligar/desligar uma ação** → Espaço de Trabalho → IA de operação (só `manage_team`); grava log `update` `metadata.stage = "op_switch"`.
+- **Liberar escrita para a equipe** (passo 8 da Etapa 3, com OK do dono) → `op_write: true` em `ROLE_DEFAULTS` de ADMIN/ADMIN+ (`permissions.ts`).
+- **Testar prévia de L3 sem o app** → `scripts/op-testar-ferramenta.mjs adicionar_tag '{"card":"4967","tag":"AFASTADOS"}' --usuario=<id>` (com o mesmo `-r` de ambiente do relatório; o script força `confirmar: false`, nunca grava).
 
 ## Testes e validação
-- `tests/op-policy.test.ts` (níveis, `read_only` em L1, `dashboard_only`, hash canônico, `stripSensitive`), `tests/op-resolve.test.ts` (referências, CPF × telefone, colunas, dias em Brasília), `tests/op-registry.test.ts` (12 ferramentas L1, JSON Schema, validação), `tests/vault.test.ts` (nome/slug, hash da fonte, contatos, frontmatter, `decideSeed`, `checkNote`, amostra), `tests/op-auth.test.ts` (Prisma mockado: hash, revogado, cliente 403, rate limit 429), `tests/guard-bash.test.ts` (regras do hook).
+- `tests/card-writes.test.ts` (libs de escrita com Prisma mockado: noop, autor/origem no log, tag sem mudança, menção só equipe, FK nula para autor de sistema, arquivo noop), `tests/op-preview.test.ts` (hash estável, `estado_mudou`, interruptores), `tests/meu-dia.test.ts`, `tests/op-policy.test.ts` (níveis, L3/`op_write`, `read_only`, `dashboard_only`, interruptor, `archive_cards`, hash canônico, `stripSensitive`), `tests/op-resolve.test.ts` (referências, CPF × telefone, colunas, dias em Brasília), `tests/op-registry.test.ts` (12 L1 + `meu_dia` + 6 L3, JSON Schema, `confirmar` padrão false, validação), `tests/vault.test.ts` (nome/slug, hash da fonte, contatos, frontmatter, `decideSeed`, `checkNote`, amostra), `tests/op-auth.test.ts` (Prisma mockado: hash, revogado, cliente 403, rate limit 429), `tests/guard-bash.test.ts` (regras do hook).
 - Manual: `curl <base>/api/op/tools` sem token → `{"ok":false,"code":"sem_token"}` (se vier "Não autenticado", o middleware barrou); token falso → `token_invalido`; com token: `/cliente <card de teste>` no Claude Code e conferir as linhas novas em `op_requests`/`op_tool_calls`.
 
 ## Fronteiras
@@ -140,4 +161,4 @@ flowchart LR
 - **Erros/background**: `reportCriticalError`, `runAfterResponse`, `rateLimit`.
 
 ## Backlog
-- Etapa 2 (plano em `docs/ai-first/02-plano-etapa-2.md`, resultado em `docs/ai-first/02-resultado-etapa-2.md`): falta publicar os lotes, confirmar etapas/INSS com o dono, `verificar_pendencias` comparar com `servicos/inss.md` publicado, backend do quadro "Cérebro APP" no ar (actions, `/api/cerebro/*`, `DevTicket.meta`; a UI nova ainda não foi publicada; lotes sobem como `_lotes/<id>.json` pelo `sync-vault-s3.mjs`, gerados pelo `vault-publicar.mjs relatorio`); Etapa 3 (plano em `docs/ai-first/03-plano-etapa-3.md`): ferramentas L3 com prévia + `previa_hash`, interruptor por ferramenta, libs `app/_shared/lib/cards/*`, `/meu-dia`; Etapa 5: `op_approvals` + `executar_aprovado`; Etapa 7: tela "Operação por IA" no Espaço de Trabalho sobre `op_*`.
+- Etapa 2 (plano em `docs/ai-first/02-plano-etapa-2.md`, resultado em `docs/ai-first/02-resultado-etapa-2.md`): falta publicar os lotes, confirmar etapas/INSS com o dono, `verificar_pendencias` comparar com `servicos/inss.md` publicado, backend do quadro "Cérebro APP" no ar (actions, `/api/cerebro/*`, `DevTicket.meta`; a UI nova ainda não foi publicada; lotes sobem como `_lotes/<id>.json` pelo `sync-vault-s3.mjs`, gerados pelo `vault-publicar.mjs relatorio`); Etapa 3 implementada (resultado em `docs/ai-first/03-resultado-etapa-3.md`; falta deploy, teste manual no card de teste e passo 8 — liberar `op_write` à equipe); Etapa 4 (plano em `docs/ai-first/04-plano-etapa-4.md`): documentos; Etapa 5: `op_approvals` + `executar_aprovado`; Etapa 7: tela "Operação por IA" no Espaço de Trabalho sobre `op_*`.

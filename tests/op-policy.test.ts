@@ -13,11 +13,33 @@ describe("canRun", () => {
   const admin = resolvePermissions("ADMIN");
   const sa = resolvePermissions("ADMIN++");
 
-  it("Etapa 1 só libera até L2", () => {
-    expect(OP_MAX_LEVEL).toBe(2);
+  it("Etapa 3 libera até L3; L4 segue bloqueado", () => {
+    expect(OP_MAX_LEVEL).toBe(3);
     expect(canRun(1, "op_use", admin)).toEqual({ ok: true });
-    expect(canRun(3, "op_use", sa)).toMatchObject({ ok: false, code: "nivel_bloqueado" });
-    expect(canRun(4, "op_use", sa)).toMatchObject({ ok: false, code: "nivel_bloqueado" });
+    expect(canRun(3, "op_write", sa)).toEqual({ ok: true });
+    expect(canRun(4, "op_write", sa)).toMatchObject({ ok: false, code: "nivel_bloqueado" });
+  });
+
+  it("L3 exige op_write (padrão só ADMIN++)", () => {
+    expect(canRun(3, "op_write", admin)).toMatchObject({ ok: false, code: "sem_permissao" });
+    expect(canRun(3, "op_write", resolvePermissions("ADMIN", { op_write: true }))).toEqual({ ok: true });
+  });
+
+  it("L3 recusa read_only e dashboard_only", () => {
+    // ADMIN++ ignora overrides: os casos usam ADMIN com op_write concedido.
+    expect(canRun(3, "op_write", resolvePermissions("ADMIN", { op_write: true, read_only: true }))).toMatchObject({ code: "somente_leitura" });
+    expect(canRun(3, "op_write", resolvePermissions("ADMIN", { op_write: true, dashboard_only: true }))).toMatchObject({ code: "sem_permissao" });
+  });
+
+  it("interruptor desligado recusa antes de tudo", () => {
+    expect(canRun(3, "op_write", sa, false)).toMatchObject({ ok: false, code: "ferramenta_desligada" });
+  });
+
+  it("arquivar exige archive_cards além de op_write", () => {
+    const semArquivo = resolvePermissions("ADMIN", { op_write: true, archive_cards: false });
+    expect(canRun(3, "archive_cards", semArquivo)).toMatchObject({ ok: false, code: "sem_permissao" });
+    const semEscrita = resolvePermissions("ADMIN", { archive_cards: true });
+    expect(canRun(3, "archive_cards", semEscrita)).toMatchObject({ ok: false, code: "sem_permissao" });
   });
 
   it("sem op_use nada roda", () => {

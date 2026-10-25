@@ -72,7 +72,7 @@ function Excerpt({ text, muted }: { text: string; muted: boolean }) {
 }
 
 type FilterKey = 'PENDING' | 'ACK' | 'DONE' | 'ALL';
-type SourceKey = 'all' | 'comment' | 'chat' | 'whatsapp' | 'botconversa';
+type SourceKey = 'all' | 'comment' | 'chat' | 'whatsapp' | 'botconversa' | 'op';
 
 const FILTERS: { key: FilterKey; label: string; dot: string }[] = [
   { key: 'PENDING', label: 'Pendentes', dot: 'bg-amber-500' },
@@ -203,7 +203,8 @@ function MentionRow({
   onStatus: (id: string, status: MentionStatus) => void; onOpen: (m: MentionDTO) => void;
 }) {
   const done = m.status === 'DONE';
-  const isCard = m.source === 'comment';
+  // Aviso/tarefa da IA de operação abre o card quando tem um.
+  const isCard = m.source === 'comment' || (m.source === 'op' && !!(m.userId || m.processId));
   const canOpen = isCard ? m.targetExists : !!m.channelId;
 
   const accent = done
@@ -344,6 +345,14 @@ function OriginBadge({ m }: { m: MentionDTO }) {
       <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300">
         <Bot className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{m.targetName.replace(/^BotConversa · /, '') || 'BotConversa'}</span>
+      </span>
+    );
+  }
+  if (m.source === 'op' && !m.userId && !m.processId) {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300">
+        <Sparkles className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">IA de operação</span>
       </span>
     );
   }
@@ -587,6 +596,7 @@ export function MentionsInbox() {
       return;
     }
     const cardId = m.processId ?? m.userId;
+    if (m.source === 'op' && !cardId) return; // aviso da IA sem card: nada a abrir
     if (!cardId || !m.targetExists) {
       toast.error('Esse card não existe mais.');
       return;
@@ -728,6 +738,7 @@ export function MentionsInbox() {
             { key: 'chat' as const, label: 'Chat', icon: MessageSquare },
             { key: 'whatsapp' as const, label: 'WhatsApp', icon: WhatsAppIcon },
             { key: 'botconversa' as const, label: 'BotConversa', icon: Bot },
+            { key: 'op' as const, label: 'IA', icon: Sparkles },
           ]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}

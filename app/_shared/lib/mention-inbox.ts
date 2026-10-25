@@ -33,7 +33,9 @@ interface RecordMentionsInput {
   // "whatsapp": tarefa do bot (lead qualificado precisa de card/contrato) —
   // o channelId carrega o contactId da conversa pra abrir direto no inbox.
   // "botconversa": tarefa vinda do webhook do BotConversa (contratado).
-  source: "comment" | "chat" | "whatsapp" | "botconversa";
+  // "op": aviso/tarefa criado pela IA de operação a pedido de um operador
+  // (notificar_pessoa) — autor é o operador; o card é opcional.
+  source: "comment" | "chat" | "whatsapp" | "botconversa" | "op";
   /** Texto cru da mensagem/comentário — o trecho é limpo aqui. */
   text: string;
   /** Nome do card ou do canal. */

@@ -42,7 +42,7 @@ try {
     const calls = await tx.opToolCall.findMany({
       where: { createdAt: { gte: desde } },
       orderBy: { createdAt: "asc" },
-      select: { operatorId: true, tool: true, ok: true, code: true, durationMs: true, requestId: true, cardIds: true, createdAt: true },
+      select: { operatorId: true, tool: true, level: true, args: true, summary: true, ok: true, code: true, durationMs: true, requestId: true, cardIds: true, createdAt: true },
     });
     const ids = [...new Set([...sessions, ...requests, ...calls].map((r) => r.operatorId))];
     const users = await tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
@@ -90,6 +90,28 @@ try {
   for (const [tool, t] of Object.entries(byTool).sort((a, b) => b[1].total - a[1].total)) {
     const falhas = Object.entries(t.falhas).map(([k, v]) => `${k}×${v}`).join(", ");
     console.log(`  ${tool.padEnd(22)} ${String(t.total).padStart(4)} · ok ${t.ok} · média ${Math.round(t.ms / t.total)} ms${falhas ? ` · falhas: ${falhas}` : ""}`);
+  }
+
+  // Escritas (L3): cada ação gera 2 linhas — prévia (sem confirmar) e execução.
+  const writes = data.calls.filter((c) => c.level >= 3);
+  if (writes.length) {
+    const byW = {};
+    for (const c of writes) {
+      const w = (byW[c.tool] ??= { previas: 0, execucoes: 0, noop: 0, estadoMudou: 0, recusas: {} });
+      const confirmed = c.args && typeof c.args === "object" && c.args.confirmar === true;
+      if (!c.ok) {
+        if (c.code === "estado_mudou") w.estadoMudou++;
+        else w.recusas[c.code ?? "?"] = (w.recusas[c.code ?? "?"] ?? 0) + 1;
+      } else if (/^noop/.test(c.summary ?? "")) w.noop++;
+      else if (confirmed) w.execucoes++;
+      else w.previas++;
+    }
+    console.log(`
+Escritas (${writes.length} chamadas L3):`);
+    for (const [tool, w] of Object.entries(byW)) {
+      const rec = Object.entries(w.recusas).map(([k, v]) => `${k}×${v}`).join(", ");
+      console.log(`  ${tool.padEnd(22)} prévias ${w.previas} · execuções ${w.execucoes} · noop ${w.noop} · estado_mudou ${w.estadoMudou}${rec ? ` · recusas: ${rec}` : ""}`);
+    }
   }
   console.log("");
 } finally {

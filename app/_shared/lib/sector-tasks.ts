@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { db } from "@/app/_shared/lib/prisma";
-import { recordMentions } from "@/app/_shared/lib/mention-inbox";
+import { cleanExcerpt, recordMentions } from "@/app/_shared/lib/mention-inbox";
 import { createTtlCache } from "@/app/_shared/utils/ttl-cache";
 
 /**
@@ -37,7 +37,7 @@ export const WA_QUEUE_SECTOR_SLUG = SECTOR_TASK_ROUTES.wa_lead_qualificado.secto
 
 const FALLBACK_ROLES = ["ADMIN", "ADMIN+", "ADMIN++"];
 
-interface SectorAudience {
+export interface SectorAudience {
   sector: { id: string; name: string } | null;
   recipientIds: string[];
 }
@@ -53,7 +53,7 @@ const sectorCache = createTtlCache<string, SectorAudience>({ ttlMs: SECTOR_TTL_M
  * estiver vazio, a equipe inteira: nenhuma tarefa ou aviso se perde por setor
  * mal configurado.
  */
-async function loadSectorAudience(slug: string): Promise<SectorAudience> {
+export async function loadSectorAudience(slug: string): Promise<SectorAudience> {
   const cached = sectorCache.get(slug);
   // Cópia: quem chama pode mexer no array.
   if (cached) return { sector: cached.sector, recipientIds: [...cached.recipientIds] };
@@ -130,4 +130,39 @@ export async function recordSectorTask({
   } catch (err) {
     console.error(`[SECTOR TASKS] Falha ao criar a tarefa "${kind}":`, err);
   }
+}
+
+interface CreateSectorTaskInput {
+  /** Audiência já resolvida (loadSectorAudience) — a prévia da IA mostra estes ids. */
+  audience: SectorAudience;
+  text: string;
+  author: { id: string; name: string };
+  card?: { id: string; isProcess: boolean; name: string } | null;
+}
+
+/**
+ * Tarefa compartilhada do setor pedida por um operador (IA de operação,
+ * notificar_pessoa com setor). Diferente do recordSectorTask, lança: quem
+ * pediu precisa saber se a tarefa não foi criada.
+ */
+export async function createSectorTask({ audience, text, author, card = null }: CreateSectorTaskInput): Promise<string> {
+  const groupId = randomUUID();
+  const recipientIds = audience.recipientIds.filter((id) => id !== author.id);
+  if (recipientIds.length === 0) throw new Error("Setor sem destinatários além do próprio autor.");
+  await db.mention.createMany({
+    data: recipientIds.map((recipientId) => ({
+      recipientId,
+      authorId: author.id,
+      authorName: author.name,
+      source: "op",
+      excerpt: cleanExcerpt(text) || "(sem texto)",
+      targetName: card?.name ?? "IA de operação",
+      userId: card && !card.isProcess ? card.id : null,
+      processId: card?.isProcess ? card.id : null,
+      sectorId: audience.sector?.id ?? null,
+      sectorName: audience.sector?.name ?? null,
+      groupId,
+    })),
+  });
+  return groupId;
 }

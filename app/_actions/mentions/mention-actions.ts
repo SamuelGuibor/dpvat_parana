@@ -17,7 +17,8 @@ export interface MentionDTO {
   // "whatsapp": tarefa criada pelo bot (ex.: lead qualificado pela IA que
   // precisa de card + contrato) — abrir leva pra conversa do WhatsApp.
   // "botconversa": tarefa do webhook do BotConversa (contratado).
-  source: 'comment' | 'chat' | 'whatsapp' | 'botconversa';
+  // "op": aviso/tarefa da IA de operação (operador pediu pelo Claude Code).
+  source: 'comment' | 'chat' | 'whatsapp' | 'botconversa' | 'op';
   excerpt: string;
   /** Tarefas por setor: setor responsável no momento da criação. */
   sectorId: string | null;
@@ -135,7 +136,8 @@ async function enrich(rows: MentionRow[]): Promise<MentionDTO[]> {
         r.source === 'chat' ? 'chat'
           : r.source === 'whatsapp' ? 'whatsapp'
             : r.source === 'botconversa' ? 'botconversa'
-              : 'comment',
+              : r.source === 'op' ? 'op'
+                : 'comment',
       excerpt: r.excerpt,
       sectorId: r.sectorId,
       sectorName: r.sectorName,

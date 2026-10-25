@@ -4,16 +4,16 @@
 // Níveis de autonomia (docs/ai-first/00-diagnostico-etapa-zero.md §6.3):
 //   1 leitura · 2 preparar (rascunho) · 3 interno reversível · 4 externo/sensível
 //   (só com aprovação digitada no app) · 5 não existe ferramenta.
-// A Etapa 1 só libera L1/L2: OP_MAX_LEVEL sobe quando as ferramentas de escrita
-// existirem, nunca antes.
+// Etapa 3 libera L3 (escrita interna reversível, sempre com prévia + "sim"
+// e interruptor por ferramenta). L4 só na Etapa 5, com aprovação no app.
 
 import { createHash } from "crypto";
 import type { PermissionKey, PermissionMap } from "../permissions";
 
 export type OpLevel = 1 | 2 | 3 | 4;
-export const OP_MAX_LEVEL: OpLevel = 2;
+export const OP_MAX_LEVEL: OpLevel = 3;
 
-export type OpDenyCode = "nivel_bloqueado" | "sem_permissao" | "somente_leitura";
+export type OpDenyCode = "nivel_bloqueado" | "sem_permissao" | "somente_leitura" | "ferramenta_desligada";
 
 export type CanRunResult = { ok: true } | { ok: false; code: OpDenyCode; message: string };
 
@@ -21,9 +21,18 @@ export type CanRunResult = { ok: true } | { ok: false; code: OpDenyCode; message
  * Decide se o operador pode rodar uma ferramenta. A permissão vem do banco
  * (resolvePermissions do User do token), nunca do que o app afirma.
  */
-export function canRun(level: OpLevel, permission: PermissionKey, perms: PermissionMap): CanRunResult {
+export function canRun(
+  level: OpLevel,
+  permission: PermissionKey,
+  perms: PermissionMap,
+  /** Interruptor da ferramenta (op/switches.ts). L1 não tem interruptor. */
+  enabled = true,
+): CanRunResult {
   if (level > OP_MAX_LEVEL) {
     return { ok: false, code: "nivel_bloqueado", message: "Esta ferramenta ainda não está liberada nesta etapa." };
+  }
+  if (!enabled) {
+    return { ok: false, code: "ferramenta_desligada", message: "Esta ação da IA está desligada no Espaço de Trabalho (IA de operação)." };
   }
   // "Somente Dashboard" é para quem só acompanha leads de tráfego: sem kanban
   // na tela, sem ficha de cliente pela IA (o op_use padrão do cargo não vale).
@@ -31,7 +40,8 @@ export function canRun(level: OpLevel, permission: PermissionKey, perms: Permiss
     return { ok: false, code: "sem_permissao", message: "Você não tem permissão para usar a IA de operação." };
   }
   if (!perms[permission]) {
-    return { ok: false, code: "sem_permissao", message: "Você não tem permissão para esta consulta." };
+    const what = level >= 3 ? "esta ação" : "esta consulta";
+    return { ok: false, code: "sem_permissao", message: `Você não tem permissão para ${what}.` };
   }
   if (level >= 3) {
     if (perms.read_only) {

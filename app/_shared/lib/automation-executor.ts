@@ -20,6 +20,18 @@ import { brDateVars } from "../utils/date-br";
 import {
   type CardData, getVars, evalConditions, fireCycleKey,
 } from "./automation-conditions";
+import { moveCardToLabel } from "./cards/move-card";
+import { setCardTag } from "./cards/tags";
+import { addCardComment } from "./cards/comment";
+
+/**
+ * Tipos de ação que quem move pode pedir para pular. Só a IA de operação usa:
+ * o operador viu na prévia que a coluna manda WhatsApp ao cliente e disse
+ * "sem WhatsApp" (decisão do dono, 25/10). O site nunca pula nada.
+ */
+export type SkippableActionType = "whatsapp";
+
+const BOT_AUTHOR_NAME = `🤖 Bot (Automação)`;
 
 // Limite de movimentos encadeados por ação "move" (coluna A move pra B, que
 // move pra C...). Evita loop infinito entre automações que se apontam.
@@ -70,6 +82,7 @@ type ActionCtx = {
   currentLabelId: string;
   // Profundidade do encadeamento de ações "move" (interno).
   depth: number;
+  skipActionTypes?: SkippableActionType[];
 };
 
 // Executa UMA ação de UMA automação para um card. Retorna "moved" quando a
@@ -77,18 +90,44 @@ type ActionCtx = {
 // (e o de automações da coluna) nesse caso, pois o card já não está lá.
 async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<"moved" | void> {
   const { auto, cardId, isProcess, authorId, authorName, cardData, vars, safeName, currentLabelId, depth } = ctx;
+  const botAuthor = { id: authorId, name: BOT_AUTHOR_NAME };
+  const automation = { id: auto.id, name: auto.name };
 
-  if (action.type === "comment" && action.templateText) {
-    await db.comment.create({
-      data: {
-        text: fillTemplate(action.templateText, vars),
-        authorId,
-        authorName: `🤖 Bot (Automação)`,
-        targetName: String(cardData.name ?? ""),
-        userId: isProcess ? null : cardId,
-        processId: isProcess ? cardId : null,
+  if (ctx.skipActionTypes?.includes(action.type as SkippableActionType)) {
+    await createLog({
+      action: "update",
+      message: `automação "${auto.name}": ação "${action.type}" não executada — operador optou por não enviar pela IA`,
+      authorId,
+      authorName,
+      userId: isProcess ? null : cardId,
+      processId: isProcess ? cardId : null,
+      metadata: {
+        stage: "automation_skip",
+        automationId: auto.id,
+        automationName: auto.name,
+        actionType: action.type,
+        reason: "operador optou por não enviar pela IA",
       },
     });
+    return;
+  }
+
+  // Comentário da automação: mesma lib do site (gera comment_add no
+  // histórico), sem sino/menção — como sempre foi.
+  if (action.type === "comment" && action.templateText) {
+    try {
+      await addCardComment({
+        cardId,
+        isProcess,
+        text: fillTemplate(action.templateText, vars),
+        author: botAuthor,
+        source: "automation",
+        notify: false,
+        automation,
+      });
+    } catch (err) {
+      console.error(`[AUTOMATION] Erro ao comentar (auto ${auto.id}):`, err);
+    }
   }
 
   if (action.type === "whatsapp" && action.waText) {
@@ -176,26 +215,8 @@ async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<
   // não duplica); tag apagada é ignorada com aviso.
   if (action.type === "add_tag" && action.tagId) {
     try {
-      const tag = await db.cardTag.findUnique({ where: { id: action.tagId } });
-      if (!tag) {
-        console.warn(`[AUTOMATION] Tag não existe mais (auto ${auto.id}) — ação de tag ignorada.`);
-      } else {
-        const tagOp = { cardTags: { connect: { id: tag.id } } };
-        if (isProcess) {
-          await db.process.update({ where: { id: cardId }, data: tagOp });
-        } else {
-          await db.user.update({ where: { id: cardId }, data: tagOp });
-        }
-        await createLog({
-          action: "tag_add",
-          message: `adicionou a tag "${tag.name}" (automação: ${auto.name})`,
-          authorId,
-          authorName: `🤖 Bot (Automação)`,
-          userId: isProcess ? null : cardId,
-          processId: isProcess ? cardId : null,
-          metadata: { automationId: auto.id, automationName: auto.name, tagId: tag.id, tagName: tag.name },
-        });
-      }
+      // Tag já presente = sem gravação e sem log (setCardTag compara antes).
+      await setCardTag({ cardId, isProcess, tagId: action.tagId, on: true, author: botAuthor, source: "automation", automation });
     } catch (err) {
       console.error(`[AUTOMATION] Erro ao adicionar tag (auto ${auto.id}):`, err);
     }
@@ -211,48 +232,27 @@ async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<
     }
     if (action.moveLabelId === currentLabelId) return; // já está na coluna de destino
 
-    const targetLabel = await db.label.findUnique({ where: { id: action.moveLabelId } });
-    if (!targetLabel) {
-      console.warn(`[AUTOMATION] Coluna de destino não existe mais (auto ${auto.id}) — ação de mover ignorada.`);
+    try {
+      // Mesma lib do site: grava a coluna + log `move` e encadeia as automações
+      // da coluna nova com await (depth + 1). O "pular WhatsApp" pedido pelo
+      // operador vale para a cadeia inteira.
+      const moved = await moveCardToLabel({
+        cardId,
+        isProcess,
+        labelId: action.moveLabelId,
+        author: { id: authorId, name: BOT_AUTHOR_NAME },
+        source: "automation",
+        automation,
+        automations: "await",
+        depth: depth + 1,
+        skipActionTypes: ctx.skipActionTypes,
+        automationAuthorName: authorName,
+      });
+      if (moved.noop) return;
+    } catch (err) {
+      console.warn(`[AUTOMATION] Ação de mover ignorada (auto ${auto.id}):`, err);
       return;
     }
-
-    const moveData = {
-      labelId: targetLabel.id,
-      role: targetLabel.name,
-      statusStartedAt: new Date(),
-    };
-    if (isProcess) {
-      await db.process.update({ where: { id: cardId }, data: moveData });
-    } else {
-      await db.user.update({ where: { id: cardId }, data: moveData });
-    }
-
-    await createLog({
-      action: "move",
-      message: `moveu de "${String(cardData.role ?? "?")}" para "${targetLabel.name}" (automação: ${auto.name})`,
-      authorId,
-      authorName: `🤖 Bot (Automação)`,
-      userId: isProcess ? null : cardId,
-      processId: isProcess ? cardId : null,
-      metadata: {
-        from: cardData.role ?? null,
-        to: targetLabel.name,
-        cardName: cardData.name ?? null,
-        service: cardData.service ?? null,
-        automationId: auto.id,
-        automationName: auto.name,
-      },
-    });
-
-    await runAutomations({
-      cardId,
-      isProcess,
-      newLabelId: targetLabel.id,
-      authorId,
-      authorName,
-      depth: depth + 1,
-    });
     return "moved";
   }
 
@@ -295,6 +295,7 @@ export async function runAutomations({
   authorId,
   authorName,
   depth = 0,
+  skipActionTypes,
 }: {
   cardId: string;
   isProcess: boolean;
@@ -303,6 +304,7 @@ export async function runAutomations({
   authorName: string;
   // Profundidade do encadeamento de ações "move" (interno).
   depth?: number;
+  skipActionTypes?: SkippableActionType[];
 }) {
   try {
     const automations = await fetchAutomationsByLabel(newLabelId);
@@ -348,7 +350,7 @@ export async function runAutomations({
       const actions = (auto.actions as unknown as AutomationAction[]) ?? [];
       const ctx: ActionCtx = {
         auto, cardId, isProcess, authorId, authorName, cardData, vars, safeName,
-        currentLabelId: newLabelId, depth,
+        currentLabelId: newLabelId, depth, skipActionTypes,
       };
 
       for (const action of actions) {

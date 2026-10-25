@@ -46,6 +46,7 @@
       "mcp__crm-op__consultar_conversa",
       "mcp__crm-op__consultar_hospital",
       "mcp__crm-op__minhas_permissoes",
+      "mcp__crm-op__meu_dia",
       "Read(//d/Chatbot_whatsapp/**)",
       "Read(//d/docx-converter/**)"
     ],

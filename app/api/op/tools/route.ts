@@ -7,6 +7,7 @@ import { opAuth } from "@/app/_shared/lib/op/http";
 import { catalogEntry } from "@/app/_shared/lib/op/registry";
 import { canRun } from "@/app/_shared/lib/op/policy";
 import { OP_TOOLS } from "@/app/_shared/lib/op/tools";
+import { getOpSwitches, isToolEnabled } from "@/app/_shared/lib/op/switches";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,13 @@ export async function GET(req: Request) {
   const auth = await opAuth(req, "op_tools_catalog");
   if ("res" in auth) return auth.res;
   const { op } = auth;
+  // L3 desligada no Espaço de Trabalho → permitido: false (o MCP não a expõe).
+  const switches = await getOpSwitches();
   return noStoreJson({
     ok: true,
     data: {
       operador: { nome: op.name, cargo: op.role },
-      tools: OP_TOOLS.map((t) => ({ ...catalogEntry(t), permitido: canRun(t.level, t.permission, op.permissions).ok })),
+      tools: OP_TOOLS.map((t) => ({ ...catalogEntry(t), permitido: canRun(t.level, t.permission, op.permissions, isToolEnabled(switches, t)).ok })),
     },
   });
 }

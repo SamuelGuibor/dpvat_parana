@@ -67,7 +67,7 @@ export async function recordPrompt(input: { sessionId: string; operatorId: strin
 }
 
 /** Último prompt da sessão (até 30 min) — o pedido que levou à ferramenta. */
-async function latestRequestId(sessionId: string): Promise<string | null> {
+export async function latestRequestId(sessionId: string): Promise<string | null> {
   const row = await db.opRequest.findFirst({
     where: { sessionId, createdAt: { gte: new Date(Date.now() - REQUEST_LINK_WINDOW_MS) } },
     orderBy: { createdAt: "desc" },
@@ -78,6 +78,8 @@ async function latestRequestId(sessionId: string): Promise<string | null> {
 
 export interface ToolCallRecord {
   sessionId: string | null;
+  /** Já resolvido pela rota (L3 grava no metadata.op do Log); omitido = busca aqui. */
+  requestId?: string | null;
   operatorId: string;
   tool: string;
   level: number;
@@ -91,7 +93,8 @@ export interface ToolCallRecord {
 
 export async function recordToolCall(input: ToolCallRecord): Promise<void> {
   try {
-    const requestId = input.sessionId ? await latestRequestId(input.sessionId) : null;
+    const requestId =
+      input.requestId !== undefined ? input.requestId : input.sessionId ? await latestRequestId(input.sessionId) : null;
     await db.opToolCall.create({
       data: {
         sessionId: input.sessionId,

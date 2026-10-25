@@ -50,7 +50,8 @@ export type LogAction =
   | "critical_error" // erro engolido de propósito (reportCriticalError): contexto, mensagem, contactId quando há; autor = sistema
   | "overdue_alert"  // notificação de card estourado (limite de dias da coluna)
   | "sheets_export"     // automação registrou o card numa planilha do Google
-  | "tag_add"           // automação adicionou uma tag ao card
+  | "tag_add"           // marcou uma tag no card (site, automação ou IA de operação)
+  | "tag_remove"        // tirou uma tag do card (site ou IA de operação)
   | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
   | "ai_audit_feedback"; // feedback humano sobre uma auditoria da IA
 
@@ -60,7 +61,9 @@ export type LogAction =
  * trabalho; a tag é classificação de um clique e, contada, inflaria "tarefas"
  * (~10 por dia). Continuam no banco e no feed do painel Chatbot.
  */
-export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove"];
+// tag_add/tag_remove do card: a rota de tag do site passou a logar (Etapa 3 da
+// IA de operação) — pelo mesmo motivo das tags de conversa, não viram tarefa.
+export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove"];
 
 interface CreateLogInput {
   action: LogAction;
@@ -85,6 +88,11 @@ interface CreateLogInput {
 const SYSTEM_AUTHOR_IDS = new Set([
   "whatsapp-bot", "whatsapp-client", "whatsapp-meta", "system", "roteiro", "kanban-overdue",
 ]);
+
+/** Autor sem linha em User (bot, cron…): não pode ir para coluna com FK (Comment.authorId). */
+export function isSystemAuthorId(authorId: string | null | undefined): boolean {
+  return !authorId || SYSTEM_AUTHOR_IDS.has(authorId);
+}
 
 type SectorSnapshot = Record<string, any> | null;
 

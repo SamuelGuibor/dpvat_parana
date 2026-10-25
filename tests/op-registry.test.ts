@@ -16,12 +16,14 @@ const ETAPA_1 = [
   "consultar_conversa",
 ];
 const ETAPA_2 = ["consultar_hospital", "minhas_permissoes"];
+const ETAPA_3_L1 = ["meu_dia"];
+const ETAPA_3 = ["mover_card", "adicionar_tag", "remover_tag", "comentar_card", "notificar_pessoa", "arquivar_card"];
 
 describe("registry da operação por IA", () => {
-  it("as 10 ferramentas da Etapa 1 + 2 da Etapa 2, nomes únicos", () => {
+  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3, nomes únicos", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
-    expect([...names].sort()).toEqual([...ETAPA_1, ...ETAPA_2].sort());
+    expect([...names].sort()).toEqual([...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3].sort());
   });
 
   it("consultar_hospital exige hospital ou card", () => {
@@ -31,17 +33,39 @@ describe("registry da operação por IA", () => {
     expect(t.schema.safeParse({ card: "2342" }).success).toBe(true);
   });
 
-  it("todas são L1 (nenhuma escrita nesta etapa) e com permissão existente", () => {
+  it("L3 só na lista da Etapa 3 (op_write/archive_cards); o resto é L1", () => {
     for (const t of OP_TOOLS) {
-      expect(t.level).toBe(1);
       expect(PERMISSION_KEYS).toContain(t.permission);
       expect(t.description.length).toBeGreaterThan(30);
+      if (ETAPA_3.includes(t.name)) {
+        expect(t.level).toBe(3);
+        expect(["op_write", "archive_cards"]).toContain(t.permission);
+        expect(t.description).toMatch(/^ESCRITA\./);
+      } else {
+        expect(t.level).toBe(1);
+      }
     }
     expect(getTool("consultar_conversa")?.permission).toBe("view_whatsapp");
+    expect(getTool("arquivar_card")?.permission).toBe("archive_cards");
   });
 
-  it("nenhuma ferramenta de escrita no catálogo", () => {
-    for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(mover|adicionar|remover|comentar|criar|arquivar|executar|enviar)/);
+  it("nenhuma ferramenta de envio externo, lote ou execução de aprovado", () => {
+    for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(enviar|executar|criar_card|mudar_etapa)/);
+  });
+
+  it("L3 sem confirmar = prévia (confirmar padrão false); nenhuma aceita lista de cards", () => {
+    for (const name of ETAPA_3) {
+      const t = getTool(name)!;
+      const s = catalogEntry(t).inputSchema as { properties: Record<string, { type?: string }> };
+      expect(s.properties.confirmar).toBeDefined();
+      expect(s.properties.previa_hash).toBeDefined();
+      if (s.properties.card) expect(s.properties.card.type).toBe("string");
+    }
+    const parsed = getTool("mover_card")!.schema.safeParse({ card: "2342", coluna: "AUDITORIA" });
+    expect(parsed.success && (parsed.data as { confirmar: boolean }).confirmar).toBe(false);
+    expect(getTool("arquivar_card")!.schema.safeParse({ card: "1" }).success).toBe(false);
+    expect(getTool("arquivar_card")!.schema.safeParse({ card: "1", destino: "APTOS CCS", desarquivar: true }).success).toBe(false);
+    expect(getTool("arquivar_card")!.schema.safeParse({ card: "1", desarquivar: true }).success).toBe(true);
   });
 
   it("zod → JSON Schema é objeto, sem $schema, com required coerente", () => {

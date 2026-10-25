@@ -3,7 +3,7 @@
 import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
 import { db } from "../../_shared/lib/prisma";
 import { unstable_noStore as noStore } from "next/cache";
-import { createLog } from "../../_shared/lib/log";
+import { setCardArchive } from "../../_shared/lib/cards/archive";
 import { requirePermission } from "../../_shared/lib/permissions-server";
 
 // Estados possíveis de arquivamento. null = card ativo no board.
@@ -21,21 +21,6 @@ export type ArchiveStatus =
   | "desistiram_expressamente"
   | "voltar_um_dia";
 
-const ARCHIVE_LABELS: Record<ArchiveStatus, string> = {
-  pagos_ccs: "APTOS CCS",
-  pagos_uni: "APTOS UNI",
-  enviados_taynara: "ENVIADOS TAYNARA",
-  enviados_evelyn: "ENVIADOS EVELYN",
-  enviados_joinville: "ENVIADOS JOINVILLE",
-  pastas_negadas_ccs: "PASTAS NEGADAS CCS",
-  pastas_negadas_uni: "PASTAS NEGADAS UNI",
-  perdeu_contato_definitivo: "PERDEU CONTATO - DEFINITIVO",
-  nao_assinaram_procuracao: "NÃO ASSINARAM PROCURAÇÃO",
-  descartados_analise_interna: "DESCARTADOS ANÁLISE INTERNA",
-  desistiram_expressamente: "DESISTIRAM EXPRESSAMENTE",
-  voltar_um_dia: "VOLTAR UM DIA"
-};
-
 interface SetArchiveStatusProps {
   id: string;
   isProcess: boolean;
@@ -48,32 +33,8 @@ export async function setArchiveStatus({ id, isProcess, status }: SetArchiveStat
   await assertCanWrite();
   const ctx = await requirePermission("archive_cards");
 
-  const data = {
-    archiveStatus: status,
-    archivedAt: status ? new Date() : null,
-  };
-
-  if (isProcess) {
-    await db.process.update({ where: { id }, data });
-  } else {
-    await db.user.update({ where: { id }, data });
-  }
-
-  await createLog({
-    action: "archive",
-    message: status
-      ? `arquivou o card como "${ARCHIVE_LABELS[status]}"`
-      : "desarquivou o card",
-    authorId: ctx.userId,
-    authorName: ctx.name ?? "Usuário",
-    userId: isProcess ? null : id,
-    processId: isProcess ? id : null,
-    metadata: {
-      archiveStatus: status,
-      archiveLabel: status ? ARCHIVE_LABELS[status] : null,
-      archived: Boolean(status),
-    },
-  });
+  // Grava archiveStatus/archivedAt + log `archive` (app/_shared/lib/cards/archive.ts).
+  await setCardArchive({ cardId: id, isProcess, status, author: { id: ctx.userId, name: ctx.name ?? "Usuário" } });
 
   // Sem revalidatePath: o board remove/repõe o card de forma otimista e o
   // polling sincroniza o resto — revalidar re-renderizava a rota inteira.
