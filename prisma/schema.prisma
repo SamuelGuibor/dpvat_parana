@@ -1534,7 +1534,8 @@ model OpRequest {
   operatorId String
   text       String
   skill      String?
-  // Reservado ao estado de workflow com retomada (Etapa 6).
+  // Etapa 6: progresso do fluxo longo que este prompt iniciou (só ids/keys,
+  // schema v1 em app/_shared/utils/workflows.ts; app/_shared/lib/op/workflow.ts).
   state      Json?
   createdAt  DateTime     @default(now())
   toolCalls  OpToolCall[]

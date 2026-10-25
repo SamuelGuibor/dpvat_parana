@@ -221,7 +221,8 @@ export const anexarRascunho = defineTool({
           data: {
             noop: true,
             mensagem: existing.deletedAt ? "Este rascunho já foi anexado e o documento está na lixeira do card." : "Este rascunho já está anexado ao card.",
-            documento: { nome: existing.name, pasta: categoryLabel(existing.category) },
+            // id = ref do passo "anexar" do salvar_progresso (Etapa 6).
+            documento: { id: existing.id, nome: existing.name, pasta: categoryLabel(existing.category) },
           },
           summary: `noop anexar ${draft.key}`,
           cardIds: [card],
@@ -252,7 +253,7 @@ export const anexarRascunho = defineTool({
         data: {
           feito: !out.result.noop,
           noop: out.result.noop,
-          documento: { nome: out.result.name, pasta: categoryLabel(out.result.category) },
+          documento: { id: out.result.documentId, nome: out.result.name, pasta: categoryLabel(out.result.category) },
           card: { cardNumber: cardRow.cardNumber, nome: cardRow.name },
         },
         summary: `${out.result.noop ? "noop" : "anexou"} ${draft.fileName} em ${cardRow.cardNumber ?? "?"}`,

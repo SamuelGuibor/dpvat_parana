@@ -22,14 +22,16 @@ const ETAPA_4_L1 = ["listar_modelos"];
 const ETAPA_4_L2 = ["preparar_procuracao", "preparar_pedido_prontuario", "preparar_contrato"];
 const ETAPA_4_L3 = ["anexar_rascunho"];
 const ETAPA_5_L4 = ["preparar_email", "preparar_whatsapp", "executar_aprovado"];
+// Etapa 6: registro de progresso (L1, escreve só em op_requests, nunca no card).
+const ETAPA_6_L1 = ["salvar_progresso", "fluxos_abertos", "retomar_fluxo"];
 const L3 = [...ETAPA_3, ...ETAPA_4_L3];
 
 describe("registry da operação por IA", () => {
-  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3 + documentos da Etapa 4 + envio aprovado da Etapa 5, nomes únicos", () => {
+  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3 + documentos da Etapa 4 + envio aprovado da Etapa 5 + fluxos da Etapa 6, nomes únicos", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual(
-      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4].sort(),
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1].sort(),
     );
   });
 
@@ -56,8 +58,13 @@ describe("registry da operação por IA", () => {
         expect(t.level).toBe(2);
         expect(t.permission).toBe("op_use");
         expect(t.description).toMatch(/^PREPARA /);
+      } else if (ETAPA_6_L1.includes(t.name)) {
+        expect(t.level).toBe(1);
+        expect(t.permission).toBe("op_use");
+        expect(t.description).toMatch(/^REGISTRO\./);
       } else {
         expect(t.level).toBe(1);
+        expect(t.switchable).toBeFalsy();
       }
     }
     expect(getTool("consultar_conversa")?.permission).toBe("view_whatsapp");
@@ -68,6 +75,25 @@ describe("registry da operação por IA", () => {
     for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(enviar|criar_card|mudar_etapa)/);
     expect(OP_TOOLS.filter((t) => t.name.startsWith("executar")).map((t) => t.name)).toEqual(["executar_aprovado"]);
     expect(getTool("preparar_whatsapp")?.permission).toBe("view_whatsapp");
+  });
+
+  it("fluxos (Etapa 6): só salvar_progresso tem interruptor; schemas", () => {
+    expect(OP_TOOLS.filter((t) => t.switchable).map((t) => t.name)).toEqual(["salvar_progresso"]);
+    const salvar = getTool("salvar_progresso")!.schema;
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "pedido", ref: "op-drafts/x/1792900329052-11fe030d.pdf" }).success).toBe(true);
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "anexar", ref: ["d1", "d2"] }).success).toBe(true);
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342", fim: "abandonado" }).success).toBe(true);
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342" }).success).toBe(false);
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "pedido", fim: "concluido" }).success).toBe(false);
+    expect(salvar.safeParse({ workflow: "dpvat", card: "2342", passo: "pedido" }).success).toBe(false);
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "pendencias", bloqueio: { tipo: "dado_faltante", campos: ["data_acidente"] } }).success).toBe(true);
+    expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "pendencias", bloqueio: { tipo: "outro" } }).success).toBe(false);
+    const retomar = getTool("retomar_fluxo")!.schema;
+    expect(retomar.safeParse({}).success).toBe(false);
+    expect(retomar.safeParse({ card: "2342" }).success).toBe(false);
+    expect(retomar.safeParse({ card: "2342", workflow: "prontuario" }).success).toBe(true);
+    expect(retomar.safeParse({ fluxo: "cmreq00000000000000001" }).success).toBe(true);
+    expect(getTool("fluxos_abertos")!.schema.safeParse({}).success).toBe(true);
   });
 
   it("envio aprovado: schemas", () => {

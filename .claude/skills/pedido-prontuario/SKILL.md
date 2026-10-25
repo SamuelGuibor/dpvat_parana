@@ -18,6 +18,9 @@ Entrada: `$ARGUMENTS` = card (número, CPF ou nome).
 4. Pergunte se quer anexar o pedido no card. Sim → `anexar_rascunho` (prévia → "Confirma?" → `confirmar: true` + `previa_hash`). A pasta padrão do pedido é a que `pastaSugerida` indicar; pasta diferente só se o operador pedir.
 5. **Próximos passos sugeridos**: "mandar ao hospital por e-mail com aprovação → `/prontuario <card>`" (só se o modo for e-mail; senão, como o operador faz pelo canal acima), "precisa de procuração? → `/procuracao <card>`", "mover para a coluna de protocolo quando enviar (`mover_card`)".
 
+## Progresso (retomada — Regras de progresso de `.claude/skills/cliente/SKILL.md`)
+`workflow: "pedido_prontuario"`. Antes do passo 1: `retomar_fluxo` com `card` + `workflow`. Depois: `pedido` com `ref` = `rascunho` (passo 2, `gerado: true`); `anexar` com `ref` = `documento.id` (passo 4). `gerado: false` e o operador vai preencher → `passo: "pedido"` + `bloqueio` `dado_faltante`. Operador não quer anexar → `fim: "concluido"`. Se ele quiser mandar por e-mail, a `/prontuario` começa um fluxo próprio (o rascunho já gerado pode ir como anexo: use a key).
+
 ## Regras
 - Esta skill **não envia** o pedido: o envio por e-mail com aprovação é a `/prontuario` (Regras de aprovação de `.claude/skills/cliente/SKILL.md`).
 - Contato só copiado de `consultar_hospital`; nunca complete ou deduza e-mail/telefone.

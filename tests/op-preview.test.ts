@@ -63,5 +63,8 @@ describe("interruptores", () => {
     expect(isToolEnabled({}, { name: "obter_card", level: 1 })).toBe(true);
     expect(isToolEnabled({}, { name: "mover_card", level: 3 })).toBe(false);
     expect(isToolEnabled({ mover_card: true }, { name: "mover_card", level: 3 })).toBe(true);
+    // Etapa 6: L1 que grava registro nasce desligada como as L3.
+    expect(isToolEnabled({}, { name: "salvar_progresso", level: 1, switchable: true })).toBe(false);
+    expect(isToolEnabled({ salvar_progresso: true }, { name: "salvar_progresso", level: 1, switchable: true })).toBe(true);
   });
 });

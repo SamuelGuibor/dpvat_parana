@@ -24,6 +24,9 @@ const LABELS: Record<string, string> = {
   preparar_email: 'E-mail para fora (hospital) — canal',
   preparar_whatsapp: 'WhatsApp ao cliente — canal',
   executar_aprovado: 'Enviar o que o operador aprovou (e-mail/WhatsApp)',
+  // Etapa 6: só grava o progresso do fluxo (op_requests), nunca o card.
+  // Desligada, /prontuario & cia. seguem sem poder retomar depois.
+  salvar_progresso: 'Guardar o progresso dos fluxos (retomar com /retomar)',
 };
 
 export function OpSwitchesPanel() {

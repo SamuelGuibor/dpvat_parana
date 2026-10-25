@@ -1,5 +1,5 @@
 // POST /api/op/tools/<nome> — executa uma ferramenta da IA de operação.
-// Token → operador (permissões do banco) → ferramenta → interruptor (L3) →
+// Token → operador (permissões do banco) → ferramenta → interruptor (L3/L4/registro) →
 // nível/permissão → args (zod) → execução → op_tool_calls (com await) → {ok, data}.
 // L3 grava DUAS linhas (prévia e execução): a skill chama sem `confirmar` e
 // depois com `confirmar` + `previa_hash` (app/_shared/lib/op/preview.ts).
@@ -11,7 +11,7 @@ import { opAuth, opFail } from "@/app/_shared/lib/op/http";
 import { describeZodError, OpToolError } from "@/app/_shared/lib/op/registry";
 import { canRun } from "@/app/_shared/lib/op/policy";
 import { ensureOpSession, latestRequestId, recordToolCall } from "@/app/_shared/lib/op/record";
-import { getOpSwitches, isToolEnabled } from "@/app/_shared/lib/op/switches";
+import { getOpSwitches, hasSwitch, isToolEnabled } from "@/app/_shared/lib/op/switches";
 import { CardWriteError } from "@/app/_shared/lib/cards/types";
 import { getTool } from "@/app/_shared/lib/op/tools";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: Ctx) {
       ...r,
     });
 
-  const enabled = tool.level < 3 || isToolEnabled(await getOpSwitches(), tool);
+  const enabled = !hasSwitch(tool) || isToolEnabled(await getOpSwitches(), tool);
   const allowed = canRun(tool.level, tool.permission, op.permissions, enabled);
   if (!allowed.ok) {
     await record({ ok: false, code: allowed.code, summary: allowed.message });

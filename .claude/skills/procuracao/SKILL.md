@@ -16,6 +16,9 @@ Entrada: `$ARGUMENTS` = card (número, CPF ou nome) e, opcional, o modelo ("Curi
 3. Pergunte: **"Anexo na pasta `<pastaSugerida>` do card?"**. Só se o operador quiser → `anexar_rascunho` com `rascunho` (sem `confirmar`) → mostre a prévia inteira (arquivo, card, pasta, campos em branco, aviso de arquivado) → "Confirma?" → "sim" → `anexar_rascunho` com `confirmar: true` + `previa_hash`. Pasta diferente só se o operador pedir (`pasta`).
 4. Depois de anexar, diga que o documento está na pasta do card (aba Arquivos) e termine com **Próximos passos sugeridos** (ex.: mandar para o cliente assinar — hoje pelo site/WhatsApp manual; contrato no ZapSign → `/contrato`).
 
+## Progresso (retomada — Regras de progresso de `.claude/skills/cliente/SKILL.md`)
+`workflow: "procuracao"`. Antes do passo 1: `retomar_fluxo` com `card` + `workflow`. Depois: `procuracao` com `ref` = `rascunho` (passo 2, `gerado: true`); `anexar` com `ref` = `documento.id` (passo 3). Parou em `gerado: false` para o operador preencher o cadastro → `salvar_progresso` com `passo: "procuracao"` + `bloqueio` `dado_faltante` (`campos` de `camposFaltando`). Operador não quer anexar → `fim: "concluido"`. Retomado com o rascunho ainda válido → não gere de novo: vá direto ao anexar com a key do `jaFeito`.
+
 ## Regras
 - Uma geração por pedido: o conversor de PDF é fila única (gerar em série atrasa a equipe toda). Nada em lote, nem "todos da coluna".
 - O link de prévia é do rascunho, tem dado pessoal: mostre só para o operador, não cole em comentário nem mande ao cliente.

@@ -1,0 +1,240 @@
+// Etapa 6: workflows com retomada. `salvar_progresso` grava o passo feito (ou
+// onde parou) em op_requests.state do prompt que iniciou o fluxo; nunca toca o
+// card. Nasce com interruptor DESLIGADO (switchable): desligada, as skills
+// seguem sem retomada. `fluxos_abertos` e `retomar_fluxo` leem; o retomar só
+// grava (tira o que venceu, cancela a aprovação pendente do próprio fluxo)
+// com o interruptor ligado. Lib: app/_shared/lib/op/workflow.ts; passos:
+// app/_shared/utils/workflows.ts.
+
+import { z } from "zod/v4";
+import { db } from "../../prisma";
+import { defineTool } from "../registry";
+import { cardRefSchema } from "./obter-card";
+import { brDateTime, brDaysBetween } from "../resolve";
+import { getOpSwitches, isToolEnabled } from "../switches";
+import { listOpenFlows, loadForResume, saveProgress } from "../workflow";
+import { DOC_FIELD_LABELS } from "@/app/_shared/utils/doc-fields";
+import {
+  BLOQUEIO_CODIGOS,
+  BLOQUEIO_TIPOS,
+  WORKFLOW_IDS,
+  WORKFLOW_STALE_DAYS,
+  currentStep,
+  stepOf,
+  workflowDef,
+  type WorkflowState,
+  type WorkflowStep,
+} from "@/app/_shared/utils/workflows";
+
+const workflowSchema = z.enum(WORKFLOW_IDS).describe("prontuario | procuracao | pedido_prontuario | contrato");
+
+function stepOut(step: WorkflowStep | null) {
+  return step ? { passo: step.id, rotulo: step.rotulo, opcional: !!step.opcional } : null;
+}
+
+function bloqueioOut(state: WorkflowState) {
+  const b = state.bloqueio;
+  if (!b) return null;
+  const def = workflowDef(state.workflow);
+  return {
+    passo: b.passo,
+    rotulo: stepOf(def, b.passo)?.rotulo ?? b.passo,
+    tipo: b.tipo,
+    ...(b.campos?.length ? { campos: b.campos.map((c) => DOC_FIELD_LABELS[c] ?? c) } : {}),
+    ...(b.codigo ? { codigo: b.codigo } : {}),
+    desde: brDateTime(b.em),
+  };
+}
+
+function feitosOut(state: WorkflowState) {
+  const def = workflowDef(state.workflow);
+  return state.feitos.map((f) => ({ passo: f.passo, rotulo: stepOf(def, f.passo)?.rotulo ?? f.passo, em: brDateTime(f.em), ...(f.refs ? { refs: f.refs } : {}) }));
+}
+
+// ---------------------------------------------------------------------------
+// salvar_progresso
+// ---------------------------------------------------------------------------
+
+const salvarSchema = z
+  .object({
+    workflow: workflowSchema,
+    card: cardRefSchema,
+    passo: z.string().min(2).max(40).optional().describe("Id do passo (ver a skill). Sem bloqueio = passo FEITO."),
+    ref: z
+      .union([z.string().min(1).max(200), z.array(z.string().min(1).max(200)).min(1).max(5)])
+      .optional()
+      .describe(
+        "O que a ferramenta do passo devolveu: key op-drafts/… (rascunho), documento.id (anexar), approvalId (preparar_*/enviar), \"email\"|\"outro\" (modo), nome exato da tag/coluna, comentarioId. Nunca invente.",
+      ),
+    bloqueio: z
+      .object({
+        tipo: z.enum(BLOQUEIO_TIPOS),
+        campos: z
+          .array(z.string().min(1).max(60))
+          .max(20)
+          .optional()
+          .describe("Campos faltando, como vieram em camposFaltando (ex.: \"data do acidente\", \"estado civil\"). Só os campos do cadastro entram; o resto é ignorado."),
+        codigo: z.string().regex(/^[a-z][a-z0-9_]{1,60}$/).optional().describe(`code da recusa que parou o fluxo: ${BLOQUEIO_CODIGOS.join(", ")}. Outro = ignorado.`),
+      })
+      .optional()
+      .describe("O fluxo PAROU neste passo (o passo não conta como feito; o que já foi feito fica). Sem texto livre: o progresso nunca guarda nome, CPF, telefone ou e-mail."),
+    fim: z.enum(["concluido", "abandonado"]).optional().describe("Encerra o fluxo: concluido (operador não quer os passos opcionais que faltam) ou abandonado (vai recomeçar)."),
+  })
+  .refine((a) => Boolean(a.passo) !== Boolean(a.fim), { message: "mande passo OU fim" })
+  .refine((a) => !(a.fim && (a.ref || a.bloqueio)), { message: "fim não leva ref nem bloqueio" });
+
+export const salvarProgresso = defineTool({
+  name: "salvar_progresso",
+  description:
+    "REGISTRO. Guarda o progresso de um fluxo longo (/prontuario, /procuracao, /pedido-prontuario, /contrato) para retomar depois, em outra conversa ou outro dia. Chame DEPOIS de cada passo concluído, com o ref exato que a ferramenta devolveu; ao parar por dado faltante/erro, com bloqueio. Não mexe no card. Passo fora da ordem = passo_invalido; ref que não confere = ref_invalido.",
+  level: 1,
+  permission: "op_use",
+  switchable: true,
+  schema: salvarSchema,
+  async run({ op, trace, previewOnly }, args) {
+    const refs = args.ref === undefined ? [] : Array.isArray(args.ref) ? args.ref : [args.ref];
+    const out = await saveProgress({
+      op,
+      trace,
+      workflow: args.workflow,
+      cardRef: args.card,
+      passo: args.passo,
+      refs,
+      bloqueio: args.bloqueio,
+      fim: args.fim,
+      previewOnly,
+    });
+    const cardOut = { cardNumber: out.card.cardNumber, nome: out.card.name };
+    if ("semRegistro" in out) {
+      return {
+        data: {
+          salvo: false,
+          semRegistro: true,
+          aviso: `Progresso NÃO guardado: ${out.motivo}. Este fluxo não vai poder ser retomado — avise o operador uma vez e siga normalmente.`,
+          card: cardOut,
+        },
+        summary: `sem registro (${args.workflow} ${out.card.cardNumber ?? "?"})`,
+        cardIds: [out.card.id],
+      };
+    }
+    const estado = out.estado;
+    const data = {
+      salvo: out.salvo,
+      ...("previewOnly" in out ? { previewOnly: true, aviso: "modo de teste (script): nada foi gravado", estadoQueGravaria: estado } : { novo: out.novo }),
+      fluxo: out.fluxo,
+      workflow: estado.workflow,
+      card: cardOut,
+      status: estado.status,
+      bloqueio: bloqueioOut(estado),
+      feitos: feitosOut(estado),
+      proximo: stepOut(out.proximo),
+      ...(estado.status === "bloqueado" ? { instrucao: "Diga ao operador o que falta e que, quando resolver, é só digitar /retomar." } : {}),
+    };
+    const what = args.fim ? `fim ${args.fim}` : args.bloqueio ? `bloqueado em ${args.passo}` : `${args.passo} feito`;
+    return { data, summary: `${args.workflow} ${out.card.cardNumber ?? "?"}: ${what}${"previewOnly" in out ? " (prévia)" : ""}`, cardIds: [out.card.id] };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// fluxos_abertos
+// ---------------------------------------------------------------------------
+
+export const fluxosAbertos = defineTool({
+  name: "fluxos_abertos",
+  description: `REGISTRO. Lista os fluxos longos do PRÓPRIO operador em andamento ou parados (últimos ${WORKFLOW_STALE_DAYS} dias): qual fluxo, card, onde parou e por quê, próximo passo. É a primeira chamada da /retomar. Só lê.`,
+  level: 1,
+  permission: "op_use",
+  schema: z.object({}),
+  async run({ op }) {
+    const agora = new Date();
+    const { abertos, vencidos } = await listOpenFlows(op.userId, agora);
+    const ids = [...new Set(abertos.map((f) => f.state.card.id))];
+    const cards = ids.length
+      ? await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, cardNumber: true, name: true } })
+      : [];
+    const fluxos = abertos.slice(0, 20).map((f) => {
+      const def = workflowDef(f.state.workflow);
+      const c = cards.find((x) => x.id === f.state.card.id);
+      const ultimo = f.state.passo ? stepOf(def, f.state.passo) : null;
+      return {
+        fluxo: f.id,
+        workflow: f.state.workflow,
+        rotulo: def.rotulo,
+        skill: def.skill,
+        card: { cardNumber: c?.cardNumber ?? f.state.card.cardNumber, nome: c?.name ?? null },
+        status: f.state.status,
+        ultimoPasso: ultimo ? { passo: ultimo.id, rotulo: ultimo.rotulo } : null,
+        bloqueio: bloqueioOut(f.state),
+        proximo: stepOut(currentStep(f.state)),
+        atualizado: brDateTime(f.state.atualizadoEm),
+        diasParado: brDaysBetween(new Date(f.state.atualizadoEm), agora),
+      };
+    });
+    return {
+      data: {
+        total: abertos.length,
+        fluxos,
+        ...(vencidos ? { aviso: `${vencidos} fluxo(s) parado(s) há mais de ${WORKFLOW_STALE_DAYS} dias não aparecem (considerados abandonados).` } : {}),
+      },
+      summary: `${abertos.length} fluxo(s) aberto(s)`,
+      cardIds: ids.slice(0, 100),
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// retomar_fluxo
+// ---------------------------------------------------------------------------
+
+const retomarSchema = z
+  .object({
+    fluxo: z.string().min(5).max(64).optional().describe("Id do fluxo (de fluxos_abertos)."),
+    card: cardRefSchema.optional(),
+    workflow: workflowSchema.optional(),
+  })
+  .refine((a) => Boolean(a.fluxo) || (Boolean(a.card) && Boolean(a.workflow)), { message: "mande fluxo, ou card + workflow" });
+
+export const retomarFluxo = defineTool({
+  name: "retomar_fluxo",
+  description:
+    "REGISTRO. Abre um fluxo parado do operador e diz o que já foi feito e AINDA vale (rascunho existe, anexo no card, envio executado), o que refazer (rascunho vencido; aprovação NUNCA se reaproveita: prepara de novo com código novo), o que reler (card, hospital, pendências) e o próximo passo. Com card + workflow no início de uma skill: aberto: false = começar do zero.",
+  level: 1,
+  permission: "op_use",
+  schema: retomarSchema,
+  async run({ op, previewOnly }, args) {
+    const write = !previewOnly && isToolEnabled(await getOpSwitches(), salvarProgresso);
+    const out = await loadForResume({ op, fluxoId: args.fluxo, workflow: args.workflow, cardRef: args.card, write, cancelarPendentes: !previewOnly });
+    if (!out.aberto) {
+      return {
+        data: { aberto: false, fluxo: out.fluxo, ...(out.status ? { status: out.status } : {}), motivo: out.motivo },
+        summary: `retomar: sem fluxo aberto${out.status ? ` (${out.status})` : ""}`,
+      };
+    }
+    const def = workflowDef(out.state.workflow);
+    const p = out.plano;
+    return {
+      data: {
+        aberto: true,
+        fluxo: out.fluxo,
+        workflow: out.state.workflow,
+        rotulo: def.rotulo,
+        skill: def.skill,
+        card: { cardNumber: out.card?.cardNumber ?? out.state.card.cardNumber, nome: out.card?.name ?? null, arquivado: out.card?.archiveStatus ?? null },
+        parouEm: bloqueioOut(out.state),
+        desde: brDateTime(out.state.atualizadoEm),
+        jaFeito: p.feitos,
+        refazer: p.refazer,
+        reler: p.reler.map((id) => stepOf(def, id)?.rotulo ?? id),
+        proximo: p.proximo,
+        avisos: p.avisos,
+        parar: p.parar,
+        ...(write ? {} : { aviso: previewOnly ? "Modo de teste (script): nada foi gravado nem cancelado." : "Progresso desligado: o plano não foi gravado (a aprovação pendente do fluxo, se havia, foi cancelada)." }),
+        instrucao: p.parar
+          ? "PARE: mostre o motivo ao operador e não siga o fluxo até ele conferir."
+          : `Mostre ao operador o que já foi feito e o que vai refazer. Releia ${p.reler.join(", ")} (sempre). Siga a skill ${def.skill} a partir do próximo passo; passo de escrita começa SEM confirmar (prévia) e envio sempre pede preparar de novo.`,
+      },
+      summary: `retomar ${out.state.workflow} ${out.card?.cardNumber ?? "?"}: próximo ${p.proximo?.passo ?? "—"}${p.refazer.length ? `, refazer ${p.refazer.map((r) => r.passo).join("/")}` : ""}`,
+      cardIds: [out.state.card.id],
+    };
+  },
+});

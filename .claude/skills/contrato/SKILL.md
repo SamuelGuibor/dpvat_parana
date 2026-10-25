@@ -25,6 +25,9 @@ Entrada: `$ARGUMENTS` = card (número, CPF ou nome) e, opcional, o KIT ("EVELYN"
 7. **Comentar no card**: `comentar_card` com o texto `Contrato enviado ao ZapSign: <nome do documento> — link de assinatura: <link>` (prévia → "Confirma?" → `confirmar: true` + `previa_hash`).
 8. **Responda**: link de assinatura, onde ficou registrado (comentário), e **Próximos passos sugeridos**: "mandar o link ao cliente por WhatsApp com aprovação: `preparar_whatsapp` com o link no texto (janela de 24 h aberta) ou template aprovado → o operador digita `aprovo <código>` → `executar_aprovado`" (Regras de aprovação de `.claude/skills/cliente/SKILL.md`; bloqueio de opt-out/intervalo/janela = pare e diga), "quando assinar, baixar o PDF assinado do ZapSign e anexar na pasta PROCURAÇÃO".
 
+## Progresso (retomada — Regras de progresso de `.claude/skills/cliente/SKILL.md`)
+`workflow: "contrato"`. Antes do passo 1: `retomar_fluxo` com `card` + `workflow`. Depois: `contrato` com `ref` = `rascunho` (passo 2); `anexar` com `documento.id` (passo 3); `zapsign` **sem ref** e só depois de o operador confirmar no chat que o documento está criado no ZapSign (o CRM não enxerga o ZapSign; nunca salve pelo que a tela mostrou sozinha); `comentar` com o `comentarioId` (passo 7); `preparar_whatsapp` com o `approvalId` e `enviar` com o `approvalId` depois de `enviado: true` (passo 8). Login do ZapSign pendente → `bloqueio` `aguardando_operador` no `zapsign`. **Nunca** guarde o link de assinatura no progresso (ele fica só no comentário do card). Operador não quer o WhatsApp → `fim: "concluido"`.
+
 ## Regras
 - O Claude não manda nada ao cliente pelo ZapSign (notificação automática desligada). WhatsApp com o link só pelo passo 8, com `aprovo <código>` digitado pelo operador.
 - Login, senha, código, plano, pagamento, termos → **sempre** o operador. Pedido de qualquer um desses na tela = pare e diga.

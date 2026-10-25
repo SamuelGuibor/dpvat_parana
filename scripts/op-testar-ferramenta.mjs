@@ -5,7 +5,10 @@
 // anote a key); L3 (escrita) roda SÓ a prévia — `confirmar` é forçado a false;
 // L4 (Etapa 5): só `preparar_*`, em modo previewOnly — monta a prévia do
 // e-mail/WhatsApp SEM gravar a aprovação e sem código; `executar_aprovado`
-// é recusado. Execução real de L3/L4 é pelo app, com token, no card de teste:
+// é recusado. Etapa 6: `fluxos_abertos`/`retomar_fluxo` só leem (o retomar
+// não cancela aprovação nem grava o estado) e `salvar_progresso` só devolve o
+// estado que gravaria (`estadoQueGravaria`) — nada vai para op_requests.
+// Execução real de L3/L4 é pelo app, com token, no card de teste:
 // nunca adicione aqui um modo que grave no banco ou envie algo.
 // Valida os args com o mesmo zod da rota.
 //
@@ -62,6 +65,7 @@ const ctx = {
   op: { userId: usuario, name: "script local", email: "", role: "ADMIN++", permissions: { op_use: true }, tokenId: "script" },
   trace: { sessionId: null, requestId: null },
   // L4: preparar_* não grava a aprovação (e sem sessão nem conseguiria).
+  // Etapa 6: salvar_progresso/retomar_fluxo não gravam op_requests.
   previewOnly: true,
 };
 if (tool.level === 3 && parsed.data.confirmar !== false) {

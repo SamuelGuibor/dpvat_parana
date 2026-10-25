@@ -1,7 +1,8 @@
 // Catálogo da IA de operação. Etapas 1–2: leitura (L1). Etapa 3: escrita
 // interna (L3, prévia + previa_hash + interruptor). Etapa 4: documentos
 // (rascunho L2 em op-drafts/, anexar L3). Etapa 5: comunicação externa (L4,
-// preparar → "aprovo <código>" digitado → executar). Ferramenta nova = um
+// preparar → "aprovo <código>" digitado → executar). Etapa 6: progresso dos
+// fluxos longos (salvar/retomar). Ferramenta nova = um
 // arquivo aqui + entrada na lista + teste em tests/op-registry.test.ts.
 
 import type { OpTool } from "../registry";
@@ -25,6 +26,7 @@ import { arquivarCard } from "./arquivar-card";
 import { meuDia } from "./meu-dia";
 import { anexarRascunho, listarModelos, prepararContrato, prepararPedidoProntuario, prepararProcuracao } from "./documentos";
 import { executarAprovado, prepararEmail, prepararWhatsapp } from "./comunicacao";
+import { fluxosAbertos, retomarFluxo, salvarProgresso } from "./fluxos";
 
 export const OP_TOOLS: OpTool[] = [
   buscarCliente,
@@ -61,6 +63,11 @@ export const OP_TOOLS: OpTool[] = [
   prepararEmail,
   prepararWhatsapp,
   executarAprovado,
+  // Etapa 6: fluxos longos com retomada (registro em op_requests.state, nunca
+  // no card). salvar_progresso nasce com interruptor desligado.
+  salvarProgresso,
+  fluxosAbertos,
+  retomarFluxo,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

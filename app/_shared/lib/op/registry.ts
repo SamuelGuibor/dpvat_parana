@@ -27,6 +27,11 @@ export interface OpTool<S extends z.ZodType = z.ZodType> {
   permission: PermissionKey;
   schema: S;
   /**
+   * L1 que grava no registro da operação (Etapa 6: salvar_progresso) também
+   * nasce com interruptor desligado, como as L3/L4 (op/switches.ts).
+   */
+  switchable?: boolean;
+  /**
    * `trace` liga a escrita (metadata.op do Log) à linha de op_tool_calls.
    * `previewOnly` (só o scripts/op-testar-ferramenta.mjs): `preparar_*` de L4
    * monta a prévia sem gravar a aprovação.

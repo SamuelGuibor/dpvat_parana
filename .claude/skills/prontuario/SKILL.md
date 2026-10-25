@@ -41,6 +41,23 @@ Regras de operação, de escrita e de **aprovação**: `.claude/skills/cliente/S
 
 Termine com **Próximos passos sugeridos** (ex.: "conferir a resposta do hospital no e-mail da equipe", "quando o prontuário chegar, anexar na pasta do card", prazo do hospital se a nota disser).
 
+## Progresso (retomada — Regras de progresso de `.claude/skills/cliente/SKILL.md`)
+`workflow: "prontuario"`. Antes do passo 1: `retomar_fluxo` com `card` + `workflow` (fluxo aberto → "continuo ou recomeço?"). Depois de cada passo, `salvar_progresso`:
+
+| passo da skill | `passo` | `ref` |
+|---|---|---|
+| 3 pendências conferidas | `pendencias` | — (campo faltando e o operador vai preencher no site → `bloqueio` `dado_faltante` com `campos` e pare) |
+| 4 pedido gerado | `pedido` | `rascunho` (key `op-drafts/…`) |
+| 5 procuração gerada | `procuracao` | `rascunho` |
+| 6 anexado | `anexar` | `documento.id` de cada `anexar_rascunho` (lista) |
+| 7 canal definido | `modo` | `"email"` ou `"outro"` (presencial/portal/WhatsApp do hospital) |
+| 9 e-mail preparado | `preparar_email` | `approvalId` (operador não digitou o código e parou → `bloqueio` `aguardando_operador` no `enviar`) |
+| 11 enviado (`enviado: true`) | `enviar` | `approvalId` |
+| 12 tag | `tag` | nome exato da tag |
+| 13 movido | `mover` | nome exato da coluna |
+
+Erros que param o fluxo: `conversor_indisponivel` → `bloqueio` `erro_externo` no passo do documento; `sem_destinatario` sem e-mail do operador → `bloqueio` `erro_externo` em `preparar_email`. Retomado depois do passo 9: **prepare o e-mail de novo** (código novo) — o `retomar_fluxo` já cancelou a aprovação antiga; se ele disser que o envio foi executado, pule para o 12.
+
 ## Regras
 - Um card por pedido; um e-mail por aprovação. Nada em lote.
 - Contato e procedimento só copiados das ferramentas; nunca complete ou deduza e-mail/telefone.
