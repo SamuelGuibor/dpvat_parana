@@ -18,6 +18,7 @@ const LABELS: Record<string, string> = {
   comentar_card: 'Comentar no card',
   notificar_pessoa: 'Avisar pessoa / tarefa de setor',
   arquivar_card: 'Arquivar / desarquivar',
+  anexar_rascunho: 'Anexar documento preparado (procuração, pedido, KIT)',
 };
 
 export function OpSwitchesPanel() {

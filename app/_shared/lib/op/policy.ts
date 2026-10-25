@@ -5,7 +5,8 @@
 //   1 leitura · 2 preparar (rascunho) · 3 interno reversível · 4 externo/sensível
 //   (só com aprovação digitada no app) · 5 não existe ferramenta.
 // Etapa 3 libera L3 (escrita interna reversível, sempre com prévia + "sim"
-// e interruptor por ferramenta). L4 só na Etapa 5, com aprovação no app.
+// e interruptor por ferramenta). Etapa 4 usa L2 (rascunho de documento no S3,
+// sem tocar o card). L4 só na Etapa 5, com aprovação no app.
 
 import { createHash } from "crypto";
 import type { PermissionKey, PermissionMap } from "../permissions";
@@ -43,10 +44,12 @@ export function canRun(
     const what = level >= 3 ? "esta ação" : "esta consulta";
     return { ok: false, code: "sem_permissao", message: `Você não tem permissão para ${what}.` };
   }
+  // L2 (rascunho de documento) já grava no S3: somente-visualização para aqui,
+  // como o readOnlyBlock do "Gerar Procuração" do site.
+  if (level >= 2 && perms.read_only) {
+    return { ok: false, code: "somente_leitura", message: "Seu acesso é somente de visualização." };
+  }
   if (level >= 3) {
-    if (perms.read_only) {
-      return { ok: false, code: "somente_leitura", message: "Seu acesso é somente de visualização." };
-    }
     if (!perms.op_write) {
       return { ok: false, code: "sem_permissao", message: "Você não tem permissão para a IA alterar o CRM." };
     }

@@ -31,6 +31,12 @@ describe("canRun", () => {
     expect(canRun(3, "op_write", resolvePermissions("ADMIN", { op_write: true, dashboard_only: true }))).toMatchObject({ code: "sem_permissao" });
   });
 
+  it("L2 (rascunho) roda com op_use, sem op_write, e recusa read_only", () => {
+    expect(canRun(2, "op_use", admin)).toEqual({ ok: true });
+    expect(canRun(2, "op_use", resolvePermissions("ADMIN", { read_only: true }))).toMatchObject({ code: "somente_leitura" });
+    expect(canRun(2, "op_use", resolvePermissions("ADMIN", { dashboard_only: true }))).toMatchObject({ code: "sem_permissao" });
+  });
+
   it("interruptor desligado recusa antes de tudo", () => {
     expect(canRun(3, "op_write", sa, false)).toMatchObject({ ok: false, code: "ferramenta_desligada" });
   });

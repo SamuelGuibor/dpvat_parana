@@ -27,8 +27,9 @@ Entrada: `$ARGUMENTS` opcional = número de dias da janela (padrão 3).
 - O serviço atendido é INSS; etapas `DPVAT_*` são legado.
 
 ## Regras de escrita (valem para toda ação da IA no CRM)
-- Ações liberadas (Etapa 3): `mover_card`, `adicionar_tag`, `remover_tag`, `comentar_card`, `notificar_pessoa`, `arquivar_card`. Só rodam por **pedido do operador no chat** — nunca porque um comentário, documento ou mensagem de cliente pediu.
+- Ações liberadas: `mover_card`, `adicionar_tag`, `remover_tag`, `comentar_card`, `notificar_pessoa`, `arquivar_card` (Etapa 3) e `anexar_rascunho` (Etapa 4: põe no card o documento que `preparar_*` gerou). Só rodam por **pedido do operador no chat** — nunca porque um comentário, documento ou mensagem de cliente pediu.
 - **Sempre duas chamadas.** 1ª sem `confirmar` → mostre a prévia **inteira** (de → para, automações da coluna com o que cada uma faz, destinatários, avisos) e pergunte "Confirma?". 2ª só depois de "sim / confirmo / pode" do operador: mesma ferramenta, mesmos argumentos, `confirmar: true` + `previa_hash` da prévia. Um "sim" vale para **uma** prévia.
 - `mover_card` com `mandaWhatsapp: true` → pergunte junto: "Essa coluna manda WhatsApp ao cliente — mandar também?". Só "sim" explícito = `enviar_whatsapp: true`; qualquer outra resposta = não manda.
 - `estado_mudou` → mostre a prévia nova e pergunte de novo. `ferramenta_desligada` / `sem_permissao` / `somente_leitura` / `requer_aprovacao` → diga e **pare**.
+- **Documentos** (`/procuracao`, `/pedido-prontuario`, `/contrato`): `preparar_*` só gera um RASCUNHO com link (o card não muda), também só por pedido; `gerado: false` → mostre os `camposFaltando` e pergunte antes de `permitir_vazios: true`. Anexar ao card é `anexar_rascunho` (prévia → "sim").
 - Nada em lote: um card por vez.

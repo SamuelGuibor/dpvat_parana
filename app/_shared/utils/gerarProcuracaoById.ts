@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from "@/app/_shared/lib/prisma";
 import { gerarProcuracao } from "./gerarProcuracao";
+import { buildProcuracaoData } from "./doc-fields";
 
 type Tipo = "user" | "process";
 
@@ -34,26 +35,8 @@ export async function gerarProcuracaoById(
         throw new Error("Registro não encontrado");
     }
 
-    // Padroniza campos
-    const dados = {
-        name: data.name || "",
-        cpf: data.cpf || "",
-        rg: data.rg || "",
-        nacionalidade: data.nacionalidade || "brasileiro(a)",
-        estado_civil: data.estado_civil || "",
-        profissao: data.profissao || "",
-        rua: data.rua || "",
-        bairro: data.bairro || "",
-        numero: data.numero || "",
-        cep: data.cep || "",
-        cidade: data.cidade || "",
-        estado: data.estado || "",
-        data_nascimento: data.data_nasc || "",
-        hospital: data.hospital || "",
-        nome_mae: data.nome_mae || "",
-        data_acidente: data.data_acidente || "",
-        data: formatarData(new Date()),
-    };
+    // Padroniza campos (mapa compartilhado com a IA de operação, doc-fields.ts).
+    const dados = buildProcuracaoData(data, formatarData(new Date()));
 
     const buffer = await gerarProcuracao(dados, template);
     return buffer;

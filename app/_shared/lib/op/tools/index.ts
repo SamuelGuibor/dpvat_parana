@@ -1,5 +1,6 @@
 // Catálogo da IA de operação. Etapas 1–2: leitura (L1). Etapa 3: escrita
-// interna (L3, prévia + previa_hash + interruptor). Ferramenta nova = um
+// interna (L3, prévia + previa_hash + interruptor). Etapa 4: documentos
+// (rascunho L2 em op-drafts/, anexar L3). Ferramenta nova = um
 // arquivo aqui + entrada na lista + teste em tests/op-registry.test.ts.
 
 import type { OpTool } from "../registry";
@@ -21,6 +22,7 @@ import { comentarCard } from "./comentar-card";
 import { notificarPessoa } from "./notificar-pessoa";
 import { arquivarCard } from "./arquivar-card";
 import { meuDia } from "./meu-dia";
+import { anexarRascunho, listarModelos, prepararContrato, prepararPedidoProntuario, prepararProcuracao } from "./documentos";
 
 export const OP_TOOLS: OpTool[] = [
   buscarCliente,
@@ -45,6 +47,13 @@ export const OP_TOOLS: OpTool[] = [
   comentarCard,
   notificarPessoa,
   arquivarCard,
+  // Etapa 4: documentos. Modelos (L1), rascunho no S3 sem tocar o card (L2),
+  // anexar ao card (L3, desligada por padrão).
+  listarModelos,
+  prepararProcuracao,
+  prepararPedidoProntuario,
+  prepararContrato,
+  anexarRascunho,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

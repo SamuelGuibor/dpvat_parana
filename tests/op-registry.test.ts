@@ -18,12 +18,18 @@ const ETAPA_1 = [
 const ETAPA_2 = ["consultar_hospital", "minhas_permissoes"];
 const ETAPA_3_L1 = ["meu_dia"];
 const ETAPA_3 = ["mover_card", "adicionar_tag", "remover_tag", "comentar_card", "notificar_pessoa", "arquivar_card"];
+const ETAPA_4_L1 = ["listar_modelos"];
+const ETAPA_4_L2 = ["preparar_procuracao", "preparar_pedido_prontuario", "preparar_contrato"];
+const ETAPA_4_L3 = ["anexar_rascunho"];
+const L3 = [...ETAPA_3, ...ETAPA_4_L3];
 
 describe("registry da operação por IA", () => {
-  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3, nomes únicos", () => {
+  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3 + documentos da Etapa 4, nomes únicos", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
-    expect([...names].sort()).toEqual([...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3].sort());
+    expect([...names].sort()).toEqual(
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3].sort(),
+    );
   });
 
   it("consultar_hospital exige hospital ou card", () => {
@@ -33,14 +39,18 @@ describe("registry da operação por IA", () => {
     expect(t.schema.safeParse({ card: "2342" }).success).toBe(true);
   });
 
-  it("L3 só na lista da Etapa 3 (op_write/archive_cards); o resto é L1", () => {
+  it("L3 só nas listas de escrita (op_write/archive_cards); L2 só nas preparar_*; o resto é L1", () => {
     for (const t of OP_TOOLS) {
       expect(PERMISSION_KEYS).toContain(t.permission);
       expect(t.description.length).toBeGreaterThan(30);
-      if (ETAPA_3.includes(t.name)) {
+      if (L3.includes(t.name)) {
         expect(t.level).toBe(3);
         expect(["op_write", "archive_cards"]).toContain(t.permission);
         expect(t.description).toMatch(/^ESCRITA\./);
+      } else if (ETAPA_4_L2.includes(t.name)) {
+        expect(t.level).toBe(2);
+        expect(t.permission).toBe("op_use");
+        expect(t.description).toMatch(/^PREPARA /);
       } else {
         expect(t.level).toBe(1);
       }
@@ -54,7 +64,7 @@ describe("registry da operação por IA", () => {
   });
 
   it("L3 sem confirmar = prévia (confirmar padrão false); nenhuma aceita lista de cards", () => {
-    for (const name of ETAPA_3) {
+    for (const name of L3) {
       const t = getTool(name)!;
       const s = catalogEntry(t).inputSchema as { properties: Record<string, { type?: string }> };
       expect(s.properties.confirmar).toBeDefined();
@@ -66,6 +76,20 @@ describe("registry da operação por IA", () => {
     expect(getTool("arquivar_card")!.schema.safeParse({ card: "1" }).success).toBe(false);
     expect(getTool("arquivar_card")!.schema.safeParse({ card: "1", destino: "APTOS CCS", desarquivar: true }).success).toBe(false);
     expect(getTool("arquivar_card")!.schema.safeParse({ card: "1", desarquivar: true }).success).toBe(true);
+  });
+
+  it("documentos: preparar_* sem permitir_vazios por padrão; anexar exige rascunho e pasta válida", () => {
+    for (const name of ETAPA_4_L2) {
+      const parsed = getTool(name)!.schema.safeParse({ card: "2342", modelo: "PEDIDO_HOSPITALAR" });
+      expect(parsed.success && (parsed.data as { permitir_vazios: boolean }).permitir_vazios).toBe(false);
+      expect(getTool(name)!.schema.safeParse({ card: "2342" }).success).toBe(false);
+    }
+    const anexar = getTool("anexar_rascunho")!;
+    expect(anexar.schema.safeParse({}).success).toBe(false);
+    expect(anexar.schema.safeParse({ rascunho: "op-drafts/abc12/1761350400000-0a1b2c3d.pdf", pasta: "XPTO" }).success).toBe(false);
+    expect(anexar.schema.safeParse({ rascunho: "op-drafts/abc12/1761350400000-0a1b2c3d.pdf", pasta: "PROCURACAO" }).success).toBe(true);
+    expect(getTool("listar_modelos")!.schema.safeParse({ tipo: "contrato" }).success).toBe(true);
+    expect(getTool("listar_modelos")!.schema.safeParse({ tipo: "kit" }).success).toBe(false);
   });
 
   it("zod → JSON Schema é objeto, sem $schema, com required coerente", () => {

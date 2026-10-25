@@ -71,6 +71,24 @@ export async function readVaultText(key: string): Promise<string | null> {
 }
 
 /**
+ * URL de leitura de um RASCUNHO da IA de operação (`op-drafts/`, Etapa 4).
+ * Assinador próprio em vez de pôr o prefixo em ALLOWED_KEY_PREFIXES: aquela
+ * lista vale também para `downloadFileFromS3`, invocável de página pública, e
+ * rascunho tem dado pessoal de cliente que ainda não virou documento do card.
+ */
+export async function signOpDraftUrl(key: string, fileName: string): Promise<SignedGetUrl> {
+  if (!key.startsWith('op-drafts/') || key.split('/').includes('..')) throw new Error('Arquivo não permitido');
+  const { signingDate, expiresAt } = signingWindow(Date.now());
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME,
+    Key: key,
+    ResponseContentDisposition: contentDisposition(true, fileName),
+  });
+  const url = await getSignedUrl(s3, command, { signingDate, expiresIn: SIGNED_URL_EXPIRES_S });
+  return { url, expiresAt: expiresAt.toISOString() };
+}
+
+/**
  * Versão que nunca lança: key fora da allowlist ou erro de assinatura viram
  * `null` e o navegador cai no fallback (action no clique/mount). Uma mídia
  * problemática não pode derrubar a thread inteira.
