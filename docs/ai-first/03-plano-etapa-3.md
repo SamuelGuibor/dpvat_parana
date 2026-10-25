@@ -1,18 +1,18 @@
 # AI-First — Etapa 3: plano de execução (escrita interna no CRM, L3)
 
-> **Comece aqui num chat novo.** Leia, nesta ordem: este arquivo → `docs/ai-first/02-resultado-etapa-2.md` (o que existe e as evidências) → `docs/ai/operacao-ia.md` (mapa técnico da API/MCP/ferramentas) → `docs/ai/kanban-cards.md` e `docs/ai/workspace-equipe.md` (onde estão mover/tags/comentário/arquivar/menções). Contexto de negócio só se precisar: `docs/ai-first/00-diagnostico-etapa-zero.md` §7, §8 e §10 (decisões 3, 6, 11, 12, 14). Regras do repo valem integralmente (`CLAUDE.md` raiz; skills `/plano` `/migration` `/validar` `/mapa-atualizar`). **Banco = produção**: todo teste de escrita usa card de teste. Escrito em 24/10/2026.
+> **Comece aqui num chat novo.** Leia, nesta ordem: este arquivo → `docs/ai-first/02-resultado-etapa-2.md` (o que existe e as evidências) → `docs/ai/operacao-ia.md` (mapa técnico da API/MCP/ferramentas) → `docs/ai/kanban-cards.md` e `docs/ai/workspace-equipe.md` (onde estão mover/tags/comentário/arquivar/menções). Contexto de negócio só se precisar: `docs/ai-first/00-diagnostico-etapa-zero.md` §7, §8 e §10 (decisões 3, 6, 11, 12, 14). Regras do repo valem integralmente (`CLAUDE.md` raiz; skills `/plano` `/migration` `/validar` `/mapa-atualizar`). **Banco = produção**: todo teste de escrita usa card de teste. Escrito em 24/10/2026; **as 6 perguntas do dono foram respondidas em 25/10** (tabela de decisões, linhas "25/10") — pode começar.
 
 ## Ponto de partida (estado em 24/10/2026)
 - **Etapa 1 no ar** (`ea0de1f`, `020c7d6`): Claude Code → MCP `crm-op` → `/api/op/*` com token por membro; registro em `op_sessions`/`op_requests`/`op_tool_calls`.
 - **Etapa 2 no ar** (`b9ee892`, `8031d5d`): 12 ferramentas L1 (inclui `consultar_hospital`, `minhas_permissoes`); vault `docs/operacao/` com 163/276 hospitais publicados e sincronizados no S3; backend do quadro "Cérebro APP" (`DevTicket.meta`, `/api/cerebro/*`). O **front do Cérebro APP está só local** (dono ainda mexe) — **não toque** em `app/nova-dash/tickets/*`, `app/nova-dash/page.tsx`, `GlobalSearch.tsx` nem `docs/ai/workspace-equipe.md` sem combinar (estão modificados e não commitados na cópia do dono).
 - **Evidências de uso** (`node -r dotenv/config scripts/op-relatorio.mjs --dias=1`, 24/10): 108 prompts, 15 chamadas de ferramenta, 15 ok; `consultar_hospital` 2 chamadas ok (445 ms). Detalhe em `02-resultado-etapa-2.md`.
-- **Commit local não enviado**: `de530d2` (`scripts/op-testar-ferramenta.mjs` — roda uma ferramenta L1 direto, sem recarregar o MCP). Vai no primeiro push desta etapa. Estenda-o para L3 só com `--dry-run` forçado (ver passo 8).
+- **Commit local não enviado**: `de530d2` (`scripts/op-testar-ferramenta.mjs` — roda uma ferramenta L1 direto, sem recarregar o MCP). Vai no primeiro push desta etapa. Estenda-o para L3 só com prévia (ver passo 9).
 - **Lição da Etapa 2 que vira regra aqui**: o botão "Gerar cards automáticos" criou 25 cards de uma vez e foi preciso um script para apagar. **Toda escrita da IA tem prévia antes de executar**, e ação em lote não existe nesta etapa.
 
 ## Objetivo da etapa
 A IA passa a **fazer** o trabalho interno do CRM que hoje a pessoa faz no clique — mover card, marcar/desmarcar tag, comentar, criar tarefa/menção, avisar alguém, arquivar/desarquivar — sempre **depois de mostrar a prévia e ouvir "sim" no chat**, com o operador como autor e rastro completo. E ganha a skill `/meu-dia`.
 
-Pergunta de exemplo que precisa funcionar no fim: *"o card 2342 já tem DOCS INSS, move para AUDITORIA e avisa a Isadora"* → a IA mostra "vou mover 2342 de COM SENHA - SOLICITADO para AUDITORIA (a coluna roda 2 automações: …); e notificar Isadora com o texto …; confirma?" → "sim" → executa, relê o card e mostra o estado novo, com o log `move` assinado pelo operador "(via IA)".
+Pergunta de exemplo que precisa funcionar no fim: *"o card 2342 já tem DOCS INSS, move para AUDITORIA e avisa a Isadora"* → a IA mostra "vou mover 2342 de COM SENHA - SOLICITADO para AUDITORIA (a coluna roda 2 automações: …); e notificar Isadora com o texto …; essa coluna manda WhatsApp ao cliente — mandar também?" → "sim, mas sem WhatsApp" → executa, relê o card e mostra o estado novo, com o log `move` assinado pelo operador "(via IA)".
 
 **Fora desta etapa**: mudar a etapa do checklist (`status`, manda WhatsApp ao cliente → L4, decisão 14), e-mail/WhatsApp para fora (Etapa 5), documentos (Etapa 4), arquivamento destrutivo (L4), qualquer ação em lote.
 
@@ -20,12 +20,18 @@ Pergunta de exemplo que precisa funcionar no fim: *"o card 2342 já tem DOCS INS
 | origem | decisão | efeito |
 |---|---|---|
 | diag. 2/3 | Cada membro com token; permissão do banco; sem trava de IP no token | autor de toda escrita = `User` do token (`OperatorContext`) |
-| diag. 6 | IA lê o card e age como parceira; sugestão nunca executa sozinha, só após o "sim" | `notificar_pessoa`/`criar_tarefa` só depois da confirmação |
+| diag. 6 | IA lê o card e age como parceira; sugestão nunca executa sozinha, só após o "sim" | `notificar_pessoa` (aviso ou tarefa) só depois da confirmação |
 | diag. 11/12 | Plano de trabalho por pessoa; "responsável" = quem conduz a IA no card | `/meu-dia` = cards que a pessoa conduziu + tarefas dela + parados |
 | diag. 14 | Mudança de etapa (`status`) por aprovação → L4 | fora da Etapa 3 |
 | diag. §7 | `arquivar_card` L3, destrutivo = L4 | só destinos não destrutivos + desarquivar |
 | permissões | `op_write` existe; padrão **só ADMIN++**; `read_only` bloqueia L3 (já em `canRun`) | ver pergunta 1 |
 | Etapa 2 | prévia antes de escrever; nada em lote | contrato `confirmar` + `previa_hash` (passo 2) |
+| 25/10 (1) | `op_write` **só ADMIN++ por enquanto**; **depois todo mundo da equipe vai mexer nos cards** pela IA | testes só com o dono; passo 8 libera `op_write` nos cargos ADMIN/ADMIN+ (`ROLE_DEFAULTS`) depois do aceite, com o OK do dono |
+| 25/10 (2) | Interruptores **no Espaço de Trabalho** | seção nova "IA de operação" no Espaço de Trabalho (embrião do painel da Etapa 7); alterar exige `manage_team` |
+| 25/10 (3) | Mover pode disparar automação de WhatsApp ao cliente, **mas a IA pergunta se quer mandar também**; se o operador disser não, a mensagem não sai (o resto da automação roda) | `mover_card` ganha `enviar_whatsapp` (padrão `false` quando a coluna tem ação `whatsapp`); `runAutomations` aceita pular tipos de ação, com log do que foi pulado |
+| 25/10 (4) | **Uma ferramenta só** para avisar pessoa e criar tarefa | `notificar_pessoa({para: pessoa \| setor, texto, card?})`: pessoa = aviso pessoal (sino + Menções); setor = tarefa compartilhada do setor (`groupId`) |
+| 25/10 (5) | Autor visível "Fulano (via IA)" | `authorName = "<nome> (via IA)"` em log/comentário |
+| 25/10 (6) | Migrar o executor de automações para as libs **nesta etapa** | passo 1 inclui a migração (`move`, `add_tag`, `comment`), sem 3b |
 
 ## O que o levantamento no código mostrou (24/10, só leitura)
 | ação | caminho de hoje (UI) | guard | grava | efeito colateral | reaproveitável? |
@@ -58,7 +64,7 @@ Permissões que existem e importam: `op_use`, `op_write`, `op_approve`, `archive
 ### 0. Pendências (antes de tudo)
 - Push de `de530d2` junto com o primeiro commit desta etapa (não abrir deploy só para ele).
 - Criar **card de teste** (ex.: "TESTE IA — não mexer", sem telefone/CPF real) numa coluna sem automação de WhatsApp, e uma **tag de teste** (ex.: `TESTE IA`). Anotar número do card aqui no resultado. Nunca testar escrita em card de cliente.
-- Confirmar com o dono as perguntas abertas (fim do arquivo) que bloqueiam: 1 e 2.
+- Perguntas do dono: respondidas em 25/10 (ver Decisões). Nada bloqueia.
 
 ### 1. Libs de escrita com autor explícito (`app/_shared/lib/cards/`)
 Uma função por ação, chamável pela UI, pelas automações e pela IA. Sem `getServerSession` dentro; o chamador passa o autor e já fez o guard.
@@ -69,7 +75,8 @@ Uma função por ação, chamável pela UI, pelas automações e pela IA. Sem `g
 - `app/_shared/lib/notifications.ts` — `notifyUser({ recipientId, author, message, card?, alsoMention = true })`: `Notification` + `recordMentions` (senão some quando o sino for limpo). Recusa destinatário que não é equipe.
 - `sector-tasks.ts` — `createSectorTask({ sectorSlug | userIds, text, card?, author })`: exporta `loadSectorAudience`, `groupId = randomUUID()`, `recordMentions` com **`source: "op"` novo** (estender o tipo em `mention-inbox.ts`, `MentionDTO.source`/`enrich` em `mention-actions.ts` e filtros/abertura em `MentionsInbox.tsx` — receita "Nova origem de menção" do mapa `workspace-equipe`). Setor vazio → fallback ADMIN* (como hoje) e a ferramenta **mostra** os destinatários na prévia.
 - **Wrappers**: `updateKanbanStatus`, `/api/card-tags/assign`, `createComment`, `setArchiveStatus` passam a chamar as libs (mesmo comportamento na UI; `/api/card-tags/assign` ganha log de quebra, o que é desejado). Aproveitar e pôr `requireTeam()` onde hoje só há sessão (`updateKanbanStatus`, `createComment`, assign) — regra do `CLAUDE.md`.
-- **Executor de automações**: migrar `move`, `add_tag`, `comment` para as libs **num commit separado e no fim do passo**, mantendo `metadata.automationId`, depth e terminalidade do `move`; autor das automações continua "Bot (Automação)" com `authorId` `null` onde há FK. Se o risco parecer alto, deixar para a Etapa 3b e registrar no resultado — o aceite não depende disso.
+- **Executor de automações** (decisão 25/10: nesta etapa): migrar `move`, `add_tag`, `comment` para as libs **num commit separado e no fim do passo**, mantendo `metadata.automationId`, depth e terminalidade do `move`; autor das automações continua "Bot (Automação)" com `authorId` `null` onde há FK (o `comment` do executor passa a gerar `comment_add`, como a UI). Teste manual no site depois: mover card de teste para coluna com automação de comentário e de tag.
+- **Pular WhatsApp ao mover** (decisão 25/10): `runAutomations` ganha `skipActionTypes?: ("whatsapp")[]`; ação pulada vira log `update` com `metadata.stage = "automation_skip"`, `automationId` e o motivo ("operador optou por não enviar pela IA"). Só a IA usa esse parâmetro; o site continua igual.
 - Testes: `tests/card-writes.test.ts` com Prisma mockado (padrão de `tests/op-auth.test.ts`): idempotência (mesma coluna = noop, sem log), log com autor/`source`, tag sem mudança não loga, comentário recusa menção a cliente, arquivo destrutivo recusado pela ferramenta (não pela lib).
 
 ### 2. Política, interruptor e prévia
@@ -77,20 +84,19 @@ Uma função por ação, chamável pela UI, pelas automações e pela IA. Sem `g
 - `app/_shared/lib/op/switches.ts`: `getOpSwitches()` lê uma chave JSON (`op_l3_switches`, ex. `{"mover_card":true}`) com cache curto (≤ 15 s, é um kill switch) e `invalidate`; ausente = tudo desligado. `setOpSwitch(name, on, author)` grava + `Log` `update` com `metadata.stage = "op_switch"`.
 - `app/_shared/lib/op/preview.ts`: `previewHash(tool, args, estado)` e o helper que compara (→ `OpToolError("estado_mudou", …, 409, { previa })`).
 - Rota `app/api/op/tools/[tool]/route.ts`: lê o interruptor antes do `canRun`; catálogo (`GET /api/op/tools`) reflete `permitido: false` para desligada. `OperatorContext` passa a carregar `sessionId`/`requestId` (já resolvidos no `recordToolCall`) para as libs gravarem em `metadata.op`.
-- **Onde liga/desliga**: ver pergunta 2. Proposta: seção em Espaço de Trabalho → **Segurança** (`view_security`), alterar exige `manage_team`; lista as ferramentas L3 com chave on/off e a última mudança.
+- **Onde liga/desliga** (decisão 25/10): seção nova **"IA de operação"** no Espaço de Trabalho (`app/nova-dash/workspace/`, sidebar `WorkspaceSidebar`; como as seções existentes de `Workspace.tsx`). Vê quem tem `manage_team` ou `manager_dashboard`; alterar exige `manage_team`. Lista as ferramentas L3 com chave on/off, a última mudança (quem/quando) e quantas chamadas cada uma teve na semana (`op_tool_calls`). É o embrião do painel da Etapa 7. **Atenção**: `docs/ai/workspace-equipe.md` e a aba Tickets têm mudanças locais não commitadas do dono (front do Cérebro APP) — não sobrescrever.
 - Testes: `tests/op-policy.test.ts` (L3 com/sem `op_write`, `read_only`, desligada, `dashboard_only`), `tests/op-preview.test.ts` (hash estável, muda com o estado).
 
 ### 3. Ferramentas L3 (`app/_shared/lib/op/tools/`, `level: 3`, `permission: "op_write"` salvo indicação)
 | ferramenta | args | prévia mostra | executa |
 |---|---|---|---|
-| `mover_card` | `card`, `coluna` (exata) | de → para; **automações ativas da coluna destino** com tipo (`whatsapp`/`file`/`comment`/`move`/…) e aviso explícito se alguma manda WhatsApp ao cliente; recusa card arquivado | `moveCardToLabel` |
+| `mover_card` | `card`, `coluna` (exata), `enviar_whatsapp?` | de → para; **automações ativas da coluna destino** com tipo (`whatsapp`/`file`/`comment`/`move`/…); se alguma manda WhatsApp ao cliente, a prévia mostra o texto/template e a skill **pergunta "mandar também?"**; recusa card arquivado | `moveCardToLabel` com `skipActionTypes: ["whatsapp"]` quando `enviar_whatsapp` não for `true` |
 | `adicionar_tag` / `remover_tag` | `card`, `tag` (nome exato de `CardTag`) | tags antes → depois; aviso se a tag é condição de alguma automação | `setCardTag` |
 | `comentar_card` | `card`, `texto`, `mencionar?: string[]` (nomes da equipe) | texto final, quem será mencionado (resolvido a ids) | `addCardComment` |
-| `notificar_pessoa` | `para` (pessoa ou setor), `texto`, `card?` | destinatários reais (setor vazio → ADMIN*), texto | `notifyUser` (pessoa) / `createSectorTask` (setor) |
-| `criar_tarefa` | `para` (setor ou pessoa), `texto`, `card?` | destinatários, se é tarefa compartilhada do setor (`groupId`) | `createSectorTask` |
+| `notificar_pessoa` (ferramenta única: aviso + tarefa) | `para` (nome de pessoa da equipe **ou** setor), `texto`, `card?` | destinatários reais (setor vazio → ADMIN*), se vira tarefa compartilhada do setor (`groupId`: concluir uma cópia conclui para todos), texto | pessoa → `notifyUser` (sino + Menções); setor → `createSectorTask` |
 | `arquivar_card` (`archive_cards` + `op_write`) | `card`, `destino` (rótulo do catálogo) ou `desarquivar: true` | destino, card sai do board; **destino em `DESTRUCTIVE_ARCHIVE` → recusa `requer_aprovacao`** (L4, Etapa 5) | `setCardArchive` |
 
-- `notificar_pessoa` × `criar_tarefa`: notificar = aviso pessoal (sino + Menções); tarefa = item da caixa do setor com status compartilhado. Se o dono preferir uma ferramenta só, juntar (pergunta 4).
+- Uma ferramenta só (decisão 25/10): o destino decide — pessoa recebe aviso pessoal; setor recebe tarefa compartilhada.
 - Nenhuma aceita lista de cards. Nenhuma muda `status` do checklist.
 - Entrada em `OP_TOOLS` + lista `ETAPA_3` em `tests/op-registry.test.ts` (o teste passa a aceitar L3 só nessa lista, com `permission` `op_write`/`archive_cards`).
 - `.claude/settings.json`: **não** colocar as L3 em `allow` — o próprio Claude Code pede permissão ao rodar (segunda trava, além da prévia). L1 continuam em `allow`.
@@ -118,19 +124,23 @@ Uma função por ação, chamável pela UI, pelas automações e pela IA. Sem `g
 - Manual **só no card de teste**, com a ferramenta ligada só para o dono: prévia sem escrita (conferir que nada mudou no banco) → executar → reler; repetir = noop; mexer no card pelo site entre prévia e "sim" → `estado_mudou`; mover para coluna com automação de comentário (ver o comentário da automação no card); tag add/remove (log aparece); comentário com menção (sino + Menções do mencionado); notificar setor; arquivar não destrutivo e desarquivar; destino destrutivo recusado; desligar o interruptor → ferramenta some do catálogo e recusa; operador ADMIN sem `op_write` → `sem_permissao`.
 - `/mapa-atualizar operacao-ia kanban-cards workspace-equipe` + `docs/ai-first/03-resultado-etapa-3.md` com as evidências (`op-relatorio`).
 
-### 8. Ferramenta de teste local
+### 8. Liberar para a equipe (fim da etapa, com o OK do dono)
+- Decisão 25/10: todo mundo vai mexer nos cards pela IA. Depois do aceite com o dono: `op_write: true` em `ROLE_DEFAULTS` de ADMIN e ADMIN+ (`app/_shared/lib/permissions.ts`; override por pessoa continua valendo), ligar os interruptores necessários e acompanhar uma semana pelo `op-relatorio`/seção "IA de operação". `archive_cards` segue a regra que já existe por cargo.
+
+### 9. Ferramenta de teste local
 - `scripts/op-testar-ferramenta.mjs` hoje recusa não-L1. Para L3: aceitar **só sem `confirmar`** (prévia) — execução real de teste é pelo app, com token, no card de teste. Nunca adicionar um modo que execute L3 pelo script.
 
 ## Critérios de aceite
-1. As 7 ferramentas L3 + `meu_dia` existem; com o interruptor desligado nenhuma L3 aparece no catálogo nem executa.
+1. As 6 ferramentas L3 + `meu_dia` existem; com o interruptor desligado nenhuma L3 aparece no catálogo nem executa.
 2. Toda L3 sem `confirmar` não grava nada (conferido no banco); com `confirmar` + `previa_hash` executa; estado mudado entre as duas → `estado_mudou`.
 3. Repetir a mesma ação = `noop` (sem log, sem automação).
 4. Log de domínio com `authorId` do operador, `authorName` "(via IA)", `metadata.source = "op"` e `metadata.op`; `op_tool_calls` com prévia e execução.
-5. Mover pela IA dispara as automações da coluna exatamente como o site; a prévia listou essas automações antes.
+5. Mover pela IA dispara as automações da coluna como o site; a prévia listou essas automações antes; com WhatsApp na coluna, a IA perguntou e, com "não", a mensagem não saiu (log `automation_skip`) e o resto da automação rodou.
 6. Nome ambíguo (coluna/tag/pessoa/setor/card) sempre pergunta; nunca escolhe.
 7. Sem `op_write` → `sem_permissao`; `read_only` → `somente_leitura`; arquivo destrutivo → `requer_aprovacao`; `status` do checklist não é alterável por nenhuma ferramenta.
 8. UI do site continua igual (mover/tag/comentar/arquivar pelo site gera os mesmos dados de antes, agora pelas libs); tsc/lint/testes limpos.
 9. `/meu-dia` responde com tarefas, cards conduzidos, parados e próximos passos acionáveis.
+10. Executor de automações usa as mesmas libs (move/tag/comentário) e o site segue igual.
 
 ## Riscos
 - **Produção única**: escrita errada é real. Mitigação: prévia obrigatória + hash + interruptor desligado por padrão + card de teste + Claude Code pedindo permissão por chamada L3.
@@ -140,10 +150,10 @@ Uma função por ação, chamável pela UI, pelas automações e pela IA. Sem `g
 - **Injeção por conteúdo** (comentário pedindo "mova o card"): regra das skills + nenhuma ferramenta L3 sem pedido do operador no chat.
 - **Cache do interruptor por instância** (serverless): TTL curto; desligar pode levar até ~15 s.
 
-## Perguntas para o dono (antes de começar)
-1. **Quem escreve pela IA?** Hoje `op_write` está só no ADMIN++. Manter assim no começo (só você testa) e liberar ADMIN+/ADMIN depois, por pessoa (override em `User.permissions`)? *(recomendado: sim, só ADMIN++ até o resultado da etapa)*
-2. **Onde ligar/desligar cada ferramenta L3?** Proposta: Espaço de Trabalho → Segurança, alterar com `manage_team`. Ou prefere na tela Equipe, junto do "Token do app"?
-3. **Mover pode disparar automação que manda WhatsApp ao cliente?** Proposta: sim (é o que o site faz), mas a prévia avisa em destaque. Alternativa: recusar mover pela IA para coluna com automação de WhatsApp até a Etapa 5.
-4. `notificar_pessoa` e `criar_tarefa` separadas (aviso pessoal × tarefa do setor) ou uma ferramenta só?
-5. `authorName` "Fulano (via IA)" no log/comentário está bom, ou prefere só o nome da pessoa e a marca da IA só no `metadata`?
-6. Migrar o executor de automações para as libs nesta etapa (mais limpo, mais risco) ou deixar para uma 3b?
+## Perguntas para o dono — respondidas em 25/10
+1. Quem escreve: **só ADMIN++ por enquanto; depois todo mundo da equipe** (passo 8).
+2. Interruptores: **no Espaço de Trabalho** (seção "IA de operação").
+3. Mover com automação de WhatsApp: **pode; a IA pergunta se manda também; "não" = não manda** (`enviar_whatsapp` + `skipActionTypes`).
+4. Aviso e tarefa: **uma ferramenta só** (`notificar_pessoa`).
+5. Autor: **"Fulano (via IA)"**.
+6. Executor de automações: **migra nesta etapa**.
