@@ -15,12 +15,20 @@ const ETAPA_1 = [
   "verificar_pendencias",
   "consultar_conversa",
 ];
+const ETAPA_2 = ["consultar_hospital", "minhas_permissoes"];
 
 describe("registry da operação por IA", () => {
-  it("as 10 ferramentas da Etapa 1, nomes únicos", () => {
+  it("as 10 ferramentas da Etapa 1 + 2 da Etapa 2, nomes únicos", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
-    expect([...names].sort()).toEqual([...ETAPA_1].sort());
+    expect([...names].sort()).toEqual([...ETAPA_1, ...ETAPA_2].sort());
+  });
+
+  it("consultar_hospital exige hospital ou card", () => {
+    const t = getTool("consultar_hospital")!;
+    expect(t.schema.safeParse({}).success).toBe(false);
+    expect(t.schema.safeParse({ hospital: "angelina caron" }).success).toBe(true);
+    expect(t.schema.safeParse({ card: "2342" }).success).toBe(true);
   });
 
   it("todas são L1 (nenhuma escrita nesta etapa) e com permissão existente", () => {

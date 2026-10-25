@@ -1,4 +1,4 @@
-// Catálogo da Etapa 1: só leitura (L1). Ferramenta nova = um arquivo aqui +
+// Catálogo das Etapas 1–2: só leitura (L1). Ferramenta nova = um arquivo aqui +
 // entrada na lista + teste em tests/op-registry.test.ts.
 
 import type { OpTool } from "../registry";
@@ -12,6 +12,8 @@ import { listarCardsParados } from "./listar-cards-parados";
 import { listarCardsColuna } from "./listar-cards-coluna";
 import { verificarPendencias } from "./verificar-pendencias";
 import { consultarConversa } from "./consultar-conversa";
+import { consultarHospital } from "./consultar-hospital";
+import { minhasPermissoes } from "./minhas-permissoes";
 
 export const OP_TOOLS: OpTool[] = [
   buscarCliente,
@@ -24,6 +26,9 @@ export const OP_TOOLS: OpTool[] = [
   listarCardsColuna,
   verificarPendencias,
   consultarConversa,
+  // Etapa 2: base de conhecimento (vault docs/operacao + automações vivas).
+  consultarHospital,
+  minhasPermissoes,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

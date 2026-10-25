@@ -1,12 +1,23 @@
 "use server";
 
-import { assertCanWrite } from "@/app/_shared/lib/permissions-server";
+import { assertCanWrite, requireTeam } from "@/app/_shared/lib/permissions-server";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../_shared/lib/auth";
 import { Prisma } from "@prisma/client";
 import { db } from "../../_shared/lib/prisma";
+import { AccessError } from "@/app/_shared/utils/route-guards";
+import {
+  MANUAL_TICKET_TYPES,
+  TICKET_STATUS_FLOW,
+  compararContatos,
+  isKnowledgeType,
+  statusesFor,
+  type CerebroMeta,
+} from "@/app/_shared/utils/cerebro";
+import { automationSourceText, normalizeHospitalName } from "@/app/_shared/utils/vault";
+import { matchColumn } from "@/app/_shared/lib/op/resolve";
+import { activeCardsByHospital, loadHospitalGroups, loadVaultIndex } from "@/app/_shared/lib/op/hospitais";
+import { getCerebroResumo, getLote } from "@/app/_shared/lib/cerebro";
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -16,28 +27,47 @@ const s3Client = new S3Client({
   },
 });
 
-// "use server" só permite exportar funções async — as listas ficam locais
-// (espelhadas para a UI em app/nova-dash/tickets/constants.ts).
-const TICKET_TYPES = ["BUG", "ALTERACAO", "MELHORIA", "OUTRO"] as const;
-const TICKET_STATUSES = [
-  "EM_DISTRIBUICAO",
-  "EM_ANALISE",
-  "EM_DESENVOLVIMENTO",
-  "CONCLUIDO",
-] as const;
+// Listas e fluxo em app/_shared/utils/cerebro.ts ("use server" só exporta
+// funções async). Quadro "Cérebro APP" = Tickets Dev + conhecimento da operação
+// (Etapa 2 do AI-First): tickets comuns seguem como antes; cards de
+// conhecimento (CONHECIMENTO/LACUNA/DESATUALIZADO) só são assumidos/movidos
+// por quem tem manage_knowledge e passam pela fase VALIDACAO_IA.
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_IMAGES_PER_TICKET = 8;
 
+/**
+ * Quem vê o quadro: `view_tickets` (tickets de hoje) ou `op_use` (operador que
+ * sugere conhecimento). Decisão pelas permissões do banco, não pela sessão.
+ */
 async function requireTeamMember() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error("Não autenticado");
-  if (!session.user.role?.startsWith("ADMIN")) {
-    throw new Error("Apenas membros da equipe podem gerenciar tickets");
+  const ctx = await requireTeam();
+  if (!ctx.permissions.view_tickets && !ctx.permissions.op_use) {
+    throw new AccessError("Você não tem acesso ao quadro de tickets.");
   }
-  return session.user;
+  return { id: ctx.userId, name: ctx.name, role: ctx.role, permissions: ctx.permissions };
 }
+
+type Member = Awaited<ReturnType<typeof requireTeamMember>>;
+
+/** Card de conhecimento: assumir/mover/conferir exige manage_knowledge (ADMIN++). */
+function assertKnowledgeAccess(me: Member, type: string) {
+  if (isKnowledgeType(type) && !me.permissions.manage_knowledge) {
+    throw new AccessError("Só quem tem a permissão Base de conhecimento mexe em card de conhecimento.");
+  }
+}
+
+function metaOf(ticket: { meta: unknown }): CerebroMeta {
+  return ticket.meta && typeof ticket.meta === "object" ? (ticket.meta as CerebroMeta) : {};
+}
+
+function withHistory(meta: CerebroMeta, texto: string, por?: string | null): CerebroMeta {
+  const historico = [...(meta.historico ?? []), { texto, em: new Date().toISOString(), ...(por ? { por } : {}) }].slice(-30);
+  return { ...meta, historico };
+}
+
+const asJson = (m: CerebroMeta) => m as unknown as Prisma.InputJsonValue;
 
 /**
  * Presigned PUT para cada foto opcional do ticket. O navegador envia direto ao
@@ -132,7 +162,8 @@ export async function createDevTicket({ title, description, type, images }: Crea
 
   if (!title?.trim()) throw new Error("Informe o título do ticket");
   if (!description?.trim()) throw new Error("Descreva o problema ou a alteração desejada");
-  if (!TICKET_TYPES.includes(type as (typeof TICKET_TYPES)[number])) {
+  // Tipos de conhecimento nascem do "Sugerir conhecimento" ou do sistema.
+  if (!(MANUAL_TICKET_TYPES as readonly string[]).includes(type)) {
     throw new Error("Tipo de ticket inválido");
   }
 
@@ -209,6 +240,7 @@ export async function assumeDevTicket(ticketId: string) {
 
   const ticket = await db.devTicket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new Error("Ticket não encontrado");
+  assertKnowledgeAccess(me, ticket.type);
   if (ticket.assigneeId && ticket.assigneeId !== me.id) {
     throw new Error(`Ticket já assumido por ${ticket.assigneeName}`);
   }
@@ -219,6 +251,7 @@ export async function assumeDevTicket(ticketId: string) {
       assigneeId: me.id,
       assigneeName: me.name ?? "Usuário",
       ...(ticket.status === "EM_DISTRIBUICAO" ? { status: "EM_ANALISE" } : {}),
+      ...(isKnowledgeType(ticket.type) ? { meta: asJson(withHistory(metaOf(ticket), "Assumiu o card", me.name)) } : {}),
     },
   });
 }
@@ -227,12 +260,17 @@ export async function setDevTicketStatus(ticketId: string, status: string) {
   await assertCanWrite();
   const me = await requireTeamMember();
 
-  if (!TICKET_STATUSES.includes(status as (typeof TICKET_STATUSES)[number])) {
+  if (!(TICKET_STATUS_FLOW as readonly string[]).includes(status)) {
     throw new Error("Fase inválida");
   }
 
   const ticket = await db.devTicket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new Error("Ticket não encontrado");
+  assertKnowledgeAccess(me, ticket.type);
+  // Validação IA é fase só do conhecimento (redator → validador).
+  if (!(statusesFor(ticket.type) as string[]).includes(status)) {
+    throw new Error("Esta fase é só para cards de conhecimento.");
+  }
 
   const backToDistribution = status === "EM_DISTRIBUICAO";
   // Avançar sem responsável definido assume o ticket para quem moveu.
@@ -246,6 +284,7 @@ export async function setDevTicketStatus(ticketId: string, status: string) {
       // Voltar para distribuição libera o ticket para outro dev.
       ...(backToDistribution ? { assigneeId: null, assigneeName: null } : {}),
       ...(autoAssign ? { assigneeId: me.id, assigneeName: me.name ?? "Usuário" } : {}),
+      ...(isKnowledgeType(ticket.type) ? { meta: asJson(withHistory(metaOf(ticket), `Moveu para ${status}`, me.name)) } : {}),
     },
   });
 }
@@ -259,6 +298,7 @@ export async function deleteDevTicket(ticketId: string) {
   if (ticket.creatorId !== me.id && me.role !== "ADMIN++") {
     throw new Error("Só o criador do ticket (ou um ADMIN++) pode excluí-lo");
   }
+  assertKnowledgeAccess(me, ticket.type);
 
   await db.devTicket.delete({ where: { id: ticketId } });
 
@@ -266,4 +306,167 @@ export async function deleteDevTicket(ticketId: string) {
   await deleteImageKeys(ticketImagesOf(ticket).map((img) => img.key));
 
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- Cérebro APP
+
+export interface SugerirConhecimentoProps {
+  title: string;
+  /** Nome do hospital (opcional): com ele a sugestão é comparada à automação viva. */
+  hospital?: string;
+  proposta: string;
+  evidencia?: string;
+}
+
+/**
+ * Operador sugere conhecimento novo (/conhecimento sugerir ou botão do quadro).
+ * O servidor já faz a checagem de conflito: busca a automação viva do hospital
+ * e compara os contatos (hoje × proposta) — quem implementa vê lado a lado.
+ */
+export async function sugerirConhecimento({ title, hospital, proposta, evidencia }: SugerirConhecimentoProps) {
+  await assertCanWrite();
+  const me = await requireTeamMember();
+  if (!title?.trim()) throw new Error("Informe o assunto");
+  if (!proposta?.trim()) throw new Error("Escreva o que deve mudar ou ser registrado");
+
+  let meta: CerebroMeta = { proposta: proposta.trim(), evidencia: evidencia?.trim() || undefined };
+  let description = proposta.trim();
+  if (hospital?.trim()) {
+    const [grupos, index, cards] = await Promise.all([loadHospitalGroups(), loadVaultIndex(), activeCardsByHospital()]);
+    const m = matchColumn([...grupos.values()].map((g) => g.nome), normalizeHospitalName(hospital));
+    const nome = m.exact !== null ? m.exact : m.candidates.length === 1 ? m.candidates[0] : null;
+    const key = normalizeHospitalName(nome ?? hospital);
+    const g = nome ? grupos.get(key) : undefined;
+    const hoje = g ? g.autos.map(automationSourceText).join("\n\n") : "";
+    meta = {
+      ...meta,
+      hospital: g?.nome ?? hospital.trim(),
+      automacoes: g?.autos.map((a) => ({ id: a.id, nome: a.name })) ?? [],
+      nota: index.find((n) => n.hospital_norm === key)?.path,
+      hoje: hoje || undefined,
+      comparacao: compararContatos(hoje, proposta),
+      cardsAtivos: cards.get(key)?.n ?? 0,
+    };
+    if (!g) description = `${proposta.trim()}\n\n(Hospital sem automação ativa: conhecimento novo.)`;
+  }
+  meta = withHistory(meta, "Sugeriu o conhecimento", me.name);
+
+  return db.devTicket.create({
+    data: {
+      title: title.trim(),
+      description,
+      type: "CONHECIMENTO",
+      meta: asJson(meta),
+      creatorId: me.id,
+      creatorName: me.name ?? "Usuário",
+    },
+  });
+}
+
+const AUTO_LIMIT = 50;
+
+/**
+ * Cria os cards automáticos que ainda não existem abertos: LACUNA (hospital de
+ * card ativo sem procedimento) e DESATUALIZADO (nota publicada cuja automação
+ * mudou). Um card aberto por chave; no máx. 50 por clique.
+ */
+export async function gerarCardsAutomaticos() {
+  await assertCanWrite();
+  const me = await requireTeamMember();
+  if (!me.permissions.manage_knowledge) throw new AccessError("Só quem tem a permissão Base de conhecimento gera cards automáticos.");
+
+  const resumo = await getCerebroResumo();
+  const abertos = await db.devTicket.findMany({
+    where: { type: { in: ["LACUNA", "DESATUALIZADO"] }, status: { not: "CONCLUIDO" } },
+    select: { meta: true },
+  });
+  const chaves = new Set(abertos.map((t) => metaOf(t).chave).filter(Boolean));
+
+  const novos: Prisma.DevTicketCreateManyInput[] = [];
+  for (const l of resumo.lacunas) {
+    const chave = `lacuna:${normalizeHospitalName(l.hospital)}`;
+    if (chaves.has(chave)) continue;
+    novos.push({
+      title: `${l.hospital} sem procedimento`,
+      description: `${l.cardsAtivos} card(s) ativo(s) com este hospital e nenhuma automação em DISTRIBUIÇÃO DE SOLICITAÇÕES. Pode ser hospital novo ou nome digitado diferente do da automação.`,
+      type: "LACUNA",
+      meta: asJson(withHistory({ chave, hospital: l.hospital, cardsAtivos: l.cardsAtivos }, "Criado pelo relatório de lacunas")),
+      creatorId: me.id,
+      creatorName: "Relatório de lacunas",
+    });
+  }
+  for (const d of resumo.desatualizadas) {
+    const chave = `desatualizado:${d.nota}`;
+    if (chaves.has(chave)) continue;
+    novos.push({
+      title: `${d.hospital ?? d.nota}: automação mudou depois da nota`,
+      description: `A nota publicada ${d.nota} foi escrita sobre um texto de automação que não é mais o atual. Até revalidar, vale o texto vivo da automação.`,
+      type: "DESATUALIZADO",
+      meta: asJson(withHistory({ chave, hospital: d.hospital ?? undefined, nota: d.nota }, "Criado pela checagem de desatualização")),
+      creatorId: me.id,
+      creatorName: "Checagem do vault",
+    });
+  }
+  const lote = novos.slice(0, AUTO_LIMIT);
+  if (lote.length) await db.devTicket.createMany({ data: lote });
+  return { criados: lote.length, restantes: novos.length - lote.length };
+}
+
+/**
+ * Conferência humana da amostra de um lote de publicação. O card do lote nasce
+ * na primeira decisão (Validação IA) e vai para Concluído quando a amostra
+ * inteira confere; uma devolução segura o card com a nota marcada.
+ */
+export async function registrarConferencia(loteId: string, nota: string, decisao: "confere" | "devolver", obs?: string) {
+  await assertCanWrite();
+  const me = await requireTeamMember();
+  if (!me.permissions.manage_knowledge) throw new AccessError("Só quem tem a permissão Base de conhecimento confere amostra.");
+  if (decisao !== "confere" && decisao !== "devolver") throw new Error("Decisão inválida");
+
+  const lote = await getLote(loteId);
+  if (!lote) throw new Error("Lote não encontrado no S3 (rode o sync do vault).");
+  const amostra = lote.amostra.map((a) => a.nota);
+  if (!amostra.includes(nota)) throw new Error("Essa nota não está na amostra do lote.");
+
+  const chave = `lote:${loteId}`;
+  const existentes = await db.devTicket.findMany({ where: { type: "CONHECIMENTO" }, select: { id: true, meta: true } });
+  const atual = existentes.find((t) => metaOf(t).chave === chave);
+  const base: CerebroMeta = atual
+    ? metaOf(atual)
+    : {
+        chave,
+        lote: { id: loteId, aprovadas: lote.aprovadas.length, devolvidas: lote.devolvidas.length, pendentes: lote.pendentes.length, amostra },
+      };
+  const decisoes = {
+    ...(base.lote?.decisoes ?? {}),
+    [nota]: { decisao, obs: obs?.trim() || undefined, por: me.name ?? "Usuário", em: new Date().toISOString() },
+  };
+  const meta = withHistory(
+    { ...base, lote: { ...base.lote!, decisoes } },
+    `${decisao === "confere" ? "Conferiu" : "Devolveu ao redator"} ${nota}${obs?.trim() ? ` — ${obs.trim()}` : ""}`,
+    me.name,
+  );
+  const tudoConfere = amostra.every((n) => decisoes[n]?.decisao === "confere");
+  const status = tudoConfere ? "CONCLUIDO" : "VALIDACAO_IA";
+
+  if (atual) {
+    return db.devTicket.update({
+      where: { id: atual.id },
+      data: { meta: asJson(meta), status, concludedAt: tudoConfere ? new Date() : null, assigneeId: me.id, assigneeName: me.name ?? "Usuário" },
+    });
+  }
+  return db.devTicket.create({
+    data: {
+      title: `Lote ${loteId} — ${lote.aprovadas.length} nota(s) aprovadas pela IA`,
+      description: `Conferência humana da amostra (${amostra.length} de ${lote.aprovadas.length}). ${lote.devolvidas.length} devolvida(s), ${lote.pendentes.length} com pendência humana.`,
+      type: "CONHECIMENTO",
+      status,
+      meta: asJson(meta),
+      creatorId: me.id,
+      creatorName: "Validador IA",
+      assigneeId: me.id,
+      assigneeName: me.name ?? "Usuário",
+      concludedAt: tudoConfere ? new Date() : null,
+    },
+  });
 }

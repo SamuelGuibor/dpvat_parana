@@ -53,6 +53,24 @@ export async function signGetUrl(
 }
 
 /**
+ * Lê um objeto de TEXTO do vault da operação (`operacao-vault/`, sobe pelo
+ * scripts/sync-vault-s3.mjs). Usa o mesmo cliente para não abrir outro
+ * S3Client. Restrito ao prefixo do vault: não é leitor genérico do bucket.
+ * Objeto inexistente → null.
+ */
+export async function readVaultText(key: string): Promise<string | null> {
+  if (!key.startsWith('operacao-vault/') || key.includes('..')) throw new Error('Arquivo não permitido');
+  try {
+    const r = await s3.send(new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: key }));
+    return (await r.Body?.transformToString('utf-8')) ?? null;
+  } catch (err) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404) return null;
+    throw err;
+  }
+}
+
+/**
  * Versão que nunca lança: key fora da allowlist ou erro de assinatura viram
  * `null` e o navegador cai no fallback (action no clique/mount). Uma mídia
  * problemática não pode derrubar a thread inteira.

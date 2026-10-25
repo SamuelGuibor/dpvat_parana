@@ -9,7 +9,11 @@
 //
 // Uso (PRODUÇÃO: o .env aponta para o Neon):
 //   node -r dotenv/config scripts/mapa-etapas.mjs [--dias=90] [--out=<arquivo.md>]
-// Sem --out imprime no terminal. A saída só tem números agregados por coluna
+//   node -r dotenv/config scripts/mapa-etapas.mjs --vault [--apply]
+// Sem --out imprime no terminal. --vault gera (dry-run sem --apply) as notas
+// docs/operacao/etapas/<coluna>.md e servicos/inss.md como RASCUNHO, com as
+// propostas "para entrar/para sair" e as perguntas sim/não para o dono; nota
+// já redigida, confirmada ou publicada não é reescrita. A saída só tem números agregados por coluna
 // (nenhum nome, CPF ou telefone de cliente).
 //
 // Como uma "passagem" é contada: o card entra na coluna C por um log `move`
@@ -19,7 +23,8 @@
 // (Document criado antes e não apagado até lá). Tags não têm log: só a foto de hoje.
 import { PrismaClient } from "@prisma/client";
 import { createRequire } from "node:module";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const SCRIPT = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const args = Object.fromEntries(
@@ -112,7 +117,11 @@ try {
         where: { role: { notIn: TEAM }, archiveStatus: null },
         select: { labelId: true, cardTags: { select: { name: true } } },
       });
-      return { labels, cards, logs, docs, active };
+      const automations = await tx.automation.findMany({
+        where: { isActive: true },
+        select: { name: true, triggerLabelId: true, actions: true },
+      });
+      return { labels, cards, logs, docs, active, automations };
     },
     { timeout: 120_000, maxWait: 20_000 },
   );
@@ -120,7 +129,7 @@ try {
   await db.$disconnect();
 }
 
-const { labels, cards, logs, docs, active } = data;
+const { labels, cards, logs, docs, active, automations } = data;
 const orderByName = new Map(labels.map((l) => [l.name, l.order]));
 const norm = (s) => (s ?? "").trim().toUpperCase().replace(/\s+/g, " ");
 const labelByNorm = new Map(labels.map((l) => [norm(l.name), l.name]));
@@ -327,9 +336,159 @@ for (const l of labels) {
 }
 
 const text = out.join("\n") + "\n";
-if (args.out) {
+if (args.vault) {
+  await gerarVault();
+} else if (args.out) {
   writeFileSync(args.out, text);
   console.log(`Mapa gravado em ${args.out}`);
 } else {
   console.log(text);
+}
+
+// ---------- vault: etapas/<coluna>.md + servicos/inss.md ----------
+async function gerarVault() {
+  const V = await (typeof jiti.import === "function"
+    ? jiti.import("../app/_shared/utils/vault.ts")
+    : jiti("../app/_shared/utils/vault.ts"));
+  const VAULT = join(dirname(SCRIPT), "..", "docs/operacao");
+  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const fonte = `logs:${hoje}:${DIAS}d`;
+  const FORTE = 70;
+  const writes = [];
+  const pulei = [];
+
+  // Só reescreve rascunho que ninguém redigiu/confirmou.
+  const podeEscrever = (abs) => {
+    if (!existsSync(abs)) return true;
+    const { fm } = V.parseNote(readFileSync(abs, "utf8"));
+    return fm.status === "rascunho" && !fm.redigido_por && fm.kind === "extraido_dos_logs";
+  };
+  const fortesNaSaida = (st) =>
+    st?.saidas ? DOCUMENT_CATEGORIES.map((c) => ({ c, v: pct(st.naSaida[c.id] ?? 0, st.saidas) })).filter((x) => x.v >= FORTE) : [];
+  const autosDaColuna = (labelId) =>
+    automations
+      .filter((a) => a.triggerLabelId === labelId)
+      .map((a) => {
+        const tipos = [...new Set((Array.isArray(a.actions) ? a.actions : []).map((x) => x?.type).filter(Boolean))];
+        return `${a.name} (${tipos.join(", ") || "sem ação"})`;
+      });
+  const linkCol = (l) => `[[etapas/${V.slugify(l.name)}|${l.order}. ${l.name}]]`;
+
+  for (const l of labels) {
+    const st = stats.get(l.name);
+    const td = today.get(l.name);
+    const rel = `etapas/${V.slugify(l.name)}.md`;
+    const abs = join(VAULT, rel);
+    if (!podeEscrever(abs)) {
+      pulei.push(rel);
+      continue;
+    }
+    const md = st ? median(st.dias) : null;
+    const fortes = fortesNaSaida(st);
+    const campos = st ? top(st.campos, 6).filter(([, v]) => pct(v, st.entradas) >= 30) : [];
+    // "Para entrar": o que a coluna de onde o card mais vem já entrega na saída.
+    const origem = st ? top(st.de, 1)[0]?.[0] : null;
+    const fortesOrigem = origem ? fortesNaSaida(stats.get(origem)) : [];
+    const autos = autosDaColuna(l.id);
+    const perguntas = [
+      ...fortes.map((x) => `Para sair de ${l.name}, o card precisa ter **${x.c.label}**? (${x.v}% das saídas já tinham)`),
+      ...campos.map(([k, v]) => `Nesta coluna a equipe preenche/confere o campo **${k}**? (editado em ${pct(v, st.entradas)}% das passagens)`),
+    ];
+    const B = [];
+    B.push(`# ${l.order}. ${l.name}`, "");
+    B.push(`> Rascunho **extraído dos logs** (${DIAS} dias até ${hoje}, \`scripts/mapa-etapas.mjs --vault\`). Mostra o que a equipe FEZ, não a regra. Vira regra quando o dono responder as perguntas e a nota for publicada.`, "");
+    B.push("## Resumo", "");
+    B.push(`- Prazo da coluna: ${l.timeLimitDays ? `${l.timeLimitDays} dia(s)` : "sem prazo"}${md === null ? "" : ` · mediana até sair: ${md.toFixed(1)} dia(s)`}`);
+    if (st?.entradas) {
+      B.push(`- Passagens: ${st.entradas} entradas · ${st.saidas} saídas · ${st.emAndamento} em andamento`);
+      B.push(`- Vem de: ${fmtTop(st.de, st.entradas)}`);
+      B.push(`- Vai para: ${fmtTop(st.para, st.saidas)}${st.voltou ? ` · ${pct(st.voltou, st.saidas)}% voltaram para trás` : ""}`);
+    } else {
+      B.push("- Sem entradas por `move` na janela (a coluna 0 recebe cards por criação).");
+    }
+    B.push("", "## Para entrar (proposta)", "");
+    if (fortesOrigem.length) for (const x of fortesOrigem) B.push(`- Chega com **${x.c.label}** (${x.v}% das saídas de ${origem}, de onde o card mais vem)`);
+    else B.push("- Sem padrão forte nos logs.");
+    B.push("", "## Para sair (proposta)", "");
+    for (const x of fortes) B.push(`- Em ${x.v}% das saídas o card já tinha **${x.c.label}**`);
+    for (const [k, v] of campos) B.push(`- Campo **${k}** editado em ${pct(v, st.entradas)}% das passagens`);
+    if (!fortes.length && !campos.length) B.push("- Sem padrão forte nos logs.");
+    if (st?.entradas) {
+      B.push("", "## O que acontece na etapa", "");
+      B.push(`- Arquivos recebidos em ${pct(st.docQualquer, st.entradas)}% das passagens: ${top(st.comDoc, 6).map(([k, v]) => `${folderLabel.get(k) ?? k} ${pct(v, st.entradas)}%`).join(" · ") || "—"}`);
+      B.push(`- Comentários: ${(st.comentarios / st.entradas).toFixed(1)} por passagem · auditoria IA em ${pct(st.comAuditoria, st.entradas)}%`);
+      if (Object.keys(st.etapas).length) B.push(`- Etapa do checklist: ${top(st.etapas, 3).map(([k, v]) => `${k} (${v})`).join(" · ")}`);
+      if (Object.keys(st.arquivados).length) B.push(`- Arquivados a partir daqui: ${fmtTop(st.arquivados, st.entradas)}`);
+    }
+    B.push("", "## Automações da coluna (ativas)", "");
+    if (autos.length > 12) B.push(`- ${autos.length} automações (ex.: ${autos.slice(0, 5).join("; ")}…)`);
+    else if (autos.length) for (const a of autos) B.push(`- ${a}`);
+    else B.push("- Nenhuma.");
+    B.push("", "## Hoje", "", `- ${td?.n ?? 0} card(s) ativos${td ? `; tags mais comuns: ${fmtTop(td.tags, td.n, 5)}` : ""}`);
+    B.push("", "## Perguntas para confirmar (sim/não)", "");
+    if (perguntas.length) perguntas.forEach((q, i) => B.push(`${i + 1}. ${q}`));
+    else B.push("- Nenhuma: sem padrão forte para perguntar.");
+    const fm = {
+      kind: "extraido_dos_logs",
+      status: "rascunho",
+      fonte,
+      coluna: l.name,
+      redigido_por: null,
+      validado_por: null,
+      publicado_por: null,
+      atualizado_em: hoje,
+      pendente_humano: perguntas.length ? ["confirmar as perguntas sim/não com o dono"] : [],
+    };
+    writes.push([abs, rel, V.renderNote(fm, `\n${B.join("\n")}\n`)]);
+  }
+
+  // servicos/inss.md: a esteira = primeira coluna (com ≥ 20 saídas) em que a pasta fica ≥ 70% na saída.
+  const relInss = "servicos/inss.md";
+  const absInss = join(VAULT, relInss);
+  if (podeEscrever(absInss)) {
+    const esteira = [];
+    for (const c of DOCUMENT_CATEGORIES) {
+      const l = labels.find((x) => {
+        const st = stats.get(x.name);
+        return (st?.saidas ?? 0) >= 20 && pct(st.naSaida[c.id] ?? 0, st.saidas) >= FORTE;
+      });
+      if (l) esteira.push({ c, l, v: pct(stats.get(l.name).naSaida[c.id] ?? 0, stats.get(l.name).saidas) });
+    }
+    esteira.sort((a, b) => a.l.order - b.l.order);
+    const B = [];
+    B.push("# Serviço INSS — documentos por etapa", "");
+    B.push(`> Rascunho **extraído dos logs** (${DIAS} dias até ${hoje}). Não existe lista oficial: esta é a esteira que a equipe pratica. Vira regra quando o dono confirmar.`, "");
+    B.push("## Esteira (onde cada pasta passa a estar completa)", "");
+    B.push("| ao sair de | pasta | % das saídas com a pasta |", "|---|---|---|");
+    for (const e of esteira) B.push(`| ${linkCol(e.l).replace("|", "\\|")} | ${e.c.label} | ${e.v}% |`);
+    B.push("", `Leitura: ${esteira.map((e) => e.c.label).join(" → ") || "—"}.`, "");
+    B.push("## Colunas", "");
+    for (const l of labels) B.push(`- ${linkCol(l)}${l.timeLimitDays ? ` · prazo ${l.timeLimitDays} d` : ""}`);
+    B.push("", "## Perguntas para confirmar (sim/não)", "");
+    esteira.forEach((e, i) => B.push(`${i + 1}. A pasta **${e.c.label}** tem que estar completa antes de sair de **${e.l.name}**? (${e.v}% das saídas)`));
+    const fm = {
+      kind: "extraido_dos_logs",
+      status: "rascunho",
+      fonte,
+      redigido_por: null,
+      validado_por: null,
+      publicado_por: null,
+      atualizado_em: hoje,
+      pendente_humano: ["confirmar a esteira com o dono"],
+    };
+    writes.push([absInss, relInss, V.renderNote(fm, `\n${B.join("\n")}\n`)]);
+  } else {
+    pulei.push(relInss);
+  }
+
+  console.log(`Vault (etapas + serviço INSS): ${writes.length} a escrever, ${pulei.length} já redigidas/publicadas (não mexo)${args.apply ? "" : " — dry-run, use --apply"}`);
+  for (const [, rel] of writes) console.log(`  ${rel}`);
+  for (const rel of pulei) console.log(`  (pulei) ${rel}`);
+  if (args.apply) {
+    for (const [abs, , t] of writes) {
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, t);
+    }
+    console.log("Escrito. Rode `node -r dotenv/config scripts/vault-seed-hospitais.mjs --apply` para atualizar o Mapa da Operação.");
+  }
 }

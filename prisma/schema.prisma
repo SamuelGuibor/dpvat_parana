@@ -1336,9 +1336,10 @@ model DevTicket {
   id           String    @id @default(cuid())
   title        String
   description  String
-  // BUG | ALTERACAO | MELHORIA | OUTRO
+  // BUG | ALTERACAO | MELHORIA | OUTRO | CONHECIMENTO | LACUNA | DESATUALIZADO
   type         String    @default("BUG")
-  // Fluxo: EM_DISTRIBUICAO -> EM_ANALISE -> EM_DESENVOLVIMENTO -> CONCLUIDO
+  // Fluxo: EM_DISTRIBUICAO -> EM_ANALISE -> EM_DESENVOLVIMENTO -> [VALIDACAO_IA, só
+  // conhecimento] -> CONCLUIDO
   status       String    @default("EM_DISTRIBUICAO")
   // Print/foto opcional do problema (chave no S3, prefixo dev-tickets/).
   // Legado: primeira foto dos tickets criados antes do suporte a várias fotos.
@@ -1353,6 +1354,10 @@ model DevTicket {
   assigneeId   String?
   assigneeName String?
   concludedAt  DateTime?
+  // Cérebro APP (Etapa 2 do AI-First): dados do card de conhecimento —
+  // nota/automação ligadas, conflito hoje × proposta, checagens, lote e a
+  // conferência da amostra. null nos tickets comuns.
+  meta         Json?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

@@ -24,7 +24,8 @@ Rode na ordem e **reporte o resultado real** (com saída de erro, se houver). Nu
 5. **Prisma** (se `prisma/schema.prisma` mudou): `npx prisma validate` e confirme que existe migration SQL correspondente criada via `/migration`.
 6. **Revisão de regras**: delegue ao subagente `revisor-regras` com o diff (`git diff HEAD`). Ele confere as regras invioláveis do `CLAUDE.md` e dos mapas de `docs/ai/`.
 7. **Preview** (se a mudança é visível no navegador): suba o preview `dev` do `.claude/launch.json`, exercite a tela afetada e confira o console.
-8. **Mapas**: `npm run docs:check`. Se falhar, a mudança quebrou um mapa de `docs/ai/` → rode `/mapa-atualizar`.
+8. **Vault da operação** (se `docs/operacao/` ou `app/_shared/utils/vault.ts` mudou): `node scripts/vault-check.mjs` (sem banco; `node -r dotenv/config scripts/vault-check.mjs --drift` para conferir também as automações).
+9. **Mapas**: `npm run docs:check`. Se falhar, a mudança quebrou um mapa de `docs/ai/` → rode `/mapa-atualizar`.
 
 ## Saída
 Tabela `etapa | resultado | observação`, e no fim: **PRONTO** ou **BLOQUEADO: <motivo>**.
