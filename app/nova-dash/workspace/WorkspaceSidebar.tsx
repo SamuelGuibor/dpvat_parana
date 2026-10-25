@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck, Network, Bot } from 'lucide-react';
+import { UserCircle, MessagesSquare, BarChart3, LayoutDashboard, Brain, Wallet, Phone, ShieldCheck, Network } from 'lucide-react';
 import type { WorkspaceSectionKey } from '@/app/_shared/utils/dashboard-view-state';
 import { TEAM_CHAT_ENABLED } from './chat/chat-flags';
 
@@ -24,8 +24,6 @@ interface Props {
   canViewSecurity: boolean;
   /** view_ai_brain — mapa mental do bot (Cérebro da IA). */
   canViewAiBrain: boolean;
-  /** manage_team ou manager_dashboard — interruptores da IA de operação. */
-  canViewOpSwitches?: boolean;
   chatUnread: number;
   reviewPending: number;
 }
@@ -43,7 +41,7 @@ interface Group {
   items: Item[];
 }
 
-export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canViewSecurity, canViewAiBrain, canViewOpSwitches, dashboardOnly, chatUnread, reviewPending }: Props) {
+export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, canViewCosts, canManageNumbers, canViewSecurity, canViewAiBrain, dashboardOnly, chatUnread, reviewPending }: Props) {
   // Sidebar agrupada por tópicos: Meu Espaço solto no topo, depois
   // Dashboards e Chats.
   const groups: Group[] = [
@@ -77,10 +75,6 @@ export function WorkspaceSidebar({ active, onChange, isManager, canReviewAi, can
         // Mapa mental do bot (saiu do dashboard do Chatbot em 13/10/2026).
         ...(canViewAiBrain
           ? [{ key: 'cerebro-ia' as const, label: 'Cérebro da IA', desc: 'Mapa mental do bot', icon: Network }]
-          : []),
-        // Ações de escrita da IA de operação (Claude Code), liga/desliga.
-        ...(canViewOpSwitches
-          ? [{ key: 'ia-operacao' as const, label: 'IA de operação', desc: 'Ações da IA no CRM', icon: Bot }]
           : []),
       ],
     },

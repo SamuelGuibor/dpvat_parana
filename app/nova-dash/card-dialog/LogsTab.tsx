@@ -6,7 +6,7 @@ import { Button } from '@/app/_shared/ui/button';
 import {
   History, Pencil, ArrowRightLeft, FilePlus, FileMinus,
   MessageSquare, Sparkles, Clock, RefreshCw, ArrowRight,
-  ListChecks, Archive, Building2, Code2, Send,
+  ListChecks, Archive, Building2, Code2,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -93,13 +93,6 @@ const ACTION_STYLES: Record<
     node: 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400',
     badge: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800',
     label: 'Feedback IA',
-  },
-  // E-mail/WhatsApp que a IA de operação mandou depois do "aprovo" do operador.
-  op_send: {
-    icon: Send,
-    node: 'bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400',
-    badge: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800',
-    label: 'Envio (IA)',
   },
   dev_commit: {
     icon: Code2,

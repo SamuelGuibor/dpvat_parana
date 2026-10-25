@@ -11,8 +11,6 @@ import { CostsPanel } from './costs/CostsPanel';
 import { NumbersPanel } from './numbers/NumbersPanel';
 import { SecurityPanel } from './security/SecurityPanel';
 import { SystemMap } from './manager/SystemMap';
-import { OpSwitchesPanel } from './operacao/OpSwitchesPanel';
-import { OpMetricsPanel } from './operacao/OpMetricsPanel';
 import { WorkspaceSidebar, type WorkspaceSection } from './WorkspaceSidebar';
 import { useUnread } from '@/app/_shared/hooks/use-chat';
 import { TEAM_CHAT_ENABLED } from './chat/chat-flags';
@@ -40,12 +38,6 @@ export function Workspace() {
   const canManageSecurity = !permsLoading && perms.manage_team;
   const canViewSecurity = canManageSecurity || (!permsLoading && perms.view_security);
   const canViewAiBrain = !permsLoading && perms.view_ai_brain;
-  // IA de operação (interruptores das ações da IA): ver com manage_team ou
-  // manager_dashboard; alterar só manage_team (a action confere).
-  const canViewOpSwitches = !permsLoading && (perms.manage_team || perms.manager_dashboard);
-  // Painel de métricas da IA de operação (Etapa 7): só manager_dashboard (a
-  // action confere no servidor; prompts completos = decisão 7).
-  const canViewOpMetrics = !permsLoading && perms.manager_dashboard;
   // Somente Dashboard: a sidebar mostra só o Dashboard (e nada de Meu Espaço).
   const dashboardOnly = !permsLoading && perms.dashboard_only;
 
@@ -105,7 +97,6 @@ export function Workspace() {
     || (section === 'numeros' && !canManageNumbers)
     || (section === 'seguranca' && !canViewSecurity)
     || (section === 'cerebro-ia' && !canViewAiBrain)
-    || (section === 'ia-operacao' && !canViewOpSwitches)
       ? 'meu-espaco'
       : section;
   // Seção restrita restaurada enquanto as permissões carregam: espera em vez
@@ -115,7 +106,7 @@ export function Workspace() {
   return (
     // Mobile: navegação em barra no topo (coluna); desktop: sidebar à esquerda.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} canViewSecurity={canViewSecurity} canViewAiBrain={canViewAiBrain} canViewOpSwitches={canViewOpSwitches} dashboardOnly={dashboardOnly} chatUnread={chatUnread} reviewPending={reviewPending} />
+      <WorkspaceSidebar active={effective} onChange={setSection} isManager={manager} canReviewAi={canReviewAi} canViewCosts={canViewCosts} canManageNumbers={canManageNumbers} canViewSecurity={canViewSecurity} canViewAiBrain={canViewAiBrain} dashboardOnly={dashboardOnly} chatUnread={chatUnread} reviewPending={reviewPending} />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {showContent && (
           <>
@@ -128,7 +119,6 @@ export function Workspace() {
             {effective === 'numeros' && <div className="h-full overflow-y-auto"><NumbersPanel /></div>}
             {effective === 'seguranca' && <div className="h-full overflow-y-auto"><SecurityPanel readOnly={!canManageSecurity} /></div>}
             {effective === 'cerebro-ia' && <div className="h-full overflow-y-auto p-2 sm:p-4"><SystemMap /></div>}
-            {effective === 'ia-operacao' && <div className="h-full overflow-y-auto">{canViewOpMetrics && <OpMetricsPanel />}<OpSwitchesPanel /></div>}
           </>
         )}
       </div>

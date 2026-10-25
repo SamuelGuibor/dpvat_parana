@@ -19,8 +19,6 @@ export const ACTION_META: Record<string, { label: string; icon: React.ElementTyp
   document_add:    { label: 'Documentos',  icon: FileUp,         tint: 'text-cyan-600 bg-cyan-50',       ring: 'ring-cyan-100',    bar: 'bg-cyan-500', hex: '#06b6d4' },
   document_remove: { label: 'Remoções',    icon: FileX,          tint: 'text-rose-600 bg-rose-50',       ring: 'ring-rose-100',    bar: 'bg-rose-500', hex: '#f43f5e' },
   document_restore:{ label: 'Restaurações', icon: FileClock,     tint: 'text-teal-600 bg-teal-50',       ring: 'ring-teal-100',    bar: 'bg-teal-500', hex: '#14b8a6' },
-  tag_add:         { label: 'Tags do card', icon: Tag,           tint: 'text-pink-600 bg-pink-50',       ring: 'ring-pink-100',    bar: 'bg-pink-500', hex: '#ec4899' },
-  tag_remove:      { label: 'Tags do card', icon: Tag,           tint: 'text-pink-600 bg-pink-50',       ring: 'ring-pink-100',    bar: 'bg-pink-500', hex: '#ec4899' },
   document_purge:  { label: 'Exclusões definitivas', icon: Trash2, tint: 'text-red-700 bg-red-50',       ring: 'ring-red-100',     bar: 'bg-red-600', hex: '#dc2626' },
   // WhatsApp (auditoria do atendimento)
   wa_text:         { label: 'WhatsApp: mensagens', icon: MessageCircle,  tint: 'text-green-600 bg-green-50',   ring: 'ring-green-100',   bar: 'bg-green-500', hex: '#22c55e' },
