@@ -2,7 +2,8 @@
 // interna (L3, prévia + previa_hash + interruptor). Etapa 4: documentos
 // (rascunho L2 em op-drafts/, anexar L3). Etapa 5: comunicação externa (L4,
 // preparar → "aprovo <código>" digitado → executar). Etapa 6: progresso dos
-// fluxos longos (salvar/retomar). Ferramenta nova = um
+// fluxos longos (salvar/retomar). Etapa 7: auditoria (gerar_relatorio, só
+// gestor) e varredura de inconsistências, ambas L1. Ferramenta nova = um
 // arquivo aqui + entrada na lista + teste em tests/op-registry.test.ts.
 
 import type { OpTool } from "../registry";
@@ -27,6 +28,8 @@ import { meuDia } from "./meu-dia";
 import { anexarRascunho, listarModelos, prepararContrato, prepararPedidoProntuario, prepararProcuracao } from "./documentos";
 import { executarAprovado, prepararEmail, prepararWhatsapp } from "./comunicacao";
 import { fluxosAbertos, retomarFluxo, salvarProgresso } from "./fluxos";
+import { gerarRelatorio } from "./relatorio";
+import { varrerInconsistencias } from "./varredura";
 
 export const OP_TOOLS: OpTool[] = [
   buscarCliente,
@@ -68,6 +71,10 @@ export const OP_TOOLS: OpTool[] = [
   salvarProgresso,
   fluxosAbertos,
   retomarFluxo,
+  // Etapa 7: auditoria da operação (manager_dashboard; sem texto de prompt)
+  // e varredura de inconsistências dos cards ativos (só leitura).
+  gerarRelatorio,
+  varrerInconsistencias,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

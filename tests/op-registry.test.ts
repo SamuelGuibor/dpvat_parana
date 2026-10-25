@@ -24,6 +24,8 @@ const ETAPA_4_L3 = ["anexar_rascunho"];
 const ETAPA_5_L4 = ["preparar_email", "preparar_whatsapp", "executar_aprovado"];
 // Etapa 6: registro de progresso (L1, escreve só em op_requests, nunca no card).
 const ETAPA_6_L1 = ["salvar_progresso", "fluxos_abertos", "retomar_fluxo"];
+// Etapa 7: auditoria e varredura (L1, só leitura).
+const ETAPA_7_L1 = ["gerar_relatorio", "varrer_inconsistencias"];
 const L3 = [...ETAPA_3, ...ETAPA_4_L3];
 
 describe("registry da operação por IA", () => {
@@ -31,7 +33,7 @@ describe("registry da operação por IA", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual(
-      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1].sort(),
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1].sort(),
     );
   });
 
@@ -94,6 +96,33 @@ describe("registry da operação por IA", () => {
     expect(retomar.safeParse({ card: "2342", workflow: "prontuario" }).success).toBe(true);
     expect(retomar.safeParse({ fluxo: "cmreq00000000000000001" }).success).toBe(true);
     expect(getTool("fluxos_abertos")!.schema.safeParse({}).success).toBe(true);
+  });
+
+  it("Etapa 7: gerar_relatorio só gestor, tipos fechados, ≤ 90 dias; varredura com checagens e limite fechados", () => {
+    const rel = getTool("gerar_relatorio")!;
+    expect(rel.level).toBe(1);
+    expect(rel.permission).toBe("manager_dashboard");
+    expect(rel.switchable).toBeFalsy();
+    expect(rel.schema.safeParse({ tipo: "operacao" }).success).toBe(true);
+    expect(rel.schema.safeParse({ tipo: "operacao", dias: 90 }).success).toBe(true);
+    expect(rel.schema.safeParse({ tipo: "operacao", dias: 91 }).success).toBe(false);
+    expect(rel.schema.safeParse({ tipo: "prompts" }).success).toBe(false);
+    expect(rel.schema.safeParse({ tipo: "falhas", de: "2026-10-01", ate: "2026-10-25" }).success).toBe(true);
+    expect(rel.schema.safeParse({ tipo: "falhas", de: "01/10/2026" }).success).toBe(false);
+    const props = (catalogEntry(rel).inputSchema as { properties: Record<string, unknown> }).properties;
+    expect(Object.keys(props).sort()).toEqual(["ate", "de", "dias", "operador", "tipo"]);
+    const v = getTool("varrer_inconsistencias")!;
+    expect(v.level).toBe(1);
+    expect(v.permission).toBe("op_use");
+    const parsed = v.schema.safeParse({});
+    expect(parsed.success && (parsed.data as { limite: number }).limite).toBe(30);
+    expect(v.schema.safeParse({ limite: 51 }).success).toBe(false);
+    expect(v.schema.safeParse({ checagens: ["cpf_repetido", "sem_hospital"] }).success).toBe(true);
+    expect(v.schema.safeParse({ checagens: ["apagar_duplicados"] }).success).toBe(false);
+    for (const name of ETAPA_7_L1) {
+      const p = (catalogEntry(getTool(name)!).inputSchema as { properties: Record<string, unknown> }).properties;
+      expect(p.confirmar).toBeUndefined();
+    }
   });
 
   it("envio aprovado: schemas", () => {
