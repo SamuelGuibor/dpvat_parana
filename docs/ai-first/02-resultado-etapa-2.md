@@ -1,44 +1,49 @@
-# AI-First — Etapa 2: resultado (parcial, 24/10/2026)
+# AI-First — Etapa 2: resultado (24/10/2026, em produção; fechamento pendente com o dono)
 
-> Plano: `docs/ai-first/02-plano-etapa-2.md`. Mapa técnico: `docs/ai/operacao-ia.md`. Este arquivo registra o que já existe e o que falta para os critérios de aceite.
+> Plano: `docs/ai-first/02-plano-etapa-2.md`. Mapa técnico: `docs/ai/operacao-ia.md` (vault, scripts, ferramentas) e `docs/ai/workspace-equipe.md` (quadro Cérebro APP). Próxima etapa: `docs/ai-first/03-plano-etapa-3.md`.
 
-## O que foi feito
-| Passo do plano | Estado | Onde |
+## Estado por passo do plano
+| Passo | Estado | Onde |
 |---|---|---|
-| 1. Estrutura do vault | ✅ | `docs/operacao/` (`Mapa da Operação.md`, `_modelo-nota.md`, `hospitais/`, `etapas/`, `servicos/`, `modelos/`, `_relatorios/`) |
-| 2. Seed determinístico | ✅ | `scripts/vault-seed-hospitais.mjs` + lógica pura em `app/_shared/utils/vault.ts` |
-| 3. Agentes de publicação | ✅ (piloto) | `.claude/agents/redator-conhecimento.md`, `validador-conhecimento.md`, skill `/publicar-conhecimento`, `scripts/vault-publicar.mjs` |
-| 4. Validador determinístico | ✅ | `scripts/vault-check.mjs` (`--drift` lê o banco); entrou no `/validar` |
-| 5. Notas de etapa e serviço INSS | ✅ rascunho | `scripts/mapa-etapas.mjs --vault` → 20 `etapas/*.md` + `servicos/inss.md` com perguntas sim/não |
-| 6. Sync S3 | ✅ código, **não rodado** | `scripts/sync-vault-s3.mjs` (dry-run ok: 0 no S3) |
-| 7. `consultar_hospital` | ✅ código, **não publicado** | `app/_shared/lib/op/tools/consultar-hospital.ts` (+ `minhas_permissoes`) |
+| 1. Estrutura do vault | ✅ no git | `docs/operacao/` (`Mapa da Operação.md`, `_modelo-nota.md`, `hospitais/` 276, `etapas/` 20, `servicos/inss.md`, `modelos/email-prontuario.md`, `_relatorios/`, `_lotes/`) |
+| 2. Seed determinístico | ✅ | `scripts/vault-seed-hospitais.mjs` + `app/_shared/utils/vault.ts` (+ `contacts.ts`, sem Node, usado no navegador) |
+| 3. Agentes de publicação | ✅ rodando | `.claude/agents/{redator,validador}-conhecimento.md`, skill `/publicar-conhecimento`, `scripts/vault-publicar.mjs` (`proximos` · `marcar` · `relatorio` → `_relatorios/*.md` + `_lotes/*.json`) |
+| 4. Validador determinístico | ✅ | `scripts/vault-check.mjs` (`--arquivos`, `--drift`, `--json`); no `/validar` |
+| 5. Etapas + serviço INSS | ✅ rascunho | `scripts/mapa-etapas.mjs --vault` → perguntas sim/não esperando o dono |
+| 6. Sync S3 | ✅ rodado | `scripts/sync-vault-s3.mjs --apply`: 163 notas + 2 lotes em `operacao-vault/`; 2ª rodada = 0 envios (idempotente) |
+| 7. `consultar_hospital` + `minhas_permissoes` | ✅ em produção | `app/_shared/lib/op/tools/consultar-hospital.ts`, `app/_shared/lib/op/hospitais.ts` (grupos hospital × automação, índice do S3, cards por hospital) |
 | 8. Skills | ✅ | `/hospital`, `/conhecimento` (sugerir × implementar), `/publicar-conhecimento` |
-| 9. Quadro "Cérebro APP" | ✅ código + migration `dev_tickets.meta` aplicada; **não testado logado** | aba Tickets → "Cérebro APP" (`app/nova-dash/tickets/`), `app/_shared/utils/cerebro.ts`, `app/_shared/lib/cerebro.ts`, `/api/cerebro/*`; lotes em `docs/operacao/_lotes/*.json` |
-| 10. Testes/validação/docs | ✅ parcial | `tests/vault.test.ts` (17), `tests/op-registry.test.ts` (12 ferramentas); suíte: 920 testes ok; tsc 0; docs:check 0 |
+| 9. Quadro "Cérebro APP" | ⏳ backend em produção, **front só local** | backend: `DevTicket.meta` (migration `20261024200000_dev_ticket_meta` aplicada), `app/_shared/utils/cerebro.ts`, `app/_shared/lib/cerebro.ts`, `/api/cerebro/{resumo,lotes/[id]}`, actions `sugerirConhecimento`/`gerarCardsAutomaticos`/`registrarConferencia`. Front (`app/nova-dash/tickets/*`, `page.tsx`, `GlobalSearch.tsx`, `docs/ai/workspace-equipe.md`) **não commitado**: o dono ainda vai mexer (alternância Desenvolvimento × Cérebro, filtros estilo Jira, modal único `TicketDetail`) |
+| 10. Testes/validação/docs | ✅ | `tests/vault.test.ts` (17), `tests/cerebro.test.ts` (4), `tests/op-registry.test.ts` (12 ferramentas); suíte 925 ok; tsc 0; lint 0; docs:check 0; revisor-regras sem violação |
 
-## Números do seed (banco de produção, só leitura, 24/10)
-- 283 automações na coluna DISTRIBUIÇÃO DE SOLICITAÇÕES → 278 ativas → **276 notas de hospital** (2 nomes repetidos juntados; o plano falava em 281 contando as inativas).
-- GHOST: 249; hospitais das automações que casam com um GHOST: 243.
-- Cards ativos com hospital: 113; com procedimento: 85 (75%); **27 nomes de hospital de card sem procedimento** → `docs/operacao/_relatorios/lacunas.md`.
-- Contatos extraídos por regex: 205 e-mails, 136 links, 117 telefones (conferidos por amostra: sem CEP/protocolo/data).
-- Modelo `modelos/email-prontuario.md`: automação "GERAL" da coluna **FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL** (nome real da coluna).
+## Evidências em produção (24/10/2026)
+- **Deploy**: commits `b9ee892` (código) e `8031d5d` (vault) na `main`; o catálogo de produção (`diagnostico_crm`) lista 12 ferramentas, com `consultar_hospital` e `minhas_permissoes`. Commit local `de530d2` (`scripts/op-testar-ferramenta.mjs`) ainda não enviado.
+- **Uso real** (`node -r dotenv/config scripts/op-relatorio.mjs --dias=1`): 108 prompts (`/hospital` 5, `/publicar-conhecimento` 2, `/processo` 2…), 15 chamadas de ferramenta, **15 ok**; `consultar_hospital` 2 chamadas, 2 ok, média 445 ms.
+- **Testes manuais** (`scripts/op-testar-ferramenta.mjs`, a mesma ferramenta do deploy contra banco + S3 de produção):
 
-## Lote piloto (3 notas, 24/10)
-- Redator redigiu as 3; `vault-check` ok nas 3.
-- Validador: **1 aprovada** (`hospitais/anisio-figueiredo-hzn-londrina.md`, publicada), **2 devolvidas** — o redator tinha "explicado" os prefixos `.curitiba` / `.sudeste (.sp)` que a Fonte não explica. Na 2ª volta o redator tirou a interpretação e mandou para `pendente_humano` → ficaram rascunho.
-- Relatório: `docs/operacao/_relatorios/publicacao-2026-10-24-20261024-piloto.md`.
-- **Pergunta para o dono**: o que significam os prefixos `.curitiba`, `.sudeste (.sp)` etc. que aparecem antes do e-mail nas automações? Com a resposta vira uma regra (`regras/`) e as notas presas saem.
+| caso | resultado |
+|---|---|
+| Angelina Caron (sem nota publicada) | texto vivo da automação + `aviso: procedimento ainda não validado`, GHOST, 1 card ativo |
+| Anisio Figueiredo (nota publicada) | nota do vault, `desatualizado: false`, sem aviso |
+| Nota desatualizada (cópia no S3 trocada por segundos com outro `fonte_hash`, restaurada e conferida) | `desatualizado: true` + `aviso: a automação mudou depois da nota…` |
+| Hospital Municipal de Araucária (sem automação) | `nao_encontrado` apontando o relatório de lacunas |
+| "cruz vermelha" | `ambiguo` → Curitiba / Castro |
+
+- **Drift real**: `vault-check --drift` = 0 notas desatualizadas (24/10).
+- **Vault**: 276 hospitais → **163 publicados**, 113 rascunho (pendência humana ou fila); 3 lotes (`20261024-piloto`, `-1953`, `-2013`; só os dois últimos têm JSON para a conferência). GHOST 249 (243 casam); cards ativos com hospital 113, 85 com procedimento (75%), 27 nomes sem procedimento.
+- **Pipeline redator → validador funciona como trava**: no piloto o validador devolveu 2 de 3 notas porque o redator "explicou" os prefixos `.curitiba`/`.sudeste (.sp)` que a Fonte não explica; na 2ª volta virou `pendente_humano`.
+- **Incidente de teste**: o botão "Gerar cards automáticos" criou 25 cards LACUNA de uma vez; foram apagados com `scripts/cerebro-limpar-automaticos.mjs` (dry-run → `--apply`). Lição para a Etapa 3: ação em lote precisa de **prévia + confirmação**, nunca disparo direto.
 
 ## Decisões tomadas na implementação
-- Frontmatter com listas/objetos em JSON numa linha (YAML válido, abre no Obsidian; parser sem dependência).
-- `fonte_hash` = sha256 de `id + texto do comentário + nomes dos anexos` de cada automação, em ordem de id (`sourceHash`). Um só lugar para seed, check e ferramenta.
-- Fonte mudou numa nota já redigida/publicada: o seed troca só o bloco `## Fonte` e o hash e marca `desatualizado` (as seções redigidas ficam para o redator refazer). O S3 continua com a versão publicada antiga até a nova ser publicada, e `consultar_hospital` acusa `desatualizado` pelo hash.
-- Nota `kind: oficial` (escrita por pessoa via `/conhecimento implementar`) o seed não toca.
-- Status só muda pelo `vault-publicar.mjs marcar`, que recusa o que não passa no `checkNote`.
+- Frontmatter numa linha por campo, listas/objetos em JSON (YAML válido, abre no Obsidian; parser sem dependência).
+- `fonte_hash` = sha256 de `id + texto do comentário + nomes dos anexos` por automação, em ordem de id (`sourceHash`) — um só cálculo para seed, check, ferramenta e quadro.
+- Fonte mudou numa nota redigida/publicada: o seed troca só `## Fonte` + hash e marca `desatualizado`; o S3 mantém a versão publicada até republicar; `consultar_hospital` acusa pelo hash. Nota `kind: oficial` o seed não toca.
+- Status de nota só muda pelo `vault-publicar.mjs marcar` (recusa o que não passa no `checkNote`).
+- Cards LACUNA/DESATUALIZADO saem do botão do quadro (o script não escreve no banco), com `meta.chave` para não duplicar.
+- Actions de ticket passaram a ler permissões do banco (`requireTeam` + `view_tickets` ou `op_use`; conhecimento exige `manage_knowledge`).
 
-## O que falta para os critérios de aceite
-1. Publicar os ~273 hospitais restantes (`/publicar-conhecimento`, lotes de 20) e o dono conferir as amostras.
-2. Dono responder as perguntas sim/não de `etapas/*.md` e `servicos/inss.md` → publicar; depois `verificar_pendencias` compara com `servicos/inss.md`.
-3. Deploy (Vercel) para `consultar_hospital`/`minhas_permissoes` aparecerem no MCP; rodar `sync-vault-s3.mjs --apply`; teste manual `/hospital angelina caron`, hospital sem nota, nota desatualizada.
-4. Passo 9: testar logado (ticket comum de ponta a ponta, Sugerir conhecimento, Gerar cards automáticos, Conferir lote depois do sync do `_lotes/`). Os cards LACUNA/DESATUALIZADO saem do botão "Gerar cards automáticos" (no lugar do `vault-check --tickets`: script não escreve no banco).
-5. Pendências da Etapa 1: revogar o token colado no chat; publicar o commit das máscaras (`020c7d6` ainda não está no `dpvat/main`).
+## Falta para fechar a Etapa 2 (com o dono, fora da Etapa 3)
+1. Publicar os 113 restantes (`/publicar-conhecimento`, lotes de 20) + conferir amostras + `sync-vault-s3.mjs --apply` a cada lote.
+2. Responder: significado dos prefixos `.curitiba`/`.sudeste (.sp)` (vira `regras/`) e as perguntas sim/não de `etapas/*.md` e `servicos/inss.md` → publicar; depois `verificar_pendencias` compara com `servicos/inss.md`.
+3. Terminar o front do Cérebro APP e publicar (o backend já está no ar).
+4. Pendências da Etapa 1: revogar o token colado no chat; `'\D'` → `'\\D'` em `findLinkedCard` (`app/_shared/lib/whatsapp/bot.ts`).
