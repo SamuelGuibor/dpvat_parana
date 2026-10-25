@@ -1,0 +1,219 @@
+{
+  "main": {
+    "id": "895fecf3d0f50d80",
+    "type": "split",
+    "children": [
+      {
+        "id": "114212ce60fed73c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8270727e99a52886",
+            "type": "leaf",
+            "state": {
+              "type": "canvas",
+              "state": {
+                "file": "Sem título.canvas",
+                "viewState": {
+                  "x": 0,
+                  "y": 93,
+                  "zoom": 0
+                }
+              },
+              "icon": "lucide-layout-dashboard",
+              "title": "Sem título"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "63a1af54300977f4",
+    "type": "split",
+    "children": [
+      {
+        "id": "ba273e4cfd01b137",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5d6d753b4b315189",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de arquivos"
+            }
+          },
+          {
+            "id": "faede290ae953280",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Procurar"
+            }
+          },
+          {
+            "id": "523dc6fea63f966d",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "7634298db19cb57a",
+    "type": "split",
+    "children": [
+      {
+        "id": "61c592c30e896495",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "1c8ea57f859679b5",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Sem título.canvas",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Links inversos"
+            }
+          },
+          {
+            "id": "d18c709ecf5f623c",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Sem título.canvas",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Links de saída"
+            }
+          },
+          {
+            "id": "7bde6b26ad44dd75",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "5d156b9956163415",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas as propriedades"
+            }
+          },
+          {
+            "id": "3a6bfe4ce6fa3615",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Sem título.canvas",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Sumário"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir a troca rápida": false,
+      "graph:Abrir visualização em gráfico": false,
+      "canvas:Criar novo canvas": false,
+      "daily-notes:Abrir a nota de hoje": false,
+      "templates:Inserir modelo": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Criar nova base": false
+    }
+  },
+  "active": "8270727e99a52886",
+  "lastOpenFiles": [
+    "hospitais/hospital-santa-casa-de-formiga.md.tmp.9880.fd257b44410c",
+    "hospitais/hospital-santa-casa-de-cianorte.md.tmp.9880.9c0f42c2ce75",
+    "hospitais/hospital-santa-casa-de-cianorte.md.tmp.9880.eeacb3b307bd",
+    "hospitais/hospital-nossa-senhora-da-conceicao-de-urussanga.md.tmp.9880.3c99360184c8",
+    "hospitais/hospital-nossa-senhora-da-conceicao-de-urussanga.md.tmp.9880.f1d773dcf5fd",
+    "hospitais/hospital-de-dois-vizinhos.md.tmp.9880.b570c48fae02",
+    "hospitais/hospital-municipal-dr-amadeu-puppi.md.tmp.9880.8fd25260bd66",
+    "hospitais/hospital-municipal-dr-amadeu-puppi.md.tmp.9880.5857cdb9a341",
+    "hospitais/hospital-regional-de-joinville.md.tmp.9880.1ef9ccb961ae",
+    "hospitais/hospital-maternidade-suzano.md.tmp.9880.f935565266d4",
+    "hospitais/hospital-regional-de-joinville.md.tmp.9880.1e204f6e6de1",
+    "_relatorios/publicacao-2026-10-24-20261024-1953.md",
+    "Sem título.canvas",
+    "Mapa da Operação.md",
+    "etapas/aguardando-sair-data-pericia-inss.md",
+    "hospitais/sao-vicente-de-paulo-guarapuava.md",
+    "_modelo-nota.md",
+    "hospitais/base-bauru.md",
+    "etapas/agendar-pericia-adm.md",
+    "Sem título.md",
+    "etapas/afastados.md",
+    "_relatorios/publicacao-2026-10-24-20261024-piloto.md"
+  ]
+}

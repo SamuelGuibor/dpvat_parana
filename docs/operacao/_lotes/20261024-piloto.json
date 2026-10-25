@@ -1,0 +1,41 @@
+{
+  "id": "20261024-piloto",
+  "data": "2026-10-24",
+  "aprovadas": [
+    "hospitais/anisio-figueiredo-hzn-londrina.md"
+  ],
+  "devolvidas": [],
+  "pendentes": [
+    "hospitais/adhemar-de-barros-apiai.md",
+    "hospitais/angelina-caron.md"
+  ],
+  "amostra": [
+    {
+      "nota": "hospitais/anisio-figueiredo-hzn-londrina.md",
+      "titulo": "ANISIO FIGUEIREDO (HZN) LONDRINA",
+      "hospital": "ANISIO FIGUEIREDO (HZN) LONDRINA",
+      "automacao": "Pedidos de Hospitais - ANISIO FIGUEIREDO (HZN) LONDRINA",
+      "fonte": "Solicitação ocorre via whatsapp pelo número (43) 3376-4647.\nUse documentos de advogado como procurador. Enviam o prontuário pelo próprio whatsapp. Anexe o formulário https://drive.google.com/file/d/1lpA4nCVvQatrgZQmDBPzC1Gh-qBx3Unw/view?usp=sharing na solicitação.\n\nObs: o setor é um tanto quanto desorganizado, deves verificar a situação periodicamente.",
+      "secoes": {
+        "Como pedir": "1. Faça a solicitação por WhatsApp no número (43) 3376-4647.\n2. Anexe o formulário na solicitação.\n3. Use documentos de advogado como procurador.\n4. Aguarde o prontuário no próprio WhatsApp.",
+        "Contato": "- WhatsApp/telefone: (43) 3376-4647",
+        "Documentos e procuração": "- Formulário: https://drive.google.com/file/d/1lpA4nCVvQatrgZQmDBPzC1Gh-qBx3Unw/view?usp=sharing\n- Use documentos de advogado como procurador.",
+        "Prazo e retorno": "O hospital envia o prontuário pelo próprio WhatsApp. Prazo: a Fonte não menciona.",
+        "Observações": "O setor é desorganizado: verifique a situação do pedido periodicamente."
+      },
+      "contatos": {
+        "email": [],
+        "telefone": [
+          "(43) 3376-4647"
+        ],
+        "site": [
+          "https://drive.google.com/file/d/1lpA4nCVvQatrgZQmDBPzC1Gh-qBx3Unw/view?usp=sharing"
+        ]
+      },
+      "modo": [
+        "whatsapp"
+      ],
+      "procuracao": "Documentos de advogado como procurador"
+    }
+  ]
+}

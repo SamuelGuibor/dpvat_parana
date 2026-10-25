@@ -1,0 +1,321 @@
+# Mapa da Operação
+
+> Gerado em 24/10/2026, 21:29:50 pelos scripts do vault (não edite à mão: rode `node -r dotenv/config scripts/vault-seed-hospitais.mjs --apply`).
+> Só nota com status **publicado** vale como procedimento. Rascunho/em validação/desatualizado é material de trabalho.
+
+## Serviços (1 · 0 publicadas)
+
+- [[servicos/inss|Serviço INSS — documentos por etapa]] · rascunho
+
+## Etapas do kanban (20 · 0 publicadas)
+
+- [[etapas/filtro-de-cartoes|0. Filtro de Cartões]] · rascunho
+- [[etapas/colher-assinatura|1. COLHER-ASSINATURA]] · rascunho
+- [[etapas/afastados|10. AFASTADOS]] · rascunho
+- [[etapas/distribuicao-de-processos|11. DISTRIBUIÇÃO DE PROCESSOS]] · rascunho
+- [[etapas/auditoria|12. AUDITORIA]] · rascunho
+- [[etapas/fazer-roteiro-prev|13. FAZER ROTEIRO PREV]] · rascunho
+- [[etapas/revisao-pre-pasta-uni|14. REVISÃO PRÉ-PASTA |UNI]] · rascunho
+- [[etapas/enviar-email-uni-ccs|15. ENVIAR  EMAIL UNI/CCS]] · rascunho
+- [[etapas/enviados-p-uni-ccs|16. ENVIADOS P/ UNI/CCS]] · rascunho
+- [[etapas/em-analise-uni|17. EM ANALISE UNI]] · rascunho
+- [[etapas/cobranca|18. COBRANÇA]] · rascunho
+- [[etapas/pendencias-judicial|19. PENDÊNCIAS JUDICIAL]] · rascunho
+- [[etapas/fazer-protocolo-de-solicitacao-hospital|2. FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL]] · rascunho
+- [[etapas/distribuicao-de-solicitacoes|3. DISTRIBUIÇÃO DE SOLICITAÇÕES]] · rascunho
+- [[etapas/falta-senha-solicitado|4. FALTA SENHA - SOLICITADO]] · rascunho
+- [[etapas/com-senha-solicitado|5. COM SENHA - SOLICITADO]] · rascunho
+- [[etapas/inss-oab-poupa-tempo|6. INSS/OAB/POUPA TEMPO]] · rascunho
+- [[etapas/agendar-pericia-adm|7. AGENDAR PERÍCIA ADM]] · rascunho
+- [[etapas/aguardando-sair-data-pericia-inss|8. AGUARDANDO SAIR DATA PERÍCIA INSS]] · rascunho
+- [[etapas/pericia-inss-agendada|9. PERÍCIA INSS AGENDADA]] · rascunho
+
+## Modelos (1 · 0 publicadas)
+
+- [[modelos/email-prontuario|Modelo — e-mail de pedido de prontuário]] · rascunho
+
+## Hospitais (276 · 163 publicadas)
+
+- [[hospitais/adhemar-de-barros-apiai|ADHEMAR DE BARROS APIAI]] · rascunho
+- [[hospitais/angelina-caron|ANGELINA CARON]] · rascunho
+- [[hospitais/anisio-figueiredo-hzn-londrina|ANISIO FIGUEIREDO (HZN) LONDRINA]] · publicado
+- [[hospitais/arcanjo-sao-miguel-gramado|ARCANJO SÃO MIGUEL GRAMADO]] · rascunho
+- [[hospitais/artro-curitiba|ARTRO CURITIBA]] · publicado
+- [[hospitais/auxiliadora-tres-lagoas|AUXILIADORA TRES LAGOAS]] · rascunho
+- [[hospitais/azambuja-brusque|AZAMBUJA BRUSQUE]] · publicado
+- [[hospitais/baleia-belo-horizonte|BALEIA BELO HORIZONTE]] · rascunho
+- [[hospitais/base-bauru|BASE BAURU]] · publicado
+- [[hospitais/base-sao-jose-rio-preto|BASE SÃO JOSE RIO PRETO]] · publicado
+- [[hospitais/beatriz-ramos-indiaial|BEATRIZ RAMOS INDIAIAL]] · publicado
+- [[hospitais/beneficente-sao-joao-sananduva|BENEFICENTE SÃO JOAO SANANDUVA]] · rascunho
+- [[hospitais/bethesda-joinville|BETHESDA JOINVILLE]] · publicado
+- [[hospitais/bom-jesus-ponta-grossa|BOM JESUS PONTA GROSSA]] · publicado
+- [[hospitais/bom-jesus-toledo|BOM JESUS TOLEDO]] · publicado
+- [[hospitais/bom-pastor-varginha|BOM PASTOR VARGINHA]] · rascunho
+- [[hospitais/bom-samaritano-maringa|BOM SAMARITANO MARINGA]] · rascunho
+- [[hospitais/brasil-maua|BRASIL MAUA]] · publicado
+- [[hospitais/cajuru|CAJURU]] · publicado
+- [[hospitais/caridade-nsra-auxiliadora-rosario-do-sul|CARIDADE NSRA AUXILIADORA ROSARIO DO SUL]] · publicado
+- [[hospitais/caridade-palmeira|CARIDADE PALMEIRA]] · rascunho
+- [[hospitais/carolina-lupion-jaguariaiva|CAROLINA LUPION JAGUARIAIVA]] · publicado
+- [[hospitais/cassems-nova-andradina|CASSEMS NOVA ANDRADINA]] · rascunho
+- [[hospitais/cemil-umuarama|CEMIL UMUARAMA]] · publicado
+- [[hospitais/centro-regional-de-diagnostico-pato-branco|CENTRO REGIONAL DE DIAGNOSTICO PATO BRANCO]] · rascunho
+- [[hospitais/cesar-leite-manhuacu|CESAR LEITE MANHUAÇU]] · rascunho
+- [[hospitais/clinica-pontagrossense|CLINICA PONTAGROSSENSE]] · publicado
+- [[hospitais/clinica-sabedotti-ponta-grossa|CLINICA SABEDOTTI PONTA GROSSA]] · publicado
+- [[hospitais/complexo-hospitalar-diamantina-irani|COMPLEXO HOSPITALAR DIAMANTINA IRANI]] · rascunho
+- [[hospitais/complexo-mangabeira-gov-tarcisio-burity|COMPLEXO MANGABEIRA GOV TARCISIO BURITY]] · publicado
+- [[hospitais/coracao-londrina|CORAÇAO LONDRINA]] · rascunho
+- [[hospitais/cot-paranagua|COT PARANAGUA]] · publicado
+- [[hospitais/cotefi-bahia|COTEFI BAHIA]] · publicado
+- [[hospitais/cristo-rei-astorga|CRISTO REI ASTORGA]] · rascunho
+- [[hospitais/cristo-rei-ibipora|CRISTO REI IBIPORA]] · rascunho
+- [[hospitais/cristo-rei-quitandinha|CRISTO REI QUITANDINHA]] · rascunho
+- [[hospitais/cruz-vermelha-castro|CRUZ VERMELHA CASTRO]] · publicado
+- [[hospitais/cruz-vermelha-curitiba|CRUZ VERMELHA CURITIBA]] · publicado
+- [[hospitais/dirceu-arcoverde-heda-parnaiba|DIRCEU ARCOVERDE (HEDA) PARNAIBA]] · publicado
+- [[hospitais/dom-joaquim-brusque|DOM JOAQUIM BRUSQUE]] · publicado
+- [[hospitais/dona-helena-joinville|DONA HELENA JOINVILLE]] · publicado
+- [[hospitais/dr-eric-prado-diegues|DR ERIC PRADO DIEGUES]] · publicado
+- [[hospitais/envangelico-londrina|ENVANGELICO LONDRINA]] · publicado
+- [[hospitais/erasto-gaertner-agnus-dei-irati|ERASTO GAERTNER (AGNUS DEI) IRATI]] · publicado
+- [[hospitais/erasto-gaertner-curitiba|ERASTO GAERTNER CURITIBA]] · publicado
+- [[hospitais/estadual-anapolis-dr-henrique-santillo-heana|ESTADUAL ANAPOLIS (DR. HENRIQUE SANTILLO/HEANA)]] · publicado
+- [[hospitais/estadual-galileu-belem|ESTADUAL GALILEU BELEM]] · publicado
+- [[hospitais/eulalino-ignacio-de-andrade-hzs-londrina|EULALINO IGNACIO DE ANDRADE (HZS) LONDRINA]] · publicado
+- [[hospitais/florianopolis|FLORIANOPOLIS]] · publicado
+- [[hospitais/fraiburgo|FRAIBURGO]] · rascunho
+- [[hospitais/fraturas-novo-mundo|FRATURAS NOVO MUNDO]] · rascunho
+- [[hospitais/genesis-cascavel|GENESIS CASCAVEL]] · rascunho
+- [[hospitais/geral-militar-curitiba|GERAL (MILITAR) CURITIBA]] · rascunho
+- [[hospitais/geral-guarulhos|GERAL GUARULHOS]] · rascunho
+- [[hospitais/geral-itapevi|GERAL ITAPEVI]] · publicado
+- [[hospitais/geral-taipas|GERAL TAIPAS]] · rascunho
+- [[hospitais/godoy-moreira|GODOY MOREIRA]] · rascunho
+- [[hospitais/gov-celso-ramos-florianopolis|GOV CELSO RAMOS FLORIANOPOLIS]] · rascunho
+- [[hospitais/h-bento-cuiaba|H BENTO CUIABA]] · rascunho
+- [[hospitais/h-de-urgencia-de-teresina|H DE URGENCIA DE TERESINA]] · rascunho
+- [[hospitais/h-municipal-da-japuiba|H MUNICIPAL DA JAPUIBA]] · rascunho
+- [[hospitais/h-municipal-de-s-jorge-do-patrocinio|H MUNICIPAL DE S JORGE DO PATROCINIO]] · rascunho
+- [[hospitais/h-municipal-de-sto-andre|H MUNICIPAL DE STO ANDRE]] · rascunho
+- [[hospitais/h-municipal-getulio-vargas|H MUNICIPAL GETÚLIO VARGAS]] · rascunho
+- [[hospitais/h-pilar|H PILAR]] · rascunho
+- [[hospitais/h-s-jose-joinville|H S JOSÉ - JOINVILLE]] · rascunho
+- [[hospitais/h-santa-catarina-de-loanda|H SANTA CATARINA DE LOANDA]] · rascunho
+- [[hospitais/h-santa-rita-sp|H SANTA RITA - SP]] · publicado
+- [[hospitais/hc-ufpr|HC UFPR]] · publicado
+- [[hospitais/hma-hospital-e-maternidade-de-assis|HMA - Hospital e Maternidade de Assis]] · publicado
+- [[hospitais/honpar-arapongas|HONPAR ARAPONGAS]] · publicado
+- [[hospitais/hospital-da-xv-curitiba|HOSPITAL DA XV CURITIBA]] · rascunho
+- [[hospitais/hospital-das-clinicas-de-ribeirao-preto|HOSPITAL DAS CLINICAS DE RIBEIRÃO PRETO]] · publicado
+- [[hospitais/hospital-das-nacoes|HOSPITAL DAS NAÇÕES]] · rascunho
+- [[hospitais/hospital-de-dois-vizinhos|hospital de Dois Vizinhos]] · rascunho
+- [[hospitais/hospital-de-goias-valdemiro-cruz-hugo|HOSPITAL DE GOIAS VALDEMIRO CRUZ (HUGO)]] · rascunho
+- [[hospitais/hospital-de-olhos|HOSPITAL DE OLHOS]] · publicado
+- [[hospitais/hospital-do-coracao-bom-jesus|Hospital do Coração Bom Jesus]] · publicado
+- [[hospitais/hospital-do-trabalhador|HOSPITAL DO TRABALHADOR]] · rascunho
+- [[hospitais/hospital-dos-acidentados-ro|Hospital dos Acidentados - RO]] · rascunho
+- [[hospitais/hospital-estadual-de-jatai-dr-serafim-de-carvalho|Hospital Estadual de Jataí Dr. Serafim de Carvalho]] · publicado
+- [[hospitais/hospital-m-boi-mirim|Hospital M'Boi Mirim]] · publicado
+- [[hospitais/hospital-maternidade-suzano|HOSPITAL MATERNIDADE SUZANO]] · rascunho
+- [[hospitais/hospital-munic-de-foz-do-iguacu|HOSPITAL MUNIC DE FOZ DO IGUACU]] · rascunho
+- [[hospitais/hospital-municipal-dr-amadeu-puppi|Hospital Municipal Dr. Amadeu Puppi]] · rascunho
+- [[hospitais/hospital-nossa-senhora-da-conceicao-de-urussanga|HOSPITAL NOSSA SENHORA DA CONCEIÇAO DE URUSSANGA]] · publicado
+- [[hospitais/hospital-regional-de-joinville|HOSPITAL REGIONAL DE JOINVILLE]] · rascunho
+- [[hospitais/hospital-santa-casa-de-cianorte|Hospital santa casa de Cianorte]] · publicado
+- [[hospitais/hospital-santa-casa-de-formiga|HOSPITAL SANTA CASA DE FORMIGA]] · publicado
+- [[hospitais/hospital-sao-miguel|HOSPITAL SÃO MIGUEL]] · publicado
+- [[hospitais/hospital-unimed-unidade-gloria|HOSPITAL UNIMED - UNIDADE GLORIA]] · publicado
+- [[hospitais/hps-porto-alegre|HPS PORTO ALEGRE]] · publicado
+- [[hospitais/hscp-canoas|HSCP CANOAS]] · rascunho
+- [[hospitais/idf-telemaco-borba|IDF TELEMACO BORBA]] · publicado
+- [[hospitais/inc-curitiba|INC CURITIBA]] · rascunho
+- [[hospitais/instituto-de-saude-bom-jesus-ivaipora|INSTITUTO DE SAUDE BOM JESUS IVAIPORA]] · rascunho
+- [[hospitais/instituto-sante-municipal-dionisio-policlinica-dr-luiz-carlos-barreiro|INSTITUTO SANTE (MUNICIPAL DIONISIO / POLICLINICA DR LUIZ CARLOS BARREIRO)]] · rascunho
+- [[hospitais/into-jamil-haddad-rio-de-janeiro|INTO JAMIL HADDAD RIO DE JANEIRO]] · rascunho
+- [[hospitais/iot-joinville|IOT JOINVILLE]] · rascunho
+- [[hospitais/ipiranga|IPIRANGA]] · rascunho
+- [[hospitais/ipo-novo-mundo|IPO NOVO MUNDO]] · rascunho
+- [[hospitais/jacupiranga|JACUPIRANGA]] · publicado
+- [[hospitais/l-a-saude-e-fisioterapia-rolandia|L&A SAUDE E FISIOTERAPIA ROLANDIA]] · rascunho
+- [[hospitais/mackenzie|MACKENZIE]] · rascunho
+- [[hospitais/maradei-paragominas|MARADEI PARAGOMINAS]] · publicado
+- [[hospitais/marcelino-champagnat|MARCELINO CHAMPAGNAT]] · publicado
+- [[hospitais/marieta-konder-bornhausen-itajai|MARIETA KONDER BORNHAUSEN ITAJAI]] · publicado
+- [[hospitais/metropolitano-sarandi|METROPOLITANO SARANDI]] · publicado
+- [[hospitais/monsenhor-walfredo-gurgel-natal|MONSENHOR WALFREDO GURGEL NATAL]] · publicado
+- [[hospitais/municipal-cuiaba-hmc|MUNICIPAL CUIABA (HMC)]] · publicado
+- [[hospitais/municipal-monte-castelo|MUNICIPAL MONTE CASTELO]] · publicado
+- [[hospitais/municipal-rio-branco-do-sul|MUNICIPAL RIO BRANCO DO SUL]] · publicado
+- [[hospitais/municipal-sete-lagoas|MUNICIPAL SETE LAGOAS]] · publicado
+- [[hospitais/nilton-lins-manaus|NILTON LINS MANAUS]] · rascunho
+- [[hospitais/norospar-umuarama|NOROSPAR UMUARAMA]] · publicado
+- [[hospitais/nossa-sra-de-fatima|NOSSA SRA DE FATIMA]] · publicado
+- [[hospitais/nossa-vida-coronel-vivida|NOSSA VIDA CORONEL VIVIDA]] · publicado
+- [[hospitais/nova-clinica-sao-jose-dos-pinhais|NOVA CLINICA SÃO JOSE DOS PINHAIS]] · rascunho
+- [[hospitais/nova-petropolis|NOVA PETROPOLIS]] · publicado
+- [[hospitais/nsra-aparecida-fazenda-rio-grande|NSRA APARECIDA FAZENDA RIO GRANDE]] · publicado
+- [[hospitais/nsra-da-luz-medianeira|NSRA DA LUZ MEDIANEIRA]] · publicado
+- [[hospitais/nsra-das-dores-tijucas-do-sul|NSRA DAS DORES TIJUCAS DO SUL]] · publicado
+- [[hospitais/nsra-das-gracas-curitiba|NSRA DAS GRAÇAS CURITIBA]] · rascunho
+- [[hospitais/nsra-do-perpetuo-socorro-gaspar|NSRA DO PERPETUO SOCORRO GASPAR]] · rascunho
+- [[hospitais/nsra-dos-prazeres-lajes|NSRA DOS PRAZERES LAJES]] · publicado
+- [[hospitais/onix-curitiba|ONIX CURITIBA]] · rascunho
+- [[hospitais/padre-germano-lauck-foz-do-iguacu|PADRE GERMANO LAUCK FOZ DO IGUAÇU]] · publicado
+- [[hospitais/parana-clinicas|PARANA CLINICAS]] · rascunho
+- [[hospitais/paranagua|PARANAGUA]] · rascunho
+- [[hospitais/policlinica-pato-branco|POLICLINICA PATO BRANCO]] · rascunho
+- [[hospitais/policlinica-sao-vicente-de-paula-francisco-beltrao|POLICLINICA SÃO VICENTE DE PAULA FRANCISCO BELTRAO]] · publicado
+- [[hospitais/pompeia-caxias-do-sul|POMPEIA CAXIAS DO SUL]] · publicado
+- [[hospitais/pronto-atendimento-reynaldo-guerra-cajati|PRONTO ATENDIMENTO REYNALDO GUERRA CAJATI]] · publicado
+- [[hospitais/pronto-socorro-campo-mourao|PRONTO SOCORRO CAMPO MOURAO]] · publicado
+- [[hospitais/pronto-socorro-marialva|PRONTO SOCORRO MARIALVA]] · publicado
+- [[hospitais/providencia-apucarana|PROVIDENCIA APUCARANA]] · publicado
+- [[hospitais/regional-alto-vale-rio-do-sul|REGIONAL ALTO VALE RIO DO SUL]] · publicado
+- [[hospitais/regional-caridade-nsra-aparecida-uniao-da-vitoria|REGIONAL CARIDADE NSRA APARECIDA UNIAO DA VITORIA]] · publicado
+- [[hospitais/regional-de-presidente-prudente|REGIONAL DE PRESIDENTE PRUDENTE]] · publicado
+- [[hospitais/regional-de-registro|REGIONAL DE REGISTRO]] · publicado
+- [[hospitais/regional-do-oeste-lenoir-vargas-ferreira-chapeco|REGIONAL DO OESTE (LENOIR VARGAS FERREIRA) CHAPECO]] · publicado
+- [[hospitais/regional-do-sudoeste-francisco-beltrao-pecotis|REGIONAL DO SUDOESTE FRANCISCO BELTRAO (PECOTIS)]] · publicado
+- [[hospitais/regional-joinville|REGIONAL JOINVILLE]] · rascunho
+- [[hospitais/regional-litoral-paranagua|REGIONAL LITORAL PARANAGUA]] · publicado
+- [[hospitais/regional-ponta-grossa|REGIONAL PONTA GROSSA]] · publicado
+- [[hospitais/regional-s-jose-homero-de-miranda-gomes|REGIONAL S JOSE (HOMERO DE MIRANDA GOMES)]] · rascunho
+- [[hospitais/regional-s-paulo|REGIONAL S PAULO]] · rascunho
+- [[hospitais/regional-toledo|REGIONAL TOLEDO]] · rascunho
+- [[hospitais/rio-do-testo-indaial|RIO DO TESTO INDAIAL]] · publicado
+- [[hospitais/rocio|ROCIO]] · rascunho
+- [[hospitais/ruth-cardoso-camboriu|RUTH CARDOSO CAMBORIU]] · publicado
+- [[hospitais/s-domingos|S DOMINGOS]] · publicado
+- [[hospitais/s-jose-do-avai|S JOSE DO AVAI]] · publicado
+- [[hospitais/sagrada-familia-sao-bento-do-sul|SAGRADA FAMILIA SÃO BENTO DO SUL]] · publicado
+- [[hospitais/samaritano-sorocaba|SAMARITANO SOROCABA]] · rascunho
+- [[hospitais/santa-casa-sao-gabriel|SANTA CASA SÃO GABRIEL]] · publicado
+- [[hospitais/santa-casa-sao-paulo|SANTA CASA SÃO PAULO]] · rascunho
+- [[hospitais/sao-braz-sao-camilo-porto-uniao|SÃO BRAZ/SÃO CAMILO PORTO UNIAO]] · publicado
+- [[hospitais/sao-camilo-lindoia|SÃO CAMILO LINDOIA]] · rascunho
+- [[hospitais/sao-camilo-ponta-grossa|SÃO CAMILO PONTA GROSSA]] · publicado
+- [[hospitais/sao-camilo-uniao-da-vitoria|SÃO CAMILO UNIAO DA VITORIA]] · publicado
+- [[hospitais/sao-donato-icara|SÃO DONATO IÇARA]] · publicado
+- [[hospitais/sao-francisco-sao-camilo-concordia|SÃO FRANCISCO (SÃO CAMILO) CONCORDIA]] · publicado
+- [[hospitais/sao-francisco-de-assis-sto-amaro-imperatriz|SÃO FRANCISCO DE ASSIS STO AMARO IMPERATRIZ]] · rascunho
+- [[hospitais/sao-francisco-de-paula|SÃO FRANCISCO DE PAULA]] · publicado
+- [[hospitais/sao-francisco-francisco-beltrao|SÃO FRANCISCO FRANCISCO BELTRAO]] · publicado
+- [[hospitais/sao-joao-batista-criciuma|SÃO JOAO BATISTA CRICIUMA]] · publicado
+- [[hospitais/sao-joao-batista-pirai|SÃO JOAO BATISTA PIRAI]] · publicado
+- [[hospitais/sao-joaquim|SÃO JOAQUIM]] · publicado
+- [[hospitais/sao-jose-criciuma|SÃO JOSE CRICIUMA]] · rascunho
+- [[hospitais/sao-jose-de-laranjeiras-do-sul|São José de Laranjeiras do Sul]] · rascunho
+- [[hospitais/sao-jose-dos-pinhais|SÃO JOSÉ DOS PINHAIS]] · publicado
+- [[hospitais/sao-jose-jaragua-do-sul|SÃO JOSE JARAGUÁ DO SUL]] · rascunho
+- [[hospitais/sao-jose-joinville|SÃO JOSE JOINVILLE]] · publicado
+- [[hospitais/sao-jose-laranjeiras-do-sul|SÃO JOSE LARANJEIRAS DO SUL]] · publicado
+- [[hospitais/sao-lucas-campo-largo|SÃO LUCAS CAMPO LARGO]] · publicado
+- [[hospitais/sao-lucas-cascavel|SÃO LUCAS CASCAVEL]] · publicado
+- [[hospitais/sao-lucas-pato-branco|SÃO LUCAS PATO BRANCO]] · rascunho
+- [[hospitais/sao-lucas-primavera-do-leste|SÃO LUCAS PRIMAVERA DO LESTE]] · rascunho
+- [[hospitais/sao-luiz-gonzaga-sao-paulo|SÃO LUIZ GONZAGA SÃO PAULO]] · rascunho
+- [[hospitais/sao-marcos-maringa|SÃO MARCOS MARINGA]] · publicado
+- [[hospitais/sao-mateus-caarapo|SÃO MATEUS CAARAPO]] · rascunho
+- [[hospitais/sao-paulo-lagoa-vermelha|SÃO PAULO LAGOA VERMELHA]] · rascunho
+- [[hospitais/sao-paulo-xanxere|SÃO PAULO XANXERE]] · publicado
+- [[hospitais/sao-rafael-chopinzinho|SÃO RAFAEL CHOPINZINHO]] · publicado
+- [[hospitais/sao-sebastiao-papanduva|SÃO SEBASTIAO PAPANDUVA]] · publicado
+- [[hospitais/sao-vicente-araucaria|SÃO VICENTE ARAUCARIA]] · publicado
+- [[hospitais/sao-vicente-curitiba|SÃO VICENTE CURITIBA]] · rascunho
+- [[hospitais/sao-vicente-de-paulo-guarapuava|SÃO VICENTE DE PAULO GUARAPUAVA]] · publicado
+- [[hospitais/sao-vicente-de-paulo-mafra|SÃO VICENTE DE PAULO MAFRA]] · publicado
+- [[hospitais/sao-vicente-de-paulo-pitanga|SÃO VICENTE DE PAULO PITANGA]] · rascunho
+- [[hospitais/sao-vicente-de-paulo-viradouro|SÃO VICENTE DE PAULO VIRADOURO]] · publicado
+- [[hospitais/sermed-sertaozinho|SERMED SERTAOZINHO]] · publicado
+- [[hospitais/sinop|SINOP]] · publicado
+- [[hospitais/sta-casa-aracatuba|STA CASA ARAÇATUBA]] · publicado
+- [[hospitais/sta-casa-bandeirantes|STA CASA BANDEIRANTES]] · publicado
+- [[hospitais/sta-casa-cachoeiro-de-itapemirim|STA CASA CACHOEIRO DE ITAPEMIRIM]] · publicado
+- [[hospitais/sta-casa-cambe|STA CASA CAMBE]] · publicado
+- [[hospitais/sta-casa-campo-grande|STA CASA CAMPO GRANDE]] · publicado
+- [[hospitais/sta-casa-campo-mourao|STA CASA CAMPO MOURAO]] · publicado
+- [[hospitais/sta-casa-catalao|STA CASA CATALÃO]] · rascunho
+- [[hospitais/sta-casa-curitiba|STA CASA CURITIBA]] · rascunho
+- [[hospitais/sta-casa-engenheiro-beltrao|STA CASA ENGENHEIRO BELTRAO]] · publicado
+- [[hospitais/sta-casa-formiga|STA CASA FORMIGA]] · publicado
+- [[hospitais/sta-casa-irati|STA CASA IRATI]] · publicado
+- [[hospitais/sta-casa-jacarezinho|STA CASA JACAREZINHO]] · rascunho
+- [[hospitais/sta-casa-limeira|STA CASA LIMEIRA]] · publicado
+- [[hospitais/sta-casa-maringa|STA CASA MARINGA]] · rascunho
+- [[hospitais/sta-casa-misericordia-cornelio-procopio|STA CASA MISERICORDIA CORNELIO PROCOPIO]] · rascunho
+- [[hospitais/sta-casa-mococa|STA CASA MOCOCA]] · publicado
+- [[hospitais/sta-casa-mogi-das-cruzes|STA CASA MOGI DAS CRUZES]] · publicado
+- [[hospitais/sta-casa-mogi-guacu|STA CASA MOGI GUAÇU]] · publicado
+- [[hospitais/sta-casa-novo-horizonte|STA CASA NOVO HORIZONTE]] · publicado
+- [[hospitais/sta-casa-paraguacu-paulista|STA CASA PARAGUAÇU PAULISTA]] · publicado
+- [[hospitais/sta-casa-paranagua|STA CASA PARANAGUA]] · rascunho
+- [[hospitais/sta-casa-paranavai|STA CASA PARANAVAI]] · publicado
+- [[hospitais/sta-casa-ponta-grossa|STA CASA PONTA GROSSA]] · publicado
+- [[hospitais/sta-casa-ribeirao-claro|STA CASA RIBEIRAO CLARO]] · rascunho
+- [[hospitais/sta-casa-siqueira-campos|STA CASA SIQUEIRA CAMPOS]] · rascunho
+- [[hospitais/sta-casa-sorocaba|STA CASA SOROCABA]] · publicado
+- [[hospitais/sta-casa-uruguaiana|STA CASA URUGUAIANA]] · rascunho
+- [[hospitais/sta-cruz-curitiba|STA CRUZ CURITIBA]] · publicado
+- [[hospitais/sta-ines-balneario-camboriu|STA INES BALNEARIO CAMBORIU]] · publicado
+- [[hospitais/sta-isabel-blumenau|STA ISABEL BLUMENAU]] · publicado
+- [[hospitais/sta-julia-hsj-manaus|STA JULIA (HSJ) MANAUS]] · publicado
+- [[hospitais/sta-madalena-sofia-curitiba|STA MADALENA SOFIA CURITIBA]] · publicado
+- [[hospitais/sta-marcelina-sao-paulo|STA MARCELINA SÃO PAULO]] · publicado
+- [[hospitais/sta-pelizzari-palmas|STA PELIZZARI PALMAS]] · publicado
+- [[hospitais/sta-rita-maringa|STA RITA MARINGA]] · publicado
+- [[hospitais/sta-tereza-guarapuava|STA TEREZA GUARAPUAVA]] · publicado
+- [[hospitais/sta-terezinha-cruz-machado|STA TEREZINHA CRUZ MACHADO]] · publicado
+- [[hospitais/sta-terezinha-erechim|STA TEREZINHA ERECHIM]] · publicado
+- [[hospitais/sta-terezinha-joacaba|STA TEREZINHA JOAÇABA]] · publicado
+- [[hospitais/sta-terezinha-salete|STA TEREZINHA SALETE]] · publicado
+- [[hospitais/sto-antonio-municipal-pirai-do-sul|STO ANTONIO (MUNICIPAL) PIRAI DO SUL]] · publicado
+- [[hospitais/sto-antonio-armazem|STO ANTONIO ARMAZEM]] · publicado
+- [[hospitais/sto-antonio-blumenau|STO ANTONIO BLUMENAU]] · rascunho
+- [[hospitais/sto-antonio-guaramirim|STO ANTONIO GUARAMIRIM]] · publicado
+- [[hospitais/sto-antonio-guaraniacu|STO ANTONIO GUARANIAÇU]] · publicado
+- [[hospitais/sto-antonio-manoel-ribas|STO ANTONIO MANOEL RIBAS]] · publicado
+- [[hospitais/sto-antonio-tapejara|STO ANTONIO TAPEJARA]] · rascunho
+- [[hospitais/unimed-blumenau|UNIMED BLUMENAU]] · publicado
+- [[hospitais/unimed-chapeco|UNIMED CHAPECO]] · publicado
+- [[hospitais/unimed-joinville|UNIMED JOINVILLE]] · rascunho
+- [[hospitais/unimed-litoral-balneario-camboriu|UNIMED LITORAL BALNEARIO CAMBORIU]] · publicado
+- [[hospitais/unimed-ponta-grossa|UNIMED PONTA GROSSA]] · publicado
+- [[hospitais/universitario-do-oeste-cascavel|UNIVERSITARIO DO OESTE (CASCAVEL)]] · rascunho
+- [[hospitais/universitario-londrina|UNIVERSITARIO LONDRINA]] · rascunho
+- [[hospitais/universitario-maria-aparecida-pedrossian-campo-grande|UNIVERSITARIO MARIA APARECIDA PEDROSSIAN CAMPO GRANDE]] · rascunho
+- [[hospitais/universitario-maringa|UNIVERSITARIO MARINGA]] · publicado
+- [[hospitais/upa-coronel-vivida|UPA coronel vivida]] · publicado
+- [[hospitais/upa-itariri|UPA ITARIRI]] · rascunho
+- [[hospitais/upa-santana|UPA SANTANA]] · rascunho
+- [[hospitais/upas-alagoas|UPAS ALAGOAS]] · rascunho
+- [[hospitais/upas-apucarana|UPAS APUCARANA]] · rascunho
+- [[hospitais/upas-arapongas|UPAS ARAPONGAS]] · publicado
+- [[hospitais/upas-balneario-picarras|UPAS BALNEARIO PIÇARRAS]] · publicado
+- [[hospitais/upas-bauru|UPAS BAURU]] · publicado
+- [[hospitais/upas-cajati|UPAS CAJATI]] · publicado
+- [[hospitais/upas-canoas|UPAS CANOAS]] · rascunho
+- [[hospitais/upas-curitiba|UPAS CURITIBA]] · rascunho
+- [[hospitais/upas-de-pinhais|UPAS DE PINHAIS]] · publicado
+- [[hospitais/upas-foz-do-iguacu|UPAS FOZ DO IGUAÇU]] · rascunho
+- [[hospitais/upas-francisco-beltrao|UPAS FRANCISCO BELTRAO]] · publicado
+- [[hospitais/upas-guarapuava|UPAS GUARAPUAVA]] · publicado
+- [[hospitais/upas-joao-pessoa|UPAS JOAO PESSOA]] · rascunho
+- [[hospitais/upas-joinville|UPAS JOINVILLE]] · rascunho
+- [[hospitais/upas-londrina|UPAS LONDRINA]] · rascunho
+- [[hospitais/upas-morretes|UPAS MORRETES]] · rascunho
+- [[hospitais/upas-pato-branco|UPAS PATO BRANCO]] · rascunho
+- [[hospitais/upas-ponta-grossa|UPAS PONTA GROSSA]] · rascunho
+- [[hospitais/upas-sorocaba|UPAS SOROCABA]] · rascunho
+- [[hospitais/upas-toledo|UPAS TOLEDO]] · publicado
+- [[hospitais/upas-uniao-da-vitoria|UPAS UNIAO DA VITORIA]] · rascunho
+- [[hospitais/vita|Vita]] · rascunho
+- [[hospitais/vitoria-luisa-de-marillac|VITORIA (LUISA DE MARILLAC)]] · rascunho
+
+## Relatórios gerados (4)
+
+- [[_relatorios/lacunas|Lacunas do vault de hospitais]] · rascunho
+- [[_relatorios/publicacao-2026-10-24-20261024-1953|Publicação do vault — lote 20261024-1953]] · rascunho
+- [[_relatorios/publicacao-2026-10-24-20261024-2013|Publicação do vault — lote 20261024-2013]] · rascunho
+- [[_relatorios/publicacao-2026-10-24-20261024-piloto|Publicação do vault — lote 20261024-piloto]] · rascunho

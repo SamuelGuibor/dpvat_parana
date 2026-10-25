@@ -1,0 +1,7 @@
+{
+	"nodes":[
+		{"id":"7010906b518be1a0","x":0,"y":0,"width":400,"height":400,"type":"file","file":"etapas/afastados.md"},
+		{"id":"f56b5e343647669d","x":-76,"y":-6,"width":250,"height":60,"type":"text","text":""}
+	],
+	"edges":[]
+}

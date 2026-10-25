@@ -1,0 +1,663 @@
+{
+  "id": "20261024-2013",
+  "data": "2026-10-24",
+  "aprovadas": [
+    "hospitais/azambuja-brusque.md",
+    "hospitais/base-sao-jose-rio-preto.md",
+    "hospitais/cemil-umuarama.md",
+    "hospitais/clinica-pontagrossense.md",
+    "hospitais/clinica-sabedotti-ponta-grossa.md",
+    "hospitais/complexo-mangabeira-gov-tarcisio-burity.md",
+    "hospitais/cot-paranagua.md",
+    "hospitais/cotefi-bahia.md",
+    "hospitais/cruz-vermelha-castro.md",
+    "hospitais/cruz-vermelha-curitiba.md",
+    "hospitais/dirceu-arcoverde-heda-parnaiba.md",
+    "hospitais/dom-joaquim-brusque.md",
+    "hospitais/dona-helena-joinville.md",
+    "hospitais/dr-eric-prado-diegues.md",
+    "hospitais/envangelico-londrina.md",
+    "hospitais/erasto-gaertner-agnus-dei-irati.md",
+    "hospitais/erasto-gaertner-curitiba.md",
+    "hospitais/estadual-anapolis-dr-henrique-santillo-heana.md",
+    "hospitais/estadual-galileu-belem.md",
+    "hospitais/eulalino-ignacio-de-andrade-hzs-londrina.md",
+    "hospitais/florianopolis.md",
+    "hospitais/geral-itapevi.md",
+    "hospitais/h-santa-rita-sp.md",
+    "hospitais/hc-ufpr.md",
+    "hospitais/hma-hospital-e-maternidade-de-assis.md",
+    "hospitais/honpar-arapongas.md",
+    "hospitais/hospital-das-clinicas-de-ribeirao-preto.md",
+    "hospitais/hospital-de-olhos.md",
+    "hospitais/hospital-do-coracao-bom-jesus.md",
+    "hospitais/hospital-estadual-de-jatai-dr-serafim-de-carvalho.md",
+    "hospitais/hospital-m-boi-mirim.md",
+    "hospitais/hospital-nossa-senhora-da-conceicao-de-urussanga.md",
+    "hospitais/hospital-santa-casa-de-cianorte.md",
+    "hospitais/hospital-santa-casa-de-formiga.md",
+    "hospitais/hospital-sao-miguel.md",
+    "hospitais/hospital-unimed-unidade-gloria.md",
+    "hospitais/hps-porto-alegre.md",
+    "hospitais/idf-telemaco-borba.md",
+    "hospitais/jacupiranga.md",
+    "hospitais/maradei-paragominas.md",
+    "hospitais/marcelino-champagnat.md",
+    "hospitais/marieta-konder-bornhausen-itajai.md",
+    "hospitais/metropolitano-sarandi.md",
+    "hospitais/monsenhor-walfredo-gurgel-natal.md",
+    "hospitais/municipal-cuiaba-hmc.md",
+    "hospitais/municipal-monte-castelo.md",
+    "hospitais/municipal-rio-branco-do-sul.md",
+    "hospitais/municipal-sete-lagoas.md",
+    "hospitais/norospar-umuarama.md",
+    "hospitais/nossa-sra-de-fatima.md",
+    "hospitais/nossa-vida-coronel-vivida.md",
+    "hospitais/nova-petropolis.md",
+    "hospitais/nsra-aparecida-fazenda-rio-grande.md",
+    "hospitais/nsra-da-luz-medianeira.md",
+    "hospitais/nsra-das-dores-tijucas-do-sul.md",
+    "hospitais/nsra-dos-prazeres-lajes.md",
+    "hospitais/padre-germano-lauck-foz-do-iguacu.md",
+    "hospitais/policlinica-sao-vicente-de-paula-francisco-beltrao.md",
+    "hospitais/pompeia-caxias-do-sul.md",
+    "hospitais/pronto-atendimento-reynaldo-guerra-cajati.md",
+    "hospitais/pronto-socorro-campo-mourao.md",
+    "hospitais/pronto-socorro-marialva.md",
+    "hospitais/providencia-apucarana.md",
+    "hospitais/regional-alto-vale-rio-do-sul.md",
+    "hospitais/regional-caridade-nsra-aparecida-uniao-da-vitoria.md",
+    "hospitais/regional-de-presidente-prudente.md",
+    "hospitais/regional-de-registro.md",
+    "hospitais/regional-do-oeste-lenoir-vargas-ferreira-chapeco.md",
+    "hospitais/regional-do-sudoeste-francisco-beltrao-pecotis.md",
+    "hospitais/regional-litoral-paranagua.md",
+    "hospitais/regional-ponta-grossa.md",
+    "hospitais/rio-do-testo-indaial.md",
+    "hospitais/ruth-cardoso-camboriu.md",
+    "hospitais/s-domingos.md",
+    "hospitais/s-jose-do-avai.md",
+    "hospitais/sagrada-familia-sao-bento-do-sul.md",
+    "hospitais/santa-casa-sao-gabriel.md",
+    "hospitais/sao-braz-sao-camilo-porto-uniao.md",
+    "hospitais/sao-camilo-ponta-grossa.md",
+    "hospitais/sao-camilo-uniao-da-vitoria.md",
+    "hospitais/sao-donato-icara.md",
+    "hospitais/sao-francisco-de-paula.md",
+    "hospitais/sao-francisco-francisco-beltrao.md",
+    "hospitais/sao-francisco-sao-camilo-concordia.md",
+    "hospitais/sao-joao-batista-criciuma.md",
+    "hospitais/sao-joao-batista-pirai.md",
+    "hospitais/sao-joaquim.md",
+    "hospitais/sao-jose-dos-pinhais.md",
+    "hospitais/sao-jose-joinville.md",
+    "hospitais/sao-jose-laranjeiras-do-sul.md",
+    "hospitais/sao-lucas-campo-largo.md",
+    "hospitais/sao-lucas-cascavel.md",
+    "hospitais/sao-marcos-maringa.md",
+    "hospitais/sao-paulo-xanxere.md",
+    "hospitais/sao-rafael-chopinzinho.md",
+    "hospitais/sao-sebastiao-papanduva.md",
+    "hospitais/sao-vicente-araucaria.md",
+    "hospitais/sao-vicente-de-paulo-guarapuava.md",
+    "hospitais/sao-vicente-de-paulo-mafra.md",
+    "hospitais/sao-vicente-de-paulo-viradouro.md",
+    "hospitais/sermed-sertaozinho.md",
+    "hospitais/sinop.md",
+    "hospitais/sta-casa-aracatuba.md",
+    "hospitais/sta-casa-bandeirantes.md",
+    "hospitais/sta-casa-cachoeiro-de-itapemirim.md",
+    "hospitais/sta-casa-cambe.md",
+    "hospitais/sta-casa-campo-grande.md",
+    "hospitais/sta-casa-campo-mourao.md",
+    "hospitais/sta-casa-engenheiro-beltrao.md",
+    "hospitais/sta-casa-formiga.md",
+    "hospitais/sta-casa-irati.md",
+    "hospitais/sta-casa-limeira.md",
+    "hospitais/sta-casa-mococa.md",
+    "hospitais/sta-casa-mogi-das-cruzes.md",
+    "hospitais/sta-casa-mogi-guacu.md",
+    "hospitais/sta-casa-novo-horizonte.md",
+    "hospitais/sta-casa-paraguacu-paulista.md",
+    "hospitais/sta-casa-paranavai.md",
+    "hospitais/sta-casa-ponta-grossa.md",
+    "hospitais/sta-casa-sorocaba.md",
+    "hospitais/sta-cruz-curitiba.md",
+    "hospitais/sta-ines-balneario-camboriu.md",
+    "hospitais/sta-isabel-blumenau.md",
+    "hospitais/sta-julia-hsj-manaus.md",
+    "hospitais/sta-madalena-sofia-curitiba.md",
+    "hospitais/sta-marcelina-sao-paulo.md",
+    "hospitais/sta-pelizzari-palmas.md",
+    "hospitais/sta-rita-maringa.md",
+    "hospitais/sta-tereza-guarapuava.md",
+    "hospitais/sta-terezinha-cruz-machado.md",
+    "hospitais/sta-terezinha-erechim.md",
+    "hospitais/sta-terezinha-joacaba.md",
+    "hospitais/sta-terezinha-salete.md",
+    "hospitais/sto-antonio-armazem.md",
+    "hospitais/sto-antonio-guaramirim.md",
+    "hospitais/sto-antonio-guaraniacu.md",
+    "hospitais/sto-antonio-manoel-ribas.md",
+    "hospitais/sto-antonio-municipal-pirai-do-sul.md",
+    "hospitais/unimed-blumenau.md",
+    "hospitais/unimed-chapeco.md",
+    "hospitais/unimed-litoral-balneario-camboriu.md",
+    "hospitais/unimed-ponta-grossa.md",
+    "hospitais/universitario-maringa.md",
+    "hospitais/upa-coronel-vivida.md",
+    "hospitais/upas-arapongas.md",
+    "hospitais/upas-balneario-picarras.md",
+    "hospitais/upas-bauru.md",
+    "hospitais/upas-cajati.md",
+    "hospitais/upas-de-pinhais.md",
+    "hospitais/upas-francisco-beltrao.md",
+    "hospitais/upas-guarapuava.md",
+    "hospitais/upas-toledo.md"
+  ],
+  "devolvidas": [],
+  "pendentes": [
+    "hospitais/centro-regional-de-diagnostico-pato-branco.md",
+    "hospitais/cesar-leite-manhuacu.md",
+    "hospitais/complexo-hospitalar-diamantina-irani.md",
+    "hospitais/coracao-londrina.md",
+    "hospitais/cristo-rei-astorga.md",
+    "hospitais/cristo-rei-ibipora.md",
+    "hospitais/cristo-rei-quitandinha.md",
+    "hospitais/fraiburgo.md",
+    "hospitais/fraturas-novo-mundo.md",
+    "hospitais/genesis-cascavel.md",
+    "hospitais/geral-guarulhos.md",
+    "hospitais/geral-militar-curitiba.md",
+    "hospitais/geral-taipas.md",
+    "hospitais/godoy-moreira.md",
+    "hospitais/gov-celso-ramos-florianopolis.md",
+    "hospitais/h-bento-cuiaba.md",
+    "hospitais/h-de-urgencia-de-teresina.md",
+    "hospitais/h-municipal-da-japuiba.md",
+    "hospitais/h-municipal-de-s-jorge-do-patrocinio.md",
+    "hospitais/h-municipal-de-sto-andre.md",
+    "hospitais/h-municipal-getulio-vargas.md",
+    "hospitais/h-pilar.md",
+    "hospitais/h-s-jose-joinville.md",
+    "hospitais/h-santa-catarina-de-loanda.md",
+    "hospitais/hospital-da-xv-curitiba.md",
+    "hospitais/hospital-das-nacoes.md",
+    "hospitais/hospital-de-dois-vizinhos.md",
+    "hospitais/hospital-de-goias-valdemiro-cruz-hugo.md",
+    "hospitais/hospital-do-trabalhador.md",
+    "hospitais/hospital-dos-acidentados-ro.md",
+    "hospitais/hospital-maternidade-suzano.md",
+    "hospitais/hospital-munic-de-foz-do-iguacu.md",
+    "hospitais/hospital-municipal-dr-amadeu-puppi.md",
+    "hospitais/hospital-regional-de-joinville.md",
+    "hospitais/hscp-canoas.md",
+    "hospitais/inc-curitiba.md",
+    "hospitais/instituto-de-saude-bom-jesus-ivaipora.md",
+    "hospitais/instituto-sante-municipal-dionisio-policlinica-dr-luiz-carlos-barreiro.md",
+    "hospitais/into-jamil-haddad-rio-de-janeiro.md",
+    "hospitais/iot-joinville.md",
+    "hospitais/ipiranga.md",
+    "hospitais/ipo-novo-mundo.md",
+    "hospitais/l-a-saude-e-fisioterapia-rolandia.md",
+    "hospitais/mackenzie.md",
+    "hospitais/nilton-lins-manaus.md",
+    "hospitais/nova-clinica-sao-jose-dos-pinhais.md",
+    "hospitais/nsra-das-gracas-curitiba.md",
+    "hospitais/nsra-do-perpetuo-socorro-gaspar.md",
+    "hospitais/onix-curitiba.md",
+    "hospitais/parana-clinicas.md",
+    "hospitais/paranagua.md",
+    "hospitais/policlinica-pato-branco.md",
+    "hospitais/regional-joinville.md",
+    "hospitais/regional-s-jose-homero-de-miranda-gomes.md",
+    "hospitais/regional-s-paulo.md",
+    "hospitais/regional-toledo.md",
+    "hospitais/rocio.md",
+    "hospitais/samaritano-sorocaba.md",
+    "hospitais/santa-casa-sao-paulo.md",
+    "hospitais/sao-camilo-lindoia.md",
+    "hospitais/sao-francisco-de-assis-sto-amaro-imperatriz.md",
+    "hospitais/sao-jose-criciuma.md",
+    "hospitais/sao-jose-de-laranjeiras-do-sul.md",
+    "hospitais/sao-jose-jaragua-do-sul.md",
+    "hospitais/sao-lucas-pato-branco.md",
+    "hospitais/sao-lucas-primavera-do-leste.md",
+    "hospitais/sao-luiz-gonzaga-sao-paulo.md",
+    "hospitais/sao-mateus-caarapo.md",
+    "hospitais/sao-paulo-lagoa-vermelha.md",
+    "hospitais/sao-vicente-curitiba.md",
+    "hospitais/sao-vicente-de-paulo-pitanga.md",
+    "hospitais/sta-casa-catalao.md",
+    "hospitais/sta-casa-curitiba.md",
+    "hospitais/sta-casa-jacarezinho.md",
+    "hospitais/sta-casa-maringa.md",
+    "hospitais/sta-casa-misericordia-cornelio-procopio.md",
+    "hospitais/sta-casa-paranagua.md",
+    "hospitais/sta-casa-ribeirao-claro.md",
+    "hospitais/sta-casa-siqueira-campos.md",
+    "hospitais/sta-casa-uruguaiana.md",
+    "hospitais/sto-antonio-blumenau.md",
+    "hospitais/sto-antonio-tapejara.md",
+    "hospitais/unimed-joinville.md",
+    "hospitais/universitario-do-oeste-cascavel.md",
+    "hospitais/universitario-londrina.md",
+    "hospitais/universitario-maria-aparecida-pedrossian-campo-grande.md",
+    "hospitais/upa-itariri.md",
+    "hospitais/upa-santana.md",
+    "hospitais/upas-alagoas.md",
+    "hospitais/upas-apucarana.md",
+    "hospitais/upas-canoas.md",
+    "hospitais/upas-curitiba.md",
+    "hospitais/upas-foz-do-iguacu.md",
+    "hospitais/upas-joao-pessoa.md",
+    "hospitais/upas-joinville.md",
+    "hospitais/upas-londrina.md",
+    "hospitais/upas-morretes.md",
+    "hospitais/upas-pato-branco.md",
+    "hospitais/upas-ponta-grossa.md",
+    "hospitais/upas-sorocaba.md",
+    "hospitais/upas-uniao-da-vitoria.md",
+    "hospitais/vita.md",
+    "hospitais/vitoria-luisa-de-marillac.md"
+  ],
+  "amostra": [
+    {
+      "nota": "hospitais/sagrada-familia-sao-bento-do-sul.md",
+      "titulo": "SAGRADA FAMILIA SÃO BENTO DO SUL",
+      "hospital": "SAGRADA FAMILIA SÃO BENTO DO SUL",
+      "automacao": "Pedidos de Hospitais - SAGRADA FAMILIA SÃO BENTO DO SUL",
+      "fonte": "De \".sc\" para \"same@hmsf.com.br\", ou caso não respondam, via whatsapp pelo número (47) 3631-0216\nUse quaisquer documentos de procurador. Enviam o prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail de \".sc\" para same@hmsf.com.br.\n2. Se não responderem, peça por WhatsApp no número (47) 3631-0216.",
+        "Contato": "- E-mail: same@hmsf.com.br\n- WhatsApp: (47) 3631-0216",
+        "Documentos e procuração": "Use quaisquer documentos de procurador.",
+        "Prazo e retorno": "Prazo: a Fonte não menciona. O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "- O WhatsApp é o plano B, só se o e-mail ficar sem resposta."
+      },
+      "contatos": {
+        "email": [
+          "same@hmsf.com.br"
+        ],
+        "telefone": [
+          "(47) 3631-0216"
+        ],
+        "site": []
+      },
+      "modo": [
+        "email",
+        "whatsapp"
+      ],
+      "procuracao": "Quaisquer documentos de procurador"
+    },
+    {
+      "nota": "hospitais/maradei-paragominas.md",
+      "titulo": "MARADEI PARAGOMINAS",
+      "hospital": "MARADEI PARAGOMINAS",
+      "automacao": "Pedidos de Hospitais - MARADEI PARAGOMINAS",
+      "fonte": "De \".norte\" para \"arquivo@hospitalmaradei.com.br\".\nUse documentos de advogado como procurador. Enviam prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail de \".norte\" para arquivo@hospitalmaradei.com.br.\n2. Anexe os documentos de advogado como procurador.",
+        "Contato": "- E-mail: arquivo@hospitalmaradei.com.br",
+        "Documentos e procuração": "Usar documentos de advogado como procurador. A Fonte não cita formulário nem anexo.",
+        "Prazo e retorno": "O hospital envia o prontuário pelo próprio e-mail. Prazo: A Fonte não menciona.",
+        "Observações": "- A Fonte indica o envio \"De .norte\"; a nota não explica o que é esse remetente."
+      },
+      "contatos": {
+        "email": [
+          "arquivo@hospitalmaradei.com.br"
+        ],
+        "telefone": [],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Documentos de advogado como procurador"
+    },
+    {
+      "nota": "hospitais/marcelino-champagnat.md",
+      "titulo": "MARCELINO CHAMPAGNAT",
+      "hospital": "MARCELINO CHAMPAGNAT",
+      "automacao": "Pedido de Hospital - MARCELINO CHAMPAGNAT",
+      "fonte": "De \\\".curitiba\\\" para \\\"same.hmc@hospitalmarcelino.com.br\\\".\nAnexar formulário https://drive.google.com/file/d/1Or6FZQMwrw4N_aRUi9yYxRJFex7PgSJR/view?usp=sharing .Enviam o prontuário pelo próprio e-mail. Use quaisquer documentos de procurador.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail de \".curitiba\" para same.hmc@hospitalmarcelino.com.br.\n2. Anexe o formulário do link abaixo.\n3. Anexe os documentos de procurador.",
+        "Contato": "- E-mail: same.hmc@hospitalmarcelino.com.br\n- Formulário: https://drive.google.com/file/d/1Or6FZQMwrw4N_aRUi9yYxRJFex7PgSJR/view?usp=sharing",
+        "Documentos e procuração": "- Formulário (link do Drive acima), a anexar ao e-mail.\n- Podem ser usados quaisquer documentos de procurador.",
+        "Prazo e retorno": "O hospital envia o prontuário pelo próprio e-mail. Prazo: A Fonte não menciona.",
+        "Observações": "- A Fonte indica o envio \"De .curitiba\"; a nota não explica o que é esse remetente."
+      },
+      "contatos": {
+        "email": [
+          "same.hmc@hospitalmarcelino.com.br"
+        ],
+        "telefone": [],
+        "site": [
+          "https://drive.google.com/file/d/1Or6FZQMwrw4N_aRUi9yYxRJFex7PgSJR/view?usp=sharing"
+        ]
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Quaisquer documentos de procurador"
+    },
+    {
+      "nota": "hospitais/erasto-gaertner-agnus-dei-irati.md",
+      "titulo": "ERASTO GAERTNER (AGNUS DEI) IRATI",
+      "hospital": "ERASTO GAERTNER (AGNUS DEI) IRATI",
+      "automacao": "Pedidos de Hospitais - ERASTO GAERTNER (AGNUS DEI) IRATI",
+      "fonte": "Solicitação deve ser feita pelo site https: https://same.erastogaertner.com.br/ ou, pelo e-mail docsame@erastogaertner.com.br (confirmar e atualizar a solicitação via e-mail).\nPedir para o cliente enviar uma foto segurando seu documento ao lado do rosto.\nNo campus \"observação\", coloque: Documentos solicitados: Prontuário, ficha/declaração de entrada (BAM), guia RAS (se houver), laudos de radiografia, evoluções, ambulatórios e descrição de cirurgia. Se possível, enviar em ordem cronológica.\nFavor não enviar exames laboratoriais, descrição da instrumentação cirúrgica e relatórios de custos operacionais.\n\nUse documentos de advogado como procurador. Enviam prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Faça a solicitação pelo site https://same.erastogaertner.com.br/ ou pelo e-mail docsame@erastogaertner.com.br.\n2. Se pedir por e-mail, confirme e atualize a solicitação por e-mail.\n3. Peça ao cliente uma foto segurando o documento ao lado do rosto.\n4. No campo \"observação\", escreva: Documentos solicitados: Prontuário, ficha/declaração de entrada (BAM), guia RAS (se houver), laudos de radiografia, evoluções, ambulatórios e descrição de cirurgia. Se possível, enviar em ordem cronológica.",
+        "Contato": "- Site: https://same.erastogaertner.com.br/\n- E-mail: docsame@erastogaertner.com.br",
+        "Documentos e procuração": "- Foto do cliente segurando o documento ao lado do rosto.\n- Usar documentos de advogado como procurador.",
+        "Prazo e retorno": "- Prazo: A Fonte não menciona.\n- O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "- Não pedir exames laboratoriais, descrição da instrumentação cirúrgica nem relatórios de custos operacionais."
+      },
+      "contatos": {
+        "email": [
+          "docsame@erastogaertner.com.br"
+        ],
+        "telefone": [],
+        "site": [
+          "https://same.erastogaertner.com.br/"
+        ]
+      },
+      "modo": [
+        "site",
+        "email"
+      ],
+      "procuracao": "Usar documentos de advogado como procurador"
+    },
+    {
+      "nota": "hospitais/sao-francisco-sao-camilo-concordia.md",
+      "titulo": "SÃO FRANCISCO (SÃO CAMILO) CONCORDIA",
+      "hospital": "SÃO FRANCISCO (SÃO CAMILO) CONCORDIA",
+      "automacao": "Pedidos de Hospitais - SÃO FRANCISCO (SÃO CAMILO) CONCORDIA",
+      "fonte": "De \".sc\" para \"secretaria2@hospitalsaofrancisco.com\".\nAnexe o formulário https://drive.google.com/file/d/1z_WfZCk-EumPZ5AWnHPgrMSzjESDF0jG/view?usp=sharing à solicitação (deve ser assinado no ZAPSING pelo cliente). Use documentos de advogado como procurador. Enviam prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail da conta \".sc\" para secretaria2@hospitalsaofrancisco.com.\n2. Anexe o formulário à solicitação (link em Contato).\n3. O formulário deve ser assinado pelo cliente no ZAPSING.\n4. Use documentos de advogado como procurador.",
+        "Contato": "- E-mail: secretaria2@hospitalsaofrancisco.com\n- Formulário: https://drive.google.com/file/d/1z_WfZCk-EumPZ5AWnHPgrMSzjESDF0jG/view?usp=sharing",
+        "Documentos e procuração": "- Formulário assinado pelo cliente no ZAPSING.\n- Procuração: documentos de advogado como procurador.",
+        "Prazo e retorno": "Prazo: a Fonte não menciona. O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "Nenhuma além dos passos acima."
+      },
+      "contatos": {
+        "email": [
+          "secretaria2@hospitalsaofrancisco.com"
+        ],
+        "telefone": [],
+        "site": [
+          "https://drive.google.com/file/d/1z_WfZCk-EumPZ5AWnHPgrMSzjESDF0jG/view?usp=sharing"
+        ]
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Documentos de advogado como procurador; formulário assinado pelo cliente no ZAPSING"
+    },
+    {
+      "nota": "hospitais/sao-jose-joinville.md",
+      "titulo": "SÃO JOSE JOINVILLE",
+      "hospital": "SÃO JOSE JOINVILLE",
+      "automacao": "Pedidos de Hospitais - SÃO JOSE JOINVILLE",
+      "fonte": "De \".sc\" para \"rcpsame@joinville.sc.gov.br\".\nUse quaisquer documentos de procurador. Enviam o prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail da conta \".sc\" para rcpsame@joinville.sc.gov.br.\n2. Anexe os documentos de procurador.",
+        "Contato": "- E-mail: rcpsame@joinville.sc.gov.br",
+        "Documentos e procuração": "Use quaisquer documentos de procurador.",
+        "Prazo e retorno": "Prazo: a Fonte não menciona. O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "Nenhuma."
+      },
+      "contatos": {
+        "email": [
+          "rcpsame@joinville.sc.gov.br"
+        ],
+        "telefone": [],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Aceitam quaisquer documentos de procurador"
+    },
+    {
+      "nota": "hospitais/pompeia-caxias-do-sul.md",
+      "titulo": "POMPEIA CAXIAS DO SUL",
+      "hospital": "POMPEIA CAXIAS DO SUL",
+      "automacao": "Pedidos de Hospitais - POMPEIA CAXIAS DO SUL",
+      "fonte": "De \".sc\" para \"prontuario@pompeia.org.br\".\nUse documentos de advogado como procurador. Enviam prontuário pelo próprio e-mail.\nPara dúvidas pontuais, envie whatsapp para (54) 9669-8644",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail do \".sc\" para prontuario@pompeia.org.br.\n2. Use documentos de advogado como procurador.",
+        "Contato": "- E-mail: prontuario@pompeia.org.br\n- WhatsApp (só para dúvidas pontuais): (54) 9669-8644",
+        "Documentos e procuração": "Usar documentos de advogado como procurador. A Fonte não cita formulário nem anexo.",
+        "Prazo e retorno": "Prazo: a Fonte não menciona. O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "Para dúvidas pontuais, envie WhatsApp para (54) 9669-8644."
+      },
+      "contatos": {
+        "email": [
+          "prontuario@pompeia.org.br"
+        ],
+        "telefone": [
+          "(54) 9669-8644"
+        ],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Documentos de advogado como procurador"
+    },
+    {
+      "nota": "hospitais/sao-sebastiao-papanduva.md",
+      "titulo": "SÃO SEBASTIAO PAPANDUVA",
+      "hospital": "SÃO SEBASTIAO PAPANDUVA",
+      "automacao": "Pedidos de Hospitais - SÃO SEBASTIAO PAPANDUVA",
+      "fonte": "De \".sc\" para \"privacidade@ahsspapanduva.com.br\".\nAnexe o fomrulário https://docs.google.com/document/d/1fUjkDQ9EhF3nkZJ0TUl-EbgIhsgXihws/edit?usp=sharing&ouid=115417718947254022803&rtpof=true&sd=true à solicitação.\nPara dúvidas pontuais, ligue 47 36531305 ramal 216, ou, envie mensagem via whatsapp para 47 9251-5120.\nUse documentos de advogado como procurador. Enviam prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail da conta \".sc\" para privacidade@ahsspapanduva.com.br.\n2. Anexe o formulário (link em Contato) à solicitação.",
+        "Contato": "- E-mail: privacidade@ahsspapanduva.com.br\n- Telefone (dúvidas pontuais): 47 36531305, ramal 216\n- WhatsApp (dúvidas pontuais): 47 9251-5120\n- Formulário: https://docs.google.com/document/d/1fUjkDQ9EhF3nkZJ0TUl-EbgIhsgXihws/edit?usp=sharing&ouid=115417718947254022803&rtpof=true&sd=true",
+        "Documentos e procuração": "- Formulário do hospital (link em Contato), anexado à solicitação.\n- Use documentos de advogado como procurador.",
+        "Prazo e retorno": "- Prazo: A Fonte não menciona.\n- O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "- Telefone e WhatsApp são só para dúvidas pontuais."
+      },
+      "contatos": {
+        "email": [
+          "privacidade@ahsspapanduva.com.br"
+        ],
+        "telefone": [
+          "47 36531305",
+          "47 9251-5120"
+        ],
+        "site": [
+          "https://docs.google.com/document/d/1fUjkDQ9EhF3nkZJ0TUl-EbgIhsgXihws/edit?usp=sharing&ouid=115417718947254022803&rtpof=true&sd=true"
+        ]
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Documentos de advogado como procurador; anexar o formulário do hospital"
+    },
+    {
+      "nota": "hospitais/estadual-galileu-belem.md",
+      "titulo": "ESTADUAL GALILEU BELEM",
+      "hospital": "ESTADUAL GALILEU BELEM",
+      "automacao": "Pedidos de Hospitais - ESTADUAL GALILEU BELEM",
+      "fonte": "De \".norte\" para \"ascom.hmue@indsh.org.br\".\nUse quaisquer documentos como procurador. Enviam prontuário pelo próprio e-mail.\nPara dúvidas pontuais, ligue para (91) 3073-3700.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail de \".norte\" para ascom.hmue@indsh.org.br.\n2. Use quaisquer documentos como procurador.",
+        "Contato": "- E-mail: ascom.hmue@indsh.org.br\n- Telefone para dúvidas pontuais: (91) 3073-3700",
+        "Documentos e procuração": "- Pode usar quaisquer documentos como procurador.\n- Formulários ou anexos: A Fonte não menciona.",
+        "Prazo e retorno": "- Prazo: A Fonte não menciona.\n- O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "- A origem do envio está escrita na Fonte como \".norte\"."
+      },
+      "contatos": {
+        "email": [
+          "ascom.hmue@indsh.org.br"
+        ],
+        "telefone": [
+          "(91) 3073-3700"
+        ],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Pode usar quaisquer documentos como procurador"
+    },
+    {
+      "nota": "hospitais/sta-casa-bandeirantes.md",
+      "titulo": "STA CASA BANDEIRANTES",
+      "hospital": "STA CASA BANDEIRANTES",
+      "automacao": "Pedidos de Hospitais - STA CASA BANDEIRANTES",
+      "fonte": "Solicitação ocorre via whatsapp pelo número (43) 9833-0143.\nAdicione à solicitação as indicações:\nDocumentos solicitados: Prontuário, ficha/declaração de entrada (BAM), guia RAS (se houver), laudos de radiografia, evoluções, ambulatórios e descrição de cirurgia. Se possível, enviar em ordem cronológica.\nFavor não enviar exames laboratoriais, descrição da instrumentação cirúrgica e relatórios de custos operacionais.\n\nUse documentos de advogado como procurador. Enviam prontuário pela própria conversa/diretamente para a Taynara e ela reencaminha.",
+      "secoes": {
+        "Como pedir": "1. Faça a solicitação por WhatsApp no número (43) 9833-0143.\n2. Inclua na solicitação a lista de documentos desejados (veja Documentos e procuração).\n3. Se possível, peça os documentos em ordem cronológica.",
+        "Contato": "- WhatsApp: (43) 9833-0143",
+        "Documentos e procuração": "Documentos a solicitar: prontuário, ficha/declaração de entrada (BAM), guia RAS (se houver), laudos de radiografia, evoluções, ambulatórios e descrição de cirurgia.\n\nPedir para não enviar: exames laboratoriais, descrição da instrumentação cirúrgica e relatórios de custos operacionais.\n\nUsar os documentos de advogado como procurador.",
+        "Prazo e retorno": "Prazo: a Fonte não menciona. O prontuário vem pela própria conversa do WhatsApp, enviado diretamente para a Taynara, que reencaminha.",
+        "Observações": "- Se possível, pedir o envio em ordem cronológica."
+      },
+      "contatos": {
+        "email": [],
+        "telefone": [
+          "(43) 9833-0143"
+        ],
+        "site": []
+      },
+      "modo": [
+        "whatsapp"
+      ],
+      "procuracao": "Usar documentos de advogado como procurador"
+    },
+    {
+      "nota": "hospitais/sta-casa-paraguacu-paulista.md",
+      "titulo": "STA CASA PARAGUAÇU PAULISTA",
+      "hospital": "STA CASA PARAGUAÇU PAULISTA",
+      "automacao": "Pedidos de Hospitais - STA CASA PARAGUAÇU PAULISTA",
+      "fonte": "De \".sudeste (.sp)\" para \"same@santacasaparaguacupaulista.com.br\".\nUse quaisquer documentos como procurador. Enviam prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail para same@santacasaparaguacupaulista.com.br, a partir do remetente \".sudeste (.sp)\".",
+        "Contato": "- E-mail: same@santacasaparaguacupaulista.com.br",
+        "Documentos e procuração": "- Use quaisquer documentos como procurador.\n- A Fonte não cita formulário nem anexo.",
+        "Prazo e retorno": "- Prazo: A Fonte não menciona.\n- O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "- Remetente indicado na Fonte: \".sudeste (.sp)\"."
+      },
+      "contatos": {
+        "email": [
+          "same@santacasaparaguacupaulista.com.br"
+        ],
+        "telefone": [],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Aceitam quaisquer documentos como procurador."
+    },
+    {
+      "nota": "hospitais/ruth-cardoso-camboriu.md",
+      "titulo": "RUTH CARDOSO CAMBORIU",
+      "hospital": "RUTH CARDOSO CAMBORIU",
+      "automacao": "Pedidos de Hospitais - RUTH CARDOSO CAMBORIU",
+      "fonte": "De \".sc\" para \" samehrrc@vivario.org.br\".\nUse quaisquer documentos de procurador. Enviam o prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail de \".sc\" para samehrrc@vivario.org.br.\n2. Use os documentos de procurador.",
+        "Contato": "- E-mail: samehrrc@vivario.org.br",
+        "Documentos e procuração": "Aceitos quaisquer documentos de procurador. A Fonte não cita formulário.",
+        "Prazo e retorno": "Prazo: a Fonte não menciona. O hospital envia o prontuário pelo próprio e-mail da solicitação.",
+        "Observações": "A Fonte não traz mais detalhes."
+      },
+      "contatos": {
+        "email": [
+          "samehrrc@vivario.org.br"
+        ],
+        "telefone": [],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Quaisquer documentos de procurador"
+    },
+    {
+      "nota": "hospitais/sta-casa-cambe.md",
+      "titulo": "STA CASA CAMBE",
+      "hospital": "STA CASA CAMBE",
+      "automacao": "Pedidos de Hospitais - STA CASA CAMBE",
+      "fonte": "De \".parana\" para \"laudos@santacasadecambe.com.br\".\nUse documentos de advogado como procurador. Enviam o prontuário pelo próprio e-mail.\nPrazo de 30 dias úteis. Para dúvidas pontuais, ligue (43) 3174 - 3100",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail da conta \".parana\" para laudos@santacasadecambe.com.br.\n2. Use os documentos de advogado como procurador.",
+        "Contato": "- E-mail: laudos@santacasadecambe.com.br\n- Telefone: (43) 3174 - 3100",
+        "Documentos e procuração": "Usar os documentos de advogado como procurador. A Fonte não cita formulário nem anexo.",
+        "Prazo e retorno": "Prazo de 30 dias úteis. O prontuário é enviado pelo próprio e-mail.",
+        "Observações": "- Ligar para (43) 3174 - 3100 apenas para dúvidas pontuais."
+      },
+      "contatos": {
+        "email": [
+          "laudos@santacasadecambe.com.br"
+        ],
+        "telefone": [
+          "(43) 3174 - 3100"
+        ],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Usar documentos de advogado como procurador"
+    },
+    {
+      "nota": "hospitais/hospital-nossa-senhora-da-conceicao-de-urussanga.md",
+      "titulo": "HOSPITAL NOSSA SENHORA DA CONCEIÇAO DE URUSSANGA",
+      "hospital": "HOSPITAL NOSSA SENHORA DA CONCEIÇAO DE URUSSANGA",
+      "automacao": "Pedidos de Hospitais - HOSPITAL NOSSA SENHORA DA CONCEIÇAO DE URUSSANGA",
+      "fonte": "Solicitação ocorre via whatsapp pelo número (48) 9950-0644\nApenas o paciente pode retirar, antes de solicitar envie a mensagem:\nBoa tarde, [[name]].\nEntrei em contato com o hospital para solicitar seu prontuário e eles informaram que, apesar de a solicitação poder ser feita online, a retirada ocorre apenas presencialmente. \nInfelizmente, ainda não temos filial em Urussangá. O senhor poderia, por gentileza, realizar a retirada?\nAvisaremos quando o prontuário estiver disponível. Será necessário apenas que leve seu documento de identificação pessoal (CIN e/ou CNH) e que pague uma taxa diretamente ao hospital (reembolsaremos via Pix assim que enviar o comprovante de pagamento). O prontuário médico é um elemento fundamental para o sucesso de seu caso.\nPosso concluir a solicitação?\".\nUse quaisquer documentos de procurador.",
+      "secoes": {
+        "Como pedir": "1. Antes de solicitar, envie ao cliente a mensagem explicando que a solicitação pode ser online, mas a retirada é só presencial, e que não temos filial em Urussangá.\n2. Na mensagem, pergunte se pode concluir a solicitação.\n3. Solicite o prontuário por WhatsApp no número (48) 9950-0644.\n4. Avise o cliente quando o prontuário estiver disponível.",
+        "Contato": "- WhatsApp do hospital: (48) 9950-0644",
+        "Documentos e procuração": "Use quaisquer documentos de procurador na solicitação. Na retirada, o cliente leva documento de identificação pessoal (CIN e/ou CNH).",
+        "Prazo e retorno": "A Fonte não menciona prazo. Apenas o paciente pode retirar o prontuário, presencialmente.",
+        "Observações": "- O cliente paga uma taxa diretamente ao hospital; o escritório reembolsa via Pix após o comprovante.\n- A mensagem ao cliente destaca que o prontuário é fundamental para o sucesso do caso."
+      },
+      "contatos": {
+        "email": [],
+        "telefone": [
+          "(48) 9950-0644"
+        ],
+        "site": []
+      },
+      "modo": [
+        "whatsapp",
+        "presencial"
+      ],
+      "procuracao": "Quaisquer documentos de procurador"
+    },
+    {
+      "nota": "hospitais/sta-casa-ponta-grossa.md",
+      "titulo": "STA CASA PONTA GROSSA",
+      "hospital": "STA CASA PONTA GROSSA",
+      "automacao": "Pedidos de Hospitais - STA CASA PONTA GROSSA",
+      "fonte": "De \".pontagrossa\" para \"prontuario.same@santacasapg.com\".\nRetornarão com um formulário para assinar. O devolva respondendo ao e-mail.\nUse documentos de advogado como procurador. Enviam o prontuário pelo próprio e-mail.",
+      "secoes": {
+        "Como pedir": "1. Envie e-mail para prontuario.same@santacasapg.com, a partir do remetente \".pontagrossa\".\n2. Aguarde o hospital retornar com um formulário para assinar.\n3. Assine o formulário e devolva respondendo ao mesmo e-mail.",
+        "Contato": "- E-mail: prontuario.same@santacasapg.com",
+        "Documentos e procuração": "- Use documentos de advogado como procurador.\n- O hospital envia um formulário para assinar (não há anexo prévio citado na Fonte).",
+        "Prazo e retorno": "- Prazo: A Fonte não menciona.\n- O hospital envia o prontuário pelo próprio e-mail.",
+        "Observações": "- Remetente indicado na Fonte: \".pontagrossa\"."
+      },
+      "contatos": {
+        "email": [
+          "prontuario.same@santacasapg.com"
+        ],
+        "telefone": [],
+        "site": []
+      },
+      "modo": [
+        "email"
+      ],
+      "procuracao": "Usar documentos de advogado como procurador; o hospital devolve um formulário para assinar."
+    }
+  ]
+}
