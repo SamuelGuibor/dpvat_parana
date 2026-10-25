@@ -1,4 +1,4 @@
-// Interruptor por ferramenta de escrita (L3) da IA de operação.
+// Interruptor por ferramenta de escrita (L3) e de envio (L4) da IA de operação.
 //
 // Uma chave JSON em app_settings ({"mover_card": true, ...}); ausente ou
 // false = desligada (padrão). Ferramenta desligada some do catálogo e recusa
@@ -38,7 +38,7 @@ export async function getOpSwitches(): Promise<Record<string, boolean>> {
   return value;
 }
 
-/** L1/L2 não têm interruptor; L3 só roda ligada. */
+/** L1/L2 não têm interruptor; L3 e L4 só rodam ligadas. */
 export function isToolEnabled(switches: Record<string, boolean>, tool: { name: string; level: number }): boolean {
   return tool.level < 3 || switches[tool.name] === true;
 }

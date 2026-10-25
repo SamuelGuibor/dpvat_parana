@@ -136,6 +136,9 @@ const SYSTEM_SOURCE_LABELS: Record<string, string> = {
   // Provocação única do dia seguinte ao cliente cadastrado com pedido nosso
   // em aberto (passo 2 do nudge, 11/10/2026).
   client_followup: "lembrete do dia seguinte sobre o pedido em aberto",
+  // Mensagem que um atendente aprovou e a IA de operação (Claude Code) mandou
+  // pelo sendSystemWhatsApp (Etapa 5, 25/10/2026): conta no mesmo cooldown.
+  op: "mensagem da equipe enviada pela IA de operação",
 };
 
 function systemSourceLabel(source: string): string {

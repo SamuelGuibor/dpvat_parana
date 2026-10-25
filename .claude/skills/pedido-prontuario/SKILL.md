@@ -16,10 +16,10 @@ Entrada: `$ARGUMENTS` = card (número, CPF ou nome).
    - `gerado: true` → link de prévia (`previewUrl`, até `linkValidoAte`), campos em branco, `rascunhoVenceEm`.
 3. **Como enviar** (do `consultar_hospital`, sem inventar): canal (e-mail/presencial/portal), contato copiado da ferramenta, se pede procuração/formulário próprio, prazo. Nota não validada/desatualizada → o aviso da `/hospital`. Termine com a **Fonte**.
 4. Pergunte se quer anexar o pedido no card. Sim → `anexar_rascunho` (prévia → "Confirma?" → `confirmar: true` + `previa_hash`). A pasta padrão do pedido é a que `pastaSugerida` indicar; pasta diferente só se o operador pedir.
-5. **Próximos passos sugeridos**: "enviar ao hospital pelo canal acima (a IA ainda não envia — Etapa 5)", "precisa de procuração? → `/procuracao <card>`", "mover para a coluna de protocolo quando enviar (`mover_card`)".
+5. **Próximos passos sugeridos**: "mandar ao hospital por e-mail com aprovação → `/prontuario <card>`" (só se o modo for e-mail; senão, como o operador faz pelo canal acima), "precisa de procuração? → `/procuracao <card>`", "mover para a coluna de protocolo quando enviar (`mover_card`)".
 
 ## Regras
-- A IA **não envia** o pedido (nem e-mail, nem WhatsApp) nesta etapa: diga como o operador envia.
+- Esta skill **não envia** o pedido: o envio por e-mail com aprovação é a `/prontuario` (Regras de aprovação de `.claude/skills/cliente/SKILL.md`).
 - Contato só copiado de `consultar_hospital`; nunca complete ou deduza e-mail/telefone.
 - Uma geração por pedido (conversor de PDF é fila única). Nada em lote.
 - Link de prévia tem dado pessoal: só para o operador.

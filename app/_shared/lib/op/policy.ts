@@ -6,13 +6,15 @@
 //   (só com aprovação digitada no app) · 5 não existe ferramenta.
 // Etapa 3 libera L3 (escrita interna reversível, sempre com prévia + "sim"
 // e interruptor por ferramenta). Etapa 4 usa L2 (rascunho de documento no S3,
-// sem tocar o card). L4 só na Etapa 5, com aprovação no app.
+// sem tocar o card). Etapa 5 libera L4 (e-mail/WhatsApp para fora): preparar
+// devolve um código; o envio só sai com "aprovo <código>" digitado pelo
+// operador (op/approvals.ts) e o conteúdo amarrado ao canonicalHash.
 
 import { createHash } from "crypto";
 import type { PermissionKey, PermissionMap } from "../permissions";
 
 export type OpLevel = 1 | 2 | 3 | 4;
-export const OP_MAX_LEVEL: OpLevel = 3;
+export const OP_MAX_LEVEL: OpLevel = 4;
 
 export type OpDenyCode = "nivel_bloqueado" | "sem_permissao" | "somente_leitura" | "ferramenta_desligada";
 
@@ -54,6 +56,10 @@ export function canRun(
       return { ok: false, code: "sem_permissao", message: "Você não tem permissão para a IA alterar o CRM." };
     }
   }
+  // L4 (sai do escritório): preparar e executar exigem quem pode aprovar envio.
+  if (level >= 4 && !perms.op_approve) {
+    return { ok: false, code: "sem_permissao", message: "Você não tem permissão para aprovar envios da IA." };
+  }
   return { ok: true };
 }
 
@@ -68,8 +74,8 @@ export function canonicalJson(value: unknown): string {
 }
 
 /**
- * Hash SHA-256 de {tool, args} canônico. Na Etapa 5 a aprovação L4 guarda este
- * hash: argumento alterado depois do "aprovo" = hash diferente = recusa.
+ * Hash SHA-256 de {tool, args} canônico. A aprovação L4 (op_approvals) guarda
+ * este hash: conteúdo alterado depois do "aprovo" = hash diferente = recusa.
  */
 export function canonicalHash(tool: string, args: unknown): string {
   return createHash("sha256").update(canonicalJson({ tool, args })).digest("hex");

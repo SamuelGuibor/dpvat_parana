@@ -73,3 +73,29 @@ describe("guard-bash: git", () => {
     expect(check("git push origin main")).toBeNull();
   });
 });
+
+describe("guard-bash: API de operação só pelo MCP (Etapa 5)", () => {
+  it("bloqueia HTTP direto em /api/op (forjar o prompt de aprovação)", () => {
+    expect(check('curl -X POST https://segurosparana.com.br/api/op/events -d "{}"')).toMatch(/API de operação/);
+    expect(check("Invoke-RestMethod -Uri http://localhost:3000/api/op/tools/executar_aprovado")).toMatch(/API de operação/);
+    expect(check('node -e "fetch(\'https://x/api/op/events\')"')).toMatch(/API de operação/);
+  });
+  it("token do app só no MCP/hooks: comando ou arquivo executado que o cita é barrado", () => {
+    expect(check("cat > x.mjs <<'EOF'\nconst t = process.env.CRM_OP_TOKEN\nEOF")).toMatch(/API de operação/);
+    expect(check('python -c "import os; print(os.environ[\'CRM_OP_TOKEN\'])"')).toMatch(/API de operação|segredo/);
+    const forja = { "scripts/x.mjs": 'await fetch(base + "/api/op/events", { headers: { Authorization: process.env.CRM_OP_TOKEN } })' };
+    expect(check("node scripts/x.mjs", forja)).toMatch(/usa o token ou a API/);
+    expect(check("node --no-warnings scripts/x.mjs", forja)).toMatch(/usa o token ou a API/);
+    expect(check("python tmp/forja.py", { "tmp/forja.py": "os.environ['CRM_OP_TOKEN']" })).toMatch(/usa o token ou a API/);
+    // o MCP e os hooks são o caminho legítimo
+    expect(check("node tools/crm-mcp/index.mjs", { "tools/crm-mcp/index.mjs": "process.env.CRM_OP_TOKEN" })).toBeNull();
+    expect(check("node .claude/hooks/op-prompt.mjs", { ".claude/hooks/op-prompt.mjs": "/api/op/events" })).toBeNull();
+    expect(check('grep -rn "CRM_OP_TOKEN" tools')).toBeNull();
+    expect(check("node -r dotenv/config scripts/op-testar-ferramenta.mjs obter_card '{}'", { "scripts/op-testar-ferramenta.mjs": "getTool(nome)" })).toBeNull();
+  });
+
+  it("buscar a rota no código continua livre", () => {
+    expect(check('grep -rn "api/op/events" app')).toBeNull();
+    expect(check("curl https://segurosparana.com.br/api/health")).toBeNull();
+  });
+});

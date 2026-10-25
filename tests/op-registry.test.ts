@@ -21,14 +21,15 @@ const ETAPA_3 = ["mover_card", "adicionar_tag", "remover_tag", "comentar_card", 
 const ETAPA_4_L1 = ["listar_modelos"];
 const ETAPA_4_L2 = ["preparar_procuracao", "preparar_pedido_prontuario", "preparar_contrato"];
 const ETAPA_4_L3 = ["anexar_rascunho"];
+const ETAPA_5_L4 = ["preparar_email", "preparar_whatsapp", "executar_aprovado"];
 const L3 = [...ETAPA_3, ...ETAPA_4_L3];
 
 describe("registry da operação por IA", () => {
-  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3 + documentos da Etapa 4, nomes únicos", () => {
+  it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3 + documentos da Etapa 4 + envio aprovado da Etapa 5, nomes únicos", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual(
-      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3].sort(),
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4].sort(),
     );
   });
 
@@ -39,11 +40,15 @@ describe("registry da operação por IA", () => {
     expect(t.schema.safeParse({ card: "2342" }).success).toBe(true);
   });
 
-  it("L3 só nas listas de escrita (op_write/archive_cards); L2 só nas preparar_*; o resto é L1", () => {
+  it("L4 só nas de envio aprovado; L3 só nas listas de escrita (op_write/archive_cards); L2 só nas preparar_* de documento; o resto é L1", () => {
     for (const t of OP_TOOLS) {
       expect(PERMISSION_KEYS).toContain(t.permission);
       expect(t.description.length).toBeGreaterThan(30);
-      if (L3.includes(t.name)) {
+      if (ETAPA_5_L4.includes(t.name)) {
+        expect(t.level).toBe(4);
+        expect(["op_approve", "view_whatsapp"]).toContain(t.permission);
+        expect(t.description).toMatch(/^ENVIO\./);
+      } else if (L3.includes(t.name)) {
         expect(t.level).toBe(3);
         expect(["op_write", "archive_cards"]).toContain(t.permission);
         expect(t.description).toMatch(/^ESCRITA\./);
@@ -59,8 +64,26 @@ describe("registry da operação por IA", () => {
     expect(getTool("arquivar_card")?.permission).toBe("archive_cards");
   });
 
-  it("nenhuma ferramenta de envio externo, lote ou execução de aprovado", () => {
-    for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(enviar|executar|criar_card|mudar_etapa)/);
+  it("nenhuma ferramenta de envio direto, lote ou mudança de etapa; executar só o aprovado", () => {
+    for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(enviar|criar_card|mudar_etapa)/);
+    expect(OP_TOOLS.filter((t) => t.name.startsWith("executar")).map((t) => t.name)).toEqual(["executar_aprovado"]);
+    expect(getTool("preparar_whatsapp")?.permission).toBe("view_whatsapp");
+  });
+
+  it("envio aprovado: schemas", () => {
+    const email = getTool("preparar_email")!.schema;
+    expect(email.safeParse({ card: "2342", assunto: "a", corpo: "b" }).success).toBe(true);
+    expect(email.safeParse({ card: "2342", assunto: "a" }).success).toBe(false);
+    expect(email.safeParse({ card: "2342", assunto: "a", corpo: "b", anexos: ["1", "2", "3", "4", "5", "6"] }).success).toBe(false);
+    const wa = getTool("preparar_whatsapp")!.schema;
+    expect(wa.safeParse({ card: "2342", texto: "oi" }).success).toBe(true);
+    expect(wa.safeParse({ card: "2342", template: "aviso", variaveis: ["Ana"] }).success).toBe(true);
+    expect(wa.safeParse({ card: "2342" }).success).toBe(false);
+    expect(wa.safeParse({ card: "2342", texto: "oi", template: "aviso" }).success).toBe(false);
+    const ex = getTool("executar_aprovado")!.schema;
+    expect(ex.safeParse({ approvalId: "apr1", hash: "a".repeat(64) }).success).toBe(true);
+    expect(ex.safeParse({ approvalId: "apr1", hash: "xyz" }).success).toBe(false);
+    expect(ex.safeParse({ approvalId: "apr1" }).success).toBe(false);
   });
 
   it("L3 sem confirmar = prévia (confirmar padrão false); nenhuma aceita lista de cards", () => {

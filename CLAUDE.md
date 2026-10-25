@@ -30,7 +30,7 @@ npm run dev             # preview "dev" do .claude/launch.json
 | Menções/tarefas por setor, ponto, tickets dev, eventos, presença, chat da equipe | `docs/ai/workspace-equipe.md` | — |
 | Dashboards, funil do bot, fluxo do kanban, Canto da IA, custos, retenção | `docs/ai/analytics-custos.md` | — |
 | Site público, área do cliente, BotConversa, hospitais | `docs/ai/site-publico-cliente.md` | — |
-| Schema Prisma (61 models por domínio), campos pegadinha, migrations | `docs/ai/data-model.md` | `prisma/` |
+| Schema Prisma (62 models por domínio), campos pegadinha, migrations | `docs/ai/data-model.md` | `prisma/` |
 | Vercel/crons, Railway, CI, testes, scripts, env vars, serviços externos, convenções de rota | `docs/ai/infra-integracoes.md` | `app/api/` |
 | Operação por IA: Claude Code → MCP `crm-op` → `/api/op/*`, token do operador, tabelas `op_*`, skills `/cliente` `/processo` `/parados` `/pendencias` | `docs/ai/operacao-ia.md` | — |
 | Arquivos gigantes: sumário por seção com faixas de linhas | `docs/ai/hotspots.md` | — |

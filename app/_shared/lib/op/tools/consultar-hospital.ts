@@ -24,7 +24,7 @@ const schema = z
 export const consultarHospital = defineTool({
   name: "consultar_hospital",
   description:
-    "Como pedir o prontuário num hospital: texto vivo da automação do CRM (DISTRIBUIÇÃO DE SOLICITAÇÕES), nota publicada do vault da operação (se houver) com aviso de desatualizada, GHOST do catálogo e quantos cards ativos têm esse hospital. Aceita nome aproximado ou nº do card.",
+    "Como pedir o prontuário num hospital: texto vivo da automação do CRM (DISTRIBUIÇÃO DE SOLICITAÇÕES), nota publicada do vault da operação (se houver) com aviso de desatualizada, GHOST do catálogo com o contato cadastrado (`cadastro`: e-mail, telefone, modo) e quantos cards ativos têm esse hospital. Aceita nome aproximado ou nº do card.",
   level: 1,
   permission: "op_use",
   schema,
@@ -59,7 +59,10 @@ export const consultarHospital = defineTool({
     const g = grupos.get(key)!;
 
     const [ghosts, cards, index] = await Promise.all([
-      db.user.findMany({ where: { role: "GHOST" }, select: { id: true, name: true } }),
+      db.user.findMany({
+        where: { role: "GHOST" },
+        select: { id: true, name: true, hospital_email: true, hospital_telefone: true, hospital_modo: true, hospital_obs: true },
+      }),
       activeCardsByHospital(),
       loadVaultIndex(),
     ]);
@@ -97,6 +100,12 @@ export const consultarHospital = defineTool({
           anexos: automationAttachments(a),
         })),
         ghost: ghost ? { id: ghost.id, nome: ghost.name } : null,
+        // Etapa 5: contato cadastrado no GHOST (só preenchido a partir de nota
+        // publicada). null = ainda não cadastrado; use a nota/automação.
+        cadastro:
+          ghost && (ghost.hospital_email || ghost.hospital_telefone || ghost.hospital_modo || ghost.hospital_obs)
+            ? { email: ghost.hospital_email, telefone: ghost.hospital_telefone, modo: ghost.hospital_modo, obs: ghost.hospital_obs }
+            : null,
         cardsAtivos: cards.get(key)?.n ?? 0,
       },
       summary: `${g.nome}: ${nota ? (nota.desatualizado ? "nota desatualizada" : "nota publicada") : "sem nota"}, ${g.autos.length} automação(ões)`,

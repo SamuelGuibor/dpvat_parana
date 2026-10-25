@@ -67,7 +67,7 @@
 3. Faz um upsert manual em `Botconversa` pelo `telefone`: uma linha por telefone; `evento` só é regravado quando muda (e só então `updatedAt` anda).
 4. Quem lê: `getStrategicDashboardData` (só `evento='contratado'` por `createdAt` no período, direto no Prisma), as rotas `/api/botconversa/{counts,monthly,get-kanban}` (`fetchEventsCount`, `fetchEventsByMonth`, `fetchBotconversaAll`), `getBotFunnelAndLeads` em `bot-funnel.ts` (conta `evento='contratado'` por `createdAt`, a entrada do lead) e `MiniKanban` (recebe `data` do `StrategicDashboard`, recarrega por `/api/botconversa/get-kanban` e usa `PUT`/`DELETE` em `changes/[id]`).
 
-**D) Recuperação de senha** (única consumidora de `aws-messaging.ts`): `app/_actions/auth/password-reset.ts` manda SMS pela ordem SNS → Twilio → WhatsApp `sendText`, e e-mail só por SES. Detalhes em `docs/ai/auth-permissoes.md`.
+**D) Recuperação de senha** (única consumidora do SMS e do `sendEmailAws`; o `sendEmailRawAws` é da IA de operação): `app/_actions/auth/password-reset.ts` manda SMS pela ordem SNS → Twilio → WhatsApp `sendText`, e e-mail só por SES. Detalhes em `docs/ai/auth-permissoes.md`.
 
 ## Dados
 - **`User`**: é ao mesmo tempo o card do cliente e a conta da equipe. Campos que importam aqui:

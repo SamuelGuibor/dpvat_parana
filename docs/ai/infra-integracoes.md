@@ -54,7 +54,7 @@
 | Railway: docx-converter | `app/api/roteiro/route.ts`, `app/api/roteiro/download-docx/route.ts`, `app/api/procuracao/route.ts`, `app/api/doc-ia/convert/route.ts`, `signature/pdf.ts` | `DOCX_CONVERTER_URL`, `CONVERTER_API_KEY` (header `x-api-key`) |
 | Railway: relay SSE | `chat-relay.ts` · consumo em `railwayCosts` | `CHAT_RELAY_URL`, `CHAT_RELAY_SECRET`, `RAILWAY_API_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_PRICE_*` |
 | AWS S3 | cerca de 30 `new S3Client` espalhados, **sem cliente central** · presign em `app/_actions/documents/upload-s3.ts` (`getPresignedUrls`, `getRoteiroUploadUrls`) e `app/api/instructions/_s3.ts` | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET_NAME` |
-| AWS SNS / SES | `app/_shared/lib/aws-messaging.ts` (`sendSmsAws`, `sendEmailAws`) | `SNS_SMS_SENDER_ID`, `SES_FROM_EMAIL`, `SES_REGION` |
+| AWS SNS / SES | `app/_shared/lib/aws-messaging.ts` (`sendSmsAws`, `sendEmailAws`, `sendEmailRawAws`) | `SNS_SMS_SENDER_ID`, `SES_FROM_EMAIL`, `SES_REGION` |
 | AWS Cost Explorer | `cost-providers.ts` `awsCosts` | mesmas `AWS_*` |
 | Meta WhatsApp Cloud API | `whatsapp/client.ts`, `app/_actions/whatsapp/numbers.ts`, webhook | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_API_VERSION`, `WHATSAPP_CRED_KEY`, `WHATSAPP_STATUS_TEMPLATE`, `WHATSAPP_SYSTEM_COOLDOWN_HOURS`, `WHATSAPP_TEST_NUMBERS` |
 | Meta Conversions API | `app/_shared/lib/meta-conversions.ts` (`sendMetaCrmEvent`, `reportLeadStageToMeta`) | `META_DATASET_ID`, `META_CONVERSIONS_TOKEN`, `META_TEST_EVENT_CODE` |

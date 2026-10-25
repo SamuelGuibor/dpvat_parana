@@ -95,6 +95,15 @@ model User {
   // Jornada esperada no controle de ponto: { dailyMinutes: 480, days: [1,2,3,4,5] }
   workSchedule        Json?
   sectorId            String?
+  // Só nos GHOST (catálogo de hospitais, Etapa 5 da IA de operação): contato
+  // para o pedido de prontuário. Preenchido SÓ por nota publicada do vault
+  // (scripts/vault-hospitais-para-ghost.mjs --apply). Vazio nos cards e na equipe.
+  // hospital_modo: modos do vault ("email" | "whatsapp" | "presencial" | "site"),
+  // separados por vírgula quando mais de um (app/_shared/utils/hospital-contact.ts).
+  hospital_email      String?
+  hospital_telefone   String?
+  hospital_modo       String?
+  hospital_obs        String?
   sector              Sector?         @relation("UserSector", fields: [sectorId], references: [id], onDelete: SetNull)
   accounts            Account[]
   commentsAsAuthor    Comment[]       @relation("CommentAuthor")
@@ -1560,4 +1569,43 @@ model OpToolCall {
   @@index([tool, createdAt])
   @@index([sessionId])
   @@map("op_tool_calls")
+}
+
+// Aprovação L4 da IA de operação (Etapa 5): o que a IA PREPAROU para sair do
+// escritório (e-mail ao hospital, WhatsApp ao cliente) e só sai depois de o
+// operador digitar "aprovo <code>" no Claude Code (op_requests da mesma sessão,
+// depois de createdAt). Lib: app/_shared/lib/op/approvals.ts.
+model OpApproval {
+  id                String    @id @default(cuid())
+  // User da equipe que preparou (sem FK, como op_tool_calls).
+  operatorId        String
+  // OpSession.id da conversa do Claude Code que preparou (sem FK).
+  sessionId         String
+  // Ferramenta que preparou: "preparar_email" | "preparar_whatsapp".
+  tool              String
+  // "email" | "whatsapp".
+  canal             String
+  // Conteúdo final, exatamente o que vai sair (destino, assunto, corpo, anexos
+  // com ETag / texto ou template + variáveis, contato e linha).
+  args              Json
+  // canonicalHash(tool, args) — executar_aprovado exige o mesmo hash.
+  hash              String
+  // Código curto mostrado ao operador ("aprovo K7QX"); derivado do id.
+  code              String
+  // "pendente" | "enviando" | "executada" | "falhou" | "expirada" | "cancelada".
+  // "enviando" preso = resultado incerto: nunca reenvia (prepare de novo).
+  status            String    @default("pendente")
+  cardId            String?
+  expiresAt         DateTime
+  // op_requests.id do prompt "aprovo <code>" que liberou o envio.
+  approvedRequestId String?
+  executedAt        DateTime?
+  // { sent, id?, error?, via? } do envio.
+  result            Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([operatorId, createdAt])
+  @@index([status, expiresAt])
+  @@map("op_approvals")
 }

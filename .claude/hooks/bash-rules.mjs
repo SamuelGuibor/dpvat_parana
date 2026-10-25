@@ -31,6 +31,22 @@ const SCRIPT_RUN = /\b(?:node|tsx|bun)\s+(?:(?:-r|--require|--import|--loader)\s
 const ALLOWED_SCRIPT_DIRS = /^(\.\/)?(scripts|tools[\\/]crm-mcp|\.claude[\\/]hooks)[\\/]/;
 const FILE_DB_IMPORT = /@prisma\/client|PrismaClient|_shared\/lib\/prisma|from\s+["']pg["']|require\(["']pg["']\)|@neondatabase/;
 
+// Etapa 5 (envio L4): só o MCP e os hooks falam com /api/op usando o token do
+// operador. Um prompt forjado em /api/op/events seria um "aprovo <código>" que
+// o operador não digitou. Barreira de texto (não de intenção): a outra trava é
+// o pedido de permissão do Claude Code para Bash e para executar_aprovado.
+const OP_CLIENT_DIRS = /^(\.\/)?(tools[\\/]crm-mcp|\.claude[\\/]hooks)[\\/]/;
+// Interpretador rodando arquivo direto (npx/vitest ficam fora: teste é código revisado).
+// Captura o trecho do comando depois do interpretador, até ; & | ou fim.
+const INTERPRETER_RUN = /(?:^|[\s;&|(])(?:node|tsx|bun|deno|python3?|py|pwsh|powershell(?:\.exe)?|bash|sh)((?:[ \t]+[^\s;&|]+)+)/gi;
+const SCRIPT_FILE = /["']?([^\s"'<>|;&]+\.(?:m?[jt]s|cjs|py|ps1|sh))(?=$|[\s"'<>|;&)])/gi;
+const interpretedFiles = (c) => [...c.matchAll(INTERPRETER_RUN)].flatMap((m) => [...m[1].matchAll(SCRIPT_FILE)].map((f) => f[1]));
+// Usa o token, ou fala com /api/op por rede (doc/teste que só CITA a rota passa).
+const NET_CALL = /\bfetch\s*\(|\bhttps?\.request\b|\baxios\b|\burllib\b|\brequests\.(post|get)\b|\bInvoke-(WebRequest|RestMethod)\b|\bcurl\b|\bwget\b/i;
+const usesOpApi = (src) => /CRM_OP_TOKEN/.test(src) || (/\/api\/op\b/.test(src) && NET_CALL.test(src));
+const OP_API =
+  "chamada direta à API de operação (/api/op) ou ao token do app. Use as ferramentas crm-op (MCP); prompt e aprovação só pelo operador.";
+
 const BANCO = "Use a skill /migration (migrate diff → db execute → migrate resolve) ou peça ao usuário para rodar manualmente se for mesmo intencional.";
 const SEGREDO = "O .env aponta para PRODUÇÃO: a IA não lê valores de segredo. Confira o .env.example (só nomes) ou pergunte ao usuário.";
 const ESCRITA =
@@ -67,6 +83,23 @@ export function checkCommand(cmd, io = {}) {
     return `prisma db execute fora de uma migration em prisma/migrations/. ${BANCO}`;
   if (INLINE_EVAL.test(c) && SECRET_NAMES.test(c)) return `código inline (node -e) lendo variável de segredo. ${SEGREDO}`;
   if (INLINE_EVAL.test(c) && DB_CODE.test(c)) return `código inline (node -e) mexendo no banco. ${ESCRITA}`;
+
+  // 4. API de operação só pelo MCP: um prompt forjado em /api/op/events seria
+  // um "aprovo <código>" que o operador não digitou (Etapa 5, envio L4).
+  // O token do operador só é usado pelo MCP e pelos hooks: comando que o cita
+  // (heredoc gravando um script, python -c, PowerShell) fica barrado; busca
+  // pelo nome no código (grep/rg/git) continua livre.
+  if (/\b(curl|wget|Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b|\bfetch\s*\(/i.test(c) && /\/api\/op\//i.test(c))
+    return OP_API;
+  if (/\bCRM_OP_TOKEN\b/.test(c) && !/^\s*(grep|rg|git)\b/.test(c)) return OP_API;
+
+  // Arquivo executado (node/python/PowerShell/sh) que usa o token ou a API de
+  // operação — fora do MCP e dos hooks — é o mesmo forjamento em dois passos.
+  for (const file of interpretedFiles(c)) {
+    if (OP_CLIENT_DIRS.test(file)) continue;
+    const src = io.readFile?.(file);
+    if (src && usesOpApi(src)) return `${file} usa o token ou a API de operação. ${OP_API}`;
+  }
 
   for (const m of c.matchAll(SCRIPT_RUN)) {
     const file = m[1];

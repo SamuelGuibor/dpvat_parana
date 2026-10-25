@@ -26,8 +26,12 @@ export interface OpTool<S extends z.ZodType = z.ZodType> {
   level: OpLevel;
   permission: PermissionKey;
   schema: S;
-  /** `trace` liga a escrita (metadata.op do Log) à linha de op_tool_calls. */
-  run(ctx: { op: OperatorContext; trace: OpTrace }, args: z.output<S>): Promise<OpToolResult>;
+  /**
+   * `trace` liga a escrita (metadata.op do Log) à linha de op_tool_calls.
+   * `previewOnly` (só o scripts/op-testar-ferramenta.mjs): `preparar_*` de L4
+   * monta a prévia sem gravar a aprovação.
+   */
+  run(ctx: { op: OperatorContext; trace: OpTrace; previewOnly?: boolean }, args: z.output<S>): Promise<OpToolResult>;
 }
 
 /** Erro esperado de ferramenta (card não achado, coluna ambígua…): vira {ok:false, code, message}. */

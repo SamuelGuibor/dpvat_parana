@@ -8,7 +8,7 @@ import { getOpSwitches, invalidateOpSwitches, setOpSwitch } from "@/app/_shared/
 import { OP_TOOLS } from "@/app/_shared/lib/op/tools";
 
 // Seção "IA de operação" do Espaço de Trabalho (embrião do painel da Etapa 7):
-// liga/desliga cada ferramenta de escrita (L3) da IA. Ver: manage_team ou
+// liga/desliga cada ferramenta de escrita (L3) e de envio (L4) da IA. Ver: manage_team ou
 // manager_dashboard; alterar: só manage_team.
 
 export interface OpSwitchRow {
@@ -29,7 +29,7 @@ export async function getOpSwitchPanel(): Promise<{ rows: OpSwitchRow[]; canEdit
     throw new AccessError("Você não tem permissão para ver esta seção.");
   }
   invalidateOpSwitches();
-  const l3 = OP_TOOLS.filter((t) => t.level === 3);
+  const l3 = OP_TOOLS.filter((t) => t.level >= 3);
   const names = l3.map((t) => t.name);
   const since = new Date(Date.now() - 7 * 86_400_000);
   const [switches, calls, changes] = await Promise.all([
@@ -48,7 +48,7 @@ export async function getOpSwitchPanel(): Promise<{ rows: OpSwitchRow[]; canEdit
     const mine = calls.filter((c) => c.tool === t.name);
     return {
       name: t.name,
-      description: t.description.replace(/^ESCRITA\.\s*/, "").split(". ")[0],
+      description: t.description.replace(/^(ESCRITA|ENVIO)\.\s*/, "").split(". ")[0],
       permission: t.permission,
       on: switches[t.name] === true,
       lastChange: last
@@ -63,7 +63,7 @@ export async function getOpSwitchPanel(): Promise<{ rows: OpSwitchRow[]; canEdit
 
 export async function setOpSwitchAction(name: string, on: boolean): Promise<{ ok: true }> {
   const ctx = await requirePermission("manage_team");
-  if (!OP_TOOLS.some((t) => t.level === 3 && t.name === name)) throw new Error("Ferramenta desconhecida.");
+  if (!OP_TOOLS.some((t) => t.level >= 3 && t.name === name)) throw new Error("Ferramenta desconhecida.");
   await setOpSwitch(name, on, { id: ctx.userId, name: ctx.name ?? "Usuário" });
   return { ok: true };
 }

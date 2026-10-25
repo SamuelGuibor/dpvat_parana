@@ -19,6 +19,11 @@ const LABELS: Record<string, string> = {
   notificar_pessoa: 'Avisar pessoa / tarefa de setor',
   arquivar_card: 'Arquivar / desarquivar',
   anexar_rascunho: 'Anexar documento preparado (procuração, pedido, KIT)',
+  // Etapa 5 (envio para fora): o e-mail/WhatsApp só sai se o canal E o
+  // "Enviar o aprovado" estiverem ligados e o operador digitar "aprovo <código>".
+  preparar_email: 'E-mail para fora (hospital) — canal',
+  preparar_whatsapp: 'WhatsApp ao cliente — canal',
+  executar_aprovado: 'Enviar o que o operador aprovou (e-mail/WhatsApp)',
 };
 
 export function OpSwitchesPanel() {
@@ -64,6 +69,10 @@ export function OpSwitchesPanel() {
             Ações que a IA pode fazer no CRM pelo app (Claude Code), sempre depois de mostrar a prévia e ouvir
             &quot;sim&quot; do operador. Desligada, a ação some do app de todo mundo em até 15 segundos.
             Quem pode usar cada ação depende da permissão &quot;IA altera o CRM&quot; da pessoa.
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Envio para fora (e-mail, WhatsApp): só sai com o canal e &quot;Enviar o que o operador aprovou&quot; ligados,
+            permissão &quot;Aprovar envios da IA&quot; e o operador digitando &quot;aprovo &lt;código&gt;&quot; no app.
           </p>
         </div>
       </div>

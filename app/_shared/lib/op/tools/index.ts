@@ -1,6 +1,7 @@
 // Catálogo da IA de operação. Etapas 1–2: leitura (L1). Etapa 3: escrita
 // interna (L3, prévia + previa_hash + interruptor). Etapa 4: documentos
-// (rascunho L2 em op-drafts/, anexar L3). Ferramenta nova = um
+// (rascunho L2 em op-drafts/, anexar L3). Etapa 5: comunicação externa (L4,
+// preparar → "aprovo <código>" digitado → executar). Ferramenta nova = um
 // arquivo aqui + entrada na lista + teste em tests/op-registry.test.ts.
 
 import type { OpTool } from "../registry";
@@ -23,6 +24,7 @@ import { notificarPessoa } from "./notificar-pessoa";
 import { arquivarCard } from "./arquivar-card";
 import { meuDia } from "./meu-dia";
 import { anexarRascunho, listarModelos, prepararContrato, prepararPedidoProntuario, prepararProcuracao } from "./documentos";
+import { executarAprovado, prepararEmail, prepararWhatsapp } from "./comunicacao";
 
 export const OP_TOOLS: OpTool[] = [
   buscarCliente,
@@ -54,6 +56,11 @@ export const OP_TOOLS: OpTool[] = [
   prepararPedidoProntuario,
   prepararContrato,
   anexarRascunho,
+  // Etapa 5: e-mail/WhatsApp para fora (L4), desligadas por padrão; envio só
+  // com "aprovo <código>" digitado pelo operador (op/approvals.ts).
+  prepararEmail,
+  prepararWhatsapp,
+  executarAprovado,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

@@ -53,7 +53,8 @@ export type LogAction =
   | "tag_add"           // marcou uma tag no card (site, automação ou IA de operação)
   | "tag_remove"        // tirou uma tag do card (site ou IA de operação)
   | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
-  | "ai_audit_feedback"; // feedback humano sobre uma auditoria da IA
+  | "ai_audit_feedback" // feedback humano sobre uma auditoria da IA
+  | "op_send";         // IA de operação enviou e-mail/WhatsApp APROVADO pelo operador (metadata.canal, approvalId)
 
 /**
  * Logs que NÃO contam como tarefa/atividade do colaborador (Visão do Gestor e

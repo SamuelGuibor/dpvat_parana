@@ -16,7 +16,7 @@ const schema = z.object({
  * Contatos do WhatsApp do card: vínculo manual (userId) primeiro; sem vínculo,
  * telefone do card pelos últimos 8 dígitos (mesma regra do findLinkedCard).
  */
-async function contactIdsForCard(cardId: string): Promise<string[]> {
+export async function contactIdsForCard(cardId: string): Promise<string[]> {
   const linked = await db.whatsAppContact.findMany({ where: { userId: cardId }, select: { id: true }, take: 3 });
   if (linked.length) return linked.map((c) => c.id);
 
