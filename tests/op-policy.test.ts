@@ -24,18 +24,18 @@ describe("canRun", () => {
   it("L4 exige op_approve (padrão só ADMIN++) além de op_write; read_only e interruptor recusam", () => {
     expect(canRun(4, "op_approve", admin)).toMatchObject({ ok: false, code: "sem_permissao" });
     // preparar_whatsapp: permissão de domínio view_whatsapp + op_approve
-    expect(canRun(4, "view_whatsapp", resolvePermissions("ADMIN", { op_write: true }))).toMatchObject({ ok: false, code: "sem_permissao" });
+    expect(canRun(4, "view_whatsapp", resolvePermissions("ADMIN"))).toMatchObject({ ok: false, code: "sem_permissao" });
     expect(canRun(4, "view_whatsapp", resolvePermissions("ADMIN", { op_write: true, op_approve: true }))).toEqual({ ok: true });
-    expect(canRun(4, "op_approve", resolvePermissions("ADMIN", { op_approve: true }))).toMatchObject({ ok: false, code: "sem_permissao" });
+    expect(canRun(4, "op_approve", resolvePermissions("ADMIN", { op_write: false, op_approve: true }))).toMatchObject({ ok: false, code: "sem_permissao" });
     expect(canRun(4, "op_approve", resolvePermissions("ADMIN", { op_write: true, op_approve: true, read_only: true }))).toMatchObject({ code: "somente_leitura" });
     expect(canRun(4, "op_approve", sa, false)).toMatchObject({ ok: false, code: "ferramenta_desligada" });
     expect(resolvePermissions("ADMIN").op_approve).toBe(false);
     expect(resolvePermissions("ADMIN+").op_approve).toBe(false);
   });
 
-  it("L3 exige op_write (padrão só ADMIN++)", () => {
-    expect(canRun(3, "op_write", admin)).toMatchObject({ ok: false, code: "sem_permissao" });
-    expect(canRun(3, "op_write", resolvePermissions("ADMIN", { op_write: true }))).toEqual({ ok: true });
+  it("L3 exige op_write (padrão da equipe toda desde 26/10; override tira)", () => {
+    expect(canRun(3, "op_write", admin)).toEqual({ ok: true });
+    expect(canRun(3, "op_write", resolvePermissions("ADMIN", { op_write: false }))).toMatchObject({ ok: false, code: "sem_permissao" });
   });
 
   it("L3 recusa read_only e dashboard_only", () => {
@@ -57,7 +57,7 @@ describe("canRun", () => {
   it("arquivar exige archive_cards além de op_write", () => {
     const semArquivo = resolvePermissions("ADMIN", { op_write: true, archive_cards: false });
     expect(canRun(3, "archive_cards", semArquivo)).toMatchObject({ ok: false, code: "sem_permissao" });
-    const semEscrita = resolvePermissions("ADMIN", { archive_cards: true });
+    const semEscrita = resolvePermissions("ADMIN", { op_write: false, archive_cards: true });
     expect(canRun(3, "archive_cards", semEscrita)).toMatchObject({ ok: false, code: "sem_permissao" });
   });
 

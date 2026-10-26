@@ -84,7 +84,7 @@ describe("operatorFromTokenRow", () => {
     expect(ctx.userId).toBe("u1");
     expect(ctx.permissions.op_use).toBe(true);
     expect(ctx.permissions.view_whatsapp).toBe(false);
-    expect(ctx.permissions.op_write).toBe(false);
+    expect(ctx.permissions.op_write).toBe(true);
   });
 });
 

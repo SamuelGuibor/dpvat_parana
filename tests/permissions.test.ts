@@ -64,10 +64,10 @@ describe("operação por IA", () => {
     }
   });
 
-  it("escrever, aprovar e publicar conhecimento nascem só no ADMIN++", () => {
+  it("escrever é da equipe toda (26/10); aprovar e publicar conhecimento nascem só no ADMIN++", () => {
     for (const role of ["ADMIN", "ADMIN+"] as const) {
       const map = resolvePermissions(role);
-      expect(map.op_write).toBe(false);
+      expect(map.op_write).toBe(true);
       expect(map.op_approve).toBe(false);
       expect(map.manage_knowledge).toBe(false);
     }

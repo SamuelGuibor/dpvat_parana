@@ -2,13 +2,16 @@
 import { db } from "@/app/_shared/lib/prisma";
 import { gerarProcuracao } from "./gerarProcuracao";
 import { buildProcuracaoData } from "./doc-fields";
+import { brDateBR } from "./date-br";
 
 type Tipo = "user" | "process";
 
 function formatarData(data?: Date | null) {
     if (!data) return "";
 
-    return data.toLocaleDateString("pt-BR");
+    // Data de Curitiba: a Vercel roda em UTC e, depois das 21h, o
+    // toLocaleDateString saía com a data de amanhã (decisão do dono, 26/10).
+    return brDateBR(data);
 }
 
 export async function gerarProcuracaoById(

@@ -303,10 +303,11 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     // Lista de nome+telefone é dado pessoal em massa — nasce exclusiva do
     // ADMIN++, concedível por override.
     export_leads_csv: false,
-    // IA de operação: leitura liberada pra equipe; escrever no CRM, aprovar
-    // envio e publicar conhecimento nascem exclusivos do ADMIN++.
+    // IA de operação: ler e escrever no CRM liberados pra equipe (decisão do
+    // dono, 26/10); aprovar envio e publicar conhecimento nascem exclusivos do
+    // ADMIN++, concedíveis por override.
     op_use: true,
-    op_write: false,
+    op_write: true,
     op_approve: false,
     manage_knowledge: false,
     manage_team: false,
@@ -358,7 +359,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     dashboard_only: false,
     export_leads_csv: false,
     op_use: true,
-    op_write: false,
+    op_write: true,
     op_approve: false,
     manage_knowledge: false,
     manage_team: false,
