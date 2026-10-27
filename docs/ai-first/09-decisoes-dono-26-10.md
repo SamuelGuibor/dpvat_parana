@@ -49,3 +49,13 @@
 
 ## Travas
 Nada enviado em teste; ferramenta nova desligada; migration só aditiva; nenhum arquivo de tela (`app/nova-dash/**`, `*.tsx`) nem os arquivos locais do dono; commit local sem push.
+
+## Plano refinado lendo o código (26/10, noite)
+- **A** vira 5 ferramentas, todas com interruptor desligado: `editar_comentario`, `atualizar_tarefa`, `gerenciar_documento` (uma ferramenta, 4 ações reversíveis: renomear, pasta, lixeira, restaurar — um interruptor só, **provisória**), `preparar_acao_irreversivel` (L4 canal `card` no mesmo `executar_aprovado`: excluir card e arquivar em destino que encerra) e `quem_pediu` (L1). Zip de pasta: **não** faz falta (`listar_documentos` já dá o link de cada arquivo; a rota do zip exige sessão do site) — **provisória**.
+- **B**: `gerar_relatorio` passa a `op_use` com escopo no servidor; a action da tela idem; skill `/meu-rendimento`. Texto dos prompts continua só gestor (**provisória**: nem o próprio operador lê o texto pela tela).
+- **C**: só sai a trava de categoria; AUTHENTICATION (código de verificação) continua recusado (**provisória**).
+- **D**: `editar_cadastro` com lista fechada; fora: e-mail (é `@unique` e login do cliente), campos do responsável `*_res`, `obs` (**provisória**); troca exige `confirmar_trocas` fora do hash.
+- **E**: script com conferência por sha256 + contagem antes de apagar; sem cron (o dono roda o `--apply` por trimestre — **provisória**).
+- **F**: a purga de prompts nasce atrás do interruptor `purga_prompts_dev` (desligado) — rodar automático apagaria dado de produção sem o OK final do dono. Filtro por `cwd` descartado: operação e desenvolvimento usam a mesma pasta.
+- **G/H**: `op_workflows` com um aberto por (workflow, card), não mais por operador; copiados os fluxos existentes (migration aditiva).
+- **I**: "tempo ativo" removido; só a latência das ferramentas.

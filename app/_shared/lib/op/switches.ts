@@ -39,6 +39,14 @@ export async function getOpSwitches(): Promise<Record<string, boolean>> {
   return value;
 }
 
+/**
+ * Interruptores que não são ferramenta (rotinas do servidor), no mesmo JSON e
+ * pelo mesmo script/painel. Desligados por padrão, como as ferramentas.
+ * - purga_prompts_dev: apaga prompts de desenvolvimento com mais de 1 h
+ *   (decisão 19 do dono, 26/10; app/_shared/lib/op/retencao.ts).
+ */
+export const OP_EXTRA_SWITCHES = [{ name: "purga_prompts_dev", rotulo: "apagar prompts de desenvolvimento após 1 h" }] as const;
+
 /** L3, L4 e as L1 que gravam registro (`switchable`, Etapa 6) têm interruptor. */
 export function hasSwitch(tool: { level: number; switchable?: boolean }): boolean {
   return tool.level >= 3 || tool.switchable === true;

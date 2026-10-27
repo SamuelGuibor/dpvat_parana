@@ -34,7 +34,7 @@ const MAX_CARD_LOOKUP = 400;
 /**
  * Fluxo aberto de antes do período entra só na lista "parados" (com origem
  * até 90 dias antes do fim do período): sem esse corte o ramo dos abertos
- * varreria op_requests inteira (sem índice em state nem em createdAt sozinho).
+ * varreria op_workflows inteira.
  */
 const OPEN_FLOW_LOOKBACK_DAYS = 90;
 
@@ -92,14 +92,15 @@ export async function loadOpMetricRows(periodo: Pick<OpPeriod, "gte" | "lt">, op
       select: { id: true, operatorId: true, canal: true, status: true, cardId: true, expiresAt: true, createdAt: true },
     }),
     // Fluxos do período + os ainda abertos de antes (a tela mostra o que está
-    // parado hoje). state só tem ids (schema v1 da Etapa 6).
+    // parado hoje). Tabela op_workflows (decisão 21); state só tem ids. O
+    // operador do fluxo é quem começou; filtrado por operador, vale qualquer
+    // fluxo em que ele mexeu (fluxo passa por vários operadores, decisão 20).
     db.$queryRaw<{ id: string; operatorId: string; createdAt: Date; state: unknown }[]>(Prisma.sql`
-      SELECT id, "operatorId", "createdAt", state
-      FROM op_requests
-      WHERE state IS NOT NULL
-        AND (("createdAt" >= ${periodo.gte} AND "createdAt" < ${periodo.lt})
-             OR ("createdAt" >= ${new Date(periodo.lt.getTime() - OPEN_FLOW_LOOKBACK_DAYS * 86_400_000)} AND state->>'status' IN ('em_andamento', 'bloqueado')))
-        ${opFilter}
+      SELECT id, "startedById" AS "operatorId", "createdAt", state
+      FROM op_workflows
+      WHERE (("createdAt" >= ${periodo.gte} AND "createdAt" < ${periodo.lt})
+             OR ("createdAt" >= ${new Date(periodo.lt.getTime() - OPEN_FLOW_LOOKBACK_DAYS * 86_400_000)} AND status IN ('em_andamento', 'bloqueado')))
+        ${operatorId ? Prisma.sql`AND ${operatorId} = ANY("operatorIds")` : Prisma.empty}
       ORDER BY "createdAt" DESC
       LIMIT ${MAX_FLOWS}
     `),
@@ -180,7 +181,6 @@ export interface OpPromptItem {
 export async function getOpPrompts(input: {
   periodo: OpPeriod;
   operatorId?: string | null;
-  incluirConversas?: boolean;
   pagina?: number;
 }): Promise<{ itens: OpPromptItem[]; total: number; pagina: number; paginas: number; cortado: boolean }> {
   // 1) Sem texto: classifica pelo que as ferramentas fizeram.
@@ -211,7 +211,8 @@ export async function getOpPrompts(input: {
       const cs = byReq.get(h.id) ?? [];
       return { ...h, classe: classifyPrompt({ skill: h.skill, levels: cs.map((c) => c.level) }), ferramentas: [...new Set(cs.map((c) => c.tool))] };
     })
-    .filter((h) => input.incluirConversas || h.classe !== "conversa");
+    // Conversa/desenvolvimento nunca aparece, nem para o gestor (decisão 19).
+    .filter((h) => h.classe !== "conversa");
   const listed = classified.slice(0, MAX_PROMPT_LIST);
   const paginas = Math.max(1, Math.ceil(listed.length / PROMPTS_PAGE_SIZE));
   const pagina = Math.min(Math.max(1, input.pagina ?? 1), paginas);

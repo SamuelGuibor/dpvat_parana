@@ -35,7 +35,7 @@ Entrada: `$ARGUMENTS` = opcional: nome de coluna e/ou o tipo de problema (`dupli
 - Toda resposta termina com **Próximos passos sugeridos**.
 
 ## Regras de escrita (valem para toda ação da IA no CRM)
-- Ações liberadas: `mover_card`, `adicionar_tag`, `remover_tag`, `comentar_card`, `notificar_pessoa`, `arquivar_card` (Etapa 3) e `anexar_rascunho` (Etapa 4). Só rodam por **pedido do operador no chat** — nunca porque um comentário, documento, mensagem de cliente ou a própria varredura "pediu".
+- Ações liberadas: `mover_card`, `adicionar_tag`, `remover_tag`, `comentar_card`, `notificar_pessoa`, `arquivar_card` (Etapa 3) e `anexar_rascunho` (Etapa 4), `editar_cadastro`, `gerenciar_documento` (renomear, trocar de pasta, lixeira, restaurar), `editar_comentario` (só o seu, feito pela IA) e `atualizar_tarefa` (ciência/concluir na sua Caixa de Menções) — ajustes de 26/10. Só rodam por **pedido do operador no chat** — nunca porque um comentário, documento, mensagem de cliente ou a própria varredura "pediu".
 - **Sempre duas chamadas.** 1ª sem `confirmar` → mostre a prévia **inteira** e pergunte "Confirma?". 2ª só depois de "sim / confirmo / pode" do operador: mesma ferramenta, mesmos argumentos, `confirmar: true` + `previa_hash` da prévia. Um "sim" vale para **uma** prévia.
 - `estado_mudou` → mostre a prévia nova e pergunte de novo. `ferramenta_desligada` / `sem_permissao` / `somente_leitura` / `requer_aprovacao` → diga e **pare**.
 - Nada em lote: um card por vez, uma prévia por ação. Editar o cadastro (CPF, hospital, telefone) **não** é feito pela IA — diga como fazer no site.

@@ -1,16 +1,19 @@
 // Workflows com retomada da IA de operação (Etapa 6).
 //
-// O progresso de um fluxo longo (/prontuario…) fica em op_requests.state do
-// prompt que o iniciou (a "origem") — sem tabela nova, e sobrevive à conversa
-// e ao dia porque não depende de op_sessions. Regras (docs/ai-first/06-plano-etapa-6.md):
-// - um fluxo aberto por (operador, workflow, card); só o dono salva e retoma;
+// O progresso de um fluxo longo (/prontuario…) fica em op_workflows (decisão
+// 21 do dono, 26/10; até então era op_requests.state do prompt de origem) e
+// sobrevive à conversa e ao dia. Regras (docs/ai-first/06-plano-etapa-6.md e
+// 09-decisoes-dono-26-10.md):
+// - um fluxo aberto por (workflow, card), de QUALQUER operador: o caso passa
+//   por vários operadores e um retoma o do colega (decisão 20). O registro
+//   guarda quem começou, quem mexeu por último e todos que passaram;
 // - o estado guarda só ids/keys (schema em app/_shared/utils/workflows.ts);
 // - todo ref é conferido AQUI antes de virar "feito" (o servidor só confia no
 //   que ele mesmo confere: key de rascunho do próprio operador e do card,
 //   aprovação executada, tag/coluna que o card tem agora);
 // - retomar relê a fonte (rascunho, anexo, aprovação, card) e nunca
 //   reaproveita aprovação: a pendente é cancelada e o preparo é refeito.
-// Escreve só em op_requests (e cancela aprovação pendente do próprio fluxo em
+// Escreve só em op_workflows (e cancela aprovação pendente do fluxo em
 // op_approvals) — nunca no card.
 
 import { Prisma } from "@prisma/client";
@@ -53,41 +56,53 @@ export interface FlowRow {
   id: string;
   createdAt: Date;
   state: WorkflowState;
+  startedById: string;
+  lastOperatorId: string;
+  operatorIds: string[];
 }
 
-const OPEN_FILTER: Prisma.OpRequestWhereInput[] = [
-  { state: { path: ["status"], equals: "em_andamento" } },
-  { state: { path: ["status"], equals: "bloqueado" } },
-];
+const OPEN_STATUS = ["em_andamento", "bloqueado"];
+const FLOW_SELECT = { id: true, createdAt: true, state: true, startedById: true, lastOperatorId: true, operatorIds: true } as const;
 
-/** Fluxos abertos do operador (mais novo primeiro). Filtro por operatorId usa o índice (operatorId, createdAt). */
+/**
+ * Fluxos abertos (mais novo primeiro): de um card+workflow (de qualquer
+ * operador), de um card, ou aqueles em que o operador mexeu.
+ */
 export async function openFlows(
   client: Tx | typeof db,
-  operatorId: string,
-  filter?: { workflow: WorkflowId; cardId: string },
+  filter: { workflow: WorkflowId; cardId: string } | { cardId: string } | { operatorId: string },
 ): Promise<FlowRow[]> {
-  const rows = await client.opRequest.findMany({
-    where: {
-      operatorId,
-      OR: OPEN_FILTER,
-      ...(filter
-        ? { AND: [{ state: { path: ["workflow"], equals: filter.workflow } }, { state: { path: ["card", "id"], equals: filter.cardId } }] }
-        : {}),
-    },
+  const where: Prisma.OpWorkflowWhereInput =
+    "operatorId" in filter
+      ? { operatorIds: { has: filter.operatorId } }
+      : { cardId: filter.cardId, ...("workflow" in filter ? { workflow: filter.workflow } : {}) };
+  const rows = await client.opWorkflow.findMany({
+    where: { ...where, status: { in: OPEN_STATUS } },
     orderBy: { createdAt: "desc" },
     take: 50,
-    select: { id: true, createdAt: true, state: true },
+    select: FLOW_SELECT,
   });
   const out: FlowRow[] = [];
   for (const r of rows) {
     const state = parseWorkflowState(r.state);
-    if (state && isOpen(state)) out.push({ id: r.id, createdAt: r.createdAt, state });
+    if (state && isOpen(state)) out.push({ ...r, state });
   }
   return out;
 }
 
-async function lockFlow(tx: Tx, operatorId: string, workflow: string, cardId: string): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`op_wf:${operatorId}:${workflow}:${cardId}`}))`;
+/** Lock por (workflow, card): dois operadores no mesmo caso não abrem dois fluxos. */
+async function lockFlow(tx: Tx, workflow: string, cardId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`op_wf:${workflow}:${cardId}`}))`;
+}
+
+/** Dados do registro a cada gravação: status espelhado + quem mexeu por último. */
+function flowWrite(estado: WorkflowState, operatorId: string, operatorIds: string[]) {
+  return {
+    state: toJson(estado),
+    status: estado.status,
+    lastOperatorId: operatorId,
+    operatorIds: operatorIds.includes(operatorId) ? operatorIds : [...operatorIds, operatorId],
+  };
 }
 
 function validState(state: WorkflowState): WorkflowState {
@@ -244,7 +259,7 @@ export interface SaveInput {
 }
 
 export type SaveOutcome =
-  | { salvo: true; fluxo: string; novo: boolean; estado: WorkflowState; proximo: WorkflowStep | null; card: CardFacts }
+  | { salvo: true; fluxo: string; novo: boolean; estado: WorkflowState; proximo: WorkflowStep | null; card: CardFacts; comecadoPor?: string }
   | { salvo: false; semRegistro: true; motivo: string; card: CardFacts }
   | { salvo: false; previewOnly: true; fluxo: string | null; estado: WorkflowState; proximo: WorkflowStep | null; card: CardFacts };
 
@@ -302,7 +317,7 @@ export async function saveProgress(input: SaveInput): Promise<SaveOutcome> {
       throw new OpToolError("passo_invalido", `"${input.passo}" não é passo deste fluxo. Passos: ${ids}.`, 422);
     }
     // Ordem conferida antes do ref (erro mais útil); é conferida de novo sob o lock.
-    const aberto = (await openFlows(db, input.op.userId, { workflow: input.workflow, cardId })).find((f) => !isStale(f.state, agora));
+    const aberto = (await openFlows(db, { workflow: input.workflow, cardId })).find((f) => !isStale(f.state, agora));
     const pre = checkStep(aberto?.state ?? newState({ workflow: input.workflow, card: { id: card.id, cardNumber: card.cardNumber, colunaId: card.labelId }, agora }), input.passo);
     if (!pre.ok) throw new OpToolError("passo_invalido", pre.motivo, 422);
     const precisaRef = !["reler", "operador"].includes(step.kind);
@@ -314,7 +329,7 @@ export async function saveProgress(input: SaveInput): Promise<SaveOutcome> {
   }
 
   if (input.previewOnly) {
-    const atual = (await openFlows(db, input.op.userId, { workflow: input.workflow, cardId })).find((f) => !isStale(f.state, agora)) ?? null;
+    const atual = (await openFlows(db, { workflow: input.workflow, cardId })).find((f) => !isStale(f.state, agora)) ?? null;
     if (!atual && input.fim) throw new OpToolError("nao_encontrado", "Não há fluxo aberto deste tipo para este card.", 404);
     const base = atual?.state ?? newState({ workflow: input.workflow, card: { id: card.id, cardNumber: card.cardNumber, colunaId: card.labelId }, agora });
     const estado = validState(applyChange(base, input, card, verified, agora));
@@ -322,38 +337,49 @@ export async function saveProgress(input: SaveInput): Promise<SaveOutcome> {
   }
 
   return db.$transaction(async (tx) => {
-    await lockFlow(tx, input.op.userId, input.workflow, cardId);
-    const flows = await openFlows(tx, input.op.userId, { workflow: input.workflow, cardId });
+    await lockFlow(tx, input.workflow, cardId);
+    const flows = await openFlows(tx, { workflow: input.workflow, cardId });
     // Parado há mais de 14 dias vira abandonado na leitura (sem cron).
     for (const f of flows.filter((x) => isStale(x.state, agora))) {
-      await tx.opRequest.update({ where: { id: f.id }, data: { state: toJson(finish(f.state, "abandonado", agora)) } });
+      const fim = finish(f.state, "abandonado", agora);
+      await tx.opWorkflow.update({ where: { id: f.id }, data: { state: toJson(fim), status: fim.status } });
     }
     const atual = flows.find((f) => !isStale(f.state, agora)) ?? null;
 
     if (atual) {
+      // Fluxo de colega: segue no mesmo registro (decisão 20); quem salvou
+      // entra em operatorIds e vira o lastOperatorId.
       const estado = validState(applyChange(atual.state, input, card, verified, agora));
-      await tx.opRequest.update({ where: { id: atual.id }, data: { state: toJson(estado) } });
-      return { salvo: true as const, fluxo: atual.id, novo: false, estado, proximo: currentStep(estado), card };
+      await tx.opWorkflow.update({ where: { id: atual.id }, data: flowWrite(estado, input.op.userId, atual.operatorIds) });
+      return {
+        salvo: true as const,
+        fluxo: atual.id,
+        novo: false,
+        estado,
+        proximo: currentStep(estado),
+        card,
+        ...(atual.startedById !== input.op.userId ? { comecadoPor: atual.startedById } : {}),
+      };
     }
     if (input.fim) throw new OpToolError("nao_encontrado", "Não há fluxo aberto deste tipo para este card.", 404);
 
-    // Fluxo novo: a origem é o prompt do operador que levou a esta chamada (o
-    // hook UserPromptSubmit grava). Sem ele (sem CRM_OP_TOKEN, hook fora do
-    // ar) o fluxo segue sem retomada.
-    const requestId = input.trace.requestId;
-    if (!requestId) {
-      return { salvo: false as const, semRegistro: true as const, motivo: "o app não registrou o seu pedido (hook sem token ou fora do ar)", card };
-    }
+    // Fluxo novo. A origem (prompt do operador, gravado pelo hook) é só
+    // rastro: sem ela o fluxo é guardado do mesmo jeito. Um prompt marca no
+    // máximo um fluxo como origem (coluna única).
     const estado = validState(applyChange(newState({ workflow: input.workflow, card: { id: card.id, cardNumber: card.cardNumber, colunaId: card.labelId }, agora }), input, card, verified, agora));
-    // Só ocupa um prompt do próprio operador que ainda não guarda outro fluxo.
-    const claimed = await tx.opRequest.updateMany({
-      where: { id: requestId, operatorId: input.op.userId, state: { equals: Prisma.DbNull } },
-      data: { state: toJson(estado) },
+    const requestId = input.trace.requestId;
+    const origemLivre = requestId ? !(await tx.opWorkflow.findUnique({ where: { originRequestId: requestId }, select: { id: true } })) : false;
+    const created = await tx.opWorkflow.create({
+      data: {
+        workflow: input.workflow,
+        cardId,
+        startedById: input.op.userId,
+        originRequestId: origemLivre ? requestId : null,
+        ...flowWrite(estado, input.op.userId, []),
+      },
+      select: { id: true },
     });
-    if (claimed.count !== 1) {
-      return { salvo: false as const, semRegistro: true as const, motivo: "este pedido já guarda outro fluxo (um fluxo por mensagem do operador)", card };
-    }
-    return { salvo: true as const, fluxo: requestId, novo: true, estado, proximo: currentStep(estado), card };
+    return { salvo: true as const, fluxo: created.id, novo: true, estado, proximo: currentStep(estado), card };
   });
 }
 
@@ -361,15 +387,29 @@ export async function saveProgress(input: SaveInput): Promise<SaveOutcome> {
 // fluxos_abertos / retomar_fluxo
 // ---------------------------------------------------------------------------
 
-export async function listOpenFlows(operatorId: string, agora: Date = new Date()): Promise<{ abertos: FlowRow[]; vencidos: number }> {
-  const flows = await openFlows(db, operatorId);
+/** Abertos em que o operador mexeu, ou (com cardId) todos os do card, de qualquer operador. */
+export async function listOpenFlows(
+  filter: { operatorId: string } | { cardId: string },
+  agora: Date = new Date(),
+): Promise<{ abertos: FlowRow[]; vencidos: number }> {
+  const flows = await openFlows(db, filter);
   const abertos = flows.filter((f) => !isStale(f.state, agora));
   return { abertos, vencidos: flows.length - abertos.length };
 }
 
 export type ResumeOutcome =
   | { aberto: false; motivo: string; fluxo: string | null; status?: string }
-  | { aberto: true; fluxo: string; state: WorkflowState; plano: ResumePlan; card: CardFacts | null; gravado: boolean };
+  | {
+      aberto: true;
+      fluxo: string;
+      state: WorkflowState;
+      plano: ResumePlan;
+      card: CardFacts | null;
+      gravado: boolean;
+      /** Quem começou e quem mexeu por último antes desta retomada (ids da equipe). */
+      comecadoPor: string;
+      ultimoOperador: string;
+    };
 
 /** Relê a fonte de cada feito: o que o plano puro precisa saber. */
 async function gatherFacts(
@@ -417,7 +457,8 @@ async function gatherFacts(
     }
   }
   if (approvalIds.length) {
-    const rows = await db.opApproval.findMany({ where: { id: { in: approvalIds }, operatorId: op.userId }, select: { id: true, status: true, expiresAt: true } });
+    // Aprovações do fluxo, de quem as preparou (o fluxo pode ser de colega).
+    const rows = await db.opApproval.findMany({ where: { id: { in: approvalIds }, cardId: state.card.id }, select: { id: true, status: true, expiresAt: true } });
     for (const id of approvalIds) {
       const r = rows.find((x) => x.id === id);
       let st: ApprovalFact = (r?.status as ApprovalFact | undefined) ?? "sumiu";
@@ -425,7 +466,9 @@ async function gatherFacts(
       // Aprovação L4 não é retomável: a pendente é cancelada para nenhum
       // "aprovo" antigo valer depois de o fluxo ter preparado de novo.
       if (st === "pendente" && cancelarPendentes) {
-        await db.opApproval.updateMany({ where: { id, operatorId: op.userId, status: "pendente" }, data: { status: "cancelada" } });
+        // Vale também para a de um colega: quem retoma prepara de novo, com o
+        // próprio código; o "aprovo" antigo não pode continuar valendo.
+        await db.opApproval.updateMany({ where: { id, cardId: state.card.id, status: "pendente" }, data: { status: "cancelada" } });
         st = "cancelada";
       }
       fatos.aprovacoes[id] = st;
@@ -436,7 +479,8 @@ async function gatherFacts(
   const tools = [...new Set(def.passos.filter((p) => p.kind === "envio" && p.aprovacao).map((p) => p.aprovacao as string))];
   if (tools.length) {
     const exec = await db.opApproval.findMany({
-      where: { operatorId: op.userId, cardId: state.card.id, status: "executada", tool: { in: tools }, createdAt: { gte: row.createdAt } },
+      // De qualquer operador: o colega pode ter mandado antes de parar.
+      where: { cardId: state.card.id, status: "executada", tool: { in: tools }, createdAt: { gte: row.createdAt } },
       orderBy: { createdAt: "desc" },
       take: 5,
       select: { id: true, tool: true },
@@ -467,22 +511,23 @@ export async function loadForResume(input: {
   let row: FlowRow | null = null;
 
   if (input.fluxoId) {
-    const r = await db.opRequest.findUnique({ where: { id: input.fluxoId }, select: { id: true, operatorId: true, createdAt: true, state: true } });
+    const r = await db.opWorkflow.findUnique({ where: { id: input.fluxoId }, select: FLOW_SELECT });
     const state = r ? parseWorkflowState(r.state) : null;
-    if (!r || !state) throw new OpToolError("nao_encontrado", "Fluxo não encontrado. Use fluxos_abertos para ver os seus.", 404);
-    if (r.operatorId !== input.op.userId) throw new OpToolError("sem_permissao", "Este fluxo é de outra pessoa: cada um retoma o seu.", 403);
+    if (!r || !state) throw new OpToolError("nao_encontrado", "Fluxo não encontrado. Use fluxos_abertos para ver os abertos.", 404);
+    // Qualquer operador da equipe retoma (decisão 20): sem checagem de dono.
     if (!isOpen(state)) return { aberto: false, fluxo: r.id, status: state.status, motivo: `Este fluxo está ${state.status}.` };
-    row = { id: r.id, createdAt: r.createdAt, state };
+    row = { ...r, state };
   } else {
     if (!input.workflow || !input.cardRef) throw new OpToolError("argumentos_invalidos", "Mande fluxo, ou card + workflow.", 400);
     const cardId = await resolveOneCardId(input.cardRef);
-    row = (await openFlows(db, input.op.userId, { workflow: input.workflow, cardId }))[0] ?? null;
+    row = (await openFlows(db, { workflow: input.workflow, cardId }))[0] ?? null;
     if (!row) return { aberto: false, fluxo: null, motivo: "Nenhum fluxo aberto deste tipo para este card." };
   }
 
   if (isStale(row.state, agora)) {
     if (input.write) {
-      await db.opRequest.updateMany({ where: { id: row.id, operatorId: input.op.userId }, data: { state: toJson(finish(row.state, "abandonado", agora)) } });
+      const fim = finish(row.state, "abandonado", agora);
+      await db.opWorkflow.updateMany({ where: { id: row.id, status: { in: OPEN_STATUS } }, data: { state: toJson(fim), status: fim.status } });
     }
     return { aberto: false, fluxo: row.id, status: "abandonado", motivo: "Parado há mais de 14 dias: considerado abandonado. Comece de novo." };
   }
@@ -499,14 +544,15 @@ export async function loadForResume(input: {
       atualizadoEm: agora.toISOString(),
     });
     gravado = await db.$transaction(async (tx) => {
-      await lockFlow(tx, input.op.userId, row!.state.workflow, row!.state.card.id);
-      const again = await tx.opRequest.findUnique({ where: { id: row!.id }, select: { state: true } });
+      await lockFlow(tx, row!.state.workflow, row!.state.card.id);
+      const again = await tx.opWorkflow.findUnique({ where: { id: row!.id }, select: { state: true, operatorIds: true } });
       const now = again ? parseWorkflowState(again.state) : null;
       // Outra chamada salvou no meio: não sobrescreve (o plano devolvido continua valendo como leitura).
       if (!now || now.atualizadoEm !== row!.state.atualizadoEm) return false;
-      await tx.opRequest.update({ where: { id: row!.id }, data: { state: toJson(estado) } });
+      // Retomar conta como "quem continuou" (lastOperatorId + operatorIds).
+      await tx.opWorkflow.update({ where: { id: row!.id }, data: flowWrite(estado, input.op.userId, again!.operatorIds) });
       return true;
     });
   }
-  return { aberto: true, fluxo: row.id, state: row.state, plano, card, gravado };
+  return { aberto: true, fluxo: row.id, state: row.state, plano, card, gravado, comecadoPor: row.startedById, ultimoOperador: row.lastOperatorId };
 }

@@ -41,7 +41,7 @@ export const VARREDURA_REGRAS: Record<VarreduraChecagem, { regra: string; fonte:
   },
   fluxo_bloqueado: {
     regra: `Fluxo da IA bloqueado há mais de ${OP_FLOW_BLOCKED_DAYS} dias — o operador parou e não voltou (/retomar).`,
-    fonte: "progresso dos fluxos (op_requests.state, Etapa 6)",
+    fonte: "progresso dos fluxos (op_workflows, Etapa 6 + ajuste H de 26/10)",
   },
 };
 

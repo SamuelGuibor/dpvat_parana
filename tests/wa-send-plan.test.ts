@@ -36,8 +36,11 @@ describe("plano do WhatsApp preparado pela IA", () => {
     expect(planWhatsAppSend({ ...fora, template: { ...tpl, headerText: "Oi {{1}}" } })).toMatchObject({ code: "template_cabecalho_variavel" });
     expect(planWhatsAppSend({ ...fora, template: { ...tpl, headerFormat: "IMAGE" } })).toMatchObject({ code: "template_sem_midia" });
     expect(planWhatsAppSend({ ...fora, template: { ...tpl, bodyPreview: null } })).toMatchObject({ code: "template_sem_texto" });
-    // MARKETING foi a causa nº 1 do aviso de spam (auditoria 24/08): a IA não manda.
-    expect(planWhatsAppSend({ ...fora, template: { ...tpl, category: "MARKETING" } })).toMatchObject({ code: "template_categoria" });
+    // Decisão 10 (26/10): MARKETING sai com aprovação, mas a prévia avisa do spam.
+    expect(planWhatsAppSend({ ...fora, template: { ...tpl, category: "MARKETING" } })).toMatchObject({ ok: true, via: "template", aviso: expect.stringContaining("MARKETING") });
+    expect(planWhatsAppSend({ ...ok, mode: "template", varsCount: 1, template: { ...tpl, category: "MARKETING" } })).toMatchObject({ ok: true, via: "text", aviso: expect.stringContaining("MARKETING") });
+    // As travas continuam valendo para MARKETING.
+    expect(planWhatsAppSend({ ...fora, contact: { optedOut: false, optedInAt: null }, template: { ...tpl, category: "MARKETING" } })).toMatchObject({ code: "sem_opt_in" });
     expect(planWhatsAppSend({ ...ok, mode: "template", varsCount: 1, template: { ...tpl, category: "AUTHENTICATION" } })).toMatchObject({ code: "template_categoria" });
   });
 

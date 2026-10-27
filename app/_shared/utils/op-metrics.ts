@@ -33,13 +33,12 @@ export const OP_SKILLS = [
   "retomar",
   "auditoria-operacao",
   "varredura",
+  "meu-rendimento",
 ] as const;
 const OP_SKILL_SET = new Set<string>(OP_SKILLS);
 
 export const OP_PERIOD_MAX_DAYS = 90;
 export const OP_PERIOD_DEFAULT_DAYS = 7;
-/** Pausa maior que isso entre dois eventos da mesma sessão não conta como tempo. */
-export const OP_SESSION_GAP_MIN = 30;
 /** Fluxo bloqueado há mais que isso entra na /varredura. */
 export const OP_FLOW_BLOCKED_DAYS = 3;
 
@@ -48,9 +47,11 @@ export const OP_METRIC_DEFINITIONS = {
   pedidos: "Prompt que chamou ao menos uma ferramenta do CRM ou começou com uma skill de operação (/cliente, /prontuario…).",
   consultas: "Pedido que só leu (ferramentas L1) — as dúvidas do dia a dia.",
   acoes: "Pedido que preparou documento (L2), mexeu no card (L3) ou preparou/enviou e-mail ou WhatsApp (L4).",
-  conversas: "Prompt sem ferramenta do CRM e sem skill de operação (conversa ou desenvolvimento). Não entra em nenhum outro número.",
-  minutosAtivos: `Soma dos intervalos de até ${OP_SESSION_GAP_MIN} min entre prompts e ferramentas dos pedidos, por conversa do app. Pausa maior não conta.`,
-  latencia: "Soma do tempo que as ferramentas levaram para responder.",
+  // Decisões 19 e 23 do dono (26/10): prompt sem ferramenta nem skill de
+  // operação (conversa/desenvolvimento) não aparece em número nenhum — e é
+  // apagado em 1 h (purgeDevPrompts) —, e não há "tempo ativo" por intervalo
+  // entre prompts: o operador pede o que quiser, quando quiser.
+  latencia: "Soma do tempo que as ferramentas levaram para responder (o único tempo medido).",
   cardsConduzidos: "Cards em que a IA executou uma ação a pedido do operador (L3 confirmada que mudou algo, ou envio aprovado).",
   cardsTocados: "Cards só lidos (consultas, prévias, preparos), sem ação executada.",
   falhas: "Chamadas recusadas ou com erro, por código (sem_permissao, ferramenta_desligada, estado_mudou…).",
@@ -161,17 +162,6 @@ export function callKind(c: { tool: string; level: number; ok: boolean; confirme
   return c.confirmed ? "execucao" : "previa";
 }
 
-/** Minutos ativos: soma dos intervalos ≤ `gapMin` entre eventos ordenados. */
-export function activeMinutes(times: number[], gapMin: number = OP_SESSION_GAP_MIN): number {
-  const t = [...times].sort((a, b) => a - b);
-  let ms = 0;
-  for (let i = 1; i < t.length; i++) {
-    const d = t[i] - t[i - 1];
-    if (d <= gapMin * 60_000) ms += d;
-  }
-  return Math.round(ms / 6_000) / 10;
-}
-
 /** Status efetivo da aprovação: pendente com prazo vencido = expirada. */
 export function approvalStatus(a: { status: string; expiresAt: Date }, agora: Date = new Date()): string {
   return a.status === "pendente" && a.expiresAt.getTime() < agora.getTime() ? "expirada" : a.status;
@@ -218,7 +208,7 @@ export interface MetricApproval {
 }
 
 export interface MetricFlow {
-  /** op_requests.id do prompt de origem. */
+  /** op_workflows.id (fluxos copiados da Etapa 6 mantêm o id do prompt de origem). */
   id: string;
   operatorId: string;
   createdAt: Date;
@@ -239,9 +229,7 @@ export interface OperatorStats {
   pedidos: number;
   consultas: number;
   acoes: number;
-  conversas: number;
   sessoes: number;
-  minutosAtivos: number;
   latenciaMs: number;
   chamadas: number;
   falhas: number;
@@ -330,9 +318,7 @@ function emptyStats(operatorId: string, dias: string[]): OperatorStats {
     pedidos: 0,
     consultas: 0,
     acoes: 0,
-    conversas: 0,
     sessoes: 0,
-    minutosAtivos: 0,
     latenciaMs: 0,
     chamadas: 0,
     falhas: 0,
@@ -398,16 +384,13 @@ export function buildOpMetrics(input: {
 
   const skills: Record<string, number> = {};
   const consultaTools: Record<string, number> = {};
-  const sessionEvents = new Map<string, { operatorId: string; times: number[] }>();
   const sessionsByOp = new Map<string, Set<string>>();
   for (const p of input.prompts) {
     const calls = callsByRequest.get(p.id) ?? [];
     const cls = classifyPrompt({ skill: p.skill, levels: calls.map((c) => c.level) });
+    // Conversa/desenvolvimento não entra em número nenhum (decisão 19).
+    if (cls === "conversa") continue;
     const s = stats(p.operatorId);
-    if (cls === "conversa") {
-      s.conversas++;
-      continue;
-    }
     s.pedidos++;
     if (cls === "acao") s.acoes++;
     else s.consultas++;
@@ -419,14 +402,10 @@ export function buildOpMetrics(input: {
     if (p.skill) bump(skills, isOpSkill(p.skill) ? p.skill : "(outra skill)");
     else bump(skills, "(sem skill)");
     if (cls === "consulta") for (const c of calls) if (c.level <= 1) bump(consultaTools, c.tool);
-    const ev = sessionEvents.get(p.sessionId) ?? { operatorId: p.operatorId, times: [] };
-    ev.times.push(p.createdAt.getTime(), ...calls.map((c) => c.createdAt.getTime()));
-    sessionEvents.set(p.sessionId, ev);
     const set = sessionsByOp.get(p.operatorId) ?? new Set<string>();
     set.add(p.sessionId);
     sessionsByOp.set(p.operatorId, set);
   }
-  for (const ev of sessionEvents.values()) stats(ev.operatorId).minutosAtivos += activeMinutes(ev.times);
   for (const [op, set] of sessionsByOp) stats(op).sessoes = set.size;
 
   // Ferramentas, falhas, cards.
@@ -550,10 +529,9 @@ export function buildOpMetrics(input: {
   parados.sort((a, b) => b.diasParado - a.diasParado);
 
   const operadores = [...byOp.values()].sort((a, b) => b.pedidos - a.pedidos || b.chamadas - a.chamadas);
-  for (const s of operadores) s.minutosAtivos = Math.round(s.minutosAtivos * 10) / 10;
   const totais = emptyStats("", dias);
   for (const s of operadores) {
-    for (const k of ["pedidos", "consultas", "acoes", "conversas", "sessoes", "minutosAtivos", "latenciaMs", "chamadas", "falhas", "cardsTocados"] as const) {
+    for (const k of ["pedidos", "consultas", "acoes", "sessoes", "latenciaMs", "chamadas", "falhas", "cardsTocados"] as const) {
       totais[k] += s[k];
     }
     for (const k of Object.keys(totais.aprovacoes) as (keyof ApprovalCounts)[]) totais.aprovacoes[k] += s.aprovacoes[k];
@@ -564,7 +542,6 @@ export function buildOpMetrics(input: {
       totais.porDia[i].falhas += d.falhas;
     });
   }
-  totais.minutosAtivos = Math.round(totais.minutosAtivos * 10) / 10;
   totais.cardsConduzidos = conducted.size;
   totais.cardsTocados = touchedOnly.length;
   const totaisSemId: Omit<OperatorStats, "operatorId"> = { ...totais };

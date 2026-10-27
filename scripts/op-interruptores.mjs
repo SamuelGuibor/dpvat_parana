@@ -3,7 +3,8 @@
 // `ia-operacao-telas` (25/10). Grava pelo mesmo `setOpSwitch` do painel: mesma
 // chave, mesmo log `update` com `metadata.stage = "op_switch"` e o autor.
 //
-// Só ferramentas que TÊM interruptor (L3, L4 e as L1 `switchable`); nome
+// Só ferramentas que TÊM interruptor (L3, L4 e as L1 `switchable`) e as
+// rotinas de OP_EXTRA_SWITCHES (ex.: purga_prompts_dev, L0 na lista); nome
 // desconhecido ou sem interruptor = erro, nada gravado. O autor do --apply
 // precisa ser da equipe com `manage_team` (o mesmo guard da action do painel).
 // O efeito leva até ~15 s em cada instância da Vercel (cache do kill switch).
@@ -40,7 +41,8 @@ const { resolvePermissions, isTeamRole } = await load("../app/_shared/lib/permis
 const { brDateTime } = await load("../app/_shared/lib/op/resolve.ts");
 const { db } = await load("../app/_shared/lib/prisma.ts");
 
-const comInterruptor = OP_TOOLS.filter((t) => S.hasSwitch(t));
+// Ferramentas com interruptor + rotinas do servidor (OP_EXTRA_SWITCHES, "L0").
+const comInterruptor = [...OP_TOOLS.filter((t) => S.hasSwitch(t)), ...S.OP_EXTRA_SWITCHES.map((x) => ({ name: x.name, level: 0 }))];
 const byName = new Map(comInterruptor.map((t) => [t.name, t]));
 
 function fail(msg) {

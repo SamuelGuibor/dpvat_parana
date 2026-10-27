@@ -11,6 +11,8 @@ import { opAuth, opFail } from "@/app/_shared/lib/op/http";
 import { ensureOpSession, recordPrompt, recordToolCall } from "@/app/_shared/lib/op/record";
 import { getTool } from "@/app/_shared/lib/op/tools";
 import { describeZodError } from "@/app/_shared/lib/op/registry";
+import { purgeDevPrompts } from "@/app/_shared/lib/op/retencao";
+import { runAfterResponse } from "@/app/_shared/lib/background";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,12 @@ export async function POST(req: Request) {
   if (ev.type === "prompt") {
     if (!ev.text?.trim()) return noStoreJson({ ok: true, data: { ignorado: true } });
     const requestId = await recordPrompt({ sessionId, operatorId: op.userId, text: ev.text });
+    // Decisão 19 (26/10): prompt de desenvolvimento do operador some depois de
+    // 1 h. Roda aqui, a cada prompt dele (só as últimas 24 h, barato), e o
+    // cron diário de retenção pega o resto.
+    runAfterResponse("op_purge_dev_prompts", () =>
+      purgeDevPrompts({ operatorId: op.userId, desde: new Date(Date.now() - 24 * 3_600_000), limit: 200 }),
+    );
     return noStoreJson({ ok: true, data: { requestId } });
   }
 

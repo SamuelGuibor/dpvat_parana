@@ -48,6 +48,7 @@
       "mcp__crm-op__minhas_permissoes",
       "mcp__crm-op__meu_dia",
       "mcp__crm-op__listar_modelos",
+      "mcp__crm-op__quem_pediu",
       "Read(//d/Chatbot_whatsapp/**)",
       "Read(//d/docx-converter/**)"
     ],

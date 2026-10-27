@@ -16,7 +16,7 @@ vi.mock("@/app/_shared/lib/permissions-server", () => perms);
 
 import { getOpMetrics, getOpPrompts, loadOpMetricRows, maskOpToken } from "@/app/_shared/lib/op/metrics";
 import { getOpMetricsAction, getOpPromptsAction } from "@/app/_actions/op/metrics";
-import { shapeRelatorio, RELATORIO_TIPOS } from "@/app/_shared/lib/op/tools/relatorio";
+import { shapeRelatorio, RELATORIO_TIPOS, gerarRelatorio } from "@/app/_shared/lib/op/tools/relatorio";
 import { resolveOpPeriod } from "@/app/_shared/utils/op-metrics";
 
 const agora = new Date("2026-10-25T13:00:00Z");
@@ -61,7 +61,7 @@ describe("lib de métricas", () => {
     // args só aparece dentro do booleano do confirmar
     expect(calls.replace("args->>'confirmar'", "")).not.toMatch(/\bargs\b/);
     expect(calls).not.toMatch(/\btext\b/);
-    expect(flows).toMatch(/state IS NOT NULL/);
+    expect(flows).toMatch(/FROM op_workflows/);
     // os dois ramos (período e abertos de antes) têm corte de data
     expect(flows.match(/"createdAt" >= \?/g)).toHaveLength(2);
     expect(flows).not.toMatch(/\btext\b/);
@@ -115,18 +115,27 @@ describe("lib de métricas", () => {
 });
 
 describe("actions da tela", () => {
-  it("sem manager_dashboard: recusa antes de ler o banco (métricas e texto)", async () => {
+  it("sem manager_dashboard: texto recusado antes do banco; números só do próprio (decisão 5)", async () => {
     perms.requirePermission.mockRejectedValue(new Error("Você não tem permissão para esta ação."));
-    await expect(getOpMetricsAction({ dias: 7 })).rejects.toThrow(/permissão/);
     await expect(getOpPromptsAction({ dias: 7 })).rejects.toThrow(/permissão/);
     expect(perms.requirePermission).toHaveBeenCalledWith("manager_dashboard");
-    expect(perms.requirePermission).not.toHaveBeenCalledWith("manage_team");
     expect(db.opRequest.findMany).not.toHaveBeenCalled();
+    // Sem op_use nem gestor: recusa antes do banco.
+    perms.requireTeam.mockResolvedValue({ userId: "op1", name: "Ana", email: "a@x", permissions: { manager_dashboard: false, op_use: false } });
+    await expect(getOpMetricsAction({ dias: 7 })).rejects.toThrow(/permissão/);
     expect(db.$queryRaw).not.toHaveBeenCalled();
+    // Com op_use: o operatorId pedido é ignorado, vale o da sessão.
+    perms.requireTeam.mockResolvedValue({ userId: "op1", name: "Ana", email: "a@x", permissions: { manager_dashboard: false, op_use: true } });
+    const r = await getOpMetricsAction({ dias: 7, operatorId: "outra" });
+    expect(r.escopo).toBe("proprio");
+    expect(r.operadores).toEqual([{ id: "op1", nome: "Ana" }]);
+    for (const c of db.opRequest.findMany.mock.calls) expect(JSON.stringify(c[0].where)).not.toContain("outra");
+    expect(JSON.stringify(db.opRequest.findMany.mock.calls[0][0].where)).toContain("op1");
   });
 
   it("com a permissão: período inválido vira erro com mensagem própria", async () => {
     perms.requirePermission.mockResolvedValue({ permissions: { manager_dashboard: true } });
+    perms.requireTeam.mockResolvedValue({ userId: "g1", name: "Gestor", email: "g@x", permissions: { manager_dashboard: true, op_use: true } });
     await expect(getOpMetricsAction({ de: "2026-01-01", ate: "2026-10-25" })).rejects.toThrow(/90 dias/);
     await expect(getOpMetricsAction({ dias: 7 })).resolves.toHaveProperty("metrics.periodo.dias", 7);
   });
@@ -154,5 +163,24 @@ describe("gerar_relatorio", () => {
     expect(falhas.porCodigo[0]).toMatchObject({ code: "estado_mudou", exemplos: ["c1"], cards: [4967] });
     const apr = shapeRelatorio("aprovacoes", m) as { lista: { status: string; card: number }[] };
     expect(apr.lista[0]).toMatchObject({ status: "expirada", card: 4967 });
+  });
+});
+
+describe("gerar_relatorio sem Visão do Gestor (decisão 5)", () => {
+  const ctx = (manager: boolean) => ({
+    op: { userId: "op1", name: "Ana", email: "a@x", role: "ADMIN", permissions: { op_use: true, manager_dashboard: manager }, tokenId: "t" },
+    trace: { sessionId: null, requestId: null },
+  });
+  it("vê só o próprio; pedir outra pessoa é recusado (não cai calado no próprio)", async () => {
+    const out = await gerarRelatorio.run(ctx(false) as never, { tipo: "operacao" } as never);
+    expect(out.data).toMatchObject({ escopo: "proprio", operador: "Ana" });
+    expect(db.opRequest.findMany.mock.calls[0][0].where.operatorId).toBe("op1");
+    db.user.findMany.mockResolvedValue([{ id: "op2", name: "Bia" }]);
+    await expect(gerarRelatorio.run(ctx(false) as never, { tipo: "operacao", operador: "Bia" } as never)).rejects.toMatchObject({ code: "sem_permissao" });
+  });
+  it("gestor sem operador vê a equipe", async () => {
+    const out = await gerarRelatorio.run(ctx(true) as never, { tipo: "operacao" } as never);
+    expect(out.data).toMatchObject({ escopo: "equipe" });
+    expect(db.opRequest.findMany.mock.calls[0][0].where).not.toHaveProperty("operatorId");
   });
 });

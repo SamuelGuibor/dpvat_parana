@@ -10,14 +10,14 @@ Entrada: `$ARGUMENTS` = período e, opcional, uma pessoa. Exemplos: `semana pass
 ## Passos
 1. **Período em dias de Brasília** (até 90): "últimos N dias" → `dias: N`; "semana passada" → `de` = segunda e `ate` = domingo da semana anterior; "ontem" → `de` = `ate` = ontem; datas → `de`/`ate` no formato AAAA-MM-DD; mês → do dia 1º ao último (ou até hoje). Pessoa → `operador` (nome ou parte).
 2. Chame `gerar_relatorio` **quatro vezes**, com o mesmo período/operador: `tipo: "operacao"`, `"falhas"`, `"fluxos"`, `"aprovacoes"`.
-   - `sem_permissao` → "a auditoria é só para quem tem a Visão do Gestor" e **pare**. `argumentos_invalidos` → diga o motivo (período > 90 dias, data inválida) e pergunte de novo. `ambiguo`/`nao_encontrado` no operador → mostre as opções/pergunte.
+   - `escopo: "proprio"` → a pessoa não tem a Visão do Gestor: diga "a auditoria da equipe é só para quem tem a Visão do Gestor; para ver o seu, use `/meu-rendimento`" e **pare**. `sem_permissao` → mesma frase, pare. `argumentos_invalidos` → diga o motivo (período > 90 dias, data inválida) e pergunte de novo. `ambiguo`/`nao_encontrado` no operador → mostre as opções/pergunte.
 3. Para **evidência de ação** (o que a IA fez num card citado), use `listar_historico` com `limite: 10` no card (autor "<nome> (via IA)"). No máximo 5 cards — os de falha repetida ou de envio expirado primeiro.
 4. Responda com estas seções, nesta ordem (pule a que vier vazia dizendo "nada no período"):
-   - **Período e definição** — de/até e uma linha com as definições de pedido, consulta, ação e conversa (vêm em `definicoes`). Diga quantas **conversas** ficaram fora da conta.
-   - **Rendimento por pessoa** — tabela: pessoa · pedidos · consultas · ações · cards conduzidos · envios executados/expirados · falhas · tempo ativo · sessões. Nada de ranking com adjetivo ("o pior", "preguiçoso"): só os números.
+   - **Período e definição** — de/até e uma linha com as definições de pedido, consulta e ação (vêm em `definicoes`). Prompt de conversa/desenvolvimento não entra em número nenhum (decisão do dono, 26/10): não comente sobre ele.
+   - **Rendimento por pessoa** — tabela: pessoa · pedidos · consultas · ações · cards conduzidos · envios executados/expirados · falhas · latência das ferramentas (s) · sessões. Não há "tempo ativo": o operador pede quando quiser (decisão do dono, 26/10). Nada de ranking com adjetivo ("o pior", "preguiçoso"): só os números.
    - **Consultas frequentes** — `skills` e `consultasFrequentes` (as ferramentas de leitura mais chamadas): é o que a equipe mais precisa saber. Sem o texto dos pedidos (a ferramenta não devolve; o texto fica na tela do gestor).
    - **Falhas** — por `code` (maior primeiro), com a taxa (`taxaFalhaPct`), 2–3 ids de exemplo (`exemplos` = `op_tool_calls.id`) e os nºs de card.
-   - **Fluxos parados** — `bloqueios` mais comuns e a lista `parados` (fluxo = `op_requests.id`, card, passo, bloqueio, dias, pessoa).
+   - **Fluxos parados** — `bloqueios` mais comuns e a lista `parados` (fluxo = `op_workflows.id`, card, passo, bloqueio, dias, quem começou). Qualquer colega pode retomar (`/retomar <card>`).
    - **Envios** — por status/canal e as aprovações `expirada`/`falhou` (id da aprovação, card, pessoa).
    - **O que melhorar** — de 2 a 6 itens, **cada um com a evidência** (id, card ou código) e **quem faria**. Só a partir de padrões que vieram nos dados:
      - falha repetida de um mesmo `code` (≥ 3) → explique o código (tabela de códigos em `docs/ai/operacao-ia.md`) e o que fazer (`sem_permissao` → dono revê a permissão; `ferramenta_desligada` → dono decide se liga o interruptor; `estado_mudou` → normal, card mexido no site entre a prévia e o "sim"; `argumentos_invalidos` → ajuste de skill, ticket para o dono);

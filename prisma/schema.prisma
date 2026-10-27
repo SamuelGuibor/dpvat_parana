@@ -1545,6 +1545,36 @@ model OpRequest {
   @@map("op_requests")
 }
 
+// Fluxo longo com retomada da IA de operação (/prontuario & cia.). Decisões
+// 20 e 21 do dono (26/10): tabela própria (antes ficava em op_requests.state)
+// e o fluxo é do CARD — qualquer operador da equipe retoma o de um colega.
+// Um aberto por (workflow, card), garantido por advisory lock na lib
+// (app/_shared/lib/op/workflow.ts). `state` = schema v1 de
+// app/_shared/utils/workflows.ts (só ids/keys, nunca dado pessoal).
+model OpWorkflow {
+  id              String   @id @default(cuid())
+  workflow        String
+  cardId          String
+  // em_andamento | bloqueado | concluido | abandonado (cópia de state.status, para filtrar).
+  status          String
+  state           Json
+  // Quem começou e quem mexeu por último (User da equipe, sem FK como op_*).
+  startedById     String
+  lastOperatorId  String
+  // Todos os operadores que salvaram/retomaram este fluxo, em ordem de entrada.
+  operatorIds     String[] @default([])
+  // op_requests.id do prompt que abriu o fluxo (rastro; sem FK: a retenção
+  // de 3 meses apaga prompts antigos sem levar o fluxo junto).
+  originRequestId String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([cardId, workflow, status])
+  @@index([status, updatedAt])
+  @@index([startedById, createdAt])
+  @@map("op_workflows")
+}
+
 // Cada ferramenta executada (ou recusada) pela API de operação.
 model OpToolCall {
   id         String     @id @default(cuid())

@@ -42,12 +42,14 @@ export const varrerInconsistencias = defineTool({
         select: { id: true, cardNumber: true, name: true, cpf: true, telefone: true, hospital: true, outro_hospital: true, role: true, label: { select: { name: true } } },
       }),
       wantFlows
-        ? db.opRequest.findMany({
-            where: { createdAt: { gte: new Date(Date.now() - FLOW_LOOKBACK_DAYS * 86_400_000) }, state: { path: ["status"], equals: "bloqueado" } },
-            orderBy: { createdAt: "desc" },
-            take: 200,
-            select: { id: true, operatorId: true, state: true },
-          })
+        ? db.opWorkflow
+            .findMany({
+              where: { createdAt: { gte: new Date(Date.now() - FLOW_LOOKBACK_DAYS * 86_400_000) }, status: "bloqueado" },
+              orderBy: { createdAt: "desc" },
+              take: 200,
+              select: { id: true, lastOperatorId: true, state: true },
+            })
+            .then((rows) => rows.map((r) => ({ id: r.id, operatorId: r.lastOperatorId, state: r.state })))
         : Promise.resolve([]),
     ]);
     const res = findInconsistencies({

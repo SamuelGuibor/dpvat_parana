@@ -26,7 +26,8 @@ import {
   type ApprovalStatus,
 } from "@/app/_shared/utils/approval-code";
 
-export type ApprovalCanal = "email" | "whatsapp";
+// "card" = ação irreversível no card (excluir, arquivar em destino que encerra).
+export type ApprovalCanal = "email" | "whatsapp" | "card";
 
 export interface ApprovalRow {
   id: string;

@@ -75,11 +75,18 @@ export function planWhatsAppSend(i: WaPlanInput): WaPlan {
   const t = i.template;
   if (!t) return { ok: false, code: "template_nao_encontrado", message: "Este template não existe no catálogo da linha do contato (o catálogo é por WABA)." };
   if (t.status !== "APPROVED") return { ok: false, code: "template_nao_aprovado", message: `O template "${t.name}" está ${t.status} na Meta; só APPROVED sai.` };
-  // Só UTILITY: template MARKETING foi a causa nº 1 do aviso de spam nas duas
-  // WABAs (auditoria de 24/08/2026) e AUTHENTICATION é código de verificação.
-  if (t.category !== "UTILITY") {
-    return { ok: false, code: "template_categoria", message: `O template "${t.name}" é ${t.category}; a IA só manda template UTILITY (aviso de spam da Meta).` };
+  // Qualquer categoria sai com aprovação do operador (decisão 10 do dono,
+  // 26/10), menos AUTHENTICATION: é código de verificação de login, não
+  // mensagem ao cliente (provisória). MARKETING sai com aviso na prévia —
+  // foi a causa nº 1 do aviso de spam nas duas WABAs (auditoria 24/08/2026);
+  // opt-out, cooldown, janela, opt-in e pausa continuam valendo abaixo.
+  if (t.category === "AUTHENTICATION") {
+    return { ok: false, code: "template_categoria", message: `O template "${t.name}" é AUTHENTICATION (código de verificação); a IA não manda esse tipo.` };
   }
+  const avisoCategoria =
+    t.category === "MARKETING"
+      ? `Template MARKETING: foi o tipo que gerou o aviso de spam da Meta nas duas linhas. Mande só se o cliente espera esta mensagem.`
+      : undefined;
   if ((i.varsCount ?? 0) !== t.bodyVars) {
     return { ok: false, code: "variaveis_erradas", message: `O template "${t.name}" tem ${t.bodyVars} variável(is) no corpo; vieram ${i.varsCount ?? 0}.` };
   }
@@ -88,7 +95,7 @@ export function planWhatsAppSend(i: WaPlanInput): WaPlan {
   }
   if (i.windowOpen) {
     // sendSystemWhatsApp manda TEXTO dentro da janela: o texto do template preenchido.
-    return { ok: true, via: "text", aviso: "Janela de 24 h aberta: sai como texto com o conteúdo do template preenchido." };
+    return { ok: true, via: "text", aviso: juntar("Janela de 24 h aberta: sai como texto com o conteúdo do template preenchido.", avisoCategoria) };
   }
   if (!i.contact.optedInAt) return { ok: false, code: "sem_opt_in", message: "Fora da janela e o contato não tem opt-in registrado: a Meta exige o aceite." };
   if (i.number?.templatesPaused) return { ok: false, code: "templates_pausados", message: "Templates estão pausados nesta linha (tela Números). Nada de template sai por ela." };
@@ -98,7 +105,11 @@ export function planWhatsAppSend(i: WaPlanInput): WaPlan {
   if (t.headerFormat && MIDIA.has(t.headerFormat) && !t.headerMediaKey) {
     return { ok: false, code: "template_sem_midia", message: `O template "${t.name}" tem cabeçalho de mídia sem mídia definida (Templates → Gerenciar).` };
   }
-  return { ok: true, via: "template" };
+  return { ok: true, via: "template", ...(avisoCategoria ? { aviso: avisoCategoria } : {}) };
+}
+
+function juntar(...partes: (string | undefined)[]): string {
+  return partes.filter(Boolean).join(" ");
 }
 
 /** "5541999990000" / "(41) 99999-0000" → { ddd: "41", last8: "99990000" }; sem DDD → null. */

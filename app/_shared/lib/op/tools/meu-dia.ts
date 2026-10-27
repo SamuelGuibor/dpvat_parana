@@ -29,7 +29,7 @@ export const meuDia = defineTool({
         where: { recipientId: op.userId, status: "PENDING" },
         orderBy: { createdAt: "asc" },
         take: 30,
-        select: { authorName: true, source: true, excerpt: true, targetName: true, userId: true, sectorName: true, groupId: true, createdAt: true },
+        select: { id: true, authorName: true, source: true, excerpt: true, targetName: true, userId: true, sectorName: true, groupId: true, createdAt: true },
       }),
       db.opToolCall.findMany({
         where: { operatorId: op.userId, ok: true, createdAt: { gte: since } },
@@ -101,6 +101,7 @@ export const meuDia = defineTool({
         hoje: brDate(new Date()),
         janelaDias: args.dias,
         tarefas: mentions.map((m) => ({
+          tarefaId: m.id,
           de: m.authorName,
           origem: m.source,
           setor: m.sectorName,

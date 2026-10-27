@@ -3,7 +3,9 @@
 // (rascunho L2 em op-drafts/, anexar L3). Etapa 5: comunicação externa (L4,
 // preparar → "aprovo <código>" digitado → executar). Etapa 6: progresso dos
 // fluxos longos (salvar/retomar). Etapa 7: auditoria (gerar_relatorio, só
-// gestor) e varredura de inconsistências, ambas L1. Ferramenta nova = um
+// gestor) e varredura de inconsistências, ambas L1. Ajustes de 26/10: editar
+// cadastro, documentos, comentário/tarefa (L3), ação irreversível (L4) e
+// quem_pediu (L1). Ferramenta nova = um
 // arquivo aqui + entrada na lista + teste em tests/op-registry.test.ts.
 
 import type { OpTool } from "../registry";
@@ -26,10 +28,14 @@ import { notificarPessoa } from "./notificar-pessoa";
 import { arquivarCard } from "./arquivar-card";
 import { meuDia } from "./meu-dia";
 import { anexarRascunho, listarModelos, prepararContrato, prepararPedidoProntuario, prepararProcuracao } from "./documentos";
-import { executarAprovado, prepararEmail, prepararWhatsapp } from "./comunicacao";
+import { executarAprovado, prepararAcaoIrreversivel, prepararEmail, prepararWhatsapp } from "./comunicacao";
 import { fluxosAbertos, retomarFluxo, salvarProgresso } from "./fluxos";
 import { gerarRelatorio } from "./relatorio";
 import { varrerInconsistencias } from "./varredura";
+import { editarCadastro } from "./editar-cadastro";
+import { gerenciarDocumento } from "./gerenciar-documento";
+import { atualizarTarefa, editarComentario } from "./comentario-tarefa";
+import { quemPediu } from "./quem-pediu";
 
 export const OP_TOOLS: OpTool[] = [
   buscarCliente,
@@ -75,6 +81,15 @@ export const OP_TOOLS: OpTool[] = [
   // e varredura de inconsistências dos cards ativos (só leitura).
   gerarRelatorio,
   varrerInconsistencias,
+  // Ajustes de 26/10 (docs/ai-first/09-decisoes-dono-26-10.md): "IA faz quase
+  // tudo". Escritas reversíveis em L3 e irreversíveis em L4 (aprovo <código>),
+  // todas com interruptor desligado; quem_pediu é leitura.
+  editarCadastro,
+  gerenciarDocumento,
+  editarComentario,
+  atualizarTarefa,
+  prepararAcaoIrreversivel,
+  quemPediu,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

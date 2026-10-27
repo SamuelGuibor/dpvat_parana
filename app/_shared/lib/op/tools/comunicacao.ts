@@ -4,7 +4,9 @@
 // OPERADOR digitou "aprovo <código>" (última mensagem dele na mesma conversa),
 // o hash bate e não passou de 30 min. As três nascem com interruptor
 // desligado (op/switches.ts) e exigem op_approve (canRun no L4).
-// Libs: app/_shared/lib/op/{approvals,comms}.ts.
+// Ajuste A (26/10): `preparar_acao_irreversivel` usa o mesmo contrato para o
+// que não se desfaz no card (excluir, arquivar em destino que encerra).
+// Libs: app/_shared/lib/op/{approvals,comms,irreversivel}.ts.
 
 import { z } from "zod/v4";
 import { defineTool, OpToolError } from "../registry";
@@ -24,6 +26,8 @@ import {
   type EmailApprovalArgs,
   type WhatsappApprovalArgs,
 } from "../comms";
+import { ACOES_IRREVERSIVEIS, precheckIrreversivel, prepareIrreversivel, runApprovedIrreversivel, type CardApprovalArgs } from "../irreversivel";
+import { DESTRUCTIVE_ARCHIVE, ARCHIVE_LABELS } from "../../archive-catalog";
 
 const COMO_APROVAR = (code: string) =>
   `Mostre ao operador o previaTexto INTEIRO, sem resumir (destino, texto, anexos, avisos), e peça para ele digitar, sozinho na mensagem: aprovo ${code}. ` +
@@ -37,7 +41,11 @@ function previaTexto(p: Record<string, unknown>): string {
   const avisos = (p.avisos as string[] | undefined) ?? [];
   const card = p.card as { cardNumber?: number | null; nome?: string | null } | undefined;
   const linhas: string[] = [];
-  if (p.canal === "e-mail") {
+  if (p.canal === "card") {
+    linhas.push(`${String(p.acao)} — card ${card?.cardNumber ?? "?"} (${card?.nome ?? ""})`, `Coluna: ${String(p.coluna ?? "?")}`);
+    if (p.de) linhas.push(`Arquivo atual: ${String(p.de)}`);
+    else if (p.arquivado) linhas.push(`Arquivado em: ${String(p.arquivado)}`);
+  } else if (p.canal === "e-mail") {
     const anexos = (p.anexos as { nome: string; tamanhoKb: number }[]) ?? [];
     linhas.push(
       `E-MAIL — card ${card?.cardNumber ?? "?"} (${card?.nome ?? ""})`,
@@ -145,6 +153,43 @@ export const prepararWhatsapp = defineTool({
 });
 
 // ---------------------------------------------------------------------------
+// preparar_acao_irreversivel
+// ---------------------------------------------------------------------------
+
+const irreversivelSchema = z
+  .object({
+    card: cardRefSchema,
+    acao: z.enum(ACOES_IRREVERSIVEIS).describe("excluir_card (apaga o card de vez) | arquivar_definitivo (destino que encerra o cliente)."),
+    destino: z
+      .string()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(`Só em arquivar_definitivo: ${DESTRUCTIVE_ARCHIVE.map((k) => ARCHIVE_LABELS[k]).join(", ")}.`),
+  })
+  .refine((a) => (a.acao === "arquivar_definitivo") === Boolean(a.destino), { message: "destino só (e sempre) com arquivar_definitivo" });
+
+export const prepararAcaoIrreversivel = defineTool({
+  name: "preparar_acao_irreversivel",
+  description:
+    "APROVAÇÃO. Prepara uma ação que NÃO se desfaz no card — excluir o card (com documentos, comentários e histórico) ou arquivar num destino que encerra o cliente (perdeu contato definitivo, desistiu, descartado). NADA é feito: devolve a prévia e um código; o operador precisa DIGITAR \"aprovo <código>\" e só então chame executar_aprovado. Excluir exige a permissão de excluir cards.",
+  level: 4,
+  permission: "op_approve",
+  schema: irreversivelSchema,
+  async run({ op, trace, previewOnly }, args) {
+    const { args: approvalArgs, previa, cardId } = await prepareIrreversivel({ op, ...args });
+    const out = previewOnly
+      ? null
+      : await createApproval({ operatorId: op.userId, sessionId: trace.sessionId, tool: "preparar_acao_irreversivel", canal: "card", args: approvalArgs, cardId });
+    return {
+      data: prepared(out, previa),
+      summary: `${args.acao} preparado (card ${approvalArgs.cardNumber ?? "?"})`,
+      cardIds: [cardId],
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // executar_aprovado
 // ---------------------------------------------------------------------------
 
@@ -153,12 +198,13 @@ const executarSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/).describe("hash devolvido pelo preparar_*, sem mudar nada."),
 });
 
-const CANAL_TOOL: Record<string, string> = { email: "preparar_email", whatsapp: "preparar_whatsapp" };
+const CANAL_TOOL: Record<string, string> = { email: "preparar_email", whatsapp: "preparar_whatsapp", card: "preparar_acao_irreversivel" };
+const CANAL_NOME: Record<string, string> = { email: "e-mail", whatsapp: "WhatsApp", card: "ação no card" };
 
 export const executarAprovado = defineTool({
   name: "executar_aprovado",
   description:
-    "ENVIO. Envia o que foi preparado (preparar_email/preparar_whatsapp) DEPOIS que o operador digitou \"aprovo <código>\" como última mensagem. Sem isso recusa com aprovacao_nao_digitada; conteúdo mudado = hash_diferente; mais de 30 min = aprovacao_expirada. Repetir não envia de novo.",
+    "ENVIO. Envia/executa o que foi preparado (preparar_email/preparar_whatsapp/preparar_acao_irreversivel) DEPOIS que o operador digitou \"aprovo <código>\" como última mensagem. Sem isso recusa com aprovacao_nao_digitada; conteúdo mudado = hash_diferente; mais de 30 min = aprovacao_expirada. Repetir não envia de novo.",
   level: 4,
   permission: "op_approve",
   schema: executarSchema,
@@ -168,10 +214,16 @@ export const executarAprovado = defineTool({
     // Interruptor por canal: desligar o preparar_* também segura o que já foi preparado.
     const switches = await getOpSwitches();
     if (switches[approval.tool] !== true) {
-      throw new OpToolError("ferramenta_desligada", `O envio por ${approval.canal === "email" ? "e-mail" : "WhatsApp"} está desligado no Espaço de Trabalho (IA de operação).`, 403);
+      throw new OpToolError("ferramenta_desligada", `${CANAL_NOME[approval.canal]}: está desligado no Espaço de Trabalho (IA de operação).`, 403);
     }
     if (approval.canal === "whatsapp" && !op.permissions.view_whatsapp) {
       throw new OpToolError("sem_permissao", "Você não tem permissão para o WhatsApp.", 403);
+    }
+    if (approval.canal === "card") {
+      const acao = (approval.args as CardApprovalArgs).acao;
+      if (acao === "excluir_card" ? !op.permissions.delete_cards : !op.permissions.archive_cards) {
+        throw new OpToolError("sem_permissao", "Você não tem mais permissão para esta ação no card.", 403);
+      }
     }
 
     const out = await executeApproval({
@@ -179,14 +231,21 @@ export const executarAprovado = defineTool({
       hash: args.hash,
       operatorId: op.userId,
       sessionId: trace.sessionId,
-      precheck: (a) => (a.canal === "email" ? precheckEmail(a.args as EmailApprovalArgs) : precheckWhatsapp(a.args as WhatsappApprovalArgs)),
+      precheck: (a) =>
+        a.canal === "email"
+          ? precheckEmail(a.args as EmailApprovalArgs)
+          : a.canal === "card"
+            ? precheckIrreversivel(a.args as CardApprovalArgs)
+            : precheckWhatsapp(a.args as WhatsappApprovalArgs),
       send: (a) =>
         a.canal === "email"
           ? sendApprovedEmail({ args: a.args as EmailApprovalArgs, op, trace, approvalId: a.id })
-          : sendApprovedWhatsapp({ args: a.args as WhatsappApprovalArgs, op, trace, approvalId: a.id }),
+          : a.canal === "card"
+            ? runApprovedIrreversivel({ args: a.args as CardApprovalArgs, op, trace })
+            : sendApprovedWhatsapp({ args: a.args as WhatsappApprovalArgs, op, trace, approvalId: a.id }),
     });
     const cardIds = out.approval.cardId ? [out.approval.cardId] : [];
-    const canal = out.approval.canal === "email" ? "e-mail" : "WhatsApp";
+    const canal = CANAL_NOME[out.approval.canal] ?? out.approval.canal;
     if (!out.result.sent) {
       return {
         data: {

@@ -1,6 +1,7 @@
 // Etapa 7: gerar_relatorio — as métricas da Operação por IA para a skill
-// /auditoria-operacao. L1, permissão manager_dashboard (canRun exige op_use +
-// a chave). Mesma lib da tela (app/_shared/lib/op/metrics.ts).
+// /auditoria-operacao e /meu-rendimento. L1, op_use: quem tem
+// manager_dashboard vê a equipe toda; os outros, SÓ o próprio rendimento
+// (decisão 5 do dono, 26/10). Mesma lib da tela (app/_shared/lib/op/metrics.ts).
 //
 // NUNCA devolve texto de prompt nem `args` de ferramenta/aprovação (têm dado
 // pessoal; o texto fica só na tela do gestor — decisão 7). Sai só contagem,
@@ -54,9 +55,7 @@ export function shapeRelatorio(tipo: (typeof RELATORIO_TIPOS)[number], m: OpMetr
         pedidos: o.pedidos,
         consultas: o.consultas,
         acoes: o.acoes,
-        conversas: o.conversas,
         sessoes: o.sessoes,
-        minutosAtivos: o.minutosAtivos,
         latenciaSeg: Math.round(o.latenciaMs / 100) / 10,
         chamadas: o.chamadas,
         falhas: o.falhas,
@@ -143,11 +142,11 @@ export function shapeRelatorio(tipo: (typeof RELATORIO_TIPOS)[number], m: OpMetr
 export const gerarRelatorio = defineTool({
   name: "gerar_relatorio",
   description:
-    "Relatório da Operação por IA (só gestor): rendimento por pessoa, consultas, ferramentas, cards conduzidos, falhas por código, fluxos parados e aprovações de envio, num período em dias de Brasília (até 90). Devolve só números, ids e nº de card — nunca o texto dos pedidos. Só leitura.",
+    "Relatório da Operação por IA: rendimento, consultas, ferramentas, cards conduzidos, falhas por código, fluxos parados e aprovações de envio, num período em dias de Brasília (até 90). Gestor (Visão do Gestor) vê a equipe toda ou um operador; os demais veem SÓ o próprio rendimento (escopo: \"proprio\"). Devolve só números, ids e nº de card — nunca o texto dos pedidos. Só leitura.",
   level: 1,
-  permission: "manager_dashboard",
+  permission: "op_use",
   schema,
-  async run(_ctx, args) {
+  async run({ op: ctx }, args) {
     let periodo;
     try {
       periodo = resolveOpPeriod({ dias: args.dias, de: args.de, ate: args.ate });
@@ -155,10 +154,22 @@ export const gerarRelatorio = defineTool({
       if (err instanceof OpPeriodError) throw new OpToolError("argumentos_invalidos", err.message, 400);
       throw err;
     }
-    const op = args.operador ? await resolveOperador(args.operador) : null;
+    const gestor = ctx.permissions.manager_dashboard === true;
+    let op: { id: string; nome: string } | null;
+    if (gestor) {
+      op = args.operador ? await resolveOperador(args.operador) : null;
+    } else {
+      // Sem Visão do Gestor: sempre o próprio. Pedir outra pessoa é recusado
+      // (não cai calado no próprio, para o operador não achar que viu o colega).
+      op = { id: ctx.userId, nome: ctx.name ?? ctx.email };
+      if (args.operador) {
+        const alvo = await resolveOperador(args.operador);
+        if (alvo.id !== ctx.userId) throw new OpToolError("sem_permissao", "Você só pode ver o seu próprio rendimento (a equipe toda é da Visão do Gestor).", 403);
+      }
+    }
     const m = await getOpMetrics({ periodo, operatorId: op?.id ?? null });
     return {
-      data: { tipo: args.tipo, ...(op ? { operador: op.nome } : {}), ...shapeRelatorio(args.tipo, m) },
+      data: { tipo: args.tipo, escopo: gestor ? (op ? "operador" : "equipe") : "proprio", ...(op ? { operador: op.nome } : {}), ...shapeRelatorio(args.tipo, m) },
       summary: `relatório ${args.tipo} ${periodo.de}–${periodo.ate}${op ? ` (${op.nome})` : ""}: ${m.totais.pedidos} pedido(s), ${m.totais.falhas} falha(s)`,
       // Relatório não "toca" card: não polui o /meu-dia nem o próprio dashboard.
       cardIds: [],

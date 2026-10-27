@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   OP_SKILLS,
-  activeMinutes,
   approvalStatus,
   buildOpMetrics,
   callKind,
@@ -88,14 +87,6 @@ describe("classificação sem ler o texto", () => {
     expect(callKind({ tool: "executar_aprovado", level: 4, ok: true, confirmed: false, noop: false })).toBe("execucao");
     expect(callKind({ tool: "mover_card", level: 3, ok: false, confirmed: true, noop: false })).toBe("falha");
   });
-  it("tempo ativo corta pausas > 30 min", () => {
-    const t0 = Date.UTC(2026, 9, 25, 12);
-    const min = (n: number) => t0 + n * 60_000;
-    expect(activeMinutes([min(0), min(5), min(10)])).toBe(10);
-    expect(activeMinutes([min(0), min(5), min(50), min(52)])).toBe(7); // a pausa de 45 min não conta
-    expect(activeMinutes([min(0)])).toBe(0);
-    expect(activeMinutes([min(30), min(0)])).toBe(30); // fora de ordem
-  });
   it("aprovação pendente vencida conta como expirada", () => {
     expect(approvalStatus({ status: "pendente", expiresAt: new Date("2026-10-25T12:00:00Z") }, agora)).toBe("expirada");
     expect(approvalStatus({ status: "pendente", expiresAt: new Date("2026-10-25T14:00:00Z") }, agora)).toBe("pendente");
@@ -106,7 +97,7 @@ describe("classificação sem ler o texto", () => {
 describe("buildOpMetrics", () => {
   const periodo = { de: "2026-10-19", ate: "2026-10-25" };
 
-  it("pedidos, consultas, ações, conversas fora; cards conduzidos só por execução", () => {
+  it("pedidos, consultas, ações (conversa fica fora de tudo); cards conduzidos só por execução", () => {
     const m = buildOpMetrics({
       periodo,
       agora,
@@ -128,9 +119,11 @@ describe("buildOpMetrics", () => {
       flows: [],
     });
     const op1 = m.operadores.find((o) => o.operatorId === "op1")!;
-    expect(op1).toMatchObject({ pedidos: 3, consultas: 1, acoes: 2, conversas: 1, cardsConduzidos: 1, cardsTocados: 0, chamadas: 3, falhas: 0, sessoes: 1 });
-    expect(op1.minutosAtivos).toBeCloseTo(6.2, 1);
-    expect(m.totais).toMatchObject({ pedidos: 4, conversas: 1, cardsConduzidos: 1, cardsTocados: 1, falhas: 1 });
+    expect(op1).toMatchObject({ pedidos: 3, consultas: 1, acoes: 2, cardsConduzidos: 1, cardsTocados: 0, chamadas: 3, falhas: 0, sessoes: 1 });
+    // Decisões 19 e 23 (26/10): conversa não aparece em número nenhum e não há tempo por intervalo.
+    expect(op1).not.toHaveProperty("conversas");
+    expect(op1).not.toHaveProperty("minutosAtivos");
+    expect(m.totais).toMatchObject({ pedidos: 4, cardsConduzidos: 1, cardsTocados: 1, falhas: 1 });
     expect(m.cards.conduzidos).toEqual([expect.objectContaining({ cardId: CARD, acoes: 1, ferramentas: ["mover_card"], operadores: ["op1"] })]);
     expect(m.falhas).toEqual([{ tool: "obter_card", code: "sem_permissao", total: 1, exemplos: ["c5"], cardIds: [CARD2], operadores: ["op2"] }]);
     const mover = m.ferramentas.find((t) => t.tool === "mover_card")!;

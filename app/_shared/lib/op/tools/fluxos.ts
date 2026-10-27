@@ -1,6 +1,6 @@
 // Etapa 6: workflows com retomada. `salvar_progresso` grava o passo feito (ou
-// onde parou) em op_requests.state do prompt que iniciou o fluxo; nunca toca o
-// card. Nasce com interruptor DESLIGADO (switchable): desligada, as skills
+// onde parou) em op_workflows (decisão 21, 26/10); nunca toca o card. O fluxo
+// é do card: qualquer operador continua o de um colega (decisão 20). Nasce com interruptor DESLIGADO (switchable): desligada, as skills
 // seguem sem retomada. `fluxos_abertos` e `retomar_fluxo` leem; o retomar só
 // grava (tira o que venceu, cancela a aprovação pendente do próprio fluxo)
 // com o interruptor ligado. Lib: app/_shared/lib/op/workflow.ts; passos:
@@ -9,6 +9,7 @@
 import { z } from "zod/v4";
 import { db } from "../../prisma";
 import { defineTool } from "../registry";
+import { resolveOneCardId } from "../cards";
 import { cardRefSchema } from "./obter-card";
 import { brDateTime, brDaysBetween } from "../resolve";
 import { getOpSwitches, isToolEnabled } from "../switches";
@@ -27,6 +28,14 @@ import {
 } from "@/app/_shared/utils/workflows";
 
 const workflowSchema = z.enum(WORKFLOW_IDS).describe("prontuario | procuracao | pedido_prontuario | contrato");
+
+/** id → nome da equipe, para "quem começou/quem continuou". */
+async function teamNames(ids: string[]): Promise<Map<string, string>> {
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (!uniq.length) return new Map();
+  const rows = await db.user.findMany({ where: { id: { in: uniq } }, select: { id: true, name: true, email: true } });
+  return new Map(rows.map((u) => [u.id, u.name ?? u.email]));
+}
 
 function stepOut(step: WorkflowStep | null) {
   return step ? { passo: step.id, rotulo: step.rotulo, opcional: !!step.opcional } : null;
@@ -105,6 +114,7 @@ export const salvarProgresso = defineTool({
       previewOnly,
     });
     const cardOut = { cardNumber: out.card.cardNumber, nome: out.card.name };
+    const comecadoPor = "comecadoPor" in out && out.comecadoPor ? (await teamNames([out.comecadoPor])).get(out.comecadoPor) ?? null : null;
     if ("semRegistro" in out) {
       return {
         data: {
@@ -122,6 +132,7 @@ export const salvarProgresso = defineTool({
       salvo: out.salvo,
       ...("previewOnly" in out ? { previewOnly: true, aviso: "modo de teste (script): nada foi gravado", estadoQueGravaria: estado } : { novo: out.novo }),
       fluxo: out.fluxo,
+      ...(comecadoPor ? { comecadoPor, aviso: `Fluxo começado por ${comecadoPor}: você continuou de onde ficou.` } : {}),
       workflow: estado.workflow,
       card: cardOut,
       status: estado.status,
@@ -141,17 +152,19 @@ export const salvarProgresso = defineTool({
 
 export const fluxosAbertos = defineTool({
   name: "fluxos_abertos",
-  description: `REGISTRO. Lista os fluxos longos do PRÓPRIO operador em andamento ou parados (últimos ${WORKFLOW_STALE_DAYS} dias): qual fluxo, card, onde parou e por quê, próximo passo. É a primeira chamada da /retomar. Só lê.`,
+  description: `REGISTRO. Lista fluxos longos em andamento ou parados (últimos ${WORKFLOW_STALE_DAYS} dias): sem card = os que o operador começou ou continuou; com card = TODOS daquele card, de qualquer colega (o caso passa por vários operadores). Diz quem começou, quem mexeu por último, onde parou e por quê, próximo passo. É a primeira chamada da /retomar. Só lê.`,
   level: 1,
   permission: "op_use",
-  schema: z.object({}),
-  async run({ op }) {
+  schema: z.object({ card: cardRefSchema.optional().describe("Nº do card (ou CPF/nome): lista os fluxos dele de qualquer operador.") }),
+  async run({ op }, args) {
     const agora = new Date();
-    const { abertos, vencidos } = await listOpenFlows(op.userId, agora);
+    const filtro = args.card ? { cardId: await resolveOneCardId(args.card) } : { operatorId: op.userId };
+    const { abertos, vencidos } = await listOpenFlows(filtro, agora);
     const ids = [...new Set(abertos.map((f) => f.state.card.id))];
-    const cards = ids.length
-      ? await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, cardNumber: true, name: true } })
-      : [];
+    const [cards, nomes] = await Promise.all([
+      ids.length ? db.user.findMany({ where: { id: { in: ids } }, select: { id: true, cardNumber: true, name: true } }) : Promise.resolve([]),
+      teamNames(abertos.flatMap((f) => [f.startedById, f.lastOperatorId])),
+    ]);
     const fluxos = abertos.slice(0, 20).map((f) => {
       const def = workflowDef(f.state.workflow);
       const c = cards.find((x) => x.id === f.state.card.id);
@@ -163,6 +176,9 @@ export const fluxosAbertos = defineTool({
         skill: def.skill,
         card: { cardNumber: c?.cardNumber ?? f.state.card.cardNumber, nome: c?.name ?? null },
         status: f.state.status,
+        comecadoPor: nomes.get(f.startedById) ?? f.startedById,
+        ultimoOperador: nomes.get(f.lastOperatorId) ?? f.lastOperatorId,
+        deColega: f.lastOperatorId !== op.userId,
         ultimoPasso: ultimo ? { passo: ultimo.id, rotulo: ultimo.rotulo } : null,
         bloqueio: bloqueioOut(f.state),
         proximo: stepOut(currentStep(f.state)),
@@ -197,7 +213,7 @@ const retomarSchema = z
 export const retomarFluxo = defineTool({
   name: "retomar_fluxo",
   description:
-    "REGISTRO. Abre um fluxo parado do operador e diz o que já foi feito e AINDA vale (rascunho existe, anexo no card, envio executado), o que refazer (rascunho vencido; aprovação NUNCA se reaproveita: prepara de novo com código novo), o que reler (card, hospital, pendências) e o próximo passo. Com card + workflow no início de uma skill: aberto: false = começar do zero.",
+    "REGISTRO. Abre um fluxo parado (do operador ou de um colega — qualquer um da equipe continua o caso) e diz o que já foi feito e AINDA vale (rascunho existe, anexo no card, envio executado), o que refazer (rascunho vencido; aprovação NUNCA se reaproveita: prepara de novo com código novo), o que reler (card, hospital, pendências) e o próximo passo. Com card + workflow no início de uma skill: aberto: false = começar do zero.",
   level: 1,
   permission: "op_use",
   schema: retomarSchema,
@@ -212,6 +228,8 @@ export const retomarFluxo = defineTool({
     }
     const def = workflowDef(out.state.workflow);
     const p = out.plano;
+    const nomes = await teamNames([out.comecadoPor, out.ultimoOperador]);
+    const deColega = out.ultimoOperador !== op.userId;
     return {
       data: {
         aberto: true,
@@ -220,6 +238,9 @@ export const retomarFluxo = defineTool({
         rotulo: def.rotulo,
         skill: def.skill,
         card: { cardNumber: out.card?.cardNumber ?? out.state.card.cardNumber, nome: out.card?.name ?? null, arquivado: out.card?.archiveStatus ?? null },
+        comecadoPor: nomes.get(out.comecadoPor) ?? out.comecadoPor,
+        ultimoOperador: nomes.get(out.ultimoOperador) ?? out.ultimoOperador,
+        ...(deColega ? { avisoColega: `Este fluxo estava com ${nomes.get(out.ultimoOperador) ?? "um colega"}. Ao seguir, você passa a ser quem continuou; rascunho e aprovação dele não valem para você (prepare de novo).` } : {}),
         parouEm: bloqueioOut(out.state),
         desde: brDateTime(out.state.atualizadoEm),
         jaFeito: p.feitos,

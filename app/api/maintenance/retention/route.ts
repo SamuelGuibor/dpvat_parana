@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runRetention } from "@/app/_actions/maintenance/retention";
+import { purgeDevPrompts } from "@/app/_shared/lib/op/retencao";
 
 export const dynamic = "force-dynamic";
 // Primeira rodada depois de um acúmulo grande pode varrer dezenas de milhares
@@ -25,8 +26,14 @@ export async function GET(req: NextRequest) {
   }
   try {
     const result = await runRetention();
-    console.log("[RETENTION]", result);
-    return NextResponse.json(result);
+    // Prompts de desenvolvimento registrados pela IA de operação (decisão 19,
+    // 26/10): a rodada a cada prompt cobre 24 h; esta pega o resto.
+    const opDevPrompts = await purgeDevPrompts({ limit: 5_000 }).catch((err) => {
+      console.error("[RETENTION] op_requests:", err);
+      return null;
+    });
+    console.log("[RETENTION]", { ...result, opDevPrompts });
+    return NextResponse.json({ ...result, opDevPrompts });
   } catch (error) {
     console.error("[RETENTION]", error);
     return NextResponse.json({ error: "Erro na retenção" }, { status: 500 });

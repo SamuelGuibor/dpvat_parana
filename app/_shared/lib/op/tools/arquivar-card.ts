@@ -20,7 +20,7 @@ const schema = z
 export const arquivarCard = defineTool({
   name: "arquivar_card",
   description:
-    "ESCRITA. Arquiva UM card num destino (APTOS CCS, ENVIADOS TAYNARA, VOLTAR UM DIA…) ou desarquiva. Destinos que encerram o cliente (perdeu contato definitivo, desistiu, descartado) são recusados: exigem aprovação. Sem confirmar = só prévia. Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+    "ESCRITA. Arquiva UM card num destino (APTOS CCS, ENVIADOS TAYNARA, VOLTAR UM DIA…) ou desarquiva. Destinos que encerram o cliente (perdeu contato definitivo, desistiu, descartado) são recusados aqui: vão por preparar_acao_irreversivel, com \"aprovo <código>\". Sem confirmar = só prévia. Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
   level: 3,
   permission: "archive_cards",
   schema,
@@ -35,7 +35,7 @@ export const arquivarCard = defineTool({
       if (!hit) throw new OpToolError("nao_encontrado", `Destino "${args.destino}" não existe.`, 404, Object.values(ARCHIVE_LABELS));
       status = hit[0];
       if (DESTRUCTIVE_ARCHIVE.includes(status)) {
-        throw new OpToolError("requer_aprovacao", `"${hit[1]}" encerra a relação com o cliente: faça pelo site (a IA ainda não arquiva neste destino).`, 403);
+        throw new OpToolError("requer_aprovacao", `"${hit[1]}" encerra a relação com o cliente: use preparar_acao_irreversivel (acao arquivar_definitivo) — exige "aprovo <código>".`, 403);
       }
     }
     const atual = (card.archiveStatus as ArchiveStatus | null) ?? null;

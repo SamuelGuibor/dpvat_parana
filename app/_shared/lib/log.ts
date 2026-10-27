@@ -14,6 +14,7 @@ export type LogAction =
   | "document_move"     // mudou o arquivo de pasta na aba Arquivos
   | "comment_add"
   | "create"
+  | "card_delete"   // excluiu o card de vez (hoje só a IA de operação, com "aprovo <código>"); log sem userId para sobreviver à cascata
   | "password_view"  // equipe visualizou a senha de acesso do cliente (auditoria)
   | "password_set"   // equipe redefiniu a senha de acesso do cliente
   | "dev_commit"     // commit de desenvolvimento (atividade do dev, via git)

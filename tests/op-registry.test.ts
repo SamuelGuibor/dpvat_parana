@@ -26,14 +26,19 @@ const ETAPA_5_L4 = ["preparar_email", "preparar_whatsapp", "executar_aprovado"];
 const ETAPA_6_L1 = ["salvar_progresso", "fluxos_abertos", "retomar_fluxo"];
 // Etapa 7: auditoria e varredura (L1, só leitura).
 const ETAPA_7_L1 = ["gerar_relatorio", "varrer_inconsistencias"];
-const L3 = [...ETAPA_3, ...ETAPA_4_L3];
+// Ajustes de 26/10 (09-decisoes-dono-26-10.md): escrita reversível (L3),
+// irreversível com "aprovo <código>" (L4) e a leitura "quem pediu".
+const AJUSTES_L3 = ["editar_cadastro", "gerenciar_documento", "editar_comentario", "atualizar_tarefa"];
+const AJUSTES_L4 = ["preparar_acao_irreversivel"];
+const AJUSTES_L1 = ["quem_pediu"];
+const L3 = [...ETAPA_3, ...ETAPA_4_L3, ...AJUSTES_L3];
 
 describe("registry da operação por IA", () => {
   it("Etapas 1–2 + meu_dia + 6 de escrita da Etapa 3 + documentos da Etapa 4 + envio aprovado da Etapa 5 + fluxos da Etapa 6, nomes únicos", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual(
-      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1].sort(),
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1, ...AJUSTES_L3, ...AJUSTES_L4, ...AJUSTES_L1].sort(),
     );
   });
 
@@ -52,6 +57,10 @@ describe("registry da operação por IA", () => {
         expect(t.level).toBe(4);
         expect(["op_approve", "view_whatsapp"]).toContain(t.permission);
         expect(t.description).toMatch(/^ENVIO\./);
+      } else if (AJUSTES_L4.includes(t.name)) {
+        expect(t.level).toBe(4);
+        expect(t.permission).toBe("op_approve");
+        expect(t.description).toMatch(/^APROVAÇÃO\./);
       } else if (L3.includes(t.name)) {
         expect(t.level).toBe(3);
         expect(["op_write", "archive_cards"]).toContain(t.permission);
@@ -98,10 +107,10 @@ describe("registry da operação por IA", () => {
     expect(getTool("fluxos_abertos")!.schema.safeParse({}).success).toBe(true);
   });
 
-  it("Etapa 7: gerar_relatorio só gestor, tipos fechados, ≤ 90 dias; varredura com checagens e limite fechados", () => {
+  it("Etapa 7: gerar_relatorio (op_use; equipe só para gestor, ver tests/op-metrics-lib), tipos fechados, ≤ 90 dias; varredura com checagens e limite fechados", () => {
     const rel = getTool("gerar_relatorio")!;
     expect(rel.level).toBe(1);
-    expect(rel.permission).toBe("manager_dashboard");
+    expect(rel.permission).toBe("op_use");
     expect(rel.switchable).toBeFalsy();
     expect(rel.schema.safeParse({ tipo: "operacao" }).success).toBe(true);
     expect(rel.schema.safeParse({ tipo: "operacao", dias: 90 }).success).toBe(true);
@@ -191,5 +200,24 @@ describe("registry da operação por IA", () => {
     expect(getTool("buscar_cliente")!.schema.safeParse({ nome: "Ana" }).success).toBe(true);
     expect(getTool("listar_historico")!.schema.safeParse({ card: "1", limite: 500 }).success).toBe(false);
     expect(getTool("listar_documentos")!.schema.safeParse({ card: "1", pasta: "XPTO" }).success).toBe(false);
+  });
+
+  it("ajustes de 26/10: schemas de editar_cadastro, gerenciar_documento, ação irreversível e quem_pediu", () => {
+    const cad = getTool("editar_cadastro")!.schema;
+    expect(cad.safeParse({ card: "2342", campos: { cpf: "123" } }).success).toBe(true);
+    expect(cad.safeParse({ card: "2342", campos: {} }).success).toBe(false);
+    const doc = getTool("gerenciar_documento")!.schema;
+    expect(doc.safeParse({ card: "2342", documento: "x", acao: "lixeira" }).success).toBe(true);
+    expect(doc.safeParse({ card: "2342", documento: "x", acao: "renomear" }).success).toBe(false);
+    expect(doc.safeParse({ card: "2342", documento: "x", acao: "mover_pasta", pasta: "PROCURAÇÃO" }).success).toBe(true);
+    expect(doc.safeParse({ card: "2342", documento: "x", acao: "excluir" }).success).toBe(false);
+    const irr = getTool("preparar_acao_irreversivel")!.schema;
+    expect(irr.safeParse({ card: "2342", acao: "excluir_card" }).success).toBe(true);
+    expect(irr.safeParse({ card: "2342", acao: "excluir_card", destino: "x" }).success).toBe(false);
+    expect(irr.safeParse({ card: "2342", acao: "arquivar_definitivo" }).success).toBe(false);
+    const qp = getTool("quem_pediu")!.schema;
+    expect(qp.safeParse({ aprovacao: "K7QX" }).success).toBe(true);
+    expect(qp.safeParse({}).success).toBe(false);
+    expect(qp.safeParse({ aprovacao: "K7QX", card: "2342" }).success).toBe(false);
   });
 });
