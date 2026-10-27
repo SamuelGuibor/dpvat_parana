@@ -54,6 +54,57 @@ export interface VarreduraCard {
   telefone: string | null;
   hospital: string | null;
   outroHospital: string | null;
+  /** Item C (27/10): só para os cards de grupo repetido (a ferramenta busca depois de achar os grupos). */
+  stats?: VarreduraCardStats;
+}
+
+export interface VarreduraCardStats {
+  documentos: number;
+  comentarios: number;
+  diasNaColuna: number | null;
+  /** AAAA-MM-DD (Brasília). */
+  criadoEm: string | null;
+}
+
+/** Um card dentro de um grupo repetido, como sai na evidência. */
+export interface VarreduraGrupoCard extends VarreduraCardStats {
+  id: string;
+  cardNumber: number | null;
+  nome: string | null;
+  coluna: string;
+}
+
+/** Item C: ids dos cards que caem em cpf_repetido/telefone_repetido (para buscar as contagens só deles). */
+export function duplicateCardIds(cards: VarreduraCard[]): string[] {
+  const r = findInconsistencies({ cards, flows: [], checagens: ["cpf_repetido", "telefone_repetido"], limite: 10_000 });
+  const ids = new Set<string>();
+  for (const i of r.itens) for (const c of (i.evidencia.cards as VarreduraGrupoCard[] | undefined) ?? []) ids.add(c.id);
+  return [...ids];
+}
+
+/**
+ * Qual manter num grupo repetido: mais documentos, depois mais comentários,
+ * depois o mais antigo (criadoEm), depois o menor nº. Os outros = arquivar.
+ * Heurística da IA, não regra oficial: a skill mostra e o operador decide.
+ */
+export function sugerirManter(cards: VarreduraGrupoCard[]): { manter: number | null; arquivar: (number | null)[]; motivo: string } {
+  const sorted = [...cards].sort(
+    (a, b) =>
+      b.documentos - a.documentos ||
+      b.comentarios - a.comentarios ||
+      (a.criadoEm ?? "9999").localeCompare(b.criadoEm ?? "9999") ||
+      (a.cardNumber ?? Infinity) - (b.cardNumber ?? Infinity),
+  );
+  const [m, ...rest] = sorted;
+  const motivo =
+    rest.length && m.documentos > rest[0].documentos
+      ? "tem mais documentos"
+      : rest.length && m.comentarios > rest[0].comentarios
+        ? "tem mais comentários"
+        : rest.length && m.criadoEm && rest[0].criadoEm && m.criadoEm < rest[0].criadoEm
+          ? "é o mais antigo"
+          : "empate: o de menor número";
+  return { manter: m?.cardNumber ?? null, arquivar: rest.map((c) => c.cardNumber), motivo };
 }
 
 export interface VarreduraFlow {
@@ -93,6 +144,16 @@ export function findInconsistencies(input: {
   const cardOut = (c: VarreduraCard) => ({ id: c.id, cardNumber: c.cardNumber, nome: c.nome, coluna: c.coluna });
   const push = (checagem: VarreduraChecagem, c: VarreduraCard, evidencia: Record<string, unknown>) =>
     itens.push({ checagem, card: cardOut(c), ...VARREDURA_REGRAS[checagem], evidencia });
+  // Item C (27/10): UM item por grupo repetido (antes era um por card, dobrando
+  // o limite), com as contagens de cada card e a sugestão de qual manter.
+  const grupoCards = (group: VarreduraCard[]): VarreduraGrupoCard[] =>
+    group.map((c) => ({ ...cardOut(c), documentos: c.stats?.documentos ?? 0, comentarios: c.stats?.comentarios ?? 0, diasNaColuna: c.stats?.diasNaColuna ?? null, criadoEm: c.stats?.criadoEm ?? null }));
+  const pushGrupo = (checagem: VarreduraChecagem, group: VarreduraCard[], campo: Record<string, unknown>) => {
+    const cards = grupoCards(group);
+    const sugestao = sugerirManter(cards);
+    const manter = group.find((c) => c.cardNumber === sugestao.manter) ?? group[0];
+    push(checagem, manter, { ...campo, cards, sugestao });
+  };
 
   if (on.has("cpf_repetido") || on.has("telefone_repetido")) {
     const byCpf = new Map<string, VarreduraCard[]>();
@@ -106,7 +167,7 @@ export function findInconsistencies(input: {
     if (on.has("cpf_repetido")) {
       for (const [cpf, group] of byCpf) {
         if (group.length < 2) continue;
-        for (const c of group) push("cpf_repetido", c, { campo: "cpf", valor: cpf, tambemNosCards: group.filter((o) => o !== c).map((o) => o.cardNumber) });
+        pushGrupo("cpf_repetido", group, { campo: "cpf", valor: cpf });
       }
     }
     if (on.has("telefone_repetido")) {
@@ -115,7 +176,7 @@ export function findInconsistencies(input: {
         const cpfs = new Set(group.map((c) => digits(c.cpf)).filter((d) => d.length === 11));
         // Mesmo CPF já sai no cpf_repetido; aqui só CPFs diferentes (ou faltando).
         if (cpfs.size <= 1 && group.every((c) => digits(c.cpf).length === 11)) continue;
-        for (const c of group) push("telefone_repetido", c, { campo: "telefone", final: fim, tambemNosCards: group.filter((o) => o !== c).map((o) => o.cardNumber) });
+        pushGrupo("telefone_repetido", group, { campo: "telefone", final: fim });
       }
     }
   }

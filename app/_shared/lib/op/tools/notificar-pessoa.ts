@@ -20,7 +20,7 @@ const schema = z.object({
 export const notificarPessoa = defineTool({
   name: "notificar_pessoa",
   description:
-    "ESCRITA. Avisa uma pessoa da equipe (sino + Caixa de Menções) ou cria uma tarefa compartilhada para um setor. Sem confirmar = só prévia (destinatários reais e se vira tarefa de setor). Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash. Nunca avisa cliente.",
+    "ESCRITA. Avisa uma pessoa da equipe (sino + Caixa de Menções) ou cria uma tarefa compartilhada para um setor. Chame com confirmar: true: executa na hora (ação direta, sem prévia). Nunca avisa cliente.",
   level: 3,
   permission: "op_write",
   schema,

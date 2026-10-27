@@ -69,7 +69,7 @@ Hooks ativos (`.claude/settings.json`): bloqueiam `prisma migrate dev/reset`, `d
 - O prompt vivo do bot está **no banco** (instruções + playbook publicados pela aba Instruções). Editar só o `bot.js` não muda produção. State/closeCategory/action novo = 3 lugares (instruções no banco, `STATES`/`responseSchema` no `bot.js`, `BotDecision`/switch no `bot.ts`); deploy do micro antes do CRM.
 - Código não sobrescreve decisão do cérebro com texto fixo; falha do bot vai para `handoffToQueue` com motivo, nunca vira mensagem de erro ao cliente.
 - Todo envio usa o `numberId` do contato (número inativo nunca cai no default); template só da WABA daquele número e `APPROVED`; mensagens proativas via `sendSystemWhatsApp` (opt-out, cooldown, opt-in). Opt-out só por regex (`opt-out.ts`).
-- Não afrouxar cooldown, tetos de recuperação nem o marcapasso (`createPacer`): as duas WABAs já levaram aviso de spam da Meta.
+- Não afrouxar cooldown, tetos de recuperação nem o marcapasso (`createPacer`): as duas WABAs já levaram aviso de spam da Meta. Única exceção (decisão do dono, 27/10): a mensagem **aprovada pelo operador** pela IA de operação (`executar_aprovado`) sai como transacional, sem o cooldown de proativa, e o lote (≤ 20 por código, 1,5 s entre envios) fica fora do marcapasso dos crons — opt-out, opt-in, janela de 24 h, template APPROVED e `templatesPaused` continuam valendo.
 
 **IA**
 - Toda chamada de IA (Anthropic/Gemini) grava `metadata.usage` `{model,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}` no Log; preço só em `MODEL_PRICING` (`ai-pricing.ts`). Sem isso o gasto some do Canto da IA/custos.

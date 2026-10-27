@@ -64,11 +64,11 @@ describe("operação por IA", () => {
     }
   });
 
-  it("escrever é da equipe toda (26/10); aprovar e publicar conhecimento nascem só no ADMIN++", () => {
+  it("escrever (26/10) e aprovar envio (27/10, item L) são da equipe toda; publicar conhecimento nasce só no ADMIN++", () => {
     for (const role of ["ADMIN", "ADMIN+"] as const) {
       const map = resolvePermissions(role);
       expect(map.op_write).toBe(true);
-      expect(map.op_approve).toBe(false);
+      expect(map.op_approve).toBe(true);
       expect(map.manage_knowledge).toBe(false);
     }
     const sa = resolvePermissions("ADMIN++");

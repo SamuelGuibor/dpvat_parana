@@ -41,6 +41,8 @@ const OPEN_FLOW_LOOKBACK_DAYS = 90;
 export interface OpMetricsView extends OpMetrics {
   /** operatorId → nome (equipe). */
   nomes: Record<string, string>;
+  /** operatorId → foto de perfil (User.image), quando há. */
+  fotos: Record<string, string | null>;
   /** cardId → nº, nome e coluna atual (cards citados nas listas). */
   cardsInfo: Record<string, { cardNumber: number | null; nome: string | null; coluna: string; arquivado: string | null }>;
   /** Tetos atingidos (número pode estar cortado). */
@@ -61,6 +63,10 @@ interface CallRow {
   cardIds: string[];
   durationMs: number;
   createdAt: Date;
+  previaHash: string | null;
+  avisos: string[] | null;
+  envioCanal: string | null;
+  enviados: number | null;
 }
 
 /** Linhas cruas do período (sem texto nem args). Exportado para os testes. */
@@ -79,7 +85,15 @@ export async function loadOpMetricRows(periodo: Pick<OpPeriod, "gte" | "lt">, op
       SELECT id, "operatorId", "requestId", "sessionId", tool, level, ok, code,
              COALESCE(args->>'confirmar' = 'true', false) AS confirmed,
              COALESCE(summary LIKE 'noop%', false) AS noop,
-             "cardIds", "durationMs", "createdAt"
+             "cardIds", "durationMs", "createdAt", "previaHash", avisos,
+             -- Entregas (27/10): o summary do executar_aprovado começa pelo canal
+             -- ("WhatsApp enviado…", "e-mail em lote: 7/9 enviado(s)…"); noop e
+             -- "NÃO enviado" contam zero.
+             CASE WHEN tool = 'executar_aprovado' AND ok THEN lower(split_part(summary, ' ', 1)) END AS "envioCanal",
+             CASE WHEN tool = 'executar_aprovado' AND ok THEN
+               COALESCE(substring(summary from 'em lote: ([0-9]+)/')::int,
+                        CASE WHEN summary LIKE '% enviado (aprova%' THEN 1 ELSE 0 END)
+             END AS enviados
       FROM op_tool_calls
       WHERE "createdAt" >= ${periodo.gte} AND "createdAt" < ${periodo.lt} ${opFilter}
       ORDER BY "createdAt" ASC
@@ -112,6 +126,10 @@ export async function loadOpMetricRows(periodo: Pick<OpPeriod, "gte" | "lt">, op
     confirmed: c.confirmed === true,
     noop: c.noop === true,
     cardIds: c.cardIds ?? [],
+    previaHash: c.previaHash ?? null,
+    avisos: c.avisos ?? [],
+    envioCanal: c.envioCanal ?? null,
+    enviados: Number(c.enviados ?? 0),
   }));
   return {
     prompts: prompts as MetricPrompt[],
@@ -122,10 +140,13 @@ export async function loadOpMetricRows(periodo: Pick<OpPeriod, "gte" | "lt">, op
   };
 }
 
-async function namesOf(ids: string[]): Promise<Record<string, string>> {
-  if (!ids.length) return {};
-  const rows = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
-  return Object.fromEntries(rows.map((r) => [r.id, r.name ?? r.id]));
+async function peopleOf(ids: string[]): Promise<{ nomes: Record<string, string>; fotos: Record<string, string | null> }> {
+  if (!ids.length) return { nomes: {}, fotos: {} };
+  const rows = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, image: true } });
+  return {
+    nomes: Object.fromEntries(rows.map((r) => [r.id, r.name ?? r.id])),
+    fotos: Object.fromEntries(rows.map((r) => [r.id, r.image ?? null])),
+  };
 }
 
 async function cardsOf(ids: string[]): Promise<OpMetricsView["cardsInfo"]> {
@@ -145,13 +166,17 @@ export async function getOpMetrics(input: { periodo: OpPeriod; operatorId?: stri
   const rows = await loadOpMetricRows(input.periodo, input.operatorId);
   const m = buildOpMetrics({ ...rows, periodo: input.periodo, agora: input.agora });
   const cardIds = [
+    // Rótulo dos chats primeiro: o teto de MAX_CARD_LOOKUP corta o fim da lista.
+    ...m.chats.flatMap((c) => c.cardIds.slice(0, 1)),
     ...m.cards.conduzidos.map((c) => c.cardId),
     ...m.falhas.flatMap((f) => f.cardIds),
     ...m.aprovacoes.lista.map((a) => a.cardId).filter((x): x is string => !!x),
     ...m.fluxos.parados.map((f) => f.cardId),
+    ...m.ignorados.previasNaoConfirmadas.map((i) => i.cardId).filter((x): x is string => !!x),
+    ...m.ignorados.enviosComAviso.map((i) => i.cardId).filter((x): x is string => !!x),
   ];
-  const [nomes, cardsInfo] = await Promise.all([namesOf(m.operadores.map((o) => o.operatorId)), cardsOf(cardIds)]);
-  return { ...m, nomes, cardsInfo, cortado: rows.cortado };
+  const [{ nomes, fotos }, cardsInfo] = await Promise.all([peopleOf(m.operadores.map((o) => o.operatorId)), cardsOf(cardIds)]);
+  return { ...m, nomes, fotos, cardsInfo, cortado: rows.cortado };
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +246,7 @@ export async function getOpPrompts(input: {
   // 2) Texto só da página.
   const [texts, nomes] = await Promise.all([
     page.length ? db.opRequest.findMany({ where: { id: { in: page.map((p) => p.id) } }, select: { id: true, text: true } }) : [],
-    namesOf([...new Set(page.map((p) => p.operatorId))]),
+    peopleOf([...new Set(page.map((p) => p.operatorId))]).then((x) => x.nomes),
   ]);
   const textOf = new Map(texts.map((t) => [t.id, t.text]));
   return {
@@ -251,6 +276,101 @@ export async function listOpOperators(periodo: Pick<OpPeriod, "gte" | "lt">): Pr
     where: { lastSeenAt: { gte: periodo.gte }, startedAt: { lt: periodo.lt } },
     _count: { _all: true },
   });
-  const nomes = await namesOf(rows.map((r) => r.operatorId));
+  const { nomes } = await peopleOf(rows.map((r) => r.operatorId));
   return rows.map((r) => ({ id: r.operatorId, nome: nomes[r.operatorId] ?? r.operatorId })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+// ---------------------------------------------------------------------------
+// Um chat inteiro (27/10): pedido → ações → resposta. Quem chama confere o
+// acesso (gestor lê todos; operador só os próprios — decisão do dono, 27/10).
+// ---------------------------------------------------------------------------
+
+const MAX_CHAT_PROMPTS = 200;
+const MAX_CHAT_CALLS = 1_000;
+
+export interface OpChatAcao {
+  id: string;
+  tool: string;
+  ok: boolean;
+  code: string | null;
+  summary: string;
+  cardIds: string[];
+  criadoEm: string;
+}
+
+export interface OpChatMensagem {
+  id: string;
+  criadoEm: string;
+  skill: string | null;
+  texto: string;
+  resposta: string | null;
+  respondidoEm: string | null;
+  acoes: OpChatAcao[];
+}
+
+export interface OpChatView {
+  sessionId: string;
+  operatorId: string;
+  operador: string;
+  inicio: string;
+  ultimo: string;
+  mensagens: OpChatMensagem[];
+  cardsInfo: OpMetricsView["cardsInfo"];
+  cortado: boolean;
+}
+
+/** Dono do chat (para a checagem de acesso antes de ler o texto). */
+export async function opChatOwner(sessionId: string): Promise<string | null> {
+  const s = await db.opSession.findUnique({ where: { id: sessionId }, select: { operatorId: true } });
+  return s?.operatorId ?? null;
+}
+
+export async function getOpChat(sessionId: string): Promise<OpChatView | null> {
+  const session = await db.opSession.findUnique({ where: { id: sessionId }, select: { id: true, operatorId: true, startedAt: true, lastSeenAt: true } });
+  if (!session) return null;
+  const [prompts, calls, people] = await Promise.all([
+    db.opRequest.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: "asc" },
+      take: MAX_CHAT_PROMPTS,
+      select: { id: true, createdAt: true, skill: true, text: true, response: true, respondedAt: true },
+    }),
+    db.opToolCall.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: "asc" },
+      take: MAX_CHAT_CALLS,
+      select: { id: true, requestId: true, tool: true, ok: true, code: true, summary: true, cardIds: true, createdAt: true },
+    }),
+    peopleOf([session.operatorId]),
+  ]);
+  const mensagens: OpChatMensagem[] = prompts.map((p) => ({
+    id: p.id,
+    criadoEm: p.createdAt.toISOString(),
+    skill: p.skill,
+    texto: maskOpToken(p.text),
+    resposta: p.response ? maskOpToken(p.response) : null,
+    respondidoEm: p.respondedAt?.toISOString() ?? null,
+    acoes: [],
+  }));
+  const byId = new Map(mensagens.map((m) => [m.id, m]));
+  for (const c of calls) {
+    // Sem requestId (hook antigo/evento perdido): vai para o último pedido antes dela.
+    const alvo =
+      (c.requestId && byId.get(c.requestId)) ||
+      [...mensagens].reverse().find((m) => m.criadoEm <= c.createdAt.toISOString()) ||
+      mensagens[0];
+    alvo?.acoes.push({ id: c.id, tool: c.tool, ok: c.ok, code: c.code, summary: maskOpToken(c.summary), cardIds: c.cardIds, criadoEm: c.createdAt.toISOString() });
+  }
+  const cardsInfo = await cardsOf(calls.flatMap((c) => c.cardIds));
+  const ultimo = [session.lastSeenAt, ...prompts.map((p) => p.respondedAt ?? p.createdAt)].reduce((a, b) => (b && b > a ? b : a));
+  return {
+    sessionId,
+    operatorId: session.operatorId,
+    operador: people.nomes[session.operatorId] ?? "Operador",
+    inicio: (prompts[0]?.createdAt ?? session.startedAt).toISOString(),
+    ultimo: ultimo.toISOString(),
+    mensagens,
+    cardsInfo,
+    cortado: prompts.length >= MAX_CHAT_PROMPTS || calls.length >= MAX_CHAT_CALLS,
+  };
 }

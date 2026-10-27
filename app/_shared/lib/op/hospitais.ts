@@ -17,6 +17,30 @@ export const COLUNA_HOSPITAIS = "DISTRIBUICAO DE SOLICITACOES";
 const INDEX_KEY = "operacao-vault/index.json";
 const INDEX_TTL_MS = 5 * 60_000;
 
+// Item B (27/10): as três leituras de tabela inteira (automações da coluna,
+// GHOSTs, cards ativos por hospital) rodavam a CADA consultar_hospital e a
+// cada preparar_email (2× por /prontuario). Cache por instância de 5 min, no
+// mesmo padrão do índice do vault. Quem edita automação chama
+// invalidateHospitalCache() (lib/db/automations.ts); o cadastro hospital_* do
+// GHOST só muda pelo script vault-hospitais-para-ghost.mjs (fora do app), e
+// o card novo aparece em até 5 min na contagem — aceitável para a leitura.
+// O cache é POR INSTÂNCIA da Vercel: outra instância segue com o dado velho
+// até o TTL. O valor devolvido é o mesmo objeto para todo chamador: só leia,
+// nunca mude o Map/array (corromperia o cache).
+const HOSPITAL_TTL_MS = 5 * 60_000;
+const memo = new Map<string, { at: number; value: unknown }>();
+async function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < HOSPITAL_TTL_MS) return hit.value as T;
+  const value = await fn();
+  memo.set(key, { at: Date.now(), value });
+  return value;
+}
+/** Esquece automações, GHOSTs e contagem de cards (edição de automação; testes). */
+export function invalidateHospitalCache(): void {
+  memo.clear();
+}
+
 export type HospitalAutomation = {
   id: string;
   name: string;
@@ -26,8 +50,12 @@ export type HospitalAutomation = {
 };
 export type HospitalGroup = { key: string; nome: string; autos: HospitalAutomation[]; hash: string };
 
-/** Automações ativas da coluna, agrupadas pelo nome normalizado do hospital. */
-export async function loadHospitalGroups(): Promise<Map<string, HospitalGroup>> {
+/** Automações ativas da coluna, agrupadas pelo nome normalizado do hospital (cache de 5 min). */
+export function loadHospitalGroups(): Promise<Map<string, HospitalGroup>> {
+  return cached("grupos", loadHospitalGroupsFromDb);
+}
+
+async function loadHospitalGroupsFromDb(): Promise<Map<string, HospitalGroup>> {
   const labels = await db.label.findMany({ select: { id: true, name: true } });
   const col = labels.find((l) => normalizeHospitalName(l.name) === COLUNA_HOSPITAIS);
   const grupos = new Map<string, HospitalGroup>();
@@ -77,8 +105,12 @@ export async function loadVaultIndex(): Promise<VaultIndexNota[]> {
   return notas;
 }
 
-/** Hospital (nome normalizado) → nº de cards ativos com ele cadastrado. */
-export async function activeCardsByHospital(): Promise<Map<string, { nome: string; n: number }>> {
+/** Hospital (nome normalizado) → nº de cards ativos com ele cadastrado (cache de 5 min). */
+export function activeCardsByHospital(): Promise<Map<string, { nome: string; n: number }>> {
+  return cached("cards", activeCardsByHospitalFromDb);
+}
+
+async function activeCardsByHospitalFromDb(): Promise<Map<string, { nome: string; n: number }>> {
   const cards = await db.user.findMany({ where: { ...ACTIVE_CARD_WHERE, hospital: { not: null } }, select: { hospital: true } });
   const out = new Map<string, { nome: string; n: number }>();
   for (const c of cards) {
@@ -101,14 +133,29 @@ export interface HospitalContact {
   notaCaminho: string | null;
 }
 
+export type HospitalGhost = { id: string; name: string | null; hospital_email: string | null; hospital_telefone: string | null; hospital_modo: string | null; hospital_obs: string | null };
+
+/** Catálogo de hospitais (GHOST) com o cadastro hospital_* (cache de 5 min). */
+export function loadGhosts(): Promise<HospitalGhost[]> {
+  return cached("ghosts", () =>
+    db.user.findMany({
+      where: { role: "GHOST" },
+      select: { id: true, name: true, hospital_email: true, hospital_telefone: true, hospital_modo: true, hospital_obs: true },
+    }),
+  );
+}
+
+/** GHOST pelo nome normalizado do hospital. */
+export async function ghostFor(hospital: string): Promise<HospitalGhost | null> {
+  const key = normalizeHospitalName(hospital);
+  if (!key) return null;
+  return (await loadGhosts()).find((x) => normalizeHospitalName(x.name ?? "") === key) ?? null;
+}
+
 /** Contato do hospital pelo nome (o do card ou o digitado). Só leitura. */
 export async function hospitalContactFor(hospital: string): Promise<HospitalContact> {
   const key = normalizeHospitalName(hospital);
-  const ghosts = await db.user.findMany({
-    where: { role: "GHOST" },
-    select: { id: true, name: true, hospital_email: true, hospital_telefone: true, hospital_modo: true, hospital_obs: true },
-  });
-  const g = key ? ghosts.find((x) => normalizeHospitalName(x.name ?? "") === key) ?? null : null;
+  const g = await ghostFor(hospital);
   const cadastro = g
     ? { email: g.hospital_email, telefone: g.hospital_telefone, modo: g.hospital_modo, obs: g.hospital_obs }
     : null;

@@ -349,7 +349,9 @@ export interface SystemSendInput {
    * Mensagem TRANSACIONAL pedida pelo próprio cliente naquele momento (ex.:
    * código de assinatura que ele solicitou na tela). Pula o cooldown anti-spam
    * de mensagens proativas — o cliente está esperando; segurar o envio é que
-   * quebra o fluxo. Opt-out e janela/template continuam valendo.
+   * quebra o fluxo. Opt-out e janela/template continuam valendo. Também usado
+   * pelo envio APROVADO pelo operador na IA de operação (op/comms.ts, decisão
+   * do dono de 27/10): mensagem humana, não proativa de automação.
    */
   transactional?: boolean;
   /**

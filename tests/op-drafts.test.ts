@@ -168,14 +168,19 @@ describe("anexar_rascunho (L3)", () => {
     db.document.findFirst.mockResolvedValue(null);
     db.user.findUniqueOrThrow.mockResolvedValue({ cardNumber: 2342, name: "Ana Souza", archiveStatus: null });
     const r = await anexar().run({ op, trace }, parse(anexar(), { rascunho: KEY }));
-    expect((r.data as { previa: Record<string, unknown> }).previa).toMatchObject({ pasta: "PROCURAÇÃO", camposEmBranco: ["RG"], autor: "Fulana (via IA)" });
+    const previa = (r.data as { previa: { itens: Record<string, unknown>[]; autor: string; requerConfirmacao: boolean } }).previa;
+    expect(previa.itens[0]).toMatchObject({ pasta: "PROCURAÇÃO", camposEmBranco: ["RG"] });
+    expect(previa.autor).toBe("Fulana (via IA)");
+    // Procuração anexa direto (decisão 27/10); só contrato exige confirmação.
+    expect(previa.requerConfirmacao).toBe(false);
     expect(sent.filter((s) => s.cmd === "Copy")).toHaveLength(0);
     expect(db.document.create).not.toHaveBeenCalled();
   });
 
-  it("rascunho de outro operador → sem_permissao", async () => {
+  it("rascunho de outro operador é do card: anexa normalmente (item K, 27/10 — revoga a decisão 17)", async () => {
     s3Reply.head = head({ operator: "outra" });
-    await expect(anexar().run({ op, trace }, parse(anexar(), { rascunho: KEY }))).rejects.toMatchObject({ code: "sem_permissao", status: 403 });
+    const r = await anexar().run({ op, trace }, parse(anexar(), { rascunho: KEY }));
+    expect(r.data).toMatchObject({ previa: { itens: [expect.objectContaining({ arquivo: expect.any(String) })] } });
   });
 
   it("já anexado = noop antes da prévia", async () => {

@@ -49,6 +49,31 @@
       "mcp__crm-op__meu_dia",
       "mcp__crm-op__listar_modelos",
       "mcp__crm-op__quem_pediu",
+      "mcp__crm-op__analisar_documentos",
+      "mcp__crm-op__panorama_card",
+      "mcp__crm-op__iniciar_lote",
+      "mcp__crm-op__resultado_lote",
+      "mcp__crm-op__gerar_relatorio",
+      "mcp__crm-op__varrer_inconsistencias",
+      "mcp__crm-op__fluxos_abertos",
+      "mcp__crm-op__retomar_fluxo",
+      "mcp__crm-op__salvar_progresso",
+      "mcp__crm-op__preparar_procuracao",
+      "mcp__crm-op__preparar_pedido_prontuario",
+      "mcp__crm-op__preparar_contrato",
+      "mcp__crm-op__mover_card",
+      "mcp__crm-op__adicionar_tag",
+      "mcp__crm-op__remover_tag",
+      "mcp__crm-op__comentar_card",
+      "mcp__crm-op__notificar_pessoa",
+      "mcp__crm-op__arquivar_card",
+      "mcp__crm-op__anexar_rascunho",
+      "mcp__crm-op__editar_cadastro",
+      "mcp__crm-op__gerenciar_documento",
+      "mcp__crm-op__editar_comentario",
+      "mcp__crm-op__atualizar_tarefa",
+      "mcp__crm-op__preparar_email",
+      "mcp__crm-op__preparar_whatsapp",
       "Read(//d/Chatbot_whatsapp/**)",
       "Read(//d/docx-converter/**)"
     ],
@@ -86,6 +111,9 @@
       }
     ],
     "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/op-response.mjs\"", "timeout": 8 }]
+      },
       {
         "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-typecheck.mjs\"", "timeout": 180 }]
       }

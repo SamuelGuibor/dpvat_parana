@@ -394,12 +394,14 @@ export type ApprovalFact = "pendente" | "enviando" | "executada" | "falhou" | "e
 
 /** O que a lib releu da fonte antes de retomar. */
 export interface ResumeFacts {
-  /** key → "ok" | "vencido" (mais de 7 dias/apagado/inválido) | "outro_operador". */
-  rascunhos: Record<string, "ok" | "vencido" | "outro_operador">;
+  /** key → "ok" | "vencido" (mais de 7 dias/apagado/inválido). Desde 27/10 (item K) o rascunho é do card: o de colega vale. */
+  rascunhos: Record<string, "ok" | "vencido">;
   /** id de Document → "ok" | "apagado" (lixeira ou outro card). */
   documentos: Record<string, "ok" | "apagado">;
-  /** approvalId → status atual (pendente da retomada já vem "cancelada"). */
+  /** approvalId → status atual (pendente de outra sessão já vem "cancelada"). */
   aprovacoes: Record<string, ApprovalFact>;
+  /** Item J (27/10): pendente da MESMA sessão/operador ainda válida → o operador só digita o código. */
+  aprovacoesPendentes?: Record<string, { codigo: string; expiraEm: string }>;
   /** Ferramenta de preparo (preparar_email/…) → aprovação executada depois do início do fluxo. */
   enviosExecutados?: Record<string, string>;
   /** Registros que deixaram de valer (tag tirada, card em outra coluna, comentário apagado). */
@@ -418,15 +420,19 @@ export interface ResumePlan {
   avisos: string[];
   /** Algo impede seguir sem o operador conferir (envio em andamento, card sumiu). */
   parar: { codigo: BloqueioCodigo; motivo: string } | null;
+  /** Item J: aprovação preparada que ainda vale — basta o operador digitar "aprovo <codigo>". */
+  aprovacaoValida: { passo: string; approvalId: string; codigo: string; expiraEm: string } | null;
   /** Estado já sem os feitos que perderam a validade (o que a lib grava). */
   estado: WorkflowState;
 }
 
 /**
  * Decide o que reaproveitar e o que refazer. Regras: rascunho vale se existe
- * (ou se já foi anexado e o anexo continua no card); aprovação L4 NUNCA vale —
- * só a executada (o envio está feito); "enviando" para tudo; leituras sempre
- * de novo; registro vale salvo se a lib disse que mudou.
+ * (ou se já foi anexado e o anexo continua no card); aprovação L4 vale só
+ * executada (o envio está feito) ou, desde 27/10 (item J), pendente da MESMA
+ * sessão e ainda no prazo (a lib só a lista em aprovacoesPendentes nesse
+ * caso); "enviando" para tudo; leituras sempre de novo; registro vale salvo
+ * se a lib disse que mudou.
  */
 export function resumePlan(state: WorkflowState, fatos: ResumeFacts, agora: Date = new Date()): ResumePlan {
   const def = workflowDef(state.workflow);
@@ -434,6 +440,7 @@ export function resumePlan(state: WorkflowState, fatos: ResumeFacts, agora: Date
   const refazer: ResumePlan["refazer"] = [];
   const validos = new Map<string, WorkflowFeito>();
   let parar: ResumePlan["parar"] = null;
+  let aprovacaoValida: ResumePlan["aprovacaoValida"] = null;
 
   if (!fatos.card.existe) {
     parar = { codigo: "card_sumiu", motivo: "O card deste fluxo não existe mais (ou deixou de ser card). Não dá para retomar." };
@@ -461,7 +468,7 @@ export function resumePlan(state: WorkflowState, fatos: ResumeFacts, agora: Date
           validos.set(step.id, f);
           avisos.push(`O rascunho de "${step.rotulo}" venceu, mas o documento já está anexado no card: use o documento do card (listar_documentos) no lugar da key.`);
         } else {
-          refazer.push({ passo: step.id, rotulo: step.rotulo, motivo: st === "outro_operador" ? "o rascunho é de outra pessoa" : "o rascunho venceu (7 dias) ou foi apagado" });
+          refazer.push({ passo: step.id, rotulo: step.rotulo, motivo: "o rascunho venceu (7 dias) ou foi apagado" });
         }
         break;
       }
@@ -478,8 +485,13 @@ export function resumePlan(state: WorkflowState, fatos: ResumeFacts, agora: Date
             codigo: "envio_em_andamento",
             motivo: "O envio deste fluxo começou e o resultado não foi confirmado. Confira no card/inbox se saiu ANTES de seguir; não prepare de novo.",
           };
+        } else if (st === "pendente" && ref && fatos.aprovacoesPendentes?.[ref]) {
+          const p = fatos.aprovacoesPendentes[ref];
+          validos.set(step.id, f);
+          aprovacaoValida = { passo: step.id, approvalId: ref, codigo: p.codigo, expiraEm: p.expiraEm };
+          avisos.push(`"${step.rotulo}" ainda vale (mesma sessão, dentro dos 30 min): mostre a prévia de novo e peça para o operador digitar "aprovo ${p.codigo}"; não prepare de novo.`);
         } else {
-          refazer.push({ passo: step.id, rotulo: step.rotulo, motivo: "aprovação não se reaproveita ao retomar: prepare de novo (código novo)" });
+          refazer.push({ passo: step.id, rotulo: step.rotulo, motivo: "aprovação de outra sessão (ou vencida) não se reaproveita: prepare de novo (código novo)" });
         }
         break;
       }
@@ -560,6 +572,7 @@ export function resumePlan(state: WorkflowState, fatos: ResumeFacts, agora: Date
     reler: def.passos.filter((p) => p.kind === "reler").map((p) => p.id),
     proximo: parar ? null : proximo ? { passo: proximo.id, rotulo: proximo.rotulo, opcional: !!proximo.opcional } : null,
     avisos,
+    aprovacaoValida,
     parar,
     estado,
   };

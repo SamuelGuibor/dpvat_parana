@@ -3,7 +3,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 import { z } from "zod";
 import { requirePermission, requireTeam } from "@/app/_shared/lib/permissions-server";
-import { getOpMetrics, getOpPrompts, listOpOperators, type OpMetricsView, type OpPromptItem } from "@/app/_shared/lib/op/metrics";
+import { getOpChat, getOpMetrics, getOpPrompts, listOpOperators, opChatOwner, type OpChatView, type OpMetricsView, type OpPromptItem } from "@/app/_shared/lib/op/metrics";
 import { OP_METRIC_DEFINITIONS, OpPeriodError, resolveOpPeriod } from "@/app/_shared/utils/op-metrics";
 
 // Painel "Operação por IA" (Espaço de Trabalho → IA de operação, Etapa 7).
@@ -36,6 +36,8 @@ export interface OpMetricsPayload {
   definicoes: typeof OP_METRIC_DEFINITIONS;
   /** "equipe" = Visão do Gestor; "proprio" = só os números de quem está logado. */
   escopo: "equipe" | "proprio";
+  /** Quem está logado (abre o "Meu painel"). */
+  meuId: string;
 }
 
 export async function getOpMetricsAction(raw: z.input<typeof periodSchema>): Promise<OpMetricsPayload> {
@@ -47,10 +49,10 @@ export async function getOpMetricsAction(raw: z.input<typeof periodSchema>): Pro
   const periodo = periodOf(input);
   if (!gestor) {
     const metrics = await getOpMetrics({ periodo, operatorId: ctx.userId });
-    return { metrics, operadores: [{ id: ctx.userId, nome: ctx.name ?? ctx.email }], definicoes: OP_METRIC_DEFINITIONS, escopo: "proprio" };
+    return { metrics, operadores: [{ id: ctx.userId, nome: ctx.name ?? ctx.email }], definicoes: OP_METRIC_DEFINITIONS, escopo: "proprio", meuId: ctx.userId };
   }
   const [metrics, operadores] = await Promise.all([getOpMetrics({ periodo, operatorId: input.operatorId ?? null }), listOpOperators(periodo)]);
-  return { metrics, operadores, definicoes: OP_METRIC_DEFINITIONS, escopo: "equipe" };
+  return { metrics, operadores, definicoes: OP_METRIC_DEFINITIONS, escopo: "equipe", meuId: ctx.userId };
 }
 
 const promptsSchema = periodSchema.extend({
@@ -65,4 +67,22 @@ export async function getOpPromptsAction(
   const input = promptsSchema.parse(raw ?? {});
   const periodo = periodOf(input);
   return getOpPrompts({ periodo, operatorId: input.operatorId ?? null, pagina: input.pagina });
+}
+
+/**
+ * Um chat inteiro (pedidos, ações e respostas do app). Decisão do dono
+ * (27/10): manager_dashboard lê qualquer chat; quem tem op_use lê o texto dos
+ * PRÓPRIOS chats. O dono do chat vem do banco, nunca do navegador.
+ */
+export async function getOpChatAction(raw: { sessionId: string }): Promise<OpChatView> {
+  noStore();
+  const ctx = await requireTeam();
+  const { sessionId } = z.object({ sessionId: z.string().min(1).max(64) }).parse(raw ?? {});
+  const owner = await opChatOwner(sessionId);
+  if (!owner) throw new Error("Chat não encontrado.");
+  const gestor = ctx.permissions.manager_dashboard === true;
+  if (!gestor && !(ctx.permissions.op_use && owner === ctx.userId)) throw new Error("Você não tem permissão para esta ação.");
+  const chat = await getOpChat(sessionId);
+  if (!chat) throw new Error("Chat não encontrado.");
+  return chat;
 }

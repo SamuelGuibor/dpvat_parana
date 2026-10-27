@@ -3,12 +3,14 @@
 //   session_start → só abre/atualiza op_sessions
 //   tool_error    → op_tool_calls com ok=false (falha que o CRM não viu: MCP
 //                   fora do ar, recusa no app, timeout)
+//   response      → op_requests.response do prompt da requestKey (27/10, hook
+//                   Stop op-response.mjs; o chat aparece inteiro na tela)
 // O hook nunca bloqueia o app: qualquer resposta aqui é só registro.
 
 import { z } from "zod/v4";
 import { noStoreJson } from "@/app/_shared/lib/route-auth";
 import { opAuth, opFail } from "@/app/_shared/lib/op/http";
-import { ensureOpSession, recordPrompt, recordToolCall } from "@/app/_shared/lib/op/record";
+import { ensureOpSession, recordPrompt, recordResponse, recordToolCall } from "@/app/_shared/lib/op/record";
 import { getTool } from "@/app/_shared/lib/op/tools";
 import { describeZodError } from "@/app/_shared/lib/op/registry";
 import { purgeDevPrompts } from "@/app/_shared/lib/op/retencao";
@@ -17,9 +19,11 @@ import { runAfterResponse } from "@/app/_shared/lib/background";
 export const dynamic = "force-dynamic";
 
 const eventSchema = z.object({
-  type: z.enum(["prompt", "session_start", "tool_error"]),
+  type: z.enum(["prompt", "session_start", "tool_error", "response"]),
   clientSessionId: z.string().min(1).max(200),
   cwd: z.string().max(500).optional(),
+  // Item A (27/10): chave do prompt gerada pelo hook; o MCP manda a mesma em X-Op-Request.
+  requestKey: z.string().min(8).max(80).optional(),
   text: z.string().max(100_000).optional(),
   tool: z.string().max(200).optional(),
   message: z.string().max(1000).optional(),
@@ -40,7 +44,7 @@ export async function POST(req: Request) {
 
   if (ev.type === "prompt") {
     if (!ev.text?.trim()) return noStoreJson({ ok: true, data: { ignorado: true } });
-    const requestId = await recordPrompt({ sessionId, operatorId: op.userId, text: ev.text });
+    const requestId = await recordPrompt({ sessionId, operatorId: op.userId, text: ev.text, clientKey: ev.requestKey });
     // Decisão 19 (26/10): prompt de desenvolvimento do operador some depois de
     // 1 h. Roda aqui, a cada prompt dele (só as últimas 24 h, barato), e o
     // cron diário de retenção pega o resto.
@@ -48,6 +52,12 @@ export async function POST(req: Request) {
       purgeDevPrompts({ operatorId: op.userId, desde: new Date(Date.now() - 24 * 3_600_000), limit: 200 }),
     );
     return noStoreJson({ ok: true, data: { requestId } });
+  }
+
+  if (ev.type === "response") {
+    if (!ev.requestKey || !ev.text?.trim()) return noStoreJson({ ok: true, data: { ignorado: true } });
+    const gravado = await recordResponse({ sessionId, operatorId: op.userId, clientKey: ev.requestKey, text: ev.text });
+    return noStoreJson({ ok: true, data: { gravado } });
   }
 
   if (ev.type === "tool_error") {

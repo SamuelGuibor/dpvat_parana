@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { db } from "../../prisma";
 import { defineTool, OpToolError } from "../registry";
-import { brDate } from "../resolve";
+import { brDate, brDaysBetween } from "../resolve";
 import { CARD_WHERE, cardIdsByCpf, cardIdsByPhone, cardListSelect, columnName, etapaLabel } from "../cards";
 
 const schema = z
@@ -19,7 +19,7 @@ const schema = z
 export const buscarCliente = defineTool({
   name: "buscar_cliente",
   description:
-    "Procura cards de cliente por CPF, nome, telefone ou número do processo. Devolve até 20 cards (ativos e arquivados) com número, coluna, etapa, serviço, CPF e telefone. Use antes de obter_card quando o operador não deu o número.",
+    "Procura cards de cliente por CPF, nome, telefone ou número do processo. Devolve até 20 cards (ativos e arquivados) com número, coluna, dias na coluna × prazo (prazoEstourado), etapa, serviço, CPF e telefone. Use antes de obter_card quando o operador não deu o número.",
   level: 1,
   permission: "op_use",
   schema,
@@ -49,7 +49,12 @@ export const buscarCliente = defineTool({
       take: 20,
     });
 
-    const cards = rows.map((r) => ({
+    // Item E (27/10): dias na coluna × prazo já na busca (o /cliente não precisa
+    // do panorama só para saber se estourou). Mesma régua do obter_card.
+    const cards = rows.map((r) => {
+      const dias = !r.archiveStatus && r.statusStartedAt ? brDaysBetween(r.statusStartedAt) : null;
+      const prazo = r.label?.timeLimitDays ?? null;
+      return {
       id: r.id,
       cardNumber: r.cardNumber,
       nome: r.name,
@@ -57,11 +62,15 @@ export const buscarCliente = defineTool({
       telefone: r.telefone,
       servico: r.service,
       coluna: columnName(r),
+      diasNaColuna: dias,
+      prazoDias: prazo,
+      prazoEstourado: dias !== null && prazo !== null ? dias > prazo : null,
       etapa: etapaLabel(r.service, r.status),
       hospital: r.hospital,
       arquivado: r.archiveStatus ? { destino: r.archiveStatus, em: brDate(r.archivedAt) } : null,
       tags: r.cardTags.map((t) => t.name),
-    }));
+      };
+    });
     return {
       data: { total: cards.length, limite: 20, cards },
       summary: `${cards.length} card(s) encontrado(s)`,

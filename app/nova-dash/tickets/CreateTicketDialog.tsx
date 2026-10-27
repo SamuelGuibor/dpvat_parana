@@ -26,6 +26,7 @@ import { Ticket, Type, AlignLeft, Tag, ImagePlus, X, Loader2, Plus } from 'lucid
 import { toast } from 'sonner';
 import { createDevTicket, getTicketImageUploadUrl } from '@/app/_actions/dev-tickets/ticket-actions';
 import { MAX_TICKET_IMAGES, TYPE_META } from './constants';
+import { MANUAL_TICKET_TYPES } from '@/app/_shared/utils/cerebro';
 
 const fieldLabel =
   'flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400 mb-1.5';
@@ -148,7 +149,7 @@ export function CreateTicketDialog({ onCreated }: Props) {
   return (
     <AlertDialog open={open} onOpenChange={(v) => { if (!saving) setOpen(v); }}>
       <AlertDialogTrigger asChild>
-        <Button className="h-10 rounded-xl bg-blue-600 hover:bg-blue-700">
+        <Button className="h-9 rounded-md bg-[#1a6649] font-medium text-white hover:bg-[#114a34]">
           <Plus className="w-4 h-4 mr-2" />
           Novo Ticket
         </Button>
@@ -181,7 +182,7 @@ export function CreateTicketDialog({ onCreated }: Props) {
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(TYPE_META).map(([value, meta]) => (
+                {MANUAL_TICKET_TYPES.map((value) => [value, TYPE_META[value]] as const).map(([value, meta]) => (
                   <SelectItem key={value} value={value}>
                     {meta.label}
                   </SelectItem>

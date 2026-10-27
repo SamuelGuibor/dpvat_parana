@@ -58,10 +58,12 @@ export const AI_AUDIT_PENDING_MARKER = "[[AI_AUDIT_PENDING|";
 const EXPIRED_DOC_MENTION_NAME = "Luana Oliveira";
 const EXPIRED_DOC_TAG = "DOCUMENTO VENCIDO";
 
-const MAX_FILES = 12;
+// Exportados: a análise de documentos da IA de operação (app/_shared/lib/op/doc-analysis.ts)
+// lê os mesmos arquivos com os mesmos limites.
+export const MAX_FILES = 12;
 const MAX_FILES_PRE_ENVIO = 20; // auditoria da pasta fechada — ver buildContent
-const MAX_TOTAL_BYTES = 24 * 1024 * 1024; // limite de request da API é 32MB
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_TOTAL_BYTES = 24 * 1024 * 1024; // limite de request da API é 32MB
+export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -71,7 +73,7 @@ const s3 = new S3Client({
   },
 });
 
-async function fetchS3Buffer(key: string): Promise<Buffer> {
+export async function fetchS3Buffer(key: string): Promise<Buffer> {
   const res = await s3.send(
     new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: key })
   );
@@ -80,9 +82,9 @@ async function fetchS3Buffer(key: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-type MediaKind = { kind: "image"; mediaType: string } | { kind: "pdf" } | null;
+export type MediaKind = { kind: "image"; mediaType: string } | { kind: "pdf" } | null;
 
-function mediaKind(name: string): MediaKind {
+export function mediaKind(name: string): MediaKind {
   const ext = name.toLowerCase().split(".").pop() ?? "";
   if (["jpg", "jpeg"].includes(ext)) return { kind: "image", mediaType: "image/jpeg" };
   if (ext === "png") return { kind: "image", mediaType: "image/png" };
@@ -379,30 +381,41 @@ export interface AiUsage {
   cacheWriteTokens: number;
 }
 
-async function callClaude(content: any[]): Promise<{ result: any; usage: AiUsage }> {
+/**
+ * Chamada ao Claude com JSON na resposta. Recusa ou JSON inválido lançam um
+ * erro que carrega `usage` (`err.usage`): os tokens já foram pagos e quem chama
+ * ainda consegue gravá-los no log. `timeoutMs` serve a quem roda dentro de uma
+ * rota curta (a IA de operação corta em 45 s; a auditoria segue sem teto).
+ */
+export async function callClaude(content: any[], opts: { timeoutMs?: number } = {}): Promise<{ result: any; usage: AiUsage }> {
   const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  const response = await client.messages.create({
-    model: "claude-sonnet-5",
-    max_tokens: 8000,
-    messages: [{ role: "user", content }],
-  });
+  const response = await client.messages.create(
+    {
+      model: "claude-sonnet-5",
+      max_tokens: 8000,
+      messages: [{ role: "user", content }],
+    },
+    opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
+  );
+  const usage: AiUsage = {
+    model: response.model,
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+    cacheReadTokens: (response.usage as any)?.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: (response.usage as any)?.cache_creation_input_tokens ?? 0,
+  };
   if (response.stop_reason === "refusal") {
-    throw new Error("A IA recusou a análise deste conteúdo.");
+    throw Object.assign(new Error("A IA recusou a análise deste conteúdo."), { usage });
   }
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n");
-  return {
-    result: extractJson(text),
-    usage: {
-      model: response.model,
-      inputTokens: response.usage?.input_tokens ?? 0,
-      outputTokens: response.usage?.output_tokens ?? 0,
-      cacheReadTokens: (response.usage as any)?.cache_read_input_tokens ?? 0,
-      cacheWriteTokens: (response.usage as any)?.cache_creation_input_tokens ?? 0,
-    },
-  };
+  try {
+    return { result: extractJson(text), usage };
+  } catch (err) {
+    throw Object.assign(err instanceof Error ? err : new Error(String(err)), { usage });
+  }
 }
 
 // Garante a tag e conecta ao card; menciona e notifica a responsável.

@@ -36,8 +36,14 @@ import { editarCadastro } from "./editar-cadastro";
 import { gerenciarDocumento } from "./gerenciar-documento";
 import { atualizarTarefa, editarComentario } from "./comentario-tarefa";
 import { quemPediu } from "./quem-pediu";
+import { analisarDocumentos } from "./analisar-documentos";
+import { panoramaCard } from "./panorama-card";
+import { iniciarLote, resultadoLote } from "./lotes";
 
 export const OP_TOOLS: OpTool[] = [
+  // Item O (27/10): lote em segundo plano (op_jobs + cron /api/op/jobs/run).
+  iniciarLote,
+  resultadoLote,
   buscarCliente,
   obterCard,
   listarHistorico,
@@ -90,6 +96,11 @@ export const OP_TOOLS: OpTool[] = [
   atualizarTarefa,
   prepararAcaoIrreversivel,
   quemPediu,
+  // Decisão do dono (27/10): leitura dos documentos do card em lote com IA,
+  // devolvendo divergências e sugestões prontas para editar_cadastro (L1).
+  analisarDocumentos,
+  // 27/10: ficha + histórico + documentos + pendências + conversa numa chamada.
+  panoramaCard,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

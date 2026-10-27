@@ -1,4 +1,7 @@
 import { db } from "../prisma";
+// Item B (27/10): consultar_hospital/preparar_email leem as automações por
+// hospital de um cache de 5 min; qualquer escrita aqui o esvazia.
+import { invalidateHospitalCache } from "../op/hospitais";
 
 export type AutomationCondition = {
   // Campo do card, o campo especial "tags" (tags do card, com os operadores
@@ -80,7 +83,7 @@ export async function createAutomation(data: {
   conditions: AutomationCondition[];
   actions: AutomationAction[];
 }) {
-  return db.automation.create({
+  const row = await db.automation.create({
     data: {
       name: data.name,
       category: data.category?.trim() || null,
@@ -91,6 +94,8 @@ export async function createAutomation(data: {
       actions: data.actions as object[],
     },
   });
+  invalidateHospitalCache();
+  return row;
 }
 
 export async function updateAutomation(
@@ -110,11 +115,15 @@ export async function updateAutomation(
   if (data.conditions) payload.conditions = data.conditions as object[];
   if (data.actions) payload.actions = data.actions as object[];
   if ("category" in data) payload.category = data.category?.trim() || null;
-  return db.automation.update({ where: { id }, data: payload });
+  const row = await db.automation.update({ where: { id }, data: payload });
+  invalidateHospitalCache();
+  return row;
 }
 
 export async function deleteAutomation(id: string) {
-  return db.automation.delete({ where: { id } });
+  const row = await db.automation.delete({ where: { id } });
+  invalidateHospitalCache();
+  return row;
 }
 
 // Automações ativas com pelo menos uma condição de tempo (__time_in_column__

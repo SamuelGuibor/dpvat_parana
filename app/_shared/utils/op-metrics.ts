@@ -34,6 +34,10 @@ export const OP_SKILLS = [
   "auditoria-operacao",
   "varredura",
   "meu-rendimento",
+  // 27/10: entrada genérica, WhatsApp em lote e análise de documentos.
+  "crm",
+  "whatsapp",
+  "documentos",
 ] as const;
 const OP_SKILL_SET = new Set<string>(OP_SKILLS);
 
@@ -45,6 +49,8 @@ export const OP_FLOW_BLOCKED_DAYS = 3;
 /** Definição de cada número (a tela mostra; evita número enganoso). */
 export const OP_METRIC_DEFINITIONS = {
   pedidos: "Prompt que chamou ao menos uma ferramenta do CRM ou começou com uma skill de operação (/cliente, /prontuario…).",
+  ignorados:
+    "O que o operador passou por cima (27/10): prévia que exigia o OK e nunca voltou confirmada; envio executado apesar do aviso (template MARKETING, destino fora do cadastro); cards pulados em lotes e envios que não saíram. Heurística: o envio com aviso é inferido por um executar_aprovado posterior na mesma sessão — uma preparação cancelada no meio de vários envios pode contar; confira pelo id antes de cobrar alguém.",
   consultas: "Pedido que só leu (ferramentas L1) — as dúvidas do dia a dia.",
   acoes: "Pedido que preparou documento (L2), mexeu no card (L3) ou preparou/enviou e-mail ou WhatsApp (L4).",
   // Decisões 19 e 23 do dono (26/10): prompt sem ferramenta nem skill de
@@ -57,7 +63,100 @@ export const OP_METRIC_DEFINITIONS = {
   falhas: "Chamadas recusadas ou com erro, por código (sem_permissao, ferramenta_desligada, estado_mudou…).",
   aprovacoes: "E-mails/WhatsApps preparados (L4): executada = saiu; expirada = 30 min sem 'aprovo <código>'.",
   fluxos: `Fluxos longos com retomada (/prontuario & cia.) começados no período. Parado há mais de ${WORKFLOW_STALE_DAYS} dias conta como abandonado. A lista de parados inclui os abertos de antes do período.`,
+  chats: "Conversa do Claude Code com pelo menos um pedido de operação. Ativa = teve pedido ou ferramenta nos últimos 30 min; depois disso conta como fechada.",
+  entregas: "O que a IA produziu: documento preparado (1 por card por dia), envio que saiu (cada cliente do lote conta), ação no card confirmada, cards lidos com IA e consultas respondidas.",
+  tempoEconomizado: "Estimativa: cada entrega × minutos da tabela (procuração 15, pedido de prontuário 20, WhatsApp 3…). Não é tempo medido.",
 } as const;
+
+// ---------------------------------------------------------------------------
+// Entregas e tempo economizado (decisão do dono, 27/10)
+// ---------------------------------------------------------------------------
+
+/** Chat sem pedido nem ferramenta há mais que isso conta como fechado. */
+export const OP_CHAT_IDLE_MIN = 30;
+/** Meta do anel de rendimento: entregas por semana por pessoa (proporcional ao período). */
+export const OP_META_ENTREGAS_SEMANA = 60;
+
+export type EntregaGrupo = "documentos" | "envios" | "cards";
+
+/**
+ * Tabela ÚNICA de minutos por tipo de entrega: é aqui que se ajusta a
+ * estimativa do tempo economizado (a tela, o gerar_relatorio e o tooltip leem
+ * daqui). Minutos = quanto a pessoa levaria fazendo à mão no site.
+ */
+export const OP_ENTREGAS = [
+  { key: "procuracao", label: "Procurações", grupo: "documentos", minutos: 15 },
+  { key: "pedido_prontuario", label: "Pedidos de prontuário", grupo: "documentos", minutos: 20 },
+  { key: "contrato", label: "Contratos (KIT)", grupo: "documentos", minutos: 20 },
+  { key: "documentos_lidos", label: "Cards com documentos lidos", grupo: "documentos", minutos: 5 },
+  { key: "whatsapp", label: "WhatsApps enviados", grupo: "envios", minutos: 3 },
+  { key: "email", label: "E-mails enviados", grupo: "envios", minutos: 8 },
+  { key: "card_movido", label: "Cards movidos", grupo: "cards", minutos: 1 },
+  { key: "cadastro", label: "Cadastros corrigidos", grupo: "cards", minutos: 4 },
+  { key: "comentario", label: "Comentários e avisos", grupo: "cards", minutos: 2 },
+  { key: "organizacao", label: "Tags, arquivos e tarefas", grupo: "cards", minutos: 1 },
+  { key: "consulta", label: "Consultas respondidas", grupo: "cards", minutos: 3 },
+] as const satisfies readonly { key: string; label: string; grupo: EntregaGrupo; minutos: number }[];
+
+export type EntregaKey = (typeof OP_ENTREGAS)[number]["key"];
+const ENTREGA_BY_KEY = new Map<EntregaKey, (typeof OP_ENTREGAS)[number]>(OP_ENTREGAS.map((e) => [e.key, e]));
+
+export type EntregaCounts = Record<EntregaKey, number>;
+export function emptyEntregas(): EntregaCounts {
+  return Object.fromEntries(OP_ENTREGAS.map((e) => [e.key, 0])) as EntregaCounts;
+}
+
+const PREPARO_ENTREGA: Record<string, EntregaKey> = {
+  preparar_procuracao: "procuracao",
+  preparar_pedido_prontuario: "pedido_prontuario",
+  preparar_contrato: "contrato",
+};
+const EXECUCAO_ENTREGA: Record<string, EntregaKey> = {
+  mover_card: "card_movido",
+  editar_cadastro: "cadastro",
+  comentar_card: "comentario",
+  editar_comentario: "comentario",
+  notificar_pessoa: "comentario",
+};
+
+/**
+ * Entrega de UMA chamada de ferramenta (sem a consulta, que vem do prompt).
+ * Preparo de documento devolve `dedupe`: o mesmo documento refeito no mesmo
+ * card e dia conta uma vez só (o operador costuma gerar, corrigir e gerar de novo).
+ */
+export function entregaDaChamada(c: MetricCall): { key: EntregaKey; n: number; dedupe?: string[] } | null {
+  const kind = callKind(c);
+  if (kind === "falha") return null;
+  const cards = Math.max(1, c.cardIds.length);
+  if (kind === "preparo" && PREPARO_ENTREGA[c.tool]) {
+    const day = brDayKey(c.createdAt);
+    return { key: PREPARO_ENTREGA[c.tool], n: cards, dedupe: (c.cardIds.length ? c.cardIds : [c.id]).map((id) => `${c.tool}|${id}|${day}`) };
+  }
+  if (c.tool === "executar_aprovado") {
+    const n = c.enviados ?? 0;
+    if (!n) return null;
+    if (c.envioCanal === "whatsapp") return { key: "whatsapp", n };
+    if (c.envioCanal === "e-mail") return { key: "email", n };
+    return { key: "organizacao", n };
+  }
+  if (c.tool === "analisar_documentos") return { key: "documentos_lidos", n: cards };
+  if (kind === "execucao") return { key: EXECUCAO_ENTREGA[c.tool] ?? "organizacao", n: cards };
+  return null;
+}
+
+export function minutosDe(e: Partial<EntregaCounts>): number {
+  let total = 0;
+  for (const [k, n] of Object.entries(e)) total += (ENTREGA_BY_KEY.get(k as EntregaKey)?.minutos ?? 0) * (n ?? 0);
+  return total;
+}
+
+export function totalEntregas(e: EntregaCounts): number {
+  return Object.values(e).reduce((a, b) => a + b, 0);
+}
+
+export function metaEntregas(dias: number): number {
+  return Math.max(1, Math.round((OP_META_ENTREGAS_SEMANA * dias) / 7));
+}
 
 // ---------------------------------------------------------------------------
 // Período (dias de Brasília)
@@ -153,8 +252,9 @@ export type CallKind = "leitura" | "preparo" | "previa" | "execucao" | "noop" | 
  * `noop` é execução (mudou o card). L4: `preparar_*` é preparo (gravou a
  * aprovação), `executar_aprovado` ok é execução (saiu).
  */
-export function callKind(c: { tool: string; level: number; ok: boolean; confirmed: boolean; noop: boolean }): CallKind {
-  if (!c.ok) return "falha";
+export function callKind(c: { tool: string; level: number; ok: boolean; confirmed: boolean; noop: boolean; code?: string | null }): CallKind {
+  // requer_confirmacao (27/10) é a prévia das 4 ações que pedem o OK: passo normal, não falha.
+  if (!c.ok) return c.code === "requer_confirmacao" ? "previa" : "falha";
   if (c.level <= 1) return "leitura";
   if (c.level === 2) return "preparo";
   if (c.noop) return "noop";
@@ -195,6 +295,33 @@ export interface MetricCall {
   cardIds: string[];
   durationMs: number;
   createdAt: Date;
+  /** Item G (27/10): hash da prévia (emitida/recebida) e avisos do resultado (códigos). */
+  previaHash?: string | null;
+  avisos?: string[];
+  /** executar_aprovado: canal ("whatsapp"/"e-mail") e quantos saíram, lidos do summary no SQL. */
+  envioCanal?: string | null;
+  enviados?: number;
+}
+
+/** Item G: o que o operador ignorou (prévia exigida sem OK, envio apesar do aviso, cards pulados). */
+export interface IgnoradoItem {
+  id: string;
+  operatorId: string;
+  tool: string;
+  cardId: string | null;
+  /** Códigos dos avisos (marketing, destino_livre, requer_confirmacao, pulados:N…). */
+  avisos: string[];
+  quando: string;
+}
+export interface Ignorados {
+  /** Prévia que exigia o OK do operador e nunca voltou com o hash (nem executou). */
+  previasNaoConfirmadas: IgnoradoItem[];
+  /** Preparação com aviso (MARKETING, destino fora do cadastro) cujo envio saiu mesmo assim. */
+  enviosComAviso: IgnoradoItem[];
+  /** Cards que ficaram fora de lotes (opt-out, janela, repetido…) e envios que não saíram. */
+  cardsPulados: number;
+  naoEnviados: number;
+  porOperador: Record<string, { previasNaoConfirmadas: number; enviosComAviso: number; cardsPulados: number }>;
 }
 
 export interface MetricApproval {
@@ -237,7 +364,26 @@ export interface OperatorStats {
   cardsTocados: number;
   aprovacoes: ApprovalCounts;
   fluxos: { abertos: number; concluidos: number; abandonados: number };
-  porDia: { dia: string; pedidos: number; acoes: number; falhas: number }[];
+  porDia: { dia: string; pedidos: number; acoes: number; falhas: number; entregas: number; minutos: Record<EntregaGrupo, number> }[];
+  entregas: EntregaCounts;
+  minutosPoupados: number;
+  chatsAtivos: number;
+  chatsFechados: number;
+}
+
+export interface ChatItem {
+  sessionId: string;
+  operatorId: string;
+  ativo: boolean;
+  /** Skill de operação mais usada no chat (null = pedido livre). */
+  skill: string | null;
+  pedidos: number;
+  entregas: number;
+  /** Até 3 cards citados (o primeiro vira o rótulo). */
+  cardIds: string[];
+  totalCards: number;
+  inicio: string;
+  ultimo: string;
 }
 
 export interface ToolStats {
@@ -304,7 +450,14 @@ export interface OpMetrics {
     parados: FlowItem[];
   };
   cards: { conduzidos: ConductedCard[]; tocadosSoLeitura: number };
+  ignorados: Ignorados;
+  /** Chats do período, mais recentes primeiro (teto MAX_CHATS). */
+  chats: ChatItem[];
+  /** Meta do anel para o período (OP_META_ENTREGAS_SEMANA proporcional). */
+  metaEntregas: number;
 }
+
+const MAX_CHATS = 200;
 
 const MAX_LIST = 100;
 
@@ -326,7 +479,11 @@ function emptyStats(operatorId: string, dias: string[]): OperatorStats {
     cardsTocados: 0,
     aprovacoes: emptyApprovals(),
     fluxos: { abertos: 0, concluidos: 0, abandonados: 0 },
-    porDia: dias.map((dia) => ({ dia, pedidos: 0, acoes: 0, falhas: 0 })),
+    porDia: dias.map((dia) => ({ dia, pedidos: 0, acoes: 0, falhas: 0, entregas: 0, minutos: { documentos: 0, envios: 0, cards: 0 } })),
+    entregas: emptyEntregas(),
+    minutosPoupados: 0,
+    chatsAtivos: 0,
+    chatsFechados: 0,
   };
 }
 
@@ -382,6 +539,21 @@ export function buildOpMetrics(input: {
     callsByRequest.set(c.requestId, list);
   }
 
+  const addEntrega = (operatorId: string, key: EntregaKey, n: number, quando: Date) => {
+    const s = stats(operatorId);
+    s.entregas[key] += n;
+    const e = ENTREGA_BY_KEY.get(key)!;
+    s.minutosPoupados += e.minutos * n;
+    const i = dayIdx.get(brDayKey(quando));
+    if (i !== undefined) {
+      s.porDia[i].entregas += n;
+      s.porDia[i].minutos[e.grupo] += e.minutos * n;
+    }
+  };
+
+  // Chats = sessões do Claude Code com ao menos um pedido de operação.
+  const chats = new Map<string, { operatorId: string; inicio: number; ultimo: number; pedidos: number; entregas: number; skills: Record<string, number>; cards: Set<string> }>();
+
   const skills: Record<string, number> = {};
   const consultaTools: Record<string, number> = {};
   const sessionsByOp = new Map<string, Set<string>>();
@@ -390,6 +562,17 @@ export function buildOpMetrics(input: {
     const cls = classifyPrompt({ skill: p.skill, levels: calls.map((c) => c.level) });
     // Conversa/desenvolvimento não entra em número nenhum (decisão 19).
     if (cls === "conversa") continue;
+    const t = p.createdAt.getTime();
+    const chat = chats.get(p.sessionId) ?? { operatorId: p.operatorId, inicio: t, ultimo: t, pedidos: 0, entregas: 0, skills: {}, cards: new Set<string>() };
+    chat.pedidos++;
+    chat.inicio = Math.min(chat.inicio, t);
+    chat.ultimo = Math.max(chat.ultimo, t);
+    if (isOpSkill(p.skill)) bump(chat.skills, p.skill!);
+    if (cls === "consulta") {
+      addEntrega(p.operatorId, "consulta", 1, p.createdAt);
+      chat.entregas++;
+    }
+    chats.set(p.sessionId, chat);
     const s = stats(p.operatorId);
     s.pedidos++;
     if (cls === "acao") s.acoes++;
@@ -414,11 +597,28 @@ export function buildOpMetrics(input: {
   const conducted = new Map<string, { ops: Set<string>; acoes: number; tools: Set<string>; last: number }>();
   const touched = new Map<string, Set<string>>(); // cardId → operadores (só leitura/prévia)
   const conductedByOp = new Map<string, Set<string>>();
+  const entregaVista = new Set<string>();
   const sortedCalls = [...input.calls].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   for (const c of sortedCalls) {
     const s = stats(c.operatorId);
     s.chamadas++;
     s.latenciaMs += c.durationMs;
+    const chat = c.sessionId ? chats.get(c.sessionId) : undefined;
+    if (chat) {
+      chat.ultimo = Math.max(chat.ultimo, c.createdAt.getTime());
+      for (const id of c.cardIds) chat.cards.add(id);
+    }
+    const entrega = entregaDaChamada(c);
+    if (entrega) {
+      // Sem dedupe: conta tudo. Com dedupe: só o par documento×card×dia ainda não visto.
+      const novos = entrega.dedupe ? entrega.dedupe.filter((k) => !entregaVista.has(`${c.operatorId}|${k}`)) : null;
+      const n = novos ? novos.length : entrega.n;
+      novos?.forEach((k) => entregaVista.add(`${c.operatorId}|${k}`));
+      if (n) {
+        addEntrega(c.operatorId, entrega.key, n, c.createdAt);
+        if (chat) chat.entregas += n;
+      }
+    }
     const kind = callKind(c);
     const t = tools.get(c.tool) ?? { tool: c.tool, level: c.level, total: 0, ok: 0, falhas: 0, mediaMs: 0, maxMs: 0, previas: 0, execucoes: 0, noop: 0, msSum: 0 };
     t.total++;
@@ -466,6 +666,7 @@ export function buildOpMetrics(input: {
     }
   }
   for (const [op, set] of conductedByOp) stats(op).cardsConduzidos = set.size;
+  const ignorados = buildIgnorados(sortedCalls);
   const touchedOnly = [...touched.keys()].filter((id) => !conducted.has(id));
   for (const id of touchedOnly) for (const op of touched.get(id)!) stats(op).cardsTocados++;
 
@@ -528,18 +729,46 @@ export function buildOpMetrics(input: {
   }
   parados.sort((a, b) => b.diasParado - a.diasParado);
 
-  const operadores = [...byOp.values()].sort((a, b) => b.pedidos - a.pedidos || b.chamadas - a.chamadas);
+  // Chat ativo = pedido ou ferramenta nos últimos OP_CHAT_IDLE_MIN minutos.
+  const idleMs = OP_CHAT_IDLE_MIN * 60_000;
+  const chatList: ChatItem[] = [];
+  for (const [sessionId, ch] of chats) {
+    const ativo = agora.getTime() - ch.ultimo <= idleMs;
+    const s = stats(ch.operatorId);
+    if (ativo) s.chatsAtivos++;
+    else s.chatsFechados++;
+    const cards = [...ch.cards];
+    chatList.push({
+      sessionId,
+      operatorId: ch.operatorId,
+      ativo,
+      skill: Object.entries(ch.skills).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+      pedidos: ch.pedidos,
+      entregas: ch.entregas,
+      cardIds: cards.slice(0, 3),
+      totalCards: cards.length,
+      inicio: new Date(ch.inicio).toISOString(),
+      ultimo: new Date(ch.ultimo).toISOString(),
+    });
+  }
+  chatList.sort((a, b) => Number(b.ativo) - Number(a.ativo) || b.ultimo.localeCompare(a.ultimo));
+
+  const operadores = [...byOp.values()].sort((a, b) => b.minutosPoupados - a.minutosPoupados || b.pedidos - a.pedidos || b.chamadas - a.chamadas);
   const totais = emptyStats("", dias);
   for (const s of operadores) {
-    for (const k of ["pedidos", "consultas", "acoes", "sessoes", "latenciaMs", "chamadas", "falhas", "cardsTocados"] as const) {
+    for (const k of ["pedidos", "consultas", "acoes", "sessoes", "latenciaMs", "chamadas", "falhas", "cardsTocados", "minutosPoupados", "chatsAtivos", "chatsFechados"] as const) {
       totais[k] += s[k];
     }
     for (const k of Object.keys(totais.aprovacoes) as (keyof ApprovalCounts)[]) totais.aprovacoes[k] += s.aprovacoes[k];
     for (const k of ["abertos", "concluidos", "abandonados"] as const) totais.fluxos[k] += s.fluxos[k];
+    for (const k of Object.keys(totais.entregas) as EntregaKey[]) totais.entregas[k] += s.entregas[k];
     s.porDia.forEach((d, i) => {
-      totais.porDia[i].pedidos += d.pedidos;
-      totais.porDia[i].acoes += d.acoes;
-      totais.porDia[i].falhas += d.falhas;
+      const t = totais.porDia[i];
+      t.pedidos += d.pedidos;
+      t.acoes += d.acoes;
+      t.falhas += d.falhas;
+      t.entregas += d.entregas;
+      for (const g of Object.keys(t.minutos) as EntregaGrupo[]) t.minutos[g] += d.minutos[g];
     });
   }
   totais.cardsConduzidos = conducted.size;
@@ -573,5 +802,64 @@ export function buildOpMetrics(input: {
         .map(([cardId, k]) => ({ cardId, operadores: [...k.ops], acoes: k.acoes, ferramentas: [...k.tools], ultimo: new Date(k.last).toISOString() })),
       tocadosSoLeitura: touchedOnly.length,
     },
+    ignorados,
+    chats: chatList.slice(0, MAX_CHATS),
+    metaEntregas: metaEntregas(dias.length),
   };
+}
+
+const PULADOS_RE = /^pulados:(\d+)$/;
+const NAO_ENVIADOS_RE = /^nao_enviados:(\d+)$/;
+
+/**
+ * Item G (27/10). Prévia exigida = chamada com aviso requer_confirmacao e
+ * previaHash; confirmada = chamada posterior ok da mesma ferramenta com o
+ * mesmo hash (confirmar: true). Envio com aviso = preparar_* com aviso
+ * marketing/destino_livre seguido de executar_aprovado ok na mesma sessão.
+ */
+export function buildIgnorados(calls: MetricCall[]): Ignorados {
+  const asc = [...calls].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const confirmados = new Set<string>();
+  const executadasPorSessao = new Map<string, number[]>();
+  for (const c of asc) {
+    if (c.ok && c.previaHash && c.confirmed) confirmados.add(`${c.tool}\u0000${c.previaHash}`);
+    if (c.ok && c.tool === "executar_aprovado" && c.sessionId) {
+      const arr = executadasPorSessao.get(c.sessionId) ?? [];
+      arr.push(c.createdAt.getTime());
+      executadasPorSessao.set(c.sessionId, arr);
+    }
+  }
+  const porOperador: Ignorados["porOperador"] = {};
+  const po = (id: string) => (porOperador[id] ??= { previasNaoConfirmadas: 0, enviosComAviso: 0, cardsPulados: 0 });
+  const previas: IgnoradoItem[] = [];
+  const envios: IgnoradoItem[] = [];
+  let cardsPulados = 0;
+  let naoEnviados = 0;
+  const item = (c: MetricCall): IgnoradoItem => ({ id: c.id, operatorId: c.operatorId, tool: c.tool, cardId: c.cardIds[0] ?? null, avisos: c.avisos ?? [], quando: c.createdAt.toISOString() });
+  for (const c of asc) {
+    const avisos = c.avisos ?? [];
+    if (!avisos.length) continue;
+    if (avisos.includes("requer_confirmacao") && c.previaHash && !confirmados.has(`${c.tool}\u0000${c.previaHash}`)) {
+      previas.push(item(c));
+      po(c.operatorId).previasNaoConfirmadas++;
+    }
+    if (c.tool.startsWith("preparar_") && (avisos.includes("marketing") || avisos.includes("destino_livre")) && c.sessionId) {
+      const t = c.createdAt.getTime();
+      if ((executadasPorSessao.get(c.sessionId) ?? []).some((x) => x > t)) {
+        envios.push(item(c));
+        po(c.operatorId).enviosComAviso++;
+      }
+    }
+    for (const a of avisos) {
+      const p = PULADOS_RE.exec(a);
+      if (p) {
+        cardsPulados += Number(p[1]);
+        po(c.operatorId).cardsPulados += Number(p[1]);
+      }
+      const n = NAO_ENVIADOS_RE.exec(a);
+      if (n) naoEnviados += Number(n[1]);
+    }
+  }
+  const desc = (l: IgnoradoItem[]) => l.sort((a, b) => b.quando.localeCompare(a.quando)).slice(0, MAX_LIST);
+  return { previasNaoConfirmadas: desc(previas), enviosComAviso: desc(envios), cardsPulados, naoEnviados, porOperador };
 }

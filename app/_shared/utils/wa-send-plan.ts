@@ -1,10 +1,14 @@
 // WhatsApp preparado pela IA de operação (Etapa 5): decide, ANTES de criar a
 // aprovação, se o sendSystemWhatsApp vai mandar e por onde — mesma régua dele
-// (opt-out, cooldown de proativa, janela de 24 h, opt-in, template APPROVED da
-// WABA do contato, sem variável no cabeçalho, mídia do cabeçalho) mais a linha
-// ativa e a pausa de templates (`templatesPaused`, que o sendTemplate aplica).
+// (opt-out, janela de 24 h, opt-in, template APPROVED da WABA do contato, sem
+// variável no cabeçalho, mídia do cabeçalho) mais a linha ativa e a pausa de
+// templates (`templatesPaused`, que o sendTemplate aplica).
 // Puro: o chamador lê o banco; testado em tests/wa-send-plan.test.ts.
-// Não afrouxa nada: o envio continua passando por todas as travas de novo.
+//
+// Sem cooldown (decisão do dono, 27/10 — docs/ai-first/10-decisoes-dono-27-10.md):
+// a mensagem aprovada pelo operador é humana, não proativa de automação; sai
+// como transacional no sendSystemWhatsApp. Opt-out, opt-in, janela e pausa
+// continuam valendo aqui e lá.
 
 export interface WaPlanTemplate {
   name: string;
@@ -23,7 +27,6 @@ export interface WaPlanInput {
   contact: { optedOut: boolean; optedInAt: Date | null };
   /** Linha que envia (a do contato ou a padrão); null = nenhuma linha cadastrada (envs). */
   number: { active: boolean; templatesPaused: boolean } | null;
-  inCooldown: boolean;
   windowOpen: boolean;
   mode: "texto" | "template";
   /** Template achado no catálogo da WABA da linha do contato (null = não existe lá). */
@@ -34,7 +37,6 @@ export interface WaPlanInput {
 export type WaPlanBlock =
   | "opt_out"
   | "linha_inativa"
-  | "cooldown"
   | "janela_fechada"
   | "sem_opt_in"
   | "template_nao_encontrado"
@@ -55,13 +57,6 @@ const MIDIA = new Set(["IMAGE", "VIDEO", "DOCUMENT"]);
 export function planWhatsAppSend(i: WaPlanInput): WaPlan {
   if (i.contact.optedOut) return { ok: false, code: "opt_out", message: "O cliente pediu para não receber mensagens (opt-out). Nada pode sair." };
   if (i.number && !i.number.active) return { ok: false, code: "linha_inativa", message: "A linha do contato está desativada (somente leitura). Nada sai por ela." };
-  if (i.inCooldown) {
-    return {
-      ok: false,
-      code: "cooldown",
-      message: "Já saiu mensagem automática para este contato nas últimas horas (intervalo anti-spam). Tente depois ou fale pelo inbox.",
-    };
-  }
 
   if (i.mode === "texto") {
     if (!i.windowOpen) {
@@ -79,7 +74,7 @@ export function planWhatsAppSend(i: WaPlanInput): WaPlan {
   // 26/10), menos AUTHENTICATION: é código de verificação de login, não
   // mensagem ao cliente (provisória). MARKETING sai com aviso na prévia —
   // foi a causa nº 1 do aviso de spam nas duas WABAs (auditoria 24/08/2026);
-  // opt-out, cooldown, janela, opt-in e pausa continuam valendo abaixo.
+  // opt-out, janela, opt-in e pausa continuam valendo abaixo.
   if (t.category === "AUTHENTICATION") {
     return { ok: false, code: "template_categoria", message: `O template "${t.name}" é AUTHENTICATION (código de verificação); a IA não manda esse tipo.` };
   }

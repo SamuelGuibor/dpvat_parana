@@ -1528,17 +1528,26 @@ model OpSession {
 
 // Prompt do operador (texto completo — decisão 7; leitura só manager_dashboard).
 model OpRequest {
-  id         String       @id @default(cuid())
-  sessionId  String
-  session    OpSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  operatorId String
-  text       String
-  skill      String?
+  id          String       @id @default(cuid())
+  sessionId   String
+  session     OpSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  operatorId  String
+  text        String
+  skill       String?
+  // 27/10 (item A): chave gerada pelo hook no computador do operador e mandada
+  // no header X-Op-Request pelo MCP — liga a ferramenta ao prompt exato sem
+  // esperar a Vercel responder ao evento do prompt.
+  clientKey   String?      @unique
   // Etapa 6: progresso do fluxo longo que este prompt iniciou (só ids/keys,
   // schema v1 em app/_shared/utils/workflows.ts; app/_shared/lib/op/workflow.ts).
-  state      Json?
-  createdAt  DateTime     @default(now())
-  toolCalls  OpToolCall[]
+  state       Json?
+  // 27/10: resposta final do app a este prompt (hook Stop op-response.mjs,
+  // ≤ 8.000 caracteres). Mesma regra do `text`: lê o gestor (todos) ou o
+  // próprio operador, só ao abrir o chat; some junto com o prompt na limpeza.
+  response    String?
+  respondedAt DateTime?
+  createdAt   DateTime     @default(now())
+  toolCalls   OpToolCall[]
 
   @@index([operatorId, createdAt])
   @@index([sessionId])
@@ -1594,12 +1603,52 @@ model OpToolCall {
   summary    String
   cardIds    String[]
   durationMs Int
+  // 27/10 (item G): hash da prévia emitida ou recebida (L3) — permite achar a
+  // prévia exigida que o operador não confirmou. Avisos que o resultado trazia
+  // (marketing, destino_livre, pulados:N, requer_confirmacao…) para o painel
+  // saber o que foi ignorado; nunca texto nem dado de cliente.
+  previaHash String?
+  avisos     String[]   @default([])
   createdAt  DateTime   @default(now())
 
   @@index([operatorId, createdAt])
   @@index([tool, createdAt])
   @@index([sessionId])
+  @@index([previaHash])
   @@map("op_tool_calls")
+}
+
+// Lote em segundo plano da IA de operação (27/10, item O): a ferramenta
+// iniciar_lote grava o pedido; o cron /api/op/jobs/run (1 min, maxDuration
+// 300) reivindica (claim atômico por status) e processa N itens por tique,
+// gravando o resultado por item; resultado_lote e meu_dia leem. Sem FK em
+// User (como as demais op_*).
+model OpJob {
+  id         String    @id @default(cuid())
+  // analisar_documentos | (tipos futuros)
+  tipo       String
+  operatorId String
+  sessionId  String?
+  // Args comuns do lote (ex.: objetivo, pastas) já sem PII sensível.
+  args       Json
+  // Itens na ordem pedida: [{ card, cardId?, status, resumo?, code?, data? }].
+  itens      Json
+  total      Int
+  feitos     Int       @default(0)
+  // pendente | rodando | concluido | falhou | cancelado
+  status     String    @default("pendente")
+  claimedAt  DateTime?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  // Se o operador já viu o resultado (meu_dia deixa de listar).
+  vistoEm    DateTime?
+  erro       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([operatorId, createdAt])
+  @@map("op_jobs")
 }
 
 // Aprovação L4 da IA de operação (Etapa 5): o que a IA PREPAROU para sair do

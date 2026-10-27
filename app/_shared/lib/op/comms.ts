@@ -4,9 +4,10 @@
 // tudo o que o envio vai conferir e devolve a prévia + os args que vão para
 // op_approvals (o hash amarra a aprovação a eles). Nada sai daqui.
 // sendApproved*: só chamados por executeApproval depois do "aprovo <código>":
-// despacham pelo canal (SES Raw / sendSystemWhatsApp com TODAS as travas
-// anti-spam), e no sucesso comentam no card + log `op_send` com o autor
-// "<nome> (via IA)", metadata.source = "op" e o approvalId.
+// despacham pelo canal (SES Raw / sendSystemWhatsApp com as travas da Meta:
+// opt-out, opt-in, janela, template APPROVED, pausa — sem o cooldown de
+// proativa, decisão do dono de 27/10), e no sucesso comentam no card + log
+// `op_send` com o autor "<nome> (via IA)", metadata.source = "op" e o approvalId.
 //
 // Sem "use server": quem chama (ferramentas em op/tools) já passou pelo token.
 
@@ -17,7 +18,7 @@ import { TEAM_ROLES } from "../permissions";
 import { addCardComment } from "../cards/comment";
 import { isAwsEmailConfigured, sendEmailRawAws, RAW_EMAIL_MAX_ATTACHMENT_BYTES } from "../aws-messaging";
 import { getDraft, DraftError } from "../docs/drafts";
-import { isWindowOpen, sendSystemWhatsApp, systemSendBlockReason } from "../whatsapp/outbound";
+import { isWindowOpen, sendSystemWhatsApp } from "../whatsapp/outbound";
 import { renderTemplateThreadText } from "../whatsapp/template-text";
 import { OpToolError } from "./registry";
 import { resolveOneCardId } from "./cards";
@@ -29,6 +30,19 @@ import type { OpTrace } from "../cards/types";
 import { hasHeaderBreak, isValidEmail, mimeTypeFor, normalizeEmail } from "@/app/_shared/utils/email-mime";
 import { OP_DRAFT_PREFIX } from "@/app/_shared/utils/doc-fields";
 import { planWhatsAppSend, samePhoneBR } from "@/app/_shared/utils/wa-send-plan";
+import {
+  dedupeRefs,
+  fillCardVars,
+  loteOutcome,
+  refKey,
+  LOTE_EMAIL_MAX,
+  LOTE_ENVIO_BUDGET_MS,
+  LOTE_WHATSAPP_GAP_MS,
+  LOTE_WHATSAPP_MAX,
+  type LoteEnvioItem,
+  type LoteItemPrevia,
+  type LotePulado,
+} from "@/app/_shared/utils/op-lote";
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -86,6 +100,7 @@ export interface EmailAttachmentArg {
 export interface EmailApprovalArgs extends Record<string, unknown> {
   cardId: string;
   cardNumber: number | null;
+  nome: string | null;
   de: string;
   para: string;
   cc: string[];
@@ -97,7 +112,7 @@ export interface EmailApprovalArgs extends Record<string, unknown> {
 }
 
 /** Um anexo pedido pelo modelo: key de rascunho (op-drafts/), id ou nome EXATO de documento do card. */
-async function resolveAttachment(ref: string, cardId: string, op: OperatorContext): Promise<EmailAttachmentArg> {
+async function resolveAttachment(ref: string, cardId: string): Promise<EmailAttachmentArg> {
   const r = ref.trim();
   if (r.startsWith(OP_DRAFT_PREFIX)) {
     let draft;
@@ -107,8 +122,8 @@ async function resolveAttachment(ref: string, cardId: string, op: OperatorContex
       if (err instanceof DraftError) throw new OpToolError(err.code === "rascunho_expirado" ? "rascunho_expirado" : "rascunho_invalido", err.message, 400);
       throw err;
     }
+    // Item K (27/10): o rascunho é do card; basta ser deste card (de qualquer colega).
     if (draft.cardId !== cardId) throw new OpToolError("anexo_invalido", "Este rascunho é de outro card.", 400);
-    if (draft.operatorId !== op.userId) throw new OpToolError("sem_permissao", "Este rascunho foi preparado por outra pessoa.", 403);
     const head = await headObject(r);
     if (!head) throw new OpToolError("rascunho_expirado", "O rascunho não existe mais. Prepare de novo.", 404);
     return { origem: "rascunho", key: r, nome: draft.fileName, bytes: head.bytes, etag: head.etag };
@@ -171,7 +186,7 @@ export async function prepareEmail(input: {
   const refs = [...new Set((input.anexos ?? []).map((a) => a.trim()).filter(Boolean))];
   if (refs.length > EMAIL_MAX_ATTACHMENTS) throw new OpToolError("argumentos_invalidos", `No máximo ${EMAIL_MAX_ATTACHMENTS} anexos.`, 400);
   const anexos: EmailAttachmentArg[] = [];
-  for (const ref of refs) anexos.push(await resolveAttachment(ref, card.id, input.op));
+  for (const ref of refs) anexos.push(await resolveAttachment(ref, card.id));
   const total = anexos.reduce((n, a) => n + a.bytes, 0);
   if (total > RAW_EMAIL_MAX_ATTACHMENT_BYTES) throw new OpToolError("anexos_grandes", "Os anexos passam de 10 MB somados. Tire algum.", 413);
 
@@ -187,6 +202,7 @@ export async function prepareEmail(input: {
   const args: EmailApprovalArgs = {
     cardId: card.id,
     cardNumber: card.cardNumber,
+    nome: card.name,
     de: process.env.SES_FROM_EMAIL ?? "",
     para,
     cc,
@@ -268,6 +284,7 @@ export async function sendApprovedEmail(input: {
 export interface WhatsappApprovalArgs extends Record<string, unknown> {
   cardId: string;
   cardNumber: number | null;
+  nome: string | null;
   contactId: string;
   numberId: string | null;
   linha: string;
@@ -331,7 +348,6 @@ export async function prepareWhatsapp(input: {
   }
 
   const number = await sendingNumber(contact.numberId);
-  const block = await systemSendBlockReason(contact.id);
   const windowOpen = await isWindowOpen(contact.id);
   const modo: "texto" | "template" = input.template ? "template" : "texto";
   const variaveis = (input.variaveis ?? []).map((v) => v.trim());
@@ -348,7 +364,6 @@ export async function prepareWhatsapp(input: {
   const plan = planWhatsAppSend({
     contact: { optedOut: contact.optedOut, optedInAt: contact.optedInAt },
     number: number ? { active: number.active, templatesPaused: number.templatesPaused } : null,
-    inCooldown: block === "cooldown",
     windowOpen,
     mode: modo,
     template: template
@@ -383,6 +398,7 @@ export async function prepareWhatsapp(input: {
   const args: WhatsappApprovalArgs = {
     cardId: card.id,
     cardNumber: card.cardNumber,
+    nome: card.name,
     contactId: contact.id,
     numberId: contact.numberId,
     linha: number?.label ?? "padrão",
@@ -428,9 +444,12 @@ export async function sendApprovedWhatsapp(input: {
 }): Promise<{ sent: boolean; via: string | null; reason?: string }> {
   const { args, op } = input;
   const author = viaIa(op);
-  // Todas as travas do envio de sistema valem de novo agora (opt-out,
-  // cooldown, janela, opt-in, template APPROVED da WABA, templatesPaused no
-  // sendTemplate). `source: "op"` conta no mesmo cooldown das proativas.
+  // As travas da Meta valem de novo agora (opt-out, janela, opt-in, template
+  // APPROVED da WABA, templatesPaused no sendTemplate). `transactional`: a
+  // mensagem foi escrita e aprovada por uma pessoa, não é proativa de
+  // automação — sem o cooldown de 6 h (decisão do dono, 27/10). A mensagem
+  // continua gravada com systemSource "op": as automáticas que vierem DEPOIS
+  // dela respeitam o intervalo normalmente.
   const res = await sendSystemWhatsApp({
     phone: args.telefone,
     contactId: args.contactId,
@@ -440,6 +459,7 @@ export async function sendApprovedWhatsapp(input: {
     authorId: author.id,
     authorName: author.name,
     source: "op",
+    transactional: true,
   });
   if (!res.sent) return { sent: false, via: res.via, reason: res.reason };
 
@@ -466,4 +486,235 @@ export async function sendApprovedWhatsapp(input: {
     },
   });
   return { sent: true, via: res.via };
+}
+
+// ---------------------------------------------------------------------------
+// Lote (decisão do dono, 27/10): UMA aprovação "aprovo <código>" cobre N envios
+// ---------------------------------------------------------------------------
+
+export interface LoteApprovalArgs<T extends Record<string, unknown>> extends Record<string, unknown> {
+  lote: true;
+  itens: T[];
+}
+
+export function isLote(args: unknown): args is LoteApprovalArgs<Record<string, unknown>> {
+  return !!args && typeof args === "object" && (args as { lote?: unknown }).lote === true && Array.isArray((args as { itens?: unknown }).itens);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface LotePrep<T extends Record<string, unknown>> {
+  args: LoteApprovalArgs<T>;
+  previa: Record<string, unknown>;
+  cardIds: string[];
+  pulados: LotePulado[];
+}
+
+type CardRow = Awaited<ReturnType<typeof loadCard>>;
+
+/** Resolve cada referência uma vez; card que não existe/ambíguo vira `pulado` (o resto segue). */
+async function loteCards(refs: string[], max: number, pulados: LotePulado[]): Promise<{ ref: string; card: CardRow }[]> {
+  const unique = dedupeRefs(refs);
+  if (!unique.length) throw new OpToolError("argumentos_invalidos", "Lote sem cards.", 400);
+  if (unique.length > max) throw new OpToolError("argumentos_invalidos", `No máximo ${max} cards por lote.`, 400);
+  const out: { ref: string; card: CardRow }[] = [];
+  const vistos = new Set<string>();
+  for (const ref of unique) {
+    try {
+      const card = await loadCard(ref);
+      // "2342" e o CPF do mesmo card: a mesma pessoa não recebe duas vezes no mesmo código.
+      if (vistos.has(card.id)) {
+        pulados.push({ card: ref, cardNumber: card.cardNumber, nome: card.name, code: "repetido", message: "o mesmo card já está no lote" });
+        continue;
+      }
+      vistos.add(card.id);
+      out.push({ ref, card });
+    } catch (err) {
+      if (!(err instanceof OpToolError)) throw err;
+      pulados.push({ card: ref, cardNumber: null, nome: null, code: err.code, message: err.message });
+    }
+  }
+  return out;
+}
+
+const varsOf = (card: CardRow) => ({ nome: card.name, cardNumber: card.cardNumber, hospital: card.hospital });
+
+export async function prepareWhatsappLote(input: {
+  op: OperatorContext;
+  cards: string[];
+  texto?: string;
+  template?: string;
+  variaveis?: string[];
+}): Promise<LotePrep<WhatsappApprovalArgs>> {
+  const pulados: LotePulado[] = [];
+  const cards = await loteCards(input.cards, LOTE_WHATSAPP_MAX, pulados);
+  const itens: WhatsappApprovalArgs[] = [];
+  const previas: LoteItemPrevia[] = [];
+  const cardIds: string[] = [];
+  const contatos = new Set<string>();
+  for (const { ref, card } of cards) {
+    const vars = varsOf(card);
+    try {
+      const r = await prepareWhatsapp({
+        op: input.op,
+        card: card.id,
+        texto: input.texto ? fillCardVars(input.texto, vars) : undefined,
+        template: input.template,
+        variaveis: input.variaveis?.map((v) => fillCardVars(v, vars)),
+      });
+      // Dois cards (duplicados) com o mesmo contato: uma mensagem só por telefone.
+      if (contatos.has(r.args.contactId)) {
+        pulados.push({ card: ref, cardNumber: card.cardNumber, nome: card.name, code: "repetido", message: "mesmo contato de WhatsApp de outro card do lote" });
+        continue;
+      }
+      contatos.add(r.args.contactId);
+      itens.push(r.args);
+      cardIds.push(r.cardId);
+      previas.push({
+        cardNumber: card.cardNumber,
+        nome: card.name,
+        destino: `${r.args.telefone} · linha ${r.args.linha}`,
+        saiComo: r.args.via === "template" ? `template "${r.args.template}"` : "texto",
+        texto: r.args.textoFinal,
+        avisos: (r.previa.avisos as string[] | undefined) ?? [],
+      });
+    } catch (err) {
+      if (!(err instanceof OpToolError)) throw err;
+      pulados.push({ card: ref, cardNumber: card.cardNumber, nome: card.name, code: err.code, message: err.message });
+    }
+  }
+  if (!itens.length) throw new OpToolError("lote_vazio", "Nenhum card do lote pode receber a mensagem agora (veja os motivos em details).", 422, { pulados });
+  return {
+    args: { lote: true, itens },
+    previa: { canal: "WhatsApp", lote: true, total: itens.length, itens: previas, pulados },
+    cardIds,
+    pulados,
+  };
+}
+
+export interface LoteEmailItem {
+  card: string;
+  para?: string;
+  anexos?: string[];
+}
+
+export async function prepareEmailLote(input: {
+  op: OperatorContext;
+  lote: LoteEmailItem[];
+  cc?: string[];
+  assunto: string;
+  corpo: string;
+  anexos?: string[];
+}): Promise<LotePrep<EmailApprovalArgs>> {
+  if (!isAwsEmailConfigured()) throw new OpToolError("email_nao_configurado", "O envio de e-mail (SES) não está configurado no CRM.", 503);
+  const pulados: LotePulado[] = [];
+  const byRef = new Map(input.lote.map((i) => [refKey(i.card), i]));
+  const cards = await loteCards(input.lote.map((i) => i.card), LOTE_EMAIL_MAX, pulados);
+  const itens: EmailApprovalArgs[] = [];
+  const previas: LoteItemPrevia[] = [];
+  const cardIds: string[] = [];
+  for (const { ref, card } of cards) {
+    const item = byRef.get(refKey(ref));
+    const vars = varsOf(card);
+    try {
+      const r = await prepareEmail({
+        op: input.op,
+        card: card.id,
+        para: item?.para,
+        cc: input.cc,
+        assunto: fillCardVars(input.assunto, vars),
+        corpo: fillCardVars(input.corpo, vars),
+        anexos: item?.anexos ?? input.anexos,
+      });
+      itens.push(r.args);
+      cardIds.push(r.cardId);
+      previas.push({
+        cardNumber: card.cardNumber,
+        nome: card.name,
+        destino: `${r.args.para}${r.args.cc.length ? ` (cc ${r.args.cc.join(", ")})` : ""}`,
+        saiComo: `assunto "${r.args.assunto}" · ${r.args.anexos.length} anexo(s)${r.args.destinoLivre ? " · DESTINO FORA DO CADASTRO" : ""}`,
+        texto: r.args.corpo,
+        avisos: (r.previa.avisos as string[] | undefined) ?? [],
+      });
+    } catch (err) {
+      if (!(err instanceof OpToolError)) throw err;
+      pulados.push({ card: ref, cardNumber: card.cardNumber, nome: card.name, code: err.code, message: err.message });
+    }
+  }
+  if (!itens.length) throw new OpToolError("lote_vazio", "Nenhum e-mail do lote pôde ser preparado (veja os motivos em details).", 422, { pulados });
+  return {
+    args: { lote: true, itens },
+    previa: { canal: "e-mail", lote: true, assunto: input.assunto, total: itens.length, itens: previas, pulados },
+    cardIds,
+    pulados,
+  };
+}
+
+function comCard(err: unknown, item: { cardNumber: number | null }): never {
+  if (err instanceof OpToolError) throw new OpToolError(err.code, `card ${item.cardNumber ?? "?"}: ${err.message}`, err.status, err.details);
+  throw err;
+}
+
+export async function precheckWhatsappLote(args: LoteApprovalArgs<WhatsappApprovalArgs>): Promise<void> {
+  for (const it of args.itens) await precheckWhatsapp(it).catch((e) => comCard(e, it));
+}
+
+export async function precheckEmailLote(args: LoteApprovalArgs<EmailApprovalArgs>): Promise<void> {
+  for (const it of args.itens) await precheckEmail(it).catch((e) => comCard(e, it));
+}
+
+/**
+ * Envia um a um, com intervalo; cada envio registra comentário + log `op_send`
+ * no próprio card. Nunca lança: o que não saiu volta com o motivo e o lote
+ * fica `executada` se ao menos um saiu (nunca se reenvia um lote).
+ */
+export async function sendApprovedWhatsappLote(input: {
+  args: LoteApprovalArgs<WhatsappApprovalArgs>;
+  op: OperatorContext;
+  trace: OpTrace;
+  approvalId: string;
+  gapMs?: number;
+  /** Início da rota (executar_aprovado): o orçamento conta a auth e os prechecks também. */
+  startedAt?: number;
+}) {
+  const started = input.startedAt ?? Date.now();
+  const gap = input.gapMs ?? LOTE_WHATSAPP_GAP_MS;
+  const itens: LoteEnvioItem[] = [];
+  for (let i = 0; i < input.args.itens.length; i++) {
+    const it = input.args.itens[i];
+    const base = { cardId: it.cardId, cardNumber: it.cardNumber, nome: it.nome };
+    if (Date.now() - started > LOTE_ENVIO_BUDGET_MS) {
+      itens.push({ ...base, sent: false, reason: "o tempo da chamada esgotou antes deste envio: prepare de novo só este card" });
+      continue;
+    }
+    if (i > 0 && gap) await sleep(gap);
+    try {
+      const r = await sendApprovedWhatsapp({ args: it, op: input.op, trace: input.trace, approvalId: input.approvalId });
+      itens.push({ ...base, sent: r.sent, via: r.via, reason: r.reason });
+    } catch (err) {
+      console.error("[op] envio em lote (WhatsApp) lançou:", err);
+      itens.push({ ...base, sent: false, reason: "falha inesperada no envio" });
+    }
+  }
+  return loteOutcome(itens);
+}
+
+export async function sendApprovedEmailLote(input: { args: LoteApprovalArgs<EmailApprovalArgs>; op: OperatorContext; trace: OpTrace; approvalId: string; startedAt?: number }) {
+  const started = input.startedAt ?? Date.now();
+  const itens: LoteEnvioItem[] = [];
+  for (const it of input.args.itens) {
+    const base = { cardId: it.cardId, cardNumber: it.cardNumber, nome: it.nome };
+    if (Date.now() - started > LOTE_ENVIO_BUDGET_MS) {
+      itens.push({ ...base, sent: false, reason: "o tempo da chamada esgotou antes deste envio: prepare de novo só este card" });
+      continue;
+    }
+    try {
+      const r = await sendApprovedEmail({ args: it, op: input.op, trace: input.trace, approvalId: input.approvalId });
+      itens.push({ ...base, sent: r.sent, via: "email", reason: r.error });
+    } catch (err) {
+      console.error("[op] envio em lote (e-mail) lançou:", err);
+      itens.push({ ...base, sent: false, reason: "falha inesperada no envio" });
+    }
+  }
+  return loteOutcome(itens);
 }

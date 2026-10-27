@@ -61,7 +61,6 @@ export class DraftError extends Error {
       | "card_nao_encontrado"
       | "rascunho_invalido"
       | "rascunho_expirado"
-      | "rascunho_de_outro_operador"
       | "modelo_invalido",
     message: string,
   ) {

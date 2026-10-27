@@ -19,34 +19,53 @@ describe("prévia das ferramentas L3", () => {
     expect(previewHash("adicionar_tag", { card: "1", coluna: "A" }, { labelId: "l1" })).not.toBe(base);
   });
 
-  it("sem confirmar não executa e devolve o hash", async () => {
+  it("sem confirmar não executa e devolve o hash (nos dois modos)", async () => {
     let ran = false;
-    const out = await previewOrExecute({
-      tool: "t",
-      args: { card: "1", confirmar: false },
-      estado: { x: 1 },
-      previa: { acao: "teste" },
-      execute: async () => { ran = true; },
-    });
-    expect(ran).toBe(false);
-    expect(out.executed).toBe(false);
-    if (!out.executed) expect(out.previa.previa_hash).toMatch(/^[a-f0-9]{64}$/);
+    for (const confirmacao of ["direta", "exigida"] as const) {
+      const out = await previewOrExecute({
+        tool: "t",
+        args: { card: "1", confirmar: false },
+        estado: { x: 1 },
+        previa: { acao: "teste" },
+        confirmacao,
+        execute: async () => { ran = true; },
+      });
+      expect(ran).toBe(false);
+      expect(out.executed).toBe(false);
+      if (!out.executed) {
+        expect(out.previa.previa_hash).toMatch(/^[a-f0-9]{64}$/);
+        expect(out.previa.requerConfirmacao).toBe(confirmacao === "exigida");
+      }
+    }
   });
 
-  it("confirmar sem hash → argumentos_invalidos; hash velho → estado_mudou com a prévia nova", async () => {
-    const exec = async () => "ok";
-    await expect(previewOrExecute({ tool: "t", args: { confirmar: true }, estado: {}, previa: {}, execute: exec })).rejects.toMatchObject({
-      code: "argumentos_invalidos",
-    });
-    const err = await previewOrExecute({ tool: "t", args: { confirmar: true, previa_hash: "velho" }, estado: { x: 2 }, previa: {}, execute: exec }).catch((e) => e);
+  it("direta (padrão, decisão 27/10): confirmar sem hash executa numa chamada só", async () => {
+    const out = await previewOrExecute({ tool: "t", args: { card: "1", confirmar: true }, estado: { x: 1 }, previa: {}, execute: async () => 42 });
+    expect(out).toEqual({ executed: true, result: 42 });
+  });
+
+  it("direta com hash velho ainda respeita: estado_mudou", async () => {
+    const err = await previewOrExecute({ tool: "t", args: { confirmar: true, previa_hash: "velho" }, estado: { x: 2 }, previa: {}, execute: async () => "ok" }).catch((e) => e);
     expect(err.code).toBe("estado_mudou");
     expect(err.status).toBe(409);
-    expect(err.details.previa.previa_hash).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("hash certo executa", async () => {
+  it("exigida: confirmar sem hash → requer_confirmacao com a prévia; hash velho → estado_mudou com a prévia nova", async () => {
+    const exec = async () => "ok";
+    const err = await previewOrExecute({ tool: "t", args: { confirmar: true }, estado: {}, previa: { acao: "lixeira" }, confirmacao: "exigida", execute: exec }).catch((e) => e);
+    expect(err.code).toBe("requer_confirmacao");
+    expect(err.status).toBe(409);
+    expect(err.details.previa.acao).toBe("lixeira");
+    expect(err.details.previa.previa_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(err.details.previa.requerConfirmacao).toBe(true);
+    const err2 = await previewOrExecute({ tool: "t", args: { confirmar: true, previa_hash: "velho" }, estado: { x: 2 }, previa: {}, confirmacao: "exigida", execute: exec }).catch((e) => e);
+    expect(err2.code).toBe("estado_mudou");
+    expect(err2.details.previa.previa_hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("exigida com o hash certo executa", async () => {
     const hash = previewHash("t", { card: "1" }, { x: 1 });
-    const out = await previewOrExecute({ tool: "t", args: { card: "1", confirmar: true, previa_hash: hash }, estado: { x: 1 }, previa: {}, execute: async () => 42 });
+    const out = await previewOrExecute({ tool: "t", args: { card: "1", confirmar: true, previa_hash: hash }, estado: { x: 1 }, previa: {}, confirmacao: "exigida", execute: async () => 42 });
     expect(out).toEqual({ executed: true, result: 42 });
   });
 });

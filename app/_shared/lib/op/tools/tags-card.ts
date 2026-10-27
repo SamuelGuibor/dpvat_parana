@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { defineTool, OpToolError } from "../registry";
 import { confirmSchema, previewOrExecute } from "../preview";
+import { autoProgress } from "../progress";
 import { setCardTag } from "../../cards/tags";
 import { cardRefSchema } from "./obter-card";
 import { automationsUsingTag, cardSummary, loadCardState, resolveTagExact, writeCommon } from "./_escrita";
@@ -16,8 +17,8 @@ function tagTool(on: boolean) {
   return defineTool({
     name,
     description: on
-      ? "ESCRITA. Marca uma tag em UM card. Sem confirmar = só prévia (tags antes → depois e automações que usam a tag como condição). Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash."
-      : "ESCRITA. Tira uma tag de UM card. Sem confirmar = só prévia (tags antes → depois e automações que usam a tag como condição). Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+      ? "ESCRITA. Marca uma tag em UM card. Chame com confirmar: true: executa na hora (ação direta, sem prévia). Devolve as tags relidas e as automações que usam a tag."
+      : "ESCRITA. Tira uma tag de UM card. Chame com confirmar: true: executa na hora (ação direta, sem prévia). Devolve as tags relidas.",
     level: 3,
     permission: "op_write",
     schema,
@@ -57,7 +58,9 @@ function tagTool(on: boolean) {
       }
       if (!out.result.changed) throw new OpToolError("estado_mudou", "A tag mudou no meio do caminho. Releia o card.", 409);
       const relido = await loadCardState(card.id);
-      return { data: { feito: true, card: cardSummary(relido) }, summary: `${name} ${card.cardNumber} ${tag.name}`, cardIds: [card.id] };
+      // Item I (27/10): passo "tag" do fluxo aberto (só ao marcar).
+      const progresso = on ? await autoProgress({ op, trace, cardId: card.id, match: (s) => s.kind === "registro" && s.confere === "tag", refs: [tag.name] }) : null;
+      return { data: { feito: true, card: cardSummary(relido), ...(progresso ? { progresso } : {}) }, summary: `${name} ${card.cardNumber} ${tag.name}`, cardIds: [card.id] };
     },
   });
 }

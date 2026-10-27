@@ -29,7 +29,7 @@ const schema = z.object({
 export const editarCadastro = defineTool({
   name: "editar_cadastro",
   description:
-    "ESCRITA. Preenche ou corrige campos do cadastro de UM card (nome, CPF, RG, endereço, estado civil, profissão, telefones, datas, hospital, lesões…). Nunca: senha, senha do INSS, e-mail, coluna, status do checklist. Sem confirmar = só prévia: campo vazio aparece como \"preencher\"; campo já preenchido como \"trocar\" com o valor antigo. Mostre a prévia; se houver troca, mostre cada \"antes → depois\" e pergunte especificamente se troca. Só então chame com confirmar: true + previa_hash (+ confirmar_trocas: true se houver troca).",
+    "ESCRITA. Preenche ou corrige campos do cadastro de UM card (nome, CPF, RG, endereço, estado civil, profissão, telefones, datas, hospital, lesões…). Nunca: senha, senha do INSS, e-mail, coluna, status do checklist. Chame com confirmar: true: campo VAZIO é preenchido na hora (ação direta). Campo JÁ PREENCHIDO volta com requer_confirmacao e a prévia \"antes → depois\": mostre cada troca, pergunte \"Troco?\" e repita com confirmar: true + previa_hash + confirmar_trocas: true.",
   level: 3,
   permission: "op_write",
   schema,
@@ -66,10 +66,12 @@ export const editarCadastro = defineTool({
     const trocas = plano.mudancas.filter((m) => m.tipo === "trocar");
 
     // confirmar_trocas fica fora do hash: a prévia (sem ele) e a execução
-    // (com ele) amarram os mesmos campos e valores.
+    // (com ele) amarram os mesmos campos e valores. Preencher campo vazio é
+    // direto; trocar valor existente exige ver o antes → depois (decisão 15 e 27/10).
     const out = await previewOrExecute({
       tool: "editar_cadastro",
       args: { card: args.card, campos: novos, confirmar: args.confirmar, previa_hash: args.previa_hash },
+      confirmacao: trocas.length ? "exigida" : "direta",
       estado: Object.fromEntries(campos.map((c) => [c, atual[c] ?? null])),
       previa: {
         acao: "editar cadastro",

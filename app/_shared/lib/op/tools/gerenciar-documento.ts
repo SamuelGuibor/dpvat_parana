@@ -37,7 +37,7 @@ function resolvePasta(q: string): DocumentCategoryId {
 export const gerenciarDocumento = defineTool({
   name: "gerenciar_documento",
   description:
-    "ESCRITA. Renomeia, troca de pasta, manda para a lixeira (restaurável por 30 dias) ou restaura UM documento do card. Excluir de vez não existe aqui (só no site). Sem confirmar = só prévia. Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+    "ESCRITA. Renomeia, troca de pasta, manda para a lixeira (restaurável por 30 dias) ou restaura UM documento do card. Excluir de vez não existe aqui (só no site). Chame com confirmar: true: renomear, mover_pasta e restaurar executam na hora. Só lixeira volta com requer_confirmacao e a prévia: mostre, pergunte \"Confirma?\" e repita com confirmar: true + previa_hash.",
   level: 3,
   permission: "op_write",
   schema,
@@ -83,6 +83,8 @@ export const gerenciarDocumento = defineTool({
     const out = await previewOrExecute({
       tool: "gerenciar_documento",
       args: { ...args, documento: doc.id },
+      // Decisão do dono (27/10): só tirar arquivo da aba pede confirmação.
+      confirmacao: args.acao === "lixeira" ? "exigida" : "direta",
       estado: { id: doc.id, name: doc.name, category: doc.category, lixeira: Boolean(doc.deletedAt) },
       previa: {
         acao: args.acao,

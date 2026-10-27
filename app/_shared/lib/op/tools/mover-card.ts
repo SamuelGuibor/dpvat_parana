@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { defineTool, OpToolError } from "../registry";
 import { confirmSchema, previewOrExecute } from "../preview";
+import { autoProgress } from "../progress";
 import { moveCardToLabel } from "../../cards/move-card";
 import { cardRefSchema } from "./obter-card";
 import { automationsPreview, cardSummary, loadCardState, resolveColumnExact, writeCommon } from "./_escrita";
@@ -19,7 +20,7 @@ const schema = z.object({
 export const moverCard = defineTool({
   name: "mover_card",
   description:
-    "ESCRITA. Move UM card para outra coluna do kanban, como arrastar no site (dispara as automações da coluna). Sem confirmar = só prévia: de → para, automações que vão rodar e se alguma manda WhatsApp ao cliente. Mostre a prévia ao operador, pergunte \"Confirma?\" (e, se mandaWhatsapp, \"mandar o WhatsApp também?\") e só então chame de novo com confirmar: true + previa_hash. Não muda a etapa do checklist.",
+    "ESCRITA. Move UM card para outra coluna do kanban, como arrastar no site (dispara as automações da coluna). Chame com confirmar: true: executa na hora. Só quando a coluna de destino manda WhatsApp ao cliente a chamada volta com requer_confirmacao e a prévia (automações + texto do WhatsApp): mostre, pergunte \"Confirma? Mandar o WhatsApp também?\" e repita com confirmar: true + previa_hash (+ enviar_whatsapp: true só com sim explícito). Não muda a etapa do checklist.",
   level: 3,
   permission: "op_write",
   schema,
@@ -35,14 +36,20 @@ export const moverCard = defineTool({
     }
 
     const { automacoes, mandaWhatsapp } = await automationsPreview(destino.id, card.id);
-    const enviar = args.enviar_whatsapp === true;
     // enviar_whatsapp fica fora do hash: a prévia já mostrou o texto e a skill
     // pergunta as duas coisas juntas ("Confirma? Manda o WhatsApp também?").
+    // Só vale junto do previa_hash (27/10): sem prévia ninguém viu o texto que
+    // sairia — e em modo direto (coluna sem WhatsApp na prévia) nunca libera
+    // uma cadeia de `move` que a prévia não enxerga.
+    const enviar = args.enviar_whatsapp === true && Boolean(args.previa_hash);
     const hashArgs: Record<string, unknown> = { ...args };
     delete hashArgs.enviar_whatsapp;
     const out = await previewOrExecute({
       tool: "mover_card",
       args: hashArgs,
+      // Decisão do dono (27/10): mover executa direto; só a coluna que manda
+      // WhatsApp ao cliente passa pela prévia (mensagem ao cliente = aprovação).
+      confirmacao: mandaWhatsapp ? "exigida" : "direta",
       estado: { labelId: card.labelId, archiveStatus: card.archiveStatus },
       previa: {
         acao: "mover",
@@ -76,11 +83,14 @@ export const moverCard = defineTool({
       return { data: { previa: out.previa }, summary: `prévia mover ${card.cardNumber}: ${de} → ${destino.nome}`, cardIds: [card.id] };
     }
     const depois = await loadCardState(card.id);
+    // Item I (27/10): passo "mover" do fluxo aberto do card.
+    const progresso = await autoProgress({ op, trace, cardId: card.id, match: (s) => s.kind === "registro" && s.confere === "coluna", refs: [destino.nome] });
     return {
       data: {
         feito: true,
         de,
         para: destino.nome,
+        ...(progresso ? { progresso } : {}),
         whatsapp: enviar ? "liberado para a automação" : mandaWhatsapp ? "não enviado (operador optou)" : "nenhum (WhatsApp de automação bloqueado nesta movimentação)",
         nota: "As automações da coluna rodam em segundo plano; o histórico mostra o resultado em instantes.",
         card: cardSummary(depois),

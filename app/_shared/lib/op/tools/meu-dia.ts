@@ -4,7 +4,8 @@ import { defineTool } from "../registry";
 import { brDate, brDaysBetween } from "../resolve";
 import { CARD_WHERE, columnName } from "../cards";
 import { aggregateMeuDia, type MeuDiaCard } from "@/app/_shared/utils/meu-dia";
-import { verificarPendencias } from "./verificar-pendencias";
+import { pendenciasDoCard } from "./verificar-pendencias";
+import { jobSummary, pendingJobsFor } from "../jobs";
 
 const schema = z.object({
   dias: z.number().int().min(1).max(30).default(3).describe("Janela (dias) dos cards que você conduziu. Padrão 3."),
@@ -22,9 +23,9 @@ export const meuDia = defineTool({
   level: 1,
   permission: "op_use",
   schema,
-  async run({ op, trace }, args) {
+  async run({ op }, args) {
     const since = new Date(Date.now() - args.dias * 86_400_000);
-    const [mentions, calls, moves] = await Promise.all([
+    const [mentions, calls, moves, lotes] = await Promise.all([
       db.mention.findMany({
         where: { recipientId: op.userId, status: "PENDING" },
         orderBy: { createdAt: "asc" },
@@ -43,6 +44,8 @@ export const meuDia = defineTool({
         take: 300,
         select: { userId: true, createdAt: true },
       }),
+      // Item O (27/10): lotes em segundo plano terminados e ainda não vistos (+ os rodando).
+      pendingJobsFor(op.userId),
     ]);
 
     const touched = new Map<string, Date>();
@@ -82,9 +85,9 @@ export const meuDia = defineTool({
     );
 
     const pendencias: { cardNumber: number | null; resumo: string }[] = [];
-    for (const c of cards.slice(0, MAX_PENDENCIAS)) {
-      const r = await verificarPendencias.run({ op, trace }, { card: c.id });
-      const d = r.data as { pastasVazias: string[]; checklistPendente: string[]; camposVaziosProcuracao: string[]; tagsDePendencia: string[]; senhaInssCadastrada: boolean };
+    // Em paralelo (27/10): antes era um card por vez, 15 × 3 queries em série.
+    const lidas = await Promise.all(cards.slice(0, MAX_PENDENCIAS).map(async (c) => ({ c, d: await pendenciasDoCard(c.id) })));
+    for (const { c, d } of lidas) {
       const partes = [
         d.pastasVazias.length ? `${d.pastasVazias.length} pasta(s) vazia(s)` : "",
         d.checklistPendente.length ? `${d.checklistPendente.length} item(ns) do checklist` : "",
@@ -113,8 +116,9 @@ export const meuDia = defineTool({
         cards,
         parados: cards.filter((c) => c.parado).map((c) => c.cardNumber),
         pendencias,
+        lotes: lotes.map((l) => ({ ...jobSummary(l), criadoEm: brDate(l.createdAt), dica: l.status === "concluido" || l.status === "falhou" ? "pronto: resultado_lote" : "rodando" })),
       },
-      summary: `meu dia: ${mentions.length} tarefa(s), ${cards.length} card(s), ${cards.filter((c) => c.parado).length} parado(s)`,
+      summary: `meu dia: ${mentions.length} tarefa(s), ${cards.length} card(s), ${cards.filter((c) => c.parado).length} parado(s)${lotes.length ? `, ${lotes.length} lote(s)` : ""}`,
       cardIds: cards.map((c) => c.id),
     };
   },

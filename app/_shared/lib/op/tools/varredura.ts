@@ -10,7 +10,9 @@ import { db } from "../../prisma";
 import { defineTool } from "../registry";
 import { ACTIVE_CARD_WHERE, columnName } from "../cards";
 import { resolveColumn } from "./listar-colunas";
-import { HOSPITAL_COLUMNS_RE, VARREDURA_CHECAGENS, VARREDURA_REGRAS, findInconsistencies, type VarreduraItem } from "@/app/_shared/utils/op-varredura";
+import { HOSPITAL_COLUMNS_RE, VARREDURA_CHECAGENS, VARREDURA_REGRAS, duplicateCardIds, findInconsistencies, type VarreduraCard, type VarreduraItem } from "@/app/_shared/utils/op-varredura";
+import { brDaysBetween } from "../resolve";
+import { brDayKey } from "@/app/_shared/utils/date-br";
 
 /** Fluxo com origem mais antiga que isso não entra (cobre 14 dias de parado com folga). */
 const FLOW_LOOKBACK_DAYS = 90;
@@ -28,7 +30,7 @@ const schema = z.object({
 export const varrerInconsistencias = defineTool({
   name: "varrer_inconsistencias",
   description:
-    "Varredura de cards ativos com problema: CPF repetido entre cards, telefone repetido com CPF diferente, CPF inválido, card sem hospital nas colunas de pedido de prontuário, fluxo da IA bloqueado há mais de 3 dias. Cada item traz card, regra, fonte e evidência. Só leitura — não corrige nada.",
+    "Varredura de cards ativos com problema: CPF repetido entre cards, telefone repetido com CPF diferente, CPF inválido, card sem hospital nas colunas de pedido de prontuário, fluxo da IA bloqueado há mais de 3 dias. Cada item traz card, regra, fonte e evidência; grupo repetido vem num item só, com documentos/comentários/dias de cada card e sugestao {manter, arquivar, motivo}. Só leitura — não corrige nada.",
   level: 1,
   permission: "op_use",
   schema,
@@ -52,21 +54,38 @@ export const varrerInconsistencias = defineTool({
             .then((rows) => rows.map((r) => ({ id: r.id, operatorId: r.lastOperatorId, state: r.state })))
         : Promise.resolve([]),
     ]);
-    const res = findInconsistencies({
-      cards: rows.map((r) => ({
-        id: r.id,
-        cardNumber: r.cardNumber,
-        nome: r.name,
-        coluna: columnName(r),
-        cpf: r.cpf,
-        telefone: r.telefone,
-        hospital: r.hospital,
-        outroHospital: r.outro_hospital,
-      })),
-      flows,
-      checagens: args.checagens,
-      limite: args.limite,
-    });
+    const cards: VarreduraCard[] = rows.map((r) => ({
+      id: r.id,
+      cardNumber: r.cardNumber,
+      nome: r.name,
+      coluna: columnName(r),
+      cpf: r.cpf,
+      telefone: r.telefone,
+      hospital: r.hospital,
+      outroHospital: r.outro_hospital,
+    }));
+    // Item C (27/10): contagens (documentos, comentários, idade) só dos cards
+    // que caíram em grupo repetido — a sugestão "qual manter" precisa delas.
+    const wantDup = !args.checagens?.length || args.checagens.some((c) => c === "cpf_repetido" || c === "telefone_repetido");
+    const dupIds = wantDup ? duplicateCardIds(cards) : [];
+    if (dupIds.length) {
+      const stats = await db.user.findMany({
+        where: { id: { in: dupIds } },
+        select: { id: true, createdAt: true, statusStartedAt: true, _count: { select: { document: { where: { deletedAt: null } }, commentsOnCard: true } } },
+      });
+      const byId = new Map(stats.map((s) => [s.id, s]));
+      for (const c of cards) {
+        const s = byId.get(c.id);
+        if (!s) continue;
+        c.stats = {
+          documentos: s._count.document,
+          comentarios: s._count.commentsOnCard,
+          diasNaColuna: s.statusStartedAt ? brDaysBetween(s.statusStartedAt) : null,
+          criadoEm: brDayKey(s.createdAt),
+        };
+      }
+    }
+    const res = findInconsistencies({ cards, flows, checagens: args.checagens, limite: args.limite });
 
     const opIds = [...new Set(res.itens.map((i) => i.evidencia.operadorId).filter((x): x is string => typeof x === "string"))];
     const ops = opIds.length ? await db.user.findMany({ where: { id: { in: opIds } }, select: { id: true, name: true } }) : [];
@@ -94,7 +113,7 @@ export const varrerInconsistencias = defineTool({
         total: res.total,
         mostrados: res.mostrados,
         grupos: [...grupos.values()],
-        aviso: "Checagens da IA, não regras oficiais. Nada foi alterado; qualquer correção é uma ação por vez, com prévia.",
+        aviso: "Checagens da IA, não regras oficiais. Nada foi alterado. Em grupo repetido, sugestao (qual manter) é heurística: documentos > comentários > mais antigo.",
       },
       summary: `varredura: ${res.total} item(ns) em ${rows.length} card(s)${col ? ` (${col.nome})` : ""}`,
       cardIds: [...new Set(res.itens.map((i) => i.card.id))],

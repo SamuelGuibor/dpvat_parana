@@ -5,14 +5,20 @@ import { defineTool, OpToolError } from "../registry";
 import { matchColumn } from "../resolve";
 import { ACTIVE_CARD_WHERE } from "../cards";
 
-/** Colunas na ordem do board + contagem de cards ativos (uma consulta agrupada). */
+/** Colunas na ordem do board, sem contagem (fetchLabels é cacheado: 300 s, tag "labels"). */
+export async function loadColumnNames() {
+  const labels = await fetchLabels();
+  return labels.map((l) => ({ id: l.id, nome: l.name, ordem: l.order, prazoDias: l.timeLimitDays }));
+}
+
+/** Colunas + contagem de cards ativos (uma consulta agrupada) — só o listar_colunas precisa. */
 export async function loadColumns() {
-  const [labels, counts] = await Promise.all([
-    fetchLabels(),
+  const [cols, counts] = await Promise.all([
+    loadColumnNames(),
     db.user.groupBy({ by: ["labelId"], where: ACTIVE_CARD_WHERE, _count: { _all: true } }),
   ]);
   const byLabel = new Map(counts.map((c) => [c.labelId, c._count._all]));
-  return labels.map((l) => ({ id: l.id, nome: l.name, ordem: l.order, prazoDias: l.timeLimitDays, cardsAtivos: byLabel.get(l.id) ?? 0 }));
+  return cols.map((c) => ({ ...c, cardsAtivos: byLabel.get(c.id) ?? 0 }));
 }
 
 /**
@@ -20,7 +26,8 @@ export async function loadColumns() {
  * candidatas (a skill pergunta); nenhuma → "coluna_nao_encontrada" com a lista.
  */
 export async function resolveColumn(query: string) {
-  const cols = await loadColumns();
+  // Item D (27/10): casar o nome não paga o groupBy de contagem (30–80 ms por chamada).
+  const cols = await loadColumnNames();
   const match = matchColumn(cols.map((c) => c.nome), query);
   if (match.exact !== null) return cols.find((c) => c.nome === match.exact)!;
   if (match.candidates.length === 1) return cols.find((c) => c.nome === match.candidates[0])!;

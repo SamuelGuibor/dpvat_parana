@@ -152,7 +152,7 @@ export function GlobalSearch({ onNavigate, canViewArchived, canViewTickets }: Pr
               <PaletteItem icon={<Archive className="h-4 w-4" />} label="Arquivados" onSelect={() => goTo("arquivados")} />
             )}
             {canViewTickets && (
-              <PaletteItem icon={<Ticket className="h-4 w-4" />} label="Tickets Dev" onSelect={() => goTo("tickets-dev")} />
+              <PaletteItem icon={<Ticket className="h-4 w-4" />} label="Cérebro APP (tickets e conhecimento)" onSelect={() => goTo("tickets-dev")} />
             )}
             <PaletteItem icon={<UserCircle className="h-4 w-4" />} label="Espaço de Trabalho" onSelect={() => goTo("meu-espaco")} />
           </Command.Group>

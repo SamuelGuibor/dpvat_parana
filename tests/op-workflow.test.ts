@@ -139,9 +139,7 @@ describe("salvar_progresso", () => {
     expect(out).toMatchObject({ salvo: true, novo: true });
   });
 
-  it("ref não confere: rascunho de outro operador, de outro card, de outro tipo, sem ref", async () => {
-    drafts.getDraft.mockResolvedValueOnce(draftOk({ operatorId: "op2" }));
-    await expect(save({ passo: "pedido", refs: [KEY] })).rejects.toMatchObject({ code: "ref_invalido" });
+  it("ref não confere: rascunho de outro card, de outro tipo, sem ref (o de colega vale — item K)", async () => {
     drafts.getDraft.mockResolvedValueOnce(draftOk({ cardId: "outro" }));
     await expect(save({ passo: "pedido", refs: [KEY] })).rejects.toMatchObject({ code: "ref_invalido" });
     drafts.getDraft.mockResolvedValueOnce(draftOk({ kind: "procuracao" }));
@@ -218,11 +216,25 @@ describe("retomar_fluxo", () => {
     const out = await loadForResume({ op, fluxoId: "req0", write: true, agora });
     expect(out).toMatchObject({ aberto: true, gravado: true, comecadoPor: "op2", ultimoOperador: "op2" });
     expect(db.opWorkflow.update.mock.calls[0][0].data).toMatchObject({ lastOperatorId: "op1", operatorIds: ["op2", "op1"] });
-    // rascunho do colega não vale para quem retoma: refaz
+    // rascunho do colega VALE para quem retoma (item K, 27/10): não refaz
     drafts.getDraft.mockResolvedValue(draftOk({ operatorId: "op2" }));
     db.opWorkflow.findUnique.mockResolvedValueOnce(flow(stateWithPedido(), "req0", "op2"));
     const out2 = await loadForResume({ op, fluxoId: "req0", write: false, agora });
-    expect(out2).toMatchObject({ plano: { refazer: [{ passo: "pedido" }] } });
+    expect(out2).toMatchObject({ plano: { refazer: [], feitos: expect.arrayContaining([expect.objectContaining({ passo: "pedido" })]) } });
+  });
+
+  it("aprovação pendente da MESMA sessão e no prazo é reaproveitada (item J, 27/10): nada cancelado, aprovacaoValida com o código", async () => {
+    db.opWorkflow.findMany.mockResolvedValue([flow(emailPreparado())]);
+    db.opWorkflow.findUnique.mockResolvedValue({ state: emailPreparado(), operatorIds: ["op1"] });
+    db.opApproval.findMany.mockResolvedValue([{ id: APR, status: "pendente", expiresAt: new Date(agora.getTime() + 10 * 60_000), operatorId: "op1", sessionId: "s1", code: "AB12CD" }]);
+    const out = await loadForResume({ op, workflow: "prontuario", cardRef: "4967", write: true, agora, sessionId: "s1" });
+    expect(db.opApproval.updateMany).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ aberto: true, plano: { aprovacaoValida: { passo: "preparar_email", approvalId: APR, codigo: "AB12CD" }, proximo: { passo: "enviar" }, refazer: [] } });
+    // Outra sessão (ou sem sessão): cancela como antes.
+    db.opApproval.findMany.mockResolvedValue([{ id: APR, status: "pendente", expiresAt: new Date(agora.getTime() + 10 * 60_000), operatorId: "op1", sessionId: "s1", code: "AB12CD" }]);
+    const out2 = await loadForResume({ op, workflow: "prontuario", cardRef: "4967", write: true, agora, sessionId: "s2" });
+    expect(db.opApproval.updateMany).toHaveBeenCalledWith({ where: { id: APR, cardId: CARD_ID, status: "pendente" }, data: { status: "cancelada" } });
+    expect(out2).toMatchObject({ plano: { aprovacaoValida: null, proximo: { passo: "preparar_email" } } });
   });
 
   it("card sem fluxo aberto → aberto: false", async () => {

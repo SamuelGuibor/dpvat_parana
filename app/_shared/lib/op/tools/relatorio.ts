@@ -14,14 +14,14 @@ import { TEAM_ROLES } from "../../permissions";
 import { defineTool, OpToolError } from "../registry";
 import { brDateTime } from "../resolve";
 import { getOpMetrics, type OpMetricsView } from "../metrics";
-import { OP_METRIC_DEFINITIONS, OP_PERIOD_MAX_DAYS, OpPeriodError, resolveOpPeriod } from "@/app/_shared/utils/op-metrics";
+import { OP_METRIC_DEFINITIONS, OP_PERIOD_MAX_DAYS, OpPeriodError, resolveOpPeriod, type IgnoradoItem } from "@/app/_shared/utils/op-metrics";
 
-export const RELATORIO_TIPOS = ["operacao", "falhas", "fluxos", "aprovacoes"] as const;
+export const RELATORIO_TIPOS = ["operacao", "falhas", "fluxos", "aprovacoes", "ignorados"] as const;
 
 const dayKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data no formato AAAA-MM-DD (dia de Brasília)");
 
 const schema = z.object({
-  tipo: z.enum(RELATORIO_TIPOS).describe("operacao (rendimento por pessoa, consultas, ferramentas, cards) | falhas | fluxos | aprovacoes"),
+  tipo: z.enum(RELATORIO_TIPOS).describe("operacao (rendimento por pessoa, consultas, ferramentas, cards) | falhas | fluxos | aprovacoes | ignorados (prévias sem OK, envios apesar do aviso, cards pulados — item G)"),
   dias: z.number().int().min(1).max(OP_PERIOD_MAX_DAYS).optional().describe("Últimos N dias de Brasília, hoje incluso. Padrão 7."),
   de: dayKey.optional().describe("Início (AAAA-MM-DD, Brasília). Use com `ate` em vez de `dias`."),
   ate: dayKey.optional().describe("Fim inclusivo (AAAA-MM-DD, Brasília)."),
@@ -96,6 +96,18 @@ export function shapeRelatorio(tipo: (typeof RELATORIO_TIPOS)[number], m: OpMetr
         operadores: f.operadores.map(nome),
       })),
       cortado: m.cortado,
+    };
+  }
+  if (tipo === "ignorados") {
+    const ig = m.ignorados;
+    const linha = (i: IgnoradoItem) => ({ id: i.id, operador: nome(i.operatorId), ferramenta: i.tool, card: card(i.cardId), avisos: i.avisos, quando: brDateTime(new Date(i.quando)) });
+    return {
+      periodo,
+      definicao: OP_METRIC_DEFINITIONS.ignorados,
+      totais: { previasNaoConfirmadas: ig.previasNaoConfirmadas.length, enviosComAviso: ig.enviosComAviso.length, cardsPulados: ig.cardsPulados, naoEnviados: ig.naoEnviados },
+      porOperador: Object.entries(ig.porOperador).map(([id, v]) => ({ operador: nome(id), ...v })),
+      previasNaoConfirmadas: ig.previasNaoConfirmadas.map(linha),
+      enviosComAviso: ig.enviosComAviso.map(linha),
     };
   }
   if (tipo === "fluxos") {

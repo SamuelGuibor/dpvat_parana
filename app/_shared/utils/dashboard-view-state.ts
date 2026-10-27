@@ -32,7 +32,7 @@ export const WORKSPACE_SECTION_STORAGE_KEY = 'workspace-section';
  * daqui). A guarda por permissão continua no `Workspace` (`effective`).
  */
 export const WORKSPACE_SECTIONS = [
-  'meu-espaco', 'chat', 'revisao-ia', 'gestao', 'dashboard', 'custos', 'numeros', 'seguranca', 'cerebro-ia',
+  'meu-espaco', 'chat', 'revisao-ia', 'gestao', 'dashboard', 'custos', 'numeros', 'seguranca', 'cerebro-ia', 'ia-operacao',
 ] as const;
 export type WorkspaceSectionKey = (typeof WORKSPACE_SECTIONS)[number];
 export const DEFAULT_WORKSPACE_SECTION: WorkspaceSectionKey = 'meu-espaco';

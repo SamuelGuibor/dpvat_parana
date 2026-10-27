@@ -204,7 +204,9 @@ function PageInner() {
   // Permissões vêm do servidor (cargo + overrides do ADMIN++) via
   // PermissionsProvider — nada mais de listas de IDs hardcoded aqui.
   const canViewArchived = perms.view_archived;
-  const canViewTickets = perms.view_tickets;
+  // Cérebro APP (ex-Tickets Dev): também vê quem usa a IA de operação, para
+  // sugerir conhecimento. As actions conferem de novo no servidor.
+  const canViewTickets = perms.view_tickets || perms.op_use;
   const canViewContracts = perms.manage_contracts;
   const canViewWhatsApp = perms.view_whatsapp;
   // Aba Contratos (assinatura eletrônica) DESATIVADA em 14/09/2026 — decisão
@@ -309,7 +311,7 @@ function PageInner() {
                 className={tabCls}
               >
                 <Ticket className="w-4 h-4 mr-2" />
-                Tickets Dev
+                Tickets
               </TabsTrigger>
             )}
             </>)}

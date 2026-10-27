@@ -49,9 +49,13 @@ const hosp = vi.hoisted(() => ({ email: "samelaudos@hosp.org.br" as string | nul
 vi.mock("@/app/_shared/lib/op/hospitais", () => ({
   hospitalContactFor: async () => ({ ghost: null, cadastro: null, email: hosp.email, fonteEmail: hosp.email ? "cadastro" : null, notaCaminho: null }),
 }));
-vi.mock("@/app/_shared/lib/op/cards", () => ({ resolveOneCardId: async () => "card1" }));
-const contacts = vi.hoisted(() => ({ ids: ["ct1"] as string[] }));
-vi.mock("@/app/_shared/lib/op/tools/consultar-conversa", () => ({ contactIdsForCard: async () => contacts.ids }));
+// Referência → id: o lote precisa de cards diferentes (mapa por teste); o resto resolve para card1.
+const resolve = vi.hoisted(() => ({ map: {} as Record<string, string> }));
+vi.mock("@/app/_shared/lib/op/cards", () => ({ resolveOneCardId: async (ref: string) => resolve.map[ref] ?? "card1" }));
+const contacts = vi.hoisted(() => ({ ids: ["ct1"] as string[], byCard: {} as Record<string, string[]> }));
+vi.mock("@/app/_shared/lib/op/tools/consultar-conversa", () => ({
+  contactIdsForCard: async (cardId: string) => contacts.byCard[cardId] ?? (cardId === "card2" ? ["ct2"] : contacts.ids),
+}));
 const drafts = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/app/_shared/lib/docs/drafts", () => ({
   getDraft: (...a: unknown[]) => drafts.get(...a),
@@ -61,7 +65,19 @@ const writes = vi.hoisted(() => ({ comment: vi.fn(), log: vi.fn() }));
 vi.mock("@/app/_shared/lib/cards/comment", () => ({ addCardComment: (...a: unknown[]) => writes.comment(...a) }));
 vi.mock("@/app/_shared/lib/log", () => ({ createLog: (...a: unknown[]) => writes.log(...a) }));
 
-import { precheckEmail, prepareEmail, prepareWhatsapp, sendApprovedEmail, sendApprovedWhatsapp } from "@/app/_shared/lib/op/comms";
+import {
+  isLote,
+  precheckEmail,
+  precheckWhatsappLote,
+  prepareEmail,
+  prepareEmailLote,
+  prepareWhatsapp,
+  prepareWhatsappLote,
+  sendApprovedEmail,
+  sendApprovedEmailLote,
+  sendApprovedWhatsapp,
+  sendApprovedWhatsappLote,
+} from "@/app/_shared/lib/op/comms";
 
 const op = { userId: "op1", name: "Fulana", email: "f@x", role: "ADMIN++", permissions: {}, tokenId: "t" } as never;
 const trace = { sessionId: "s1", requestId: "r1" };
@@ -76,6 +92,8 @@ beforeEach(() => {
   wa.send.mockReset().mockResolvedValue({ sent: true, via: "text" });
   hosp.email = "samelaudos@hosp.org.br";
   contacts.ids = ["ct1"];
+  contacts.byCard = {};
+  resolve.map = {};
   drafts.get.mockReset().mockResolvedValue({ key: DRAFT, cardId: "card1", operatorId: "op1", fileName: "Pedido Ana.pdf" });
   writes.comment.mockReset().mockResolvedValue({ id: "cm1" });
   writes.log.mockReset();
@@ -116,9 +134,11 @@ describe("preparar e-mail", () => {
     await expect(email()).rejects.toMatchObject({ code: "email_nao_configurado" });
   });
 
-  it("anexo: rascunho de outro operador, documento fora de uploads/, soma > 10 MB", async () => {
+  it("anexo: rascunho de colega vale (item K, 27/10), de outro card não; documento fora de uploads/; soma > 10 MB", async () => {
     drafts.get.mockResolvedValue({ key: DRAFT, cardId: "card1", operatorId: "op2", fileName: "x.pdf" });
-    await expect(email()).rejects.toMatchObject({ code: "sem_permissao" });
+    await expect(email()).resolves.toMatchObject({ args: { anexos: [expect.objectContaining({ key: DRAFT })] } });
+    drafts.get.mockResolvedValue({ key: DRAFT, cardId: "card9", operatorId: "op1", fileName: "x.pdf" });
+    await expect(email()).rejects.toMatchObject({ code: "anexo_invalido" });
     db.document.findMany.mockResolvedValue([{ id: "d1", key: "whatsapp/ct1/x.jpg", name: "foto.jpg" }]);
     await expect(email({ anexos: ["foto.jpg"] })).rejects.toMatchObject({ code: "anexo_invalido" });
     drafts.get.mockResolvedValue({ key: DRAFT, cardId: "card1", operatorId: "op1", fileName: "x.pdf" });
@@ -164,12 +184,12 @@ describe("preparar WhatsApp", () => {
     expect(previa.janela24hAberta).toBe(true);
   });
 
-  it("opt-out, cooldown e janela fechada barram na prévia", async () => {
+  it("opt-out e janela fechada barram na prévia; proativa recente NÃO barra (sem cooldown, decisão 27/10)", async () => {
     db.whatsAppContact.findMany.mockResolvedValue([{ id: "ct1", phone: "5541999990000", name: "Ana", optedOut: true, optedInAt: null, numberId: "n1" }]);
     await expect(prepareWhatsapp({ op, card: "2342", texto: "x" })).rejects.toMatchObject({ code: "opt_out" });
     db.whatsAppContact.findMany.mockResolvedValue([{ id: "ct1", phone: "5541999990000", name: "Ana", optedOut: false, optedInAt: new Date(), numberId: "n1" }]);
     wa.block = "cooldown";
-    await expect(prepareWhatsapp({ op, card: "2342", texto: "x" })).rejects.toMatchObject({ code: "cooldown" });
+    await expect(prepareWhatsapp({ op, card: "2342", texto: "x" })).resolves.toMatchObject({ args: { via: "text" } });
     wa.block = "janela";
     wa.window = false;
     await expect(prepareWhatsapp({ op, card: "2342", texto: "x" })).rejects.toMatchObject({ code: "janela_fechada" });
@@ -205,13 +225,13 @@ describe("preparar WhatsApp", () => {
 });
 
 describe("enviar WhatsApp aprovado", () => {
-  it("vai pelo sendSystemWhatsApp (todas as travas), contato exato, source op, sem pular cooldown", async () => {
+  it("vai pelo sendSystemWhatsApp (travas da Meta), contato exato, source op, transacional (sem cooldown — decisão 27/10)", async () => {
     const { args } = await prepareWhatsapp({ op, card: "2342", texto: "Oi" });
     const r = await sendApprovedWhatsapp({ args, op, trace, approvalId: "apr2" });
     expect(r).toEqual({ sent: true, via: "text" });
     const input = wa.send.mock.calls[0][0];
     expect(input).toMatchObject({ contactId: "ct1", source: "op", text: "Oi", templateName: null, authorName: "Fulana (via IA)" });
-    expect(input.transactional).toBeUndefined();
+    expect(input.transactional).toBe(true);
     expect(writes.log.mock.calls[0][0]).toMatchObject({ action: "op_send", metadata: { canal: "whatsapp", approvalId: "apr2" } });
   });
 
@@ -220,5 +240,119 @@ describe("enviar WhatsApp aprovado", () => {
     const { args } = await prepareWhatsapp({ op, card: "2342", texto: "Oi" });
     expect(await sendApprovedWhatsapp({ args, op, trace, approvalId: "apr2" })).toMatchObject({ sent: false });
     expect(writes.comment).not.toHaveBeenCalled();
+  });
+});
+
+describe("lote (decisão 27/10): uma aprovação para N envios", () => {
+  const ana = { id: "ct1", phone: "5541999990000", name: "Ana", optedOut: false, optedInAt: new Date("2026-09-01"), numberId: "n1", userId: "card1" };
+  const bia = { id: "ct2", phone: "5541999990001", name: "Bia", optedOut: false, optedInAt: new Date("2026-09-01"), numberId: "n1", userId: "card2" };
+
+  /** Dois cards de verdade: "2350" (e o id card2) resolvem para outro card, com outro contato. */
+  function doisCards(over: { biaOptedOut?: boolean } = {}) {
+    resolve.map = { "2350": "card2", card2: "card2" };
+    db.user.findUniqueOrThrow.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === "card2"
+        ? { id: "card2", cardNumber: 2350, name: "Bia Lima", hospital: "HOSP X", archiveStatus: null, telefone: "41999990001", telefone_secundario: null }
+        : { id: "card1", cardNumber: 2342, name: "Ana", hospital: "HOSP X", archiveStatus: null, telefone: "41999990000", telefone_secundario: null },
+    );
+    db.whatsAppContact.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.map((id) => (id === "ct2" ? { ...bia, optedOut: over.biaOptedOut === true } : ana)),
+    );
+  }
+
+  it("WhatsApp: variáveis preenchidas por card, bloqueado vira pulado, hash cobre os itens", async () => {
+    doisCards({ biaOptedOut: true });
+    const r = await prepareWhatsappLote({ op, cards: ["2342", "#2342", "2350"], texto: "Oi [[primeiro_nome]], card [[numero]]" });
+    expect(isLote(r.args)).toBe(true);
+    expect(r.args.itens).toHaveLength(1);
+    expect(r.args.itens[0]).toMatchObject({ cardNumber: 2342, nome: "Ana", textoFinal: "Oi Ana, card 2342", via: "text" });
+    expect(r.pulados).toEqual([{ card: "2350", cardNumber: 2350, nome: "Bia Lima", code: "opt_out", message: expect.stringContaining("opt-out") }]);
+    expect(r.previa).toMatchObject({ canal: "WhatsApp", lote: true, total: 1 });
+    expect(r.cardIds).toEqual(["card1"]);
+  });
+
+  it("WhatsApp: mesmo card por referências diferentes conta uma vez (repetido)", async () => {
+    // resolveOneCardId devolve "card1" para tudo que não está no mapa: "2342" e o CPF são o mesmo card.
+    const r = await prepareWhatsappLote({ op, cards: ["2342", "529.982.247-25"], texto: "Oi" });
+    expect(r.args.itens).toHaveLength(1);
+    expect(r.pulados).toEqual([expect.objectContaining({ card: "529.982.247-25", code: "repetido" })]);
+  });
+
+  it("WhatsApp: dois cards com o mesmo contato → o segundo é pulado (uma mensagem por telefone)", async () => {
+    doisCards();
+    // card2 é duplicata do mesmo cliente: mesmo telefone, cai no contato ct1
+    contacts.byCard = { card2: ["ct1"] };
+    db.user.findUniqueOrThrow.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === "card2"
+        ? { id: "card2", cardNumber: 2350, name: "Ana (dup)", hospital: "HOSP X", archiveStatus: null, telefone: "41999990000", telefone_secundario: null }
+        : { id: "card1", cardNumber: 2342, name: "Ana", hospital: "HOSP X", archiveStatus: null, telefone: "41999990000", telefone_secundario: null },
+    );
+    const r = await prepareWhatsappLote({ op, cards: ["2342", "2350"], texto: "Oi" });
+    expect(r.args.itens).toHaveLength(1);
+    expect(r.pulados).toEqual([expect.objectContaining({ cardNumber: 2350, code: "repetido" })]);
+  });
+
+  it("WhatsApp: todos bloqueados → lote_vazio com os motivos; mais de 20 cards → argumentos_invalidos", async () => {
+    db.whatsAppContact.findMany.mockResolvedValue([{ ...ana, optedOut: true, optedInAt: null }]);
+    await expect(prepareWhatsappLote({ op, cards: ["2342"], texto: "x" })).rejects.toMatchObject({ code: "lote_vazio", details: { pulados: [expect.objectContaining({ code: "opt_out" })] } });
+    await expect(prepareWhatsappLote({ op, cards: Array.from({ length: 21 }, (_, i) => String(i)), texto: "x" })).rejects.toMatchObject({ code: "argumentos_invalidos" });
+  });
+
+  it("WhatsApp: envio um a um, transacional, registro por card; falha de um não derruba o lote", async () => {
+    doisCards();
+    const { args } = await prepareWhatsappLote({ op, cards: ["2342", "2350"], texto: "Oi" });
+    expect(args.itens).toHaveLength(2);
+    wa.send.mockResolvedValueOnce({ sent: true, via: "text" }).mockResolvedValueOnce({ sent: false, via: null, reason: "janela fechada" });
+    const r = await sendApprovedWhatsappLote({ args, op, trace, approvalId: "apr9", gapMs: 0 });
+    expect(r).toMatchObject({ sent: true, enviados: 1, naoEnviados: 1 });
+    expect(r.itens[1]).toMatchObject({ cardNumber: 2350, sent: false, reason: "janela fechada" });
+    expect(wa.send).toHaveBeenCalledTimes(2);
+    expect(wa.send.mock.calls[0][0]).toMatchObject({ transactional: true, source: "op", contactId: "ct1" });
+    expect(wa.send.mock.calls[1][0]).toMatchObject({ contactId: "ct2" });
+    expect(writes.comment).toHaveBeenCalledTimes(1);
+    expect(writes.log.mock.calls[0][0]).toMatchObject({ action: "op_send", metadata: { approvalId: "apr9" } });
+  });
+
+  it("WhatsApp: orçamento esgotado antes de um item → esse item volta sem envio, com motivo", async () => {
+    doisCards();
+    const { args } = await prepareWhatsappLote({ op, cards: ["2342", "2350"], texto: "Oi" });
+    const r = await sendApprovedWhatsappLote({ args, op, trace, approvalId: "apr9", gapMs: 0, startedAt: Date.now() - 60_000 });
+    expect(r).toMatchObject({ sent: false, enviados: 0, naoEnviados: 2 });
+    expect(r.itens[0].reason).toMatch(/tempo da chamada esgotou/);
+    expect(wa.send).not.toHaveBeenCalled();
+  });
+
+  it("WhatsApp: precheck do lote nomeia o card que mudou", async () => {
+    const { args } = await prepareWhatsappLote({ op, cards: ["2342"], texto: "Oi" });
+    db.whatsAppContact.findUnique.mockResolvedValue({ numberId: "n2", phone: "5541999990000" });
+    await expect(precheckWhatsappLote(args)).rejects.toMatchObject({ code: "hash_diferente", message: expect.stringContaining("card 2342") });
+  });
+
+  it("e-mail: assunto/corpo com variáveis por card, anexos por item, destino livre marcado, envio registra cada card", async () => {
+    doisCards();
+    db.document.findMany.mockResolvedValue([{ id: "d1", key: "uploads/u/Pedido.pdf", name: "Pedido.pdf" }]);
+    s3.heads["uploads/u/Pedido.pdf"] = { ETag: '"e9"', ContentLength: 100 };
+    const r = await prepareEmailLote({
+      op,
+      lote: [{ card: "2342" }, { card: "2350", para: "outro@gmail.com", anexos: ["Pedido.pdf"] }],
+      assunto: "Prontuário de [[nome]]",
+      corpo: "Bom dia. Segue o pedido de [[nome]] (card [[numero]]).",
+      anexos: [DRAFT],
+    });
+    expect(r.args.itens).toHaveLength(2);
+    expect(r.args.itens[0]).toMatchObject({ cardNumber: 2342, para: "samelaudos@hosp.org.br", assunto: "Prontuário de Ana", destinoLivre: false, anexos: [expect.objectContaining({ key: DRAFT })] });
+    expect(r.args.itens[1]).toMatchObject({ cardNumber: 2350, para: "outro@gmail.com", assunto: "Prontuário de Bia Lima", destinoLivre: true, anexos: [expect.objectContaining({ nome: "Pedido.pdf" })] });
+    expect(r.previa).toMatchObject({ canal: "e-mail", lote: true, assunto: "Prontuário de [[nome]]" });
+    const out = await sendApprovedEmailLote({ args: r.args, op, trace, approvalId: "apr8" });
+    expect(out).toMatchObject({ sent: true, enviados: 2, naoEnviados: 0 });
+    expect(ses.sendRaw).toHaveBeenCalledTimes(2);
+    expect(writes.comment).toHaveBeenCalledTimes(2);
+  });
+
+  it("e-mail: card sem destinatário vira pulado; SES desligado recusa o lote inteiro", async () => {
+    hosp.email = null;
+    await expect(prepareEmailLote({ op, lote: [{ card: "2342" }], assunto: "a", corpo: "b" })).rejects.toMatchObject({ code: "lote_vazio", details: { pulados: [expect.objectContaining({ code: "sem_destinatario" })] } });
+    ses.configured = false;
+    await expect(prepareEmailLote({ op, lote: [{ card: "2342" }], assunto: "a", corpo: "b" })).rejects.toMatchObject({ code: "email_nao_configurado" });
   });
 });

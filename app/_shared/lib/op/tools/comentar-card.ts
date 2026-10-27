@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { db } from "../../prisma";
 import { defineTool, OpToolError } from "../registry";
 import { confirmSchema, previewOrExecute } from "../preview";
+import { autoProgress } from "../progress";
 import { addCardComment, sanitizeOpCommentText } from "../../cards/comment";
 import { cardRefSchema } from "./obter-card";
 import { cardSummary, loadCardState, operatorAuthor, resolveTeamMember, writeCommon } from "./_escrita";
@@ -16,7 +17,7 @@ const schema = z.object({
 export const comentarCard = defineTool({
   name: "comentar_card",
   description:
-    "ESCRITA. Comenta em UM card, com autor \"<operador> (via IA)\", e opcionalmente menciona pessoas da equipe. Sem confirmar = só prévia (texto final e quem será mencionado). Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+    "ESCRITA. Comenta em UM card, com autor \"<operador> (via IA)\", e opcionalmente menciona pessoas da equipe. Chame com confirmar: true: executa na hora (ação direta, sem prévia).",
   level: 3,
   permission: "op_write",
   schema,
@@ -62,8 +63,10 @@ export const comentarCard = defineTool({
     if (!out.executed) {
       return { data: { previa: out.previa }, summary: `prévia comentário ${card.cardNumber}`, cardIds: [card.id] };
     }
+    // Item I (27/10): passo "comentar" do fluxo aberto (contrato: link do ZapSign).
+    const progresso = await autoProgress({ op, trace, cardId: card.id, match: (s) => s.kind === "registro" && s.confere === "comentario", refs: [out.result.id] });
     return {
-      data: { feito: true, comentarioId: out.result.id, mencionados: pessoas.map((p) => p.nome), card: cardSummary(card) },
+      data: { feito: true, comentarioId: out.result.id, mencionados: pessoas.map((p) => p.nome), card: cardSummary(card), ...(progresso ? { progresso } : {}) },
       summary: `comentou em ${card.cardNumber}${pessoas.length ? ` (+${pessoas.length} menção)` : ""}`,
       cardIds: [card.id],
     };

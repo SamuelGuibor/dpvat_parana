@@ -55,7 +55,8 @@ export type LogAction =
   | "tag_remove"        // tirou uma tag do card (site ou IA de operação)
   | "ai_audit"          // auditoria de documentos por IA (documento pessoal / INSS)
   | "ai_audit_feedback" // feedback humano sobre uma auditoria da IA
-  | "op_send";         // IA de operação enviou e-mail/WhatsApp APROVADO pelo operador (metadata.canal, approvalId)
+  | "op_send"          // IA de operação enviou e-mail/WhatsApp APROVADO pelo operador (metadata.canal, approvalId)
+  | "op_doc_analysis"; // IA de operação leu documentos do card (27/10): metadata.usage, files, divergencias
 
 /**
  * Logs que NÃO contam como tarefa/atividade do colaborador (Visão do Gestor e
@@ -65,7 +66,7 @@ export type LogAction =
  */
 // tag_add/tag_remove do card: a rota de tag do site passou a logar (Etapa 3 da
 // IA de operação) — pelo mesmo motivo das tags de conversa, não viram tarefa.
-export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove"];
+export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove", "op_doc_analysis"];
 
 interface CreateLogInput {
   action: LogAction;

@@ -31,6 +31,9 @@ const ETAPA_7_L1 = ["gerar_relatorio", "varrer_inconsistencias"];
 const AJUSTES_L3 = ["editar_cadastro", "gerenciar_documento", "editar_comentario", "atualizar_tarefa"];
 const AJUSTES_L4 = ["preparar_acao_irreversivel"];
 const AJUSTES_L1 = ["quem_pediu"];
+// Decisão do dono (27/10): leitura dos documentos do card em lote com IA (L1, run_ai_audit).
+// Item O (27/10): lote em segundo plano (op_jobs): iniciar_lote custa IA (interruptor), resultado_lote só lê.
+const LOTE_L1 = ["analisar_documentos", "panorama_card", "iniciar_lote", "resultado_lote"];
 const L3 = [...ETAPA_3, ...ETAPA_4_L3, ...AJUSTES_L3];
 
 describe("registry da operação por IA", () => {
@@ -38,7 +41,7 @@ describe("registry da operação por IA", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual(
-      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1, ...AJUSTES_L3, ...AJUSTES_L4, ...AJUSTES_L1].sort(),
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1, ...AJUSTES_L3, ...AJUSTES_L4, ...AJUSTES_L1, ...LOTE_L1].sort(),
     );
   });
 
@@ -73,6 +76,8 @@ describe("registry da operação por IA", () => {
         expect(t.level).toBe(1);
         expect(t.permission).toBe("op_use");
         expect(t.description).toMatch(/^REGISTRO\./);
+      } else if (LOTE_L1.includes(t.name)) {
+        expect(t.level).toBe(1);
       } else {
         expect(t.level).toBe(1);
         expect(t.switchable).toBeFalsy();
@@ -89,7 +94,8 @@ describe("registry da operação por IA", () => {
   });
 
   it("fluxos (Etapa 6): só salvar_progresso tem interruptor; schemas", () => {
-    expect(OP_TOOLS.filter((t) => t.switchable).map((t) => t.name)).toEqual(["salvar_progresso"]);
+    // 27/10: analisar_documentos custa IA por chamada e também nasce desligada.
+    expect(OP_TOOLS.filter((t) => t.switchable).map((t) => t.name).sort()).toEqual(["analisar_documentos", "iniciar_lote", "salvar_progresso"]);
     const salvar = getTool("salvar_progresso")!.schema;
     expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "pedido", ref: "op-drafts/x/1792900329052-11fe030d.pdf" }).success).toBe(true);
     expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "anexar", ref: ["d1", "d2"] }).success).toBe(true);
@@ -139,11 +145,21 @@ describe("registry da operação por IA", () => {
     expect(email.safeParse({ card: "2342", assunto: "a", corpo: "b" }).success).toBe(true);
     expect(email.safeParse({ card: "2342", assunto: "a" }).success).toBe(false);
     expect(email.safeParse({ card: "2342", assunto: "a", corpo: "b", anexos: ["1", "2", "3", "4", "5", "6"] }).success).toBe(false);
+    // Lote (27/10): e-mail por `lote` (um item por card), WhatsApp por `cards`; nunca os dois jeitos juntos.
+    expect(email.safeParse({ lote: [{ card: "2342" }, { card: "2350", anexos: ["Pedido.pdf"], para: "x@h.com" }], assunto: "a", corpo: "Oi [[nome]]" }).success).toBe(true);
+    expect(email.safeParse({ assunto: "a", corpo: "b" }).success).toBe(false);
+    expect(email.safeParse({ card: "2342", lote: [{ card: "2350" }], assunto: "a", corpo: "b" }).success).toBe(false);
+    expect(email.safeParse({ lote: [], assunto: "a", corpo: "b" }).success).toBe(false);
     const wa = getTool("preparar_whatsapp")!.schema;
     expect(wa.safeParse({ card: "2342", texto: "oi" }).success).toBe(true);
     expect(wa.safeParse({ card: "2342", template: "aviso", variaveis: ["Ana"] }).success).toBe(true);
     expect(wa.safeParse({ card: "2342" }).success).toBe(false);
     expect(wa.safeParse({ card: "2342", texto: "oi", template: "aviso" }).success).toBe(false);
+    expect(wa.safeParse({ cards: ["2342", "2350"], texto: "Oi [[primeiro_nome]]" }).success).toBe(true);
+    expect(wa.safeParse({ cards: ["2342"], template: "aviso", variaveis: ["[[nome]]"] }).success).toBe(true);
+    expect(wa.safeParse({ card: "2342", cards: ["2350"], texto: "oi" }).success).toBe(false);
+    expect(wa.safeParse({ texto: "oi" }).success).toBe(false);
+    expect(wa.safeParse({ cards: Array.from({ length: 21 }, (_, i) => String(i + 1)), texto: "oi" }).success).toBe(false);
     const ex = getTool("executar_aprovado")!.schema;
     expect(ex.safeParse({ approvalId: "apr1", hash: "a".repeat(64) }).success).toBe(true);
     expect(ex.safeParse({ approvalId: "apr1", hash: "xyz" }).success).toBe(false);
@@ -175,8 +191,26 @@ describe("registry da operação por IA", () => {
     expect(anexar.schema.safeParse({}).success).toBe(false);
     expect(anexar.schema.safeParse({ rascunho: "op-drafts/abc12/1761350400000-0a1b2c3d.pdf", pasta: "XPTO" }).success).toBe(false);
     expect(anexar.schema.safeParse({ rascunho: "op-drafts/abc12/1761350400000-0a1b2c3d.pdf", pasta: "PROCURACAO" }).success).toBe(true);
+    // Lote (27/10): `rascunhos` em vez de `rascunho`, nunca os dois.
+    expect(anexar.schema.safeParse({ rascunhos: ["op-drafts/abc12/1761350400000-0a1b2c3d.pdf", "op-drafts/abc12/1761350400001-0a1b2c3e.pdf"] }).success).toBe(true);
+    expect(anexar.schema.safeParse({ rascunho: "op-drafts/abc12/1761350400000-0a1b2c3d.pdf", rascunhos: ["op-drafts/abc12/1761350400001-0a1b2c3e.pdf"] }).success).toBe(false);
+    expect(anexar.schema.safeParse({ rascunhos: [] }).success).toBe(false);
     expect(getTool("listar_modelos")!.schema.safeParse({ tipo: "contrato" }).success).toBe(true);
     expect(getTool("listar_modelos")!.schema.safeParse({ tipo: "kit" }).success).toBe(false);
+  });
+
+  it("decisão 27/10: analisar_documentos é L1 com run_ai_audit (lê e compara, não altera), objetivo padrão cadastro", () => {
+    const t = getTool("analisar_documentos")!;
+    expect(t.level).toBe(1);
+    expect(t.permission).toBe("run_ai_audit");
+    expect(t.switchable).toBe(true);
+    expect(getTool("panorama_card")!.switchable).toBeFalsy();
+    const parsed = t.schema.safeParse({ card: "2342" });
+    expect(parsed.success && (parsed.data as { objetivo: string }).objetivo).toBe("cadastro");
+    expect(t.schema.safeParse({ card: "2342", pastas: ["IDENTIFICACAO", "OUTROS"], objetivo: "resumo" }).success).toBe(true);
+    expect(t.schema.safeParse({ card: "2342", pastas: ["XPTO"] }).success).toBe(false);
+    expect(t.schema.safeParse({ card: "2342", objetivo: "corrigir" }).success).toBe(false);
+    expect(t.schema.safeParse({}).success).toBe(false);
   });
 
   it("zod → JSON Schema é objeto, sem $schema, com required coerente", () => {

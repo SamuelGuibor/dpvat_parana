@@ -5,7 +5,6 @@ const tpl = { name: "aviso_link", status: "APPROVED", category: "UTILITY", heade
 const ok: WaPlanInput = {
   contact: { optedOut: false, optedInAt: new Date("2026-09-01") },
   number: { active: true, templatesPaused: false },
-  inCooldown: false,
   windowOpen: true,
   mode: "texto",
 };
@@ -15,10 +14,10 @@ describe("plano do WhatsApp preparado pela IA", () => {
     expect(planWhatsAppSend(ok)).toEqual({ ok: true, via: "text" });
   });
 
-  it("opt-out, linha inativa e cooldown barram já na prévia", () => {
+  it("opt-out e linha inativa barram já na prévia; não existe cooldown para mensagem aprovada (decisão 27/10)", () => {
     expect(planWhatsAppSend({ ...ok, contact: { ...ok.contact, optedOut: true } })).toMatchObject({ ok: false, code: "opt_out" });
     expect(planWhatsAppSend({ ...ok, number: { active: false, templatesPaused: false } })).toMatchObject({ ok: false, code: "linha_inativa" });
-    expect(planWhatsAppSend({ ...ok, inCooldown: true })).toMatchObject({ ok: false, code: "cooldown" });
+    expect(planWhatsAppSend({ ...ok, inCooldown: true } as WaPlanInput)).toEqual({ ok: true, via: "text" });
   });
 
   it("janela fechada: texto não sai; só template", () => {

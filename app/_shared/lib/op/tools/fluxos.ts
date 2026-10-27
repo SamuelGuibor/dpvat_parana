@@ -213,13 +213,13 @@ const retomarSchema = z
 export const retomarFluxo = defineTool({
   name: "retomar_fluxo",
   description:
-    "REGISTRO. Abre um fluxo parado (do operador ou de um colega — qualquer um da equipe continua o caso) e diz o que já foi feito e AINDA vale (rascunho existe, anexo no card, envio executado), o que refazer (rascunho vencido; aprovação NUNCA se reaproveita: prepara de novo com código novo), o que reler (card, hospital, pendências) e o próximo passo. Com card + workflow no início de uma skill: aberto: false = começar do zero.",
+    "REGISTRO. Abre um fluxo parado (do operador ou de um colega — qualquer um da equipe continua o caso) e diz o que já foi feito e AINDA vale (rascunho existe — de qualquer colega —, anexo no card, envio executado, aprovação da MESMA sessão ainda no prazo em aprovacaoValida), o que refazer (rascunho vencido; aprovação de outra sessão: prepara de novo com código novo), o que reler (card, hospital, pendências) e o próximo passo. Com card + workflow no início de uma skill: aberto: false = começar do zero.",
   level: 1,
   permission: "op_use",
   schema: retomarSchema,
-  async run({ op, previewOnly }, args) {
+  async run({ op, trace, previewOnly }, args) {
     const write = !previewOnly && isToolEnabled(await getOpSwitches(), salvarProgresso);
-    const out = await loadForResume({ op, fluxoId: args.fluxo, workflow: args.workflow, cardRef: args.card, write, cancelarPendentes: !previewOnly });
+    const out = await loadForResume({ op, fluxoId: args.fluxo, workflow: args.workflow, cardRef: args.card, write, cancelarPendentes: !previewOnly, sessionId: trace.sessionId });
     if (!out.aberto) {
       return {
         data: { aberto: false, fluxo: out.fluxo, ...(out.status ? { status: out.status } : {}), motivo: out.motivo },
@@ -240,7 +240,7 @@ export const retomarFluxo = defineTool({
         card: { cardNumber: out.card?.cardNumber ?? out.state.card.cardNumber, nome: out.card?.name ?? null, arquivado: out.card?.archiveStatus ?? null },
         comecadoPor: nomes.get(out.comecadoPor) ?? out.comecadoPor,
         ultimoOperador: nomes.get(out.ultimoOperador) ?? out.ultimoOperador,
-        ...(deColega ? { avisoColega: `Este fluxo estava com ${nomes.get(out.ultimoOperador) ?? "um colega"}. Ao seguir, você passa a ser quem continuou; rascunho e aprovação dele não valem para você (prepare de novo).` } : {}),
+        ...(deColega ? { avisoColega: `Este fluxo estava com ${nomes.get(out.ultimoOperador) ?? "um colega"}. Ao seguir, você passa a ser quem continuou; o rascunho dele vale (é do card), a aprovação dele não (prepare de novo).` } : {}),
         parouEm: bloqueioOut(out.state),
         desde: brDateTime(out.state.atualizadoEm),
         jaFeito: p.feitos,
@@ -249,10 +249,11 @@ export const retomarFluxo = defineTool({
         proximo: p.proximo,
         avisos: p.avisos,
         parar: p.parar,
+        ...(p.aprovacaoValida ? { aprovacaoValida: { ...p.aprovacaoValida, expiraEm: brDateTime(new Date(p.aprovacaoValida.expiraEm)) } } : {}),
         ...(write ? {} : { aviso: previewOnly ? "Modo de teste (script): nada foi gravado nem cancelado." : "Progresso desligado: o plano não foi gravado (a aprovação pendente do fluxo, se havia, foi cancelada)." }),
         instrucao: p.parar
           ? "PARE: mostre o motivo ao operador e não siga o fluxo até ele conferir."
-          : `Mostre ao operador o que já foi feito e o que vai refazer. Releia ${p.reler.join(", ")} (sempre). Siga a skill ${def.skill} a partir do próximo passo; passo de escrita começa SEM confirmar (prévia) e envio sempre pede preparar de novo.`,
+          : `Mostre ao operador o que já foi feito e o que vai refazer. Releia ${p.reler.join(", ")} (sempre). Siga a skill ${def.skill} a partir do próximo passo; envio pede preparar de novo, salvo aprovacaoValida (aí só o "aprovo <código>"). O progresso dos passos é gravado pelas próprias ferramentas; salvar_progresso só para bloqueio, modo e fim.`,
       },
       summary: `retomar ${out.state.workflow} ${out.card?.cardNumber ?? "?"}: próximo ${p.proximo?.passo ?? "—"}${p.refazer.length ? `, refazer ${p.refazer.map((r) => r.passo).join("/")}` : ""}`,
       cardIds: [out.state.card.id],

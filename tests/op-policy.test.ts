@@ -21,16 +21,16 @@ describe("canRun", () => {
     expect(canRun(5 as never, "op_approve", sa)).toMatchObject({ ok: false, code: "nivel_bloqueado" });
   });
 
-  it("L4 exige op_approve (padrão só ADMIN++) além de op_write; read_only e interruptor recusam", () => {
-    expect(canRun(4, "op_approve", admin)).toMatchObject({ ok: false, code: "sem_permissao" });
+  it("L4 exige op_approve (desde 27/10 todo cargo nasce com ele) além de op_write; read_only e interruptor recusam", () => {
+    expect(canRun(4, "op_approve", resolvePermissions("ADMIN", { op_approve: false }))).toMatchObject({ ok: false, code: "sem_permissao" });
     // preparar_whatsapp: permissão de domínio view_whatsapp + op_approve
-    expect(canRun(4, "view_whatsapp", resolvePermissions("ADMIN"))).toMatchObject({ ok: false, code: "sem_permissao" });
+    expect(canRun(4, "view_whatsapp", resolvePermissions("ADMIN", { op_approve: false }))).toMatchObject({ ok: false, code: "sem_permissao" });
     expect(canRun(4, "view_whatsapp", resolvePermissions("ADMIN", { op_write: true, op_approve: true }))).toEqual({ ok: true });
     expect(canRun(4, "op_approve", resolvePermissions("ADMIN", { op_write: false, op_approve: true }))).toMatchObject({ ok: false, code: "sem_permissao" });
     expect(canRun(4, "op_approve", resolvePermissions("ADMIN", { op_write: true, op_approve: true, read_only: true }))).toMatchObject({ code: "somente_leitura" });
     expect(canRun(4, "op_approve", sa, false)).toMatchObject({ ok: false, code: "ferramenta_desligada" });
-    expect(resolvePermissions("ADMIN").op_approve).toBe(false);
-    expect(resolvePermissions("ADMIN+").op_approve).toBe(false);
+    expect(resolvePermissions("ADMIN").op_approve).toBe(true);
+    expect(resolvePermissions("ADMIN+").op_approve).toBe(true);
   });
 
   it("L3 exige op_write (padrão da equipe toda desde 26/10; override tira)", () => {

@@ -3,7 +3,7 @@
 Mapa completo: docs/ai/infra-integracoes.md
 
 ## Regras ao editar aqui
-- **Rota chamada por máquina** (cron, webhook, microserviço) precisa entrar em `PUBLIC_API_PREFIXES` do `middleware.ts`. Sem isso, o middleware devolve 401 antes de a rota rodar. Hoje `automations/cron` e `maintenance/retention` estão fora dessa lista. `/api/op` (operação por IA) está dentro e toda rota ali começa com `opAuth` (token do operador) — ver `docs/ai/operacao-ia.md`.
+- **Rota chamada por máquina** (cron, webhook, microserviço) precisa entrar em `PUBLIC_API_PREFIXES` do `middleware.ts`. Sem isso, o middleware devolve 401 antes de a rota rodar. Hoje `automations/cron` e `maintenance/retention` estão fora dessa lista. `/api/op` (operação por IA) está dentro e toda rota ali começa com `opAuth` (token do operador), com uma exceção: `/api/op/jobs/run` é cron e valida CRON_SECRET (`isCronAuthorized`) — ver `docs/ai/operacao-ia.md`.
 - **Rota de cron:**
   - GET com `export const dynamic = 'force-dynamic'`.
   - Autentique com `isCronAuthorized` de `app/api/whatsapp/cron/auth.ts`; não copie a função.

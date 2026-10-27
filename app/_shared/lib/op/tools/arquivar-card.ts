@@ -20,7 +20,7 @@ const schema = z
 export const arquivarCard = defineTool({
   name: "arquivar_card",
   description:
-    "ESCRITA. Arquiva UM card num destino (APTOS CCS, ENVIADOS TAYNARA, VOLTAR UM DIA…) ou desarquiva. Destinos que encerram o cliente (perdeu contato definitivo, desistiu, descartado) são recusados aqui: vão por preparar_acao_irreversivel, com \"aprovo <código>\". Sem confirmar = só prévia. Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+    "ESCRITA. Arquiva UM card num destino (APTOS CCS, ENVIADOS TAYNARA, VOLTAR UM DIA…) ou desarquiva. Chame com confirmar: true: executa na hora (ação direta, reversível). Destinos que encerram o cliente (perdeu contato definitivo, desistiu, descartado) são recusados aqui: vão por preparar_acao_irreversivel, com \"aprovo <código>\".",
   level: 3,
   permission: "archive_cards",
   schema,

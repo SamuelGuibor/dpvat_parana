@@ -31,7 +31,7 @@ const comentarioSchema = z
 export const editarComentario = defineTool({
   name: "editar_comentario",
   description:
-    "ESCRITA. Edita ou apaga um comentário que o PRÓPRIO operador fez pela IA (autor \"<nome> (via IA)\"). Comentário de outra pessoa, ou feito no site, é recusado. O texto antigo fica no histórico do card. Sem confirmar = só prévia (antes → depois). Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+    "ESCRITA. Edita ou apaga um comentário que o PRÓPRIO operador fez pela IA (autor \"<nome> (via IA)\"). Comentário de outra pessoa, ou feito no site, é recusado. O texto antigo fica no histórico do card. Chame com confirmar: true: executa na hora (ação direta).",
   level: 3,
   permission: "op_write",
   schema: comentarioSchema,
@@ -82,7 +82,7 @@ const tarefaSchema = z.object({
 export const atualizarTarefa = defineTool({
   name: "atualizar_tarefa",
   description:
-    "ESCRITA. Dá ciência ou conclui UMA menção/tarefa da Caixa de Menções do PRÓPRIO operador (tarefaId do meu_dia). Tarefa de setor vale para o setor todo (como no site). Sem confirmar = só prévia. Mostre a prévia, pergunte \"Confirma?\" e só então chame com confirmar: true + previa_hash.",
+    "ESCRITA. Dá ciência ou conclui UMA menção/tarefa da Caixa de Menções do PRÓPRIO operador (tarefaId do meu_dia). Tarefa de setor vale para o setor todo (como no site). Chame com confirmar: true: executa na hora (ação direta).",
   level: 3,
   permission: "op_write",
   schema: tarefaSchema,

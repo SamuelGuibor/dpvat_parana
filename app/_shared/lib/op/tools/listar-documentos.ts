@@ -17,13 +17,13 @@ const PASTAS = DOCUMENT_CATEGORIES.map((c) => c.id) as [string, ...string[]];
 const schema = z.object({
   card: cardRefSchema,
   pasta: z.enum(PASTAS).optional().describe("Só uma pasta (IDENTIFICACAO, PROCURACAO, HIPOSSUFICIENCIA, EXAME_MEDICO, DOCS_INSS, PROCESSO, ROTEIRO, OUTROS)."),
-  comLinks: z.boolean().default(true).describe("Inclui link de leitura (válido ~90 min)."),
+  comLinks: z.boolean().default(false).describe("Links de leitura (~90 min). Padrão false (27/10): peça só quando o operador for abrir o arquivo; para LER o conteúdo use analisar_documentos."),
 });
 
 export const listarDocumentos = defineTool({
   name: "listar_documentos",
   description:
-    "Arquivos do card por pasta (fora da lixeira), com data e link temporário para abrir. Pastas vazias aparecem com 0.",
+    "Arquivos do card por pasta (fora da lixeira), com id, data e, se pedir comLinks, link temporário para abrir. Pastas vazias aparecem com 0. O id serve a gerenciar_documento, preparar_email e analisar_documentos.",
   level: 1,
   permission: "op_use",
   schema,
@@ -36,13 +36,13 @@ export const listarDocumentos = defineTool({
       select: { id: true, key: true, name: true, category: true, createdAt: true },
     });
 
-    const byFolder = new Map<string, { nome: string; enviadoEm: string | null; link: string | null }[]>();
+    const byFolder = new Map<string, { id: string; nome: string; enviadoEm: string | null; link: string | null }[]>();
     for (const c of DOCUMENT_CATEGORIES) byFolder.set(c.id, []);
     for (const d of docs) {
       const folder = d.category && isDocumentCategory(d.category) ? d.category : inferCategory(d.name);
       if (args.pasta && folder !== args.pasta) continue;
       const signed = args.comLinks ? await trySignGetUrl(d.key, { fileName: d.name }) : null;
-      byFolder.get(folder)?.push({ nome: d.name, enviadoEm: brDate(d.createdAt), link: signed?.url ?? null });
+      byFolder.get(folder)?.push({ id: d.id, nome: d.name, enviadoEm: brDate(d.createdAt), link: signed?.url ?? null });
     }
 
     const pastas = [...byFolder.entries()]

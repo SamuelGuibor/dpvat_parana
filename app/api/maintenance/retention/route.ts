@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runRetention } from "@/app/_actions/maintenance/retention";
 import { purgeDevPrompts } from "@/app/_shared/lib/op/retencao";
+import { purgeOldJobs } from "@/app/_shared/lib/op/jobs";
 
 export const dynamic = "force-dynamic";
 // Primeira rodada depois de um acúmulo grande pode varrer dezenas de milhares
@@ -32,8 +33,13 @@ export async function GET(req: NextRequest) {
       console.error("[RETENTION] op_requests:", err);
       return null;
     });
-    console.log("[RETENTION]", { ...result, opDevPrompts });
-    return NextResponse.json({ ...result, opDevPrompts });
+    // Lotes em segundo plano da IA de operação (op_jobs) terminados há mais de 30 dias.
+    const opJobs = await purgeOldJobs().catch((err) => {
+      console.error("[RETENTION] op_jobs:", err);
+      return null;
+    });
+    console.log("[RETENTION]", { ...result, opDevPrompts, opJobs });
+    return NextResponse.json({ ...result, opDevPrompts, opJobs });
   } catch (error) {
     console.error("[RETENTION]", error);
     return NextResponse.json({ error: "Erro na retenção" }, { status: 500 });

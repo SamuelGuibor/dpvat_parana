@@ -165,7 +165,7 @@ export async function verifyStepRefs(input: {
       const key = one();
       try {
         const d = await getDraft(key);
-        if (d.operatorId !== op.userId) refFail("Este rascunho foi preparado por outra pessoa.");
+        // Item K (27/10): o rascunho é do CARD — vale o de qualquer colega.
         if (d.cardId !== card.id) refFail("Este rascunho é de outro card.");
         if (d.kind !== step.rascunho) refFail(`Este rascunho é de outro tipo (${d.kind}); o passo "${step.id}" espera ${step.rascunho}.`);
         return { refs: [key], modelo: d.template || undefined };
@@ -247,7 +247,9 @@ export interface SaveInput {
   op: OperatorContext;
   trace: OpTrace;
   workflow: WorkflowId;
-  cardRef: string;
+  /** Referência do operador (nº, CPF…) ou, do progresso automático, o id já resolvido. */
+  cardRef?: string;
+  cardId?: string;
   passo?: string;
   refs?: string[];
   /** Do modelo: campos (chave ou rótulo) e código são filtrados para as listas fechadas. */
@@ -303,7 +305,8 @@ function applyChange(
 export async function saveProgress(input: SaveInput): Promise<SaveOutcome> {
   const agora = input.agora ?? new Date();
   if (!input.passo && !input.fim) throw new OpToolError("argumentos_invalidos", "Mande o passo (ou fim).", 400);
-  const cardId = await resolveOneCardId(input.cardRef);
+  if (!input.cardId && !input.cardRef) throw new OpToolError("argumentos_invalidos", "Mande o card.", 400);
+  const cardId = input.cardId ?? (await resolveOneCardId(input.cardRef!));
   const card = await loadCard(cardId);
   if (!card) throw new OpToolError("nao_encontrado", "Card não encontrado.", 404);
 
@@ -418,6 +421,8 @@ async function gatherFacts(
   op: OperatorContext,
   cancelarPendentes: boolean,
   agora: Date,
+  /** Sessão de quem retoma: a pendente só é reaproveitada na MESMA sessão (o "aprovo" é provado por sessão). */
+  sessionId: string | null = null,
 ): Promise<ResumeFacts> {
   const state = row.state;
   const def = workflowDef(state.workflow);
@@ -435,8 +440,9 @@ async function gatherFacts(
     if (!step) continue;
     if (step.kind === "rascunho" && ref) {
       try {
-        const d = await getDraft(ref);
-        fatos.rascunhos[ref] = d.operatorId === op.userId ? "ok" : "outro_operador";
+        // Item K (27/10): rascunho de colega vale (é do card).
+        await getDraft(ref);
+        fatos.rascunhos[ref] = "ok";
       } catch (err) {
         if (!(err instanceof DraftError)) throw err;
         fatos.rascunhos[ref] = "vencido";
@@ -458,13 +464,24 @@ async function gatherFacts(
   }
   if (approvalIds.length) {
     // Aprovações do fluxo, de quem as preparou (o fluxo pode ser de colega).
-    const rows = await db.opApproval.findMany({ where: { id: { in: approvalIds }, cardId: state.card.id }, select: { id: true, status: true, expiresAt: true } });
+    const rows = await db.opApproval.findMany({
+      where: { id: { in: approvalIds }, cardId: state.card.id },
+      select: { id: true, status: true, expiresAt: true, operatorId: true, sessionId: true, code: true },
+    });
     for (const id of approvalIds) {
       const r = rows.find((x) => x.id === id);
       let st: ApprovalFact = (r?.status as ApprovalFact | undefined) ?? "sumiu";
       if (st === "pendente" && r && isApprovalExpired(r.expiresAt, agora.getTime())) st = "expirada";
-      // Aprovação L4 não é retomável: a pendente é cancelada para nenhum
-      // "aprovo" antigo valer depois de o fluxo ter preparado de novo.
+      // Item J (27/10): pausa de minutos na MESMA sessão, do mesmo operador e
+      // dentro dos 30 min → a aprovação continua valendo (o operador só digita
+      // o código). Outra sessão ou colega: cancela, como antes.
+      if (st === "pendente" && r && r.operatorId === op.userId && sessionId && r.sessionId === sessionId) {
+        (fatos.aprovacoesPendentes ??= {})[id] = { codigo: r.code, expiraEm: r.expiresAt.toISOString() };
+        fatos.aprovacoes[id] = st;
+        continue;
+      }
+      // Aprovação L4 não é retomável fora disso: a pendente é cancelada para
+      // nenhum "aprovo" antigo valer depois de o fluxo ter preparado de novo.
       if (st === "pendente" && cancelarPendentes) {
         // Vale também para a de um colega: quem retoma prepara de novo, com o
         // próprio código; o "aprovo" antigo não pode continuar valendo.
@@ -505,6 +522,8 @@ export async function loadForResume(input: {
    * novo e o código antigo não pode continuar valendo. Script = false.
    */
   cancelarPendentes?: boolean;
+  /** Sessão do app de quem retoma (item J: reaproveita a pendente só da mesma sessão). */
+  sessionId?: string | null;
   agora?: Date;
 }): Promise<ResumeOutcome> {
   const agora = input.agora ?? new Date();
@@ -533,7 +552,7 @@ export async function loadForResume(input: {
   }
 
   const card = await loadCard(row.state.card.id);
-  const fatos = await gatherFacts(row, card, input.op, input.cancelarPendentes ?? input.write, agora);
+  const fatos = await gatherFacts(row, card, input.op, input.cancelarPendentes ?? input.write, agora, input.sessionId ?? null);
   const plano = resumePlan(row.state, fatos, agora);
 
   let gravado = false;

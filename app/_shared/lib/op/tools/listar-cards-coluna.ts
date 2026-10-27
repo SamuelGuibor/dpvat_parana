@@ -17,7 +17,7 @@ const schema = z.object({
 export const listarCardsColuna = defineTool({
   name: "listar_cards_coluna",
   description:
-    "Cards ativos de UMA coluna, os há mais tempo na coluna primeiro, com filtros opcionais de tag, hospital e serviço. Devolve o total real e até `limite` cards.",
+    "Cards ativos de UMA coluna, os há mais tempo na coluna primeiro, com filtros opcionais de tag, hospital e serviço. Devolve o total real e até `limite` cards, cada um com CPF, telefone, dias na coluna e prazoEstourado.",
   level: 1,
   permission: "op_use",
   schema,
@@ -39,18 +39,26 @@ export const listarCardsColuna = defineTool({
         take: args.limite,
       }),
     ]);
-    const cards = rows.map((r) => ({
+    // Item E (27/10): CPF/telefone e prazo estourado por card — a skill de
+    // lote (WhatsApp, pendências) não precisa abrir card por card.
+    const cards = rows.map((r) => {
+      const dias = r.statusStartedAt ? brDaysBetween(r.statusStartedAt) : null;
+      return {
       cardNumber: r.cardNumber,
       nome: r.name,
-      diasNaColuna: r.statusStartedAt ? brDaysBetween(r.statusStartedAt) : null,
+      cpf: r.cpf,
+      telefone: r.telefone,
+      diasNaColuna: dias,
+      prazoEstourado: dias !== null && col.prazoDias !== null ? dias > col.prazoDias : null,
       desde: brDate(r.statusStartedAt),
       etapa: etapaLabel(r.service, r.status),
       servico: r.service,
       hospital: r.hospital,
       tags: r.cardTags.map((t) => t.name),
-    }));
+      };
+    });
     return {
-      data: { coluna: col.nome, prazoDias: col.prazoDias, total, mostrados: cards.length, cards },
+      data: { coluna: col.nome, prazoDias: col.prazoDias, total, mostrados: cards.length, estourados: cards.filter((c) => c.prazoEstourado).length, cards },
       summary: `${total} card(s) em ${col.nome}`,
       cardIds: rows.map((r) => r.id),
     };

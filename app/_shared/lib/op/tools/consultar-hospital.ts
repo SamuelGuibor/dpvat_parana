@@ -4,7 +4,7 @@ import { readVaultText } from "../../s3-presign";
 import { defineTool, OpToolError } from "../registry";
 import { brDate, matchColumn } from "../resolve";
 import { resolveOneCardId } from "../cards";
-import { activeCardsByHospital, loadHospitalGroups, loadVaultIndex } from "../hospitais";
+import { activeCardsByHospital, ghostFor, loadHospitalGroups, loadVaultIndex } from "../hospitais";
 import { automationAttachments, automationSourceText, normalizeHospitalName, parseNote } from "@/app/_shared/utils/vault";
 
 // Procedimento de pedido de prontuário por hospital (Etapa 2 do AI-First).
@@ -58,15 +58,8 @@ export const consultarHospital = defineTool({
     const key = normalizeHospitalName(escolhido);
     const g = grupos.get(key)!;
 
-    const [ghosts, cards, index] = await Promise.all([
-      db.user.findMany({
-        where: { role: "GHOST" },
-        select: { id: true, name: true, hospital_email: true, hospital_telefone: true, hospital_modo: true, hospital_obs: true },
-      }),
-      activeCardsByHospital(),
-      loadVaultIndex(),
-    ]);
-    const ghost = ghosts.find((x) => normalizeHospitalName(x.name ?? "") === key) ?? null;
+    // Item B (27/10): GHOST pelo catálogo cacheado (era a mesma query de hospitalContactFor, duplicada).
+    const [ghost, cards, index] = await Promise.all([ghostFor(escolhido), activeCardsByHospital(), loadVaultIndex()]);
 
     const entrada = index.find((n) => n.hospital_norm === key) ?? null;
     let nota: { caminho: string; atualizadaEm: string | null; desatualizado: boolean; texto: string } | null = null;
