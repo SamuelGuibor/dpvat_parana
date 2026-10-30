@@ -5,8 +5,8 @@
 //
 // A fonte continua aqui (.claude/skills, tools/crm-mcp, .claude/hooks): este
 // script copia para a pasta do repositório PRIVADO do plugin, que o dono
-// commita e dá push. Os operadores recebem a versão nova sozinhos ao abrir o
-// app (o plugin muda de versão a cada commit daqui).
+// commita e dá push. Os operadores recebem a versão nova sozinhos (autoUpdate
+// no settings.json da pasta deles; o plugin muda de versão a cada commit daqui).
 //
 //   npm run plugin:publicar                                  # o de sempre: gera, commita e dá push no repo do plugin
 //   node scripts/plugin-operacao.mjs                         # dry-run: lista o que geraria
@@ -222,4 +222,6 @@ if (!git("status --porcelain")) {
 }
 execSync(`git commit -q -F -`, { cwd: SAIDA, input: `Plugin ${v}\n\nGerado por scripts/plugin-operacao.mjs a partir de ${sh("git rev-parse --short HEAD")} do CRM.\n` });
 git("push -q");
-console.log(`\n✔ Publicado: ${PLUGIN}@${MARKETPLACE} ${v} no ${REPO}. A equipe recebe ao abrir o app.`);
+console.log(
+  `\n✔ Publicado: ${PLUGIN}@${MARKETPLACE} ${v} no ${REPO}. A equipe baixa sozinha (autoUpdate) e carrega na próxima abertura do app; na hora: claude plugin update ${PLUGIN}@${MARKETPLACE} + reabrir.`,
+);
