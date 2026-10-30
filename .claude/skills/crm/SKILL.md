@@ -1,6 +1,6 @@
 ---
 name: crm
-description: Operação por IA — entrada geral para qualquer pedido no CRM sem skill própria ("move o 2342 pra AUDITORIA", "marca a tag X nos cards da coluna Y", "comenta no 2310", "quem pediu o e-mail do 2310", "avisa a Isadora") e a referência COMPLETA das regras de leitura, ação direta, confirmação, envio aprovado, lote e formato que as outras skills resumem. Use quando o operador pedir "/crm" ou qualquer ação/consulta no CRM que não caia em outra skill.
+description: Operação por IA — entrada geral para qualquer pedido no CRM sem skill própria ("move o 2342 pra AUDITORIA", "marca a tag X nos cards da coluna Y", "comenta no 2310", "quem pediu o e-mail do 2310", "avisa a Isadora", "cria o card do João CPF X", "abre um ticket pro dev, o botão Y não salva", "cria a Bia na equipe") e a referência COMPLETA das regras de leitura, ação direta, confirmação, envio aprovado, lote e formato que as outras skills resumem. Use quando o operador pedir "/crm" ou qualquer ação/consulta no CRM que não caia em outra skill.
 ---
 
 # /crm — pedidos avulsos e regras completas da operação
@@ -37,10 +37,11 @@ Entrada: `$ARGUMENTS` = o pedido, em português. Ferramentas: só as `crm-op` (n
 - **Pedem confirmação antes** (a ferramenta devolve `requer_confirmacao` com `details.previa`; mostre, pergunte "Confirma?" e repita com `confirmar: true` + `previa_hash`): mover para coluna que **manda WhatsApp ao cliente** (pergunte junto "mandar o WhatsApp também?"; só "sim" explícito = `enviar_whatsapp: true`); anexar **contrato/KIT**; documento para a **lixeira**; **trocar campo já preenchido** do cadastro (`confirmar_trocas: true` junto, depois do "Troco?"). Campo vazio, renomear/mover pasta/restaurar, tags, comentário, aviso, arquivar não destrutivo: direto.
 - `estado_mudou` → mostre `details.previa` (a nova) e pergunte de novo. `ferramenta_desligada` → "está desligada no Espaço de Trabalho → IA de operação"; `somente_leitura`; `requer_aprovacao` (destino que encerra o cliente → `preparar_acao_irreversivel`). Pare.
 - Lote: `anexar_rascunho` aceita `rascunhos` (até 10); as outras, uma chamada por card em paralelo. Nunca aja em "todos" sem o operador dizer quais.
+- **Criar** (30/10): `criar_card` (nome + CPF; telefone/e-mail/coluna opcionais) cria direto; com CPF ou telefone já no CRM devolve `requer_confirmacao` com os `parecidos` — mostre e pergunte se não é o mesmo cliente. O card nasce **sem senha** da área do cliente. `criar_ticket_dev` (BUG/ALTERACAO/MELHORIA/OUTRO, descrição com onde e o que era esperado) sempre pede confirmação; conhecimento (hospital, skill, bot) é `criar_ticket`. Membro da equipe não é L3: vai por `preparar_membro_equipe` (abaixo).
 - Fora da IA: etapa do checklist, e-mail do card, senhas — diga como fazer no site.
 
-## Envio para fora (L4) — e-mail, WhatsApp, excluir/encerrar card
-- `preparar_email` / `preparar_whatsapp` / `preparar_acao_irreversivel` → cole o `previaTexto` inteiro → "Para enviar, digite só **aprovo <código>** (sozinho na mensagem)".
+## Envio para fora (L4) — e-mail, WhatsApp, excluir/encerrar card, membro da equipe
+- `preparar_email` / `preparar_whatsapp` / `preparar_acao_irreversivel` / `preparar_membro_equipe` (nome, e-mail, CPF, telefone?, cargo ADMIN ou ADMIN+; só quem gerencia a equipe; nasce sem senha — a pessoa usa "Esqueci minha senha") → cole o `previaTexto` inteiro → "Para enviar, digite só **aprovo <código>** (sozinho na mensagem)".
 - Só depois de o operador digitar `aprovo <código>` como **última mensagem** → `executar_aprovado` com `approvalId` e `hash` **exatos**. "sim/ok/pode" não valem. Nunca digite ou deduza o código. Um código = uma aprovação.
 - **Lote** (uma aprovação, N envios): WhatsApp com `cards` (até 20, variáveis `[[nome]]`, `[[primeiro_nome]]`, `[[numero]]`, `[[hospital]]`); e-mail com `lote` (até 10, anexos por card). Card bloqueado fica em `pulados` e o resto segue; o resultado volta por card.
 - Mudou algo / `hash_diferente` / `aprovacao_expirada` (30 min) → prepare de novo (código novo). `aprovacao_nao_digitada` → espere o código. `envio_em_andamento` → **não** prepare de novo; confira no card. `enviado: false` → mostre o `motivo`.

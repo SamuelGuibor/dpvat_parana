@@ -1,0 +1,12 @@
+{
+  "name": "seguros-parana",
+  "description": "IA de operação do CRM Seguros Paraná (só skills, MCP e hooks — sem o código do CRM)",
+  "owner": { "name": "Seguros Paraná" },
+  "plugins": [
+    {
+      "name": "crm",
+      "source": "./plugins/crm",
+      "description": "Skills da operação (/crm:prontuario, /crm:whatsapp, /crm:varredura…) e a conexão com o CRM pelo token do app"
+    }
+  ]
+}

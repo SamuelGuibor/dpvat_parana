@@ -7,17 +7,15 @@ import { Prisma } from "@prisma/client";
 import { db } from "../../_shared/lib/prisma";
 import { AccessError } from "@/app/_shared/utils/route-guards";
 import {
-  MANUAL_TICKET_TYPES,
   TICKET_STATUS_FLOW,
-  compararContatos,
   isKnowledgeType,
   statusesFor,
   type CerebroMeta,
+  type Destino,
 } from "@/app/_shared/utils/cerebro";
-import { automationSourceText, normalizeHospitalName } from "@/app/_shared/utils/vault";
-import { matchColumn } from "@/app/_shared/lib/op/resolve";
-import { activeCardsByHospital, loadHospitalGroups, loadVaultIndex } from "@/app/_shared/lib/op/hospitais";
+import { normalizeHospitalName } from "@/app/_shared/utils/vault";
 import { getCerebroResumo, getLote } from "@/app/_shared/lib/cerebro";
+import { CerebroError, asJson, criarSugestao, criarTicketDev, metaOf, withHistory } from "@/app/_shared/lib/cerebro-tickets";
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -30,7 +28,7 @@ const s3Client = new S3Client({
 // Listas e fluxo em app/_shared/utils/cerebro.ts ("use server" só exporta
 // funções async). Quadro "Cérebro APP" = Tickets Dev + conhecimento da operação
 // (Etapa 2 do AI-First): tickets comuns seguem como antes; cards de
-// conhecimento (CONHECIMENTO/LACUNA/DESATUALIZADO) só são assumidos/movidos
+// conhecimento (CONHECIMENTO/SKILL/BOT/LACUNA/DESATUALIZADO) só são assumidos/movidos
 // por quem tem manage_knowledge e passam pela fase VALIDACAO_IA.
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -58,16 +56,6 @@ function assertKnowledgeAccess(me: Member, type: string) {
   }
 }
 
-function metaOf(ticket: { meta: unknown }): CerebroMeta {
-  return ticket.meta && typeof ticket.meta === "object" ? (ticket.meta as CerebroMeta) : {};
-}
-
-function withHistory(meta: CerebroMeta, texto: string, por?: string | null): CerebroMeta {
-  const historico = [...(meta.historico ?? []), { texto, em: new Date().toISOString(), ...(por ? { por } : {}) }].slice(-30);
-  return { ...meta, historico };
-}
-
-const asJson = (m: CerebroMeta) => m as unknown as Prisma.InputJsonValue;
 
 /**
  * Presigned PUT para cada foto opcional do ticket. O navegador envia direto ao
@@ -160,28 +148,12 @@ export async function createDevTicket({ title, description, type, images }: Crea
   await assertCanWrite();
   const me = await requireTeamMember();
 
-  if (!title?.trim()) throw new Error("Informe o título do ticket");
-  if (!description?.trim()) throw new Error("Descreva o problema ou a alteração desejada");
-  // Tipos de conhecimento nascem do "Sugerir conhecimento" ou do sistema.
-  if (!(MANUAL_TICKET_TYPES as readonly string[]).includes(type)) {
-    throw new Error("Tipo de ticket inválido");
-  }
-
-  const photos = sanitizeImages(images);
-
-  return db.devTicket.create({
-    data: {
-      title: title.trim(),
-      description: description.trim(),
-      type,
-      images: photos as unknown as Prisma.InputJsonValue,
-      // imageKey/imageName seguem preenchidos com a primeira foto: a UI antiga
-      // e qualquer consumidor legado continuam enxergando o anexo principal.
-      imageKey: photos[0]?.key ?? null,
-      imageName: photos[0]?.name ?? null,
-      creatorId: me.id,
-      creatorName: me.name ?? "Usuário",
-    },
+  // Mesmo núcleo do criar_ticket_dev da IA (cerebro-tickets.ts).
+  return criarTicketDev(
+    { title, description, type, images: sanitizeImages(images) },
+    { id: me.id, name: me.name ?? null },
+  ).catch((err) => {
+    throw err instanceof CerebroError ? new Error(err.message) : err;
   });
 }
 
@@ -312,55 +284,32 @@ export async function deleteDevTicket(ticketId: string) {
 
 export interface SugerirConhecimentoProps {
   title: string;
-  /** Nome do hospital (opcional): com ele a sugestão é comparada à automação viva. */
+  /** vault (padrão) · skill · bot: onde a sugestão será implementada. */
+  destino?: Destino;
+  /** Nome do hospital (opcional, vault): com ele a sugestão é comparada à automação viva. */
   hospital?: string;
+  /** Pasta da skill (destino skill), ex.: meu-dia. */
+  skill?: string;
   proposta: string;
   evidencia?: string;
+  sectorId?: string | null;
 }
 
 /**
- * Operador sugere conhecimento novo (/conhecimento sugerir ou botão do quadro).
- * O servidor já faz a checagem de conflito: busca a automação viva do hospital
- * e compara os contatos (hoje × proposta) — quem implementa vê lado a lado.
+ * Operador sugere conhecimento novo (/conhecimento sugerir ou botão do quadro)
+ * para o vault, uma skill de operação ou o cérebro do bot. O servidor já faz a
+ * checagem que consegue (criarSugestao) — quem implementa vê lado a lado.
  */
-export async function sugerirConhecimento({ title, hospital, proposta, evidencia }: SugerirConhecimentoProps) {
+export async function sugerirConhecimento(props: SugerirConhecimentoProps) {
   await assertCanWrite();
   const me = await requireTeamMember();
-  if (!title?.trim()) throw new Error("Informe o assunto");
-  if (!proposta?.trim()) throw new Error("Escreva o que deve mudar ou ser registrado");
+  return criarSugestao(props, { id: me.id, name: me.name });
+}
 
-  let meta: CerebroMeta = { proposta: proposta.trim(), evidencia: evidencia?.trim() || undefined };
-  let description = proposta.trim();
-  if (hospital?.trim()) {
-    const [grupos, index, cards] = await Promise.all([loadHospitalGroups(), loadVaultIndex(), activeCardsByHospital()]);
-    const m = matchColumn([...grupos.values()].map((g) => g.nome), normalizeHospitalName(hospital));
-    const nome = m.exact !== null ? m.exact : m.candidates.length === 1 ? m.candidates[0] : null;
-    const key = normalizeHospitalName(nome ?? hospital);
-    const g = nome ? grupos.get(key) : undefined;
-    const hoje = g ? g.autos.map(automationSourceText).join("\n\n") : "";
-    meta = {
-      ...meta,
-      hospital: g?.nome ?? hospital.trim(),
-      automacoes: g?.autos.map((a) => ({ id: a.id, nome: a.name })) ?? [],
-      nota: index.find((n) => n.hospital_norm === key)?.path,
-      hoje: hoje || undefined,
-      comparacao: compararContatos(hoje, proposta),
-      cardsAtivos: cards.get(key)?.n ?? 0,
-    };
-    if (!g) description = `${proposta.trim()}\n\n(Hospital sem automação ativa: conhecimento novo.)`;
-  }
-  meta = withHistory(meta, "Sugeriu o conhecimento", me.name);
-
-  return db.devTicket.create({
-    data: {
-      title: title.trim(),
-      description,
-      type: "CONHECIMENTO",
-      meta: asJson(meta),
-      creatorId: me.id,
-      creatorName: me.name ?? "Usuário",
-    },
-  });
+/** Setores para o seletor do quadro (filtro e "Enviar sugestão"). */
+export async function listarSetoresDoQuadro() {
+  await requireTeamMember();
+  return db.sector.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true, color: true } });
 }
 
 const AUTO_LIMIT = 50;

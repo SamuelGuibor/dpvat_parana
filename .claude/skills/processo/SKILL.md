@@ -1,6 +1,6 @@
 ---
 name: processo
-description: Operação por IA — panorama completo de UM processo/card do CRM pelo número (ex.: 2342) numa chamada só: situação, histórico, documentos por pasta, pendências e conversa de WhatsApp. Use quando o operador pedir "processo 2342", "status do 2342", "como está o card X".
+description: Operação por IA — panorama completo de UM processo/card do CRM pelo número (ex.: 2342) numa chamada só — situação, histórico, documentos por pasta, pendências e conversa de WhatsApp. Use quando o operador pedir "processo 2342", "status do 2342", "como está o card X".
 ---
 
 # /processo — panorama de um card

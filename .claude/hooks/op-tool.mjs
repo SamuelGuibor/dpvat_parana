@@ -4,12 +4,16 @@
 // Nunca bloqueia; sai 0 sempre.
 import { readFileSync } from "node:fs";
 
+// Token/URL: variável de ambiente ou userConfig do plugin do operador (ver op-prompt.mjs).
+const OP_TOKEN = process.env.CRM_OP_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_TOKEN || "";
+const OP_URL = process.env.CRM_OP_URL || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_URL || "";
+
 // Códigos que o próprio MCP gera sem falar com o CRM (tools/crm-mcp/index.mjs).
 const LOCAL_FAILURE_RE = /\[(sem_conexao|timeout|http_\d+)\]|CRM_OP_TOKEN não configurado/;
 
 async function main() {
   const input = JSON.parse(readFileSync(0, "utf8") || "{}");
-  const token = process.env.CRM_OP_TOKEN;
+  const token = OP_TOKEN;
   const sessionId = String(input.session_id ?? "");
   if (!token || !sessionId) return;
 
@@ -17,7 +21,7 @@ async function main() {
   const m = raw.match(LOCAL_FAILURE_RE);
   if (!m) return;
 
-  const base = (process.env.CRM_OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
+  const base = (OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {

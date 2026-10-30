@@ -34,6 +34,13 @@ const AJUSTES_L1 = ["quem_pediu"];
 // Decisão do dono (27/10): leitura dos documentos do card em lote com IA (L1, run_ai_audit).
 // Item O (27/10): lote em segundo plano (op_jobs): iniciar_lote custa IA (interruptor), resultado_lote só lê.
 const LOTE_L1 = ["analisar_documentos", "panorama_card", "iniciar_lote", "resultado_lote"];
+// Cérebro APP (docs/ai-first/11-plano-cerebro-app.md): tickets + frente bot.
+const CEREBRO_L1 = ["listar_tickets", "ler_ticket", "analisar_regra_bot"];
+const CEREBRO_L3 = ["criar_ticket", "atualizar_ticket", "aplicar_regra_bot"];
+// Decisão do dono (30/10): criar pela IA. Card e ticket DEV em L3; membro da
+// equipe em L4 com "aprovo <código>" (dá acesso ao CRM).
+const CRIACAO_L3 = ["criar_card", "criar_ticket_dev"];
+const CRIACAO_L4 = ["preparar_membro_equipe"];
 const L3 = [...ETAPA_3, ...ETAPA_4_L3, ...AJUSTES_L3];
 
 describe("registry da operação por IA", () => {
@@ -41,7 +48,7 @@ describe("registry da operação por IA", () => {
     const names = OP_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual(
-      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1, ...AJUSTES_L3, ...AJUSTES_L4, ...AJUSTES_L1, ...LOTE_L1].sort(),
+      [...ETAPA_1, ...ETAPA_2, ...ETAPA_3_L1, ...ETAPA_3, ...ETAPA_4_L1, ...ETAPA_4_L2, ...ETAPA_4_L3, ...ETAPA_5_L4, ...ETAPA_6_L1, ...ETAPA_7_L1, ...AJUSTES_L3, ...AJUSTES_L4, ...AJUSTES_L1, ...LOTE_L1, ...CEREBRO_L1, ...CEREBRO_L3, ...CRIACAO_L3, ...CRIACAO_L4].sort(),
     );
   });
 
@@ -60,7 +67,7 @@ describe("registry da operação por IA", () => {
         expect(t.level).toBe(4);
         expect(["op_approve", "view_whatsapp"]).toContain(t.permission);
         expect(t.description).toMatch(/^ENVIO\./);
-      } else if (AJUSTES_L4.includes(t.name)) {
+      } else if (AJUSTES_L4.includes(t.name) || CRIACAO_L4.includes(t.name)) {
         expect(t.level).toBe(4);
         expect(t.permission).toBe("op_approve");
         expect(t.description).toMatch(/^APROVAÇÃO\./);
@@ -76,8 +83,11 @@ describe("registry da operação por IA", () => {
         expect(t.level).toBe(1);
         expect(t.permission).toBe("op_use");
         expect(t.description).toMatch(/^REGISTRO\./);
-      } else if (LOTE_L1.includes(t.name)) {
+      } else if (LOTE_L1.includes(t.name) || CEREBRO_L1.includes(t.name)) {
         expect(t.level).toBe(1);
+      } else if (CEREBRO_L3.includes(t.name) || CRIACAO_L3.includes(t.name)) {
+        expect(t.level).toBe(3);
+        expect(t.description).toMatch(/^ESCRITA\./);
       } else {
         expect(t.level).toBe(1);
         expect(t.switchable).toBeFalsy();
@@ -88,14 +98,15 @@ describe("registry da operação por IA", () => {
   });
 
   it("nenhuma ferramenta de envio direto, lote ou mudança de etapa; executar só o aprovado", () => {
-    for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(enviar|criar_card|mudar_etapa)/);
+    // criar_card foi liberada pelo dono em 30/10 (cria, não muda etapa nem envia).
+    for (const t of OP_TOOLS) expect(t.name).not.toMatch(/^(enviar|mudar_etapa)/);
     expect(OP_TOOLS.filter((t) => t.name.startsWith("executar")).map((t) => t.name)).toEqual(["executar_aprovado"]);
     expect(getTool("preparar_whatsapp")?.permission).toBe("view_whatsapp");
   });
 
   it("fluxos (Etapa 6): só salvar_progresso tem interruptor; schemas", () => {
     // 27/10: analisar_documentos custa IA por chamada e também nasce desligada.
-    expect(OP_TOOLS.filter((t) => t.switchable).map((t) => t.name).sort()).toEqual(["analisar_documentos", "iniciar_lote", "salvar_progresso"]);
+    expect(OP_TOOLS.filter((t) => t.switchable).map((t) => t.name).sort()).toEqual(["analisar_documentos", "analisar_regra_bot", "iniciar_lote", "salvar_progresso"]);
     const salvar = getTool("salvar_progresso")!.schema;
     expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "pedido", ref: "op-drafts/x/1792900329052-11fe030d.pdf" }).success).toBe(true);
     expect(salvar.safeParse({ workflow: "prontuario", card: "2342", passo: "anexar", ref: ["d1", "d2"] }).success).toBe(true);
@@ -253,5 +264,40 @@ describe("registry da operação por IA", () => {
     expect(qp.safeParse({ aprovacao: "K7QX" }).success).toBe(true);
     expect(qp.safeParse({}).success).toBe(false);
     expect(qp.safeParse({ aprovacao: "K7QX", card: "2342" }).success).toBe(false);
+  });
+
+  it("Cérebro APP: permissões e schemas das ferramentas de ticket e do bot", () => {
+    expect(getTool("listar_tickets")?.permission).toBe("op_use");
+    expect(getTool("ler_ticket")?.permission).toBe("op_use");
+    expect(getTool("criar_ticket")?.permission).toBe("op_use");
+    expect(getTool("atualizar_ticket")?.permission).toBe("manage_knowledge");
+    expect(getTool("analisar_regra_bot")?.permission).toBe("teach_bot");
+    expect(getTool("aplicar_regra_bot")?.permission).toBe("teach_bot");
+    const criar = getTool("criar_ticket")!.schema;
+    expect(criar.safeParse({ titulo: "Meu dia", destino: "skill", proposta: "mostrar tarefas primeiro" }).success).toBe(true);
+    expect(criar.safeParse({ titulo: "Meu dia", destino: "codigo", proposta: "mostrar tarefas primeiro" }).success).toBe(false);
+    const aplicar = getTool("aplicar_regra_bot")!.schema;
+    expect(aplicar.safeParse({ modo: "reforcar", texto: "Pergunte o hospital antes.", regra: "R4", playbookVersao: 12, pedido: "x".repeat(10) }).success).toBe(true);
+    expect(aplicar.safeParse({ modo: "apagar", texto: "Pergunte o hospital antes.", playbookVersao: 12, pedido: "x".repeat(10) }).success).toBe(false);
+    expect(getTool("atualizar_ticket")!.schema.safeParse({ ticket: "S-K2P9X", registro: "feito", regra: "regra 4" }).success).toBe(false);
+  });
+
+  it("criação (30/10): card exige CPF e nome; ticket DEV só tipos manuais; membro só ADMIN/ADMIN+ e e-mail válido", () => {
+    const card = getTool("criar_card")!.schema;
+    expect(card.safeParse({ nome: "Ana Teste", cpf: "529.982.247-25" }).success).toBe(true);
+    expect(card.safeParse({ nome: "Ana Teste" }).success).toBe(false);
+    expect(card.safeParse({ nome: "Ana Teste", cpf: "52998224725", email: "nao-e-email" }).success).toBe(false);
+    const parsed = card.safeParse({ nome: "Ana Teste", cpf: "52998224725" });
+    expect(parsed.success && (parsed.data as { confirmar: boolean }).confirmar).toBe(false);
+    const dev = getTool("criar_ticket_dev")!.schema;
+    expect(dev.safeParse({ titulo: "Botão quebrado", tipo: "BUG", descricao: "Ao clicar em salvar no card 2342 nada acontece." }).success).toBe(true);
+    expect(dev.safeParse({ titulo: "Hospital X", tipo: "CONHECIMENTO", descricao: "E-mail do hospital mudou para x@y." }).success).toBe(false);
+    const membro = getTool("preparar_membro_equipe")!;
+    expect(membro.level).toBe(4);
+    expect(membro.schema.safeParse({ nome: "Bia", email: "bia@x.com", cpf: "52998224725", cargo: "ADMIN" }).success).toBe(true);
+    expect(membro.schema.safeParse({ nome: "Bia", email: "bia@x.com", cpf: "52998224725", cargo: "ADMIN++" }).success).toBe(false);
+    const props = (catalogEntry(membro).inputSchema as { properties: Record<string, unknown> }).properties;
+    expect(props.senha).toBeUndefined();
+    expect(props.password).toBeUndefined();
   });
 });

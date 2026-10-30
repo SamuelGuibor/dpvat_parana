@@ -5,9 +5,9 @@
 
 import { extractContacts, normEmail, normPhone, normUrl } from "./contacts";
 
-export const TICKET_TYPES = ["BUG", "ALTERACAO", "MELHORIA", "OUTRO", "CONHECIMENTO", "LACUNA", "DESATUALIZADO"] as const;
+export const TICKET_TYPES = ["BUG", "ALTERACAO", "MELHORIA", "OUTRO", "CONHECIMENTO", "SKILL", "BOT", "LACUNA", "DESATUALIZADO"] as const;
 /** Tipos de conhecimento: só quem tem manage_knowledge assume/move; passam por VALIDACAO_IA. */
-export const KNOWLEDGE_TYPES = ["CONHECIMENTO", "LACUNA", "DESATUALIZADO"] as const;
+export const KNOWLEDGE_TYPES = ["CONHECIMENTO", "SKILL", "BOT", "LACUNA", "DESATUALIZADO"] as const;
 /** Tipos que a pessoa escolhe no "Novo ticket" (os de conhecimento nascem do "Sugerir" ou do sistema). */
 export const MANUAL_TICKET_TYPES = ["BUG", "ALTERACAO", "MELHORIA", "OUTRO"] as const;
 
@@ -17,6 +17,36 @@ export type TicketType = (typeof TICKET_TYPES)[number];
 export type TicketStatus = (typeof TICKET_STATUS_FLOW)[number];
 
 export const isKnowledgeType = (t: string) => (KNOWLEDGE_TYPES as readonly string[]).includes(t);
+
+/**
+ * Onde o ticket de conhecimento é implementado: vault (docs/operacao/), skill
+ * de operação (.claude/skills/) ou cérebro do bot (playbook no banco).
+ */
+export const DESTINOS = ["vault", "skill", "bot"] as const;
+export type Destino = (typeof DESTINOS)[number];
+
+/** Tipo de ticket que nasce do "Sugerir" para cada destino. */
+export const TIPO_DO_DESTINO: Record<Destino, TicketType> = { vault: "CONHECIMENTO", skill: "SKILL", bot: "BOT" };
+
+export function destinoDoTipo(type: string): Destino | null {
+  if (type === "SKILL") return "skill";
+  if (type === "BOT") return "bot";
+  return isKnowledgeType(type) ? "vault" : null;
+}
+
+/**
+ * Skills que um ticket NÃO altera (decisão D6 de 27/10): as de desenvolvimento
+ * e a `crm`, que guarda a referência completa das regras de escrita/aprovação
+ * que as outras copiam. Mudança aqui é ticket DEV, feito por quem programa.
+ */
+export const SKILLS_PROTEGIDAS = ["plano", "validar", "migration", "mapa-atualizar", "crm"] as const;
+
+/** Nome de skill válido: slug da pasta em .claude/skills/ (minúsculas, números e hífen). */
+export function skillValida(nome: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(nome) && nome.length <= 40;
+}
+
+export const skillProtegida = (nome: string) => (SKILLS_PROTEGIDAS as readonly string[]).includes(nome);
 
 /** Próxima fase: ticket comum pula a Validação IA (ela é só do conhecimento). */
 export function nextStatus(type: string, status: string): TicketStatus | null {
@@ -41,8 +71,16 @@ export function statusesFor(type: string): TicketStatus[] {
 
 /** "cmh3x…k2p9" → "C-K2P9" (prefixo pelo tipo): id curto para copiar no comando da IA. */
 export function shortTicketId(id: string, type: string): string {
-  const p = type === "LACUNA" ? "L" : type === "DESATUALIZADO" ? "D" : isKnowledgeType(type) ? "C" : "T";
+  const p =
+    type === "LACUNA" ? "L" : type === "DESATUALIZADO" ? "D" : type === "SKILL" ? "S" : type === "BOT" ? "B" : isKnowledgeType(type) ? "C" : "T";
   return `${p}-${id.slice(-5).toUpperCase()}`;
+}
+
+/** "C-K2P9X" / "k2p9x" / id inteiro → sufixo em minúsculas para achar o ticket (`id endsWith`). */
+export function parseShortTicketId(ref: string): string | null {
+  const t = (ref ?? "").trim();
+  const m = /^(?:[A-Z]-)?([a-z0-9]{5,})$/i.exec(t);
+  return m ? m[1].toLowerCase() : null;
 }
 
 // ---------------------------------------------------------------- meta do card
@@ -77,6 +115,17 @@ export type CerebroMeta = {
     decisoes?: Record<string, ConferenciaDecisao>;
   };
   historico?: { texto: string; em: string; por?: string }[];
+  /** Destino da implementação (tickets SKILL/BOT; ausente = vault, como os antigos). */
+  destino?: Destino;
+  /** Destino skill: pasta da skill em .claude/skills/. */
+  skill?: string;
+  /** Destino bot: regra do playbook tocada (R#), versão analisada e tipo da mudança. */
+  regra?: string;
+  playbookVersao?: number;
+  mudanca?: "reforcar" | "nova" | "ja_existe" | "instrucao";
+  /** Resultado da implementação: diff curto (skill) e commit, ou regra aplicada (bot). */
+  diff?: string;
+  commit?: string;
 };
 
 /**

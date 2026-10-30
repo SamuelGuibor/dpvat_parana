@@ -28,7 +28,8 @@ import { notificarPessoa } from "./notificar-pessoa";
 import { arquivarCard } from "./arquivar-card";
 import { meuDia } from "./meu-dia";
 import { anexarRascunho, listarModelos, prepararContrato, prepararPedidoProntuario, prepararProcuracao } from "./documentos";
-import { executarAprovado, prepararAcaoIrreversivel, prepararEmail, prepararWhatsapp } from "./comunicacao";
+import { executarAprovado, prepararAcaoIrreversivel, prepararEmail, prepararMembroEquipe, prepararWhatsapp } from "./comunicacao";
+import { criarCard, criarTicketDevTool } from "./criar";
 import { fluxosAbertos, retomarFluxo, salvarProgresso } from "./fluxos";
 import { gerarRelatorio } from "./relatorio";
 import { varrerInconsistencias } from "./varredura";
@@ -39,6 +40,8 @@ import { quemPediu } from "./quem-pediu";
 import { analisarDocumentos } from "./analisar-documentos";
 import { panoramaCard } from "./panorama-card";
 import { iniciarLote, resultadoLote } from "./lotes";
+import { atualizarTicket, criarTicket, lerTicket, listarTickets } from "./tickets";
+import { analisarRegraBot, aplicarRegraBot } from "./cerebro-bot";
 
 export const OP_TOOLS: OpTool[] = [
   // Item O (27/10): lote em segundo plano (op_jobs + cron /api/op/jobs/run).
@@ -101,6 +104,20 @@ export const OP_TOOLS: OpTool[] = [
   analisarDocumentos,
   // 27/10: ficha + histórico + documentos + pendências + conversa numa chamada.
   panoramaCard,
+  // Cérebro APP (docs/ai-first/11-plano-cerebro-app.md): tickets de
+  // conhecimento lidos/criados/atualizados pela IA e a frente "bot" (playbook)
+  // com o núcleo do "Ensinar o cérebro".
+  listarTickets,
+  lerTicket,
+  criarTicket,
+  atualizarTicket,
+  analisarRegraBot,
+  aplicarRegraBot,
+  // Decisão do dono (30/10): criar pela IA — card de cliente (L3), ticket DEV
+  // (L3, confirmação exigida) e membro da equipe (L4, "aprovo <código>").
+  criarCard,
+  criarTicketDevTool,
+  prepararMembroEquipe,
 ];
 
 const byName = new Map(OP_TOOLS.map((t) => [t.name, t]));

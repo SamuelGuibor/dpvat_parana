@@ -52,7 +52,8 @@ export async function ensureOpSession(
 
 /** "/cliente 123..." → "cliente". */
 export function skillFromPrompt(text: string): string | null {
-  const m = text.trim().match(/^\/([a-z][\w-]{1,40})\b/i);
+  // Plugin do operador (30/10): a skill chega com o prefixo do plugin, "/crm:prontuario".
+  const m = text.trim().match(/^\/(?:[a-z][\w-]{0,40}:)?([a-z][\w-]{1,40})\b/i);
   return m ? m[1].toLowerCase() : null;
 }
 

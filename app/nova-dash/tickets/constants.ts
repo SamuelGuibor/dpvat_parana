@@ -11,9 +11,11 @@ import {
   BookOpen,
   MapPinOff,
   History,
+  Wand2,
+  Bot,
   type LucideIcon,
 } from 'lucide-react';
-import { TICKET_STATUS_FLOW, type CerebroMeta, type TicketStatus } from '@/app/_shared/utils/cerebro';
+import { TICKET_STATUS_FLOW, type CerebroMeta, type Destino, type TicketStatus } from '@/app/_shared/utils/cerebro';
 
 // Listas e fluxo: app/_shared/utils/cerebro.ts (validadas também no servidor,
 // app/_actions/dev-tickets/ticket-actions.ts). Aqui só a cara de cada uma.
@@ -42,6 +44,8 @@ export interface DevTicketDto {
   concludedAt: string | null;
   // Cérebro APP: dados do card de conhecimento (null nos tickets comuns).
   meta: CerebroMeta | null;
+  // Setor da sugestão (Sector.id; null = sem setor).
+  sectorId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -89,6 +93,16 @@ export const TYPE_META: Record<string, { label: string; icon: LucideIcon; badge:
     icon: BookOpen,
     badge: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
   },
+  SKILL: {
+    label: 'Skill',
+    icon: Wand2,
+    badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
+  },
+  BOT: {
+    label: 'Bot',
+    icon: Bot,
+    badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+  },
   LACUNA: {
     label: 'Lacuna',
     icon: MapPinOff,
@@ -131,7 +145,7 @@ export const STATUS_META: Record<TicketStatus, { label: string; icon: LucideIcon
     icon: BrainCircuit,
     dot: 'bg-violet-500',
     header: 'text-violet-700 dark:text-violet-400',
-    hint: 'Redator escreveu; validador e amostra humana conferem contra a fonte.',
+    hint: 'IA implementou (nota, skill ou regra do bot); falta a conferência humana.',
     short: 'amostra humana',
   },
   CONCLUIDO: {
@@ -139,7 +153,7 @@ export const STATUS_META: Record<TicketStatus, { label: string; icon: LucideIcon
     icon: CheckCircle2,
     dot: 'bg-emerald-500',
     header: 'text-emerald-700 dark:text-emerald-400',
-    hint: 'Publicado no vault e no S3; ticket encerrado.',
+    hint: 'Publicado (vault, skill ou cérebro do bot); ticket encerrado.',
     short: 'últimos 14 dias',
   },
 };
@@ -175,3 +189,10 @@ export function ageLabel(iso: string, now = Date.now()) {
   if (d < 7) return `${d} d`;
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
+
+/** Destinos do "Enviar sugestão": o que cada um muda, em linguagem da operação. */
+export const DESTINO_META: Record<Destino, { label: string; hint: string }> = {
+  vault: { label: 'Procedimento / hospital', hint: 'Como pedir prontuário, contato de hospital, regra ou etapa da operação.' },
+  skill: { label: 'Skill da IA de operação', hint: 'Como uma skill (/meu-dia, /prontuario, /pendencias…) deve se comportar.' },
+  bot: { label: 'Bot do WhatsApp', hint: 'Como o bot deve responder ao cliente (vira regra do cérebro, com confirmação).' },
+};

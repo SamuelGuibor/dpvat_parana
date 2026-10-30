@@ -16,7 +16,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/app/_shared/ui/dropdown-menu';
-import { gerarCardsAutomaticos } from '@/app/_actions/dev-tickets/ticket-actions';
+import { gerarCardsAutomaticos, listarSetoresDoQuadro } from '@/app/_actions/dev-tickets/ticket-actions';
 import { KNOWLEDGE_TYPES, MANUAL_TICKET_TYPES, isKnowledgeType, statusesFor, temConflito } from '@/app/_shared/utils/cerebro';
 import type { CerebroResumo } from '@/app/_shared/lib/cerebro';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
@@ -88,6 +88,7 @@ export function TicketsBoard() {
   const [busca, setBusca] = useState('');
   const [pessoas, setPessoas] = useState<string[]>([]);
   const [tipos, setTipos] = useState<string[]>([]);
+  const [setoresSel, setSetoresSel] = useState<string[]>([]);
   const [quick, setQuick] = useState<Quick[]>([]);
   const [metricas, setMetricas] = useState(false);
   const [gerando, setGerando] = useState(false);
@@ -105,6 +106,9 @@ export function TicketsBoard() {
     fetcher,
     { revalidateOnFocus: false, refreshInterval: 120_000 },
   );
+  // Setores mudam raramente: lidos uma vez (filtro, chip do card e "Enviar sugestão").
+  const { data: setores } = useSWR('cerebro-setores', () => listarSetoresDoQuadro(), { revalidateOnFocus: false });
+  const setorPorId = useMemo(() => new Map((setores ?? []).map((s) => [s.id, s])), [setores]);
   const tickets = useMemo(() => (Array.isArray(raw) ? raw : []), [raw]);
   const myId = session?.user?.id;
   const cfg = VIEWS[view];
@@ -113,6 +117,7 @@ export function TicketsBoard() {
     setView(v);
     // Filtros são do quadro: tipo/pessoa de um não fazem sentido no outro.
     setTipos([]);
+    setSetoresSel([]);
     setPessoas([]);
     setQuick((q) => q.filter((x) => QUICK[v].some((y) => y.key === x)));
     try {
@@ -137,6 +142,7 @@ export function TicketsBoard() {
     return doQuadro.filter((t) => {
       if (q && !`${t.title} ${t.description} ${t.meta?.hospital ?? ''} ${t.creatorName} ${t.assigneeName ?? ''}`.toLowerCase().includes(q)) return false;
       if (tipos.length && !tipos.includes(t.type)) return false;
+      if (setoresSel.length && !setoresSel.includes(t.sectorId ?? NO_ASSIGNEE)) return false;
       if (pessoas.length && !pessoas.includes(t.assigneeId ?? NO_ASSIGNEE)) return false;
       if (quick.includes('meus') && myId && t.creatorId !== myId && t.assigneeId !== myId) return false;
       if (quick.includes('recentes') && now - new Date(t.updatedAt).getTime() > RECENT_MS) return false;
@@ -144,7 +150,7 @@ export function TicketsBoard() {
       if (quick.includes('ia') && t.status !== 'VALIDACAO_IA') return false;
       return true;
     });
-  }, [doQuadro, busca, tipos, pessoas, quick, myId]);
+  }, [doQuadro, busca, tipos, setoresSel, pessoas, quick, myId]);
 
   const colunas = useMemo(() => statusesFor(cfg.statusOf), [cfg.statusOf]);
   const byStatus = useMemo(() => {
@@ -156,10 +162,11 @@ export function TicketsBoard() {
     return groups;
   }, [visible, colunas]);
 
-  const filtrando = Boolean(busca.trim() || tipos.length || pessoas.length || quick.length);
+  const filtrando = Boolean(busca.trim() || tipos.length || setoresSel.length || pessoas.length || quick.length);
   const limpar = () => {
     setBusca('');
     setTipos([]);
+    setSetoresSel([]);
     setPessoas([]);
     setQuick([]);
   };
@@ -247,7 +254,7 @@ export function TicketsBoard() {
               </Button>
             </>
           )}
-          {view === 'cerebro' ? <SuggestKnowledgeDialog onCreated={refresh} /> : <CreateTicketDialog onCreated={() => mutate()} />}
+          {view === 'cerebro' ? <SuggestKnowledgeDialog onCreated={refresh} setores={setores ?? []} /> : <CreateTicketDialog onCreated={() => mutate()} />}
           <Button variant="outline" size="icon" onClick={refresh} aria-label="Atualizar" className="h-9 w-9 rounded-md border-gray-200 bg-white">
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
@@ -328,6 +335,34 @@ export function TicketsBoard() {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {Boolean(setores?.length) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className={`${toolBtn} ${setoresSel.length ? 'border-[#1a6649] bg-[#e3f1ea] text-[#114a34]' : ''}`}>
+                Setor{setoresSel.length ? ` · ${setoresSel.length}` : <span className="ml-1 font-normal text-gray-500">todos</span>}
+                <ChevronDown className="ml-1.5 h-4 w-4 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {[...(setores ?? []), { id: NO_ASSIGNEE, name: 'Sem setor', color: '#9ca3af' }].map((st) => {
+                const n = doQuadro.filter((x) => (x.sectorId ?? NO_ASSIGNEE) === st.id).length;
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={st.id}
+                    checked={setoresSel.includes(st.id)}
+                    onCheckedChange={() => setSetoresSel(toggle(setoresSel, st.id))}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: st.color }} aria-hidden="true" />
+                    {st.name}
+                    <span className="ml-auto pl-4 text-xs tabular-nums text-gray-500">{n}</span>
+                  </DropdownMenuCheckboxItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         <div className="flex flex-wrap gap-1.5">
           {QUICK[view].map((q) => {
@@ -411,7 +446,7 @@ export function TicketsBoard() {
                     <p className="text-xs text-gray-500">{filtrando ? 'Nada com esses filtros' : 'Nada aqui'}</p>
                   </div>
                 ) : (
-                  columnTickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} onChanged={refresh} />)
+                  columnTickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} onChanged={refresh} setor={ticket.sectorId ? setorPorId.get(ticket.sectorId) : undefined} />)
                 )}
               </section>
             );

@@ -26,6 +26,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Pelo plugin do operador (tools/operacao-plugin, 30/10) o token vem do
+// userConfig do plugin (cofre do sistema), exportado como CLAUDE_PLUGIN_OPTION_*;
+// neste repositório, da variável de ambiente.
+const OP_TOKEN = process.env.CRM_OP_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_TOKEN || "";
+const OP_URL = process.env.CRM_OP_URL || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_URL || "";
+
 const DIR = join(homedir(), ".claude", "crm-op");
 // Mensagem curta com "aprovo": superconjunto do que typedApprovalMatches aceita.
 const APROVO_RE = /\baprovo\b/i;
@@ -35,9 +41,9 @@ const APROVO_MAX_CHARS = 200;
 const EVT_MAX_AGE_MS = 60 * 60_000;
 
 async function post(body) {
-  const token = process.env.CRM_OP_TOKEN;
+  const token = OP_TOKEN;
   if (!token) return;
-  const base = (process.env.CRM_OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
+  const base = (OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -100,7 +106,7 @@ async function main() {
     // sem permissão de escrita no perfil: o MCP usa o id do próprio processo
   }
 
-  if (!process.env.CRM_OP_TOKEN) return;
+  if (!OP_TOKEN) return;
   const body = {
     type: "prompt",
     clientSessionId: sessionId,

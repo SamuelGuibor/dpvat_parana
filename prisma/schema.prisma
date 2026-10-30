@@ -1367,11 +1367,15 @@ model DevTicket {
   // nota/automação ligadas, conflito hoje × proposta, checagens, lote e a
   // conferência da amostra. null nos tickets comuns.
   meta         Json?
+  // Setor da sugestão (Sector.id, sem FK como os demais ids soltos): filtra o
+  // quadro Cérebro APP e diz quem avisar ao concluir. null = sem setor.
+  sectorId     String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   @@index([status])
   @@index([assigneeId])
+  @@index([sectorId])
   @@map("dev_tickets")
 }
 

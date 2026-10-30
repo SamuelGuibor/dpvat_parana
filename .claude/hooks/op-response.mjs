@@ -13,6 +13,10 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Token/URL: variável de ambiente ou userConfig do plugin do operador (ver op-prompt.mjs).
+const OP_TOKEN = process.env.CRM_OP_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_TOKEN || "";
+const OP_URL = process.env.CRM_OP_URL || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_URL || "";
+
 const DIR = join(homedir(), ".claude", "crm-op");
 // O servidor corta em 8.000; aqui só evita mandar um transcript gigante.
 const MAX_CHARS = 20_000;
@@ -20,9 +24,9 @@ const MAX_CHARS = 20_000;
 const KEY_MAX_AGE_MS = 6 * 3_600_000;
 
 async function post(body) {
-  const token = process.env.CRM_OP_TOKEN;
+  const token = OP_TOKEN;
   if (!token) return;
-  const base = (process.env.CRM_OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
+  const base = (OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -88,7 +92,7 @@ export function lastTurnText(jsonl) {
 async function main() {
   const i = process.argv.indexOf("--send");
   if (i > 0 && process.argv[i + 1]) return sendFromFile(process.argv[i + 1]);
-  if (!process.env.CRM_OP_TOKEN) return;
+  if (!OP_TOKEN) return;
 
   const input = JSON.parse(readFileSync(0, "utf8") || "{}");
   const sessionId = String(input.session_id ?? "");

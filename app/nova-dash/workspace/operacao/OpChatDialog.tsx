@@ -41,6 +41,12 @@ const TOOL_LABEL: Record<string, string> = {
   executar_aprovado: 'Enviou o aprovado',
   meu_dia: 'Montou o dia',
   gerar_relatorio: 'Gerou relatório',
+  listar_tickets: 'Listou tickets do Cérebro',
+  ler_ticket: 'Leu o ticket',
+  criar_ticket: 'Criou sugestão',
+  atualizar_ticket: 'Atualizou o ticket',
+  analisar_regra_bot: 'Analisou regra do bot',
+  aplicar_regra_bot: 'Publicou regra no bot',
 };
 
 export function OpChatDialog({ sessionId, onClose }: { sessionId: string | null; onClose: () => void }) {

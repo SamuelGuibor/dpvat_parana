@@ -31,7 +31,7 @@ export interface WriteCommon {
 /** Erro esperado (card não existe, coluna apagada…): o chamador decide a resposta. */
 export class CardWriteError extends Error {
   constructor(
-    public code: "card_nao_encontrado" | "coluna_nao_encontrada" | "tag_nao_encontrada" | "texto_vazio" | "destinatario_invalido",
+    public code: "card_nao_encontrado" | "coluna_nao_encontrada" | "tag_nao_encontrada" | "texto_vazio" | "destinatario_invalido" | "email_em_uso",
     message: string,
   ) {
     super(message);

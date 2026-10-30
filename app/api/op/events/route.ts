@@ -61,8 +61,9 @@ export async function POST(req: Request) {
   }
 
   if (ev.type === "tool_error") {
-    // "mcp__crm-op__obter_card" → "obter_card"
-    const name = (ev.tool ?? "desconhecida").replace(/^mcp__[^_]+(?:-[^_]+)*__/, "");
+    // "mcp__crm-op__obter_card" e, pelo plugin do operador,
+    // "mcp__plugin_crm_crm-op__obter_card" → "obter_card"
+    const name = (ev.tool ?? "desconhecida").replace(/^mcp__.*?__/, "");
     await recordToolCall({
       sessionId,
       operatorId: op.userId,

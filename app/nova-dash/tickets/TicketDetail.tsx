@@ -96,22 +96,18 @@ const CHECK_STYLE = {
   wait: { mark: '·', cls: 'bg-gray-100 text-gray-600' },
 };
 
-/** Texto que o operador cola no Claude Code (a IA ainda não lê tickets). */
+/**
+ * Texto que o operador cola no Claude Code. A IA lê o ticket sozinha
+ * (ferramenta ler_ticket); o assunto vai junto só para quem lê o comando.
+ */
 function commandFor(ticket: DevTicketDto, m: CerebroMeta): string {
   const id = shortTicketId(ticket.id, ticket.type);
   if (ticket.type === 'DESATUALIZADO' && m.nota) {
-    return `/publicar-conhecimento docs/operacao/${m.nota}\n\n(${id}: a automação mudou depois da nota; rode o seed antes para trazer a Fonte nova.)`;
+    return `/publicar-conhecimento docs/operacao/${m.nota}
+
+(${id}: a automação mudou depois da nota; rode o seed antes para trazer a Fonte nova.)`;
   }
-  const linhas = [
-    `/conhecimento implementar ${id}`,
-    '',
-    `Assunto: ${ticket.title}`,
-    m.hospital ? `Hospital: ${m.hospital}` : null,
-    m.proposta ? `Proposta: ${m.proposta}` : `Pedido: ${ticket.description}`,
-    m.evidencia ? `Evidência: ${m.evidencia}` : null,
-    `Aberto por: ${ticket.creatorName} em ${new Date(ticket.createdAt).toLocaleDateString('pt-BR')}`,
-  ];
-  return linhas.filter((l) => l !== null).join('\n');
+  return `/conhecimento implementar ${id}  (${ticket.title})`;
 }
 
 function stepsFor(ticket: DevTicketDto, m: CerebroMeta): ReactNode[] {
@@ -130,6 +126,22 @@ function stepsFor(ticket: DevTicketDto, m: CerebroMeta): ReactNode[] {
       <>Confira se o nome do hospital no card está igual ao da automação (pode ser só digitação).</>,
       <>Se for hospital novo, crie a automação em DISTRIBUIÇÃO DE SOLICITAÇÕES no site; ou registre com {code(`/conhecimento implementar ${id}`)}.</>,
       <>Rode o seed e publique a nota nova pelo {code('/publicar-conhecimento')}.</>,
+    ];
+  }
+  if (ticket.type === 'SKILL') {
+    return [
+      <>Quem tem permissão de conhecimento (ADMIN++) assume o card.</>,
+      <>No Claude Code, cole o comando copiado ({code(`/conhecimento implementar ${id}`)}).</>,
+      <>A IA compara com a skill{m.skill ? <> {code(`/${m.skill}`)}</> : null}, o vault e o bot, mostra o diff e pede o OK.</>,
+      <>Com o OK: commit, card em Validação IA. Os outros operadores recebem a skill ao abrir o Claude Code (atualização automática) e reiniciar.</>,
+    ];
+  }
+  if (ticket.type === 'BOT') {
+    return [
+      <>Quem tem permissão de conhecimento (ADMIN++) assume o card.</>,
+      <>No Claude Code, cole o comando copiado ({code(`/conhecimento implementar ${id}`)}).</>,
+      <>A IA cruza com o playbook publicado: já existe, reforçar uma regra ou regra nova.</>,
+      <>Regra aplicada só com confirmação: vai ao ar em até 5 min nos dois números. Mudança nas instruções fica como proposta para a aba Instruções.</>,
     ];
   }
   return [
@@ -286,14 +298,35 @@ export function TicketDetail({ ticket, open, onOpenChange, canAct, canDelete, bu
                 </Panel>
               )}
 
+              {knowledge && (m.diff || m.commit || m.regra) && (
+                <Panel title="Resultado da implementação">
+                  {m.skill && <Field label="Skill"><code className="font-mono text-[12px]">/{m.skill}</code></Field>}
+                  {m.regra && (
+                    <Field label="Regra do bot">
+                      {m.regra}
+                      {m.playbookVersao ? ` · playbook v${m.playbookVersao}` : ''}
+                      {m.mudanca ? ` · ${m.mudanca.replace('_', ' ')}` : ''}
+                    </Field>
+                  )}
+                  {m.commit && <Field label="Commit"><code className="font-mono text-[12px]">{m.commit}</code></Field>}
+                  {m.diff && (
+                    <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 font-mono text-[12px] leading-relaxed text-gray-900">{m.diff}</pre>
+                  )}
+                </Panel>
+              )}
+
               {knowledge && (m.hoje || m.proposta) && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
                   <SectionTitle>{conflitos.length ? 'Conflito com o que já existe' : 'Hoje × proposta'}</SectionTitle>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className={`rounded-xl border p-3.5 ${conflitos.length ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
-                      <div className={`text-[11px] font-black uppercase tracking-wide ${conflitos.length ? 'text-red-800' : 'text-gray-700'}`}>Hoje · automação ativa</div>
+                      <div className={`text-[11px] font-black uppercase tracking-wide ${conflitos.length ? 'text-red-800' : 'text-gray-700'}`}>{m.destino === 'skill' ? 'Hoje · skill' : m.destino === 'bot' ? 'Hoje · cérebro do bot' : 'Hoje · automação ativa'}</div>
                       <div className="mt-1 text-xs text-gray-600">
-                        {m.automacoes?.length ? `DISTRIBUIÇÃO DE SOLICITAÇÕES · ${m.automacoes.map((a) => `"${a.nome}"`).join(', ')}` : 'Nenhuma automação ativa para este hospital'}
+                        {m.destino === 'skill'
+                          ? m.skill ? `.claude/skills/${m.skill}/SKILL.md (a IA compara ao implementar)` : 'Skill não informada: a IA acha pelo assunto'
+                          : m.destino === 'bot'
+                            ? `Playbook publicado${m.playbookVersao ? ` v${m.playbookVersao}` : ''} (a IA compara ao implementar)`
+                            : m.automacoes?.length ? `DISTRIBUIÇÃO DE SOLICITAÇÕES · ${m.automacoes.map((a) => `"${a.nome}"`).join(', ')}` : 'Nenhuma automação ativa para este hospital'}
                       </div>
                       <div className="mt-2.5 whitespace-pre-wrap rounded-lg bg-white p-2.5 font-mono text-[13px] leading-relaxed text-gray-900">
                         {m.hoje ? highlight(m.hoje, hojeTerms, 'bg-red-200') : '—'}

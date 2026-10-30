@@ -27,6 +27,8 @@ import { TicketGallery, TicketZoom } from './TicketPhotos';
 interface Props {
   ticket: DevTicketDto;
   onChanged: () => void;
+  /** Setor da sugestão, já resolvido pelo quadro (undefined = sem setor). */
+  setor?: { name: string; color: string };
 }
 
 /** Faixa de alerta do card (conflito, desatualizado, amostra pendente…). */
@@ -47,7 +49,7 @@ export function ticketFlag(ticket: DevTicketDto): { text: string; cls: string } 
   return null;
 }
 
-export function TicketCard({ ticket, onChanged }: Props) {
+export function TicketCard({ ticket, onChanged, setor }: Props) {
   const { data: session } = useSession();
   const { perms } = usePermissions();
   const [busy, setBusy] = useState(false);
@@ -158,6 +160,18 @@ export function TicketCard({ ticket, onChanged }: Props) {
         {ticket.meta?.hospital && (
           <Badge className="max-w-[160px] truncate rounded border-none bg-[#eceeea] px-1.5 py-0 text-[10.5px] font-medium text-[#4f5a55]" title={ticket.meta.hospital}>
             {ticket.meta.hospital}
+          </Badge>
+        )}
+        {ticket.meta?.skill && (
+          <Badge className="rounded border-none bg-[#eceeea] px-1.5 py-0 font-mono text-[10.5px] font-medium text-[#4f5a55]">/{ticket.meta.skill}</Badge>
+        )}
+        {ticket.meta?.regra && (
+          <Badge className="rounded border-none bg-[#eceeea] px-1.5 py-0 font-mono text-[10.5px] font-medium text-[#4f5a55]">{ticket.meta.regra}</Badge>
+        )}
+        {setor && (
+          <Badge className="gap-1 rounded border-none bg-[#eceeea] px-1.5 py-0 text-[10.5px] font-medium text-[#4f5a55]">
+            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: setor.color }} aria-hidden="true" />
+            {setor.name}
           </Badge>
         )}
       </div>

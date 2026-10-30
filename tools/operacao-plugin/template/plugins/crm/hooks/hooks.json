@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/op-prompt.mjs\"", "timeout": 8 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_crm_crm-op__.*",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/op-tool.mjs\"", "timeout": 8 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/op-response.mjs\"", "timeout": 8 }]
+      }
+    ]
+  }
+}

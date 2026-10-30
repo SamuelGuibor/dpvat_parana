@@ -39,6 +39,7 @@ import {
 } from "../comms";
 import { ACOES_IRREVERSIVEIS, precheckIrreversivel, prepareIrreversivel, runApprovedIrreversivel, type CardApprovalArgs } from "../irreversivel";
 import { DESTRUCTIVE_ARCHIVE, ARCHIVE_LABELS } from "../../archive-catalog";
+import { CARGOS_MEMBRO, precheckMembro, prepareMembro, runApprovedMembro, type MembroApprovalArgs } from "../membro";
 import { LOTE_EMAIL_MAX, LOTE_WHATSAPP_MAX, previaTextoLote, type LoteItemPrevia, type LotePulado } from "@/app/_shared/utils/op-lote";
 
 const COMO_APROVAR = (code: string) =>
@@ -61,7 +62,12 @@ function previaTexto(p: Record<string, unknown>): string {
   const avisos = (p.avisos as string[] | undefined) ?? [];
   const card = p.card as { cardNumber?: number | null; nome?: string | null } | undefined;
   const linhas: string[] = [];
-  if (p.canal === "card") {
+  if (p.canal === "equipe") {
+    linhas.push(
+      `${String(p.acao)} — ${String(p.nome)} (${String(p.cargo)})`,
+      `E-mail: ${String(p.email)} · CPF: ${String(p.cpf)}${p.telefone ? ` · telefone: ${String(p.telefone)}` : ""}`,
+    );
+  } else if (p.canal === "card") {
     linhas.push(`${String(p.acao)} — card ${card?.cardNumber ?? "?"} (${card?.nome ?? ""})`, `Coluna: ${String(p.coluna ?? "?")}`);
     if (p.de) linhas.push(`Arquivo atual: ${String(p.de)}`);
     else if (p.arquivado) linhas.push(`Arquivado em: ${String(p.arquivado)}`);
@@ -261,6 +267,32 @@ export const prepararAcaoIrreversivel = defineTool({
 });
 
 // ---------------------------------------------------------------------------
+// preparar_membro_equipe (decisão do dono de 30/10)
+// ---------------------------------------------------------------------------
+
+export const prepararMembroEquipe = defineTool({
+  name: "preparar_membro_equipe",
+  description:
+    "APROVAÇÃO. Prepara a criação de um MEMBRO DA EQUIPE (acesso ao CRM): nome, e-mail, CPF, telefone opcional e cargo ADMIN ou ADMIN+ (ADMIN++ só pelo site). Exige a permissão de gerenciar a equipe. NADA é criado: devolve a prévia e um código; o operador precisa DIGITAR \"aprovo <código>\" e só então chame executar_aprovado. O membro nasce sem senha e entra pelo \"Esqueci minha senha\". Card de cliente é criar_card.",
+  level: 4,
+  permission: "op_approve",
+  schema: z.object({
+    nome: z.string().min(3).max(160),
+    email: z.email().max(160),
+    cpf: z.string().min(11).max(18),
+    telefone: z.string().min(10).max(20).optional().describe("Com DDD (para o código de senha por SMS)."),
+    cargo: z.enum(CARGOS_MEMBRO).describe("ADMIN (padrão da equipe) ou ADMIN+."),
+  }),
+  async run({ op, trace, previewOnly }, args) {
+    const { args: approvalArgs, previa } = await prepareMembro({ op, ...args });
+    const out = previewOnly
+      ? null
+      : await createApproval({ operatorId: op.userId, sessionId: trace.sessionId, tool: "preparar_membro_equipe", canal: "equipe", args: approvalArgs, cardId: null });
+    return { data: prepared(out, previa), summary: `membro da equipe preparado (${approvalArgs.cargo})` };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // executar_aprovado
 // ---------------------------------------------------------------------------
 
@@ -269,15 +301,15 @@ const executarSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/).describe("hash devolvido pelo preparar_*, sem mudar nada."),
 });
 
-const CANAL_TOOL: Record<string, string> = { email: "preparar_email", whatsapp: "preparar_whatsapp", card: "preparar_acao_irreversivel" };
-const CANAL_NOME: Record<string, string> = { email: "e-mail", whatsapp: "WhatsApp", card: "ação no card" };
+const CANAL_TOOL: Record<string, string> = { email: "preparar_email", whatsapp: "preparar_whatsapp", card: "preparar_acao_irreversivel", equipe: "preparar_membro_equipe" };
+const CANAL_NOME: Record<string, string> = { email: "e-mail", whatsapp: "WhatsApp", card: "ação no card", equipe: "membro da equipe" };
 
 type LoteResult = { sent: boolean; enviados?: number; naoEnviados?: number; itens?: unknown[]; aviso?: string };
 
 export const executarAprovado = defineTool({
   name: "executar_aprovado",
   description:
-    "ENVIO. Envia/executa o que foi preparado (preparar_email/preparar_whatsapp/preparar_acao_irreversivel, inclusive em lote) DEPOIS que o operador digitou \"aprovo <código>\" como última mensagem. Sem isso recusa com aprovacao_nao_digitada; conteúdo mudado = hash_diferente; mais de 30 min = aprovacao_expirada. Repetir não envia de novo. No lote devolve o resultado por card.",
+    "ENVIO. Envia/executa o que foi preparado (preparar_email/preparar_whatsapp/preparar_acao_irreversivel/preparar_membro_equipe, inclusive em lote) DEPOIS que o operador digitou \"aprovo <código>\" como última mensagem. Sem isso recusa com aprovacao_nao_digitada; conteúdo mudado = hash_diferente; mais de 30 min = aprovacao_expirada. Repetir não envia de novo. No lote devolve o resultado por card.",
   level: 4,
   permission: "op_approve",
   schema: executarSchema,
@@ -301,6 +333,10 @@ export const executarAprovado = defineTool({
       }
     }
 
+    if (approval.canal === "equipe" && !op.permissions.manage_team) {
+      throw new OpToolError("sem_permissao", "Você não tem mais permissão para gerenciar a equipe.", 403);
+    }
+
     const out = await executeApproval({
       approvalId: args.approvalId,
       hash: args.hash,
@@ -314,7 +350,9 @@ export const executarAprovado = defineTool({
         }
         return a.canal === "email"
           ? precheckEmail(a.args as EmailApprovalArgs)
-          : a.canal === "card"
+          : a.canal === "equipe"
+            ? precheckMembro(a.args as MembroApprovalArgs)
+            : a.canal === "card"
             ? precheckIrreversivel(a.args as CardApprovalArgs)
             : precheckWhatsapp(a.args as WhatsappApprovalArgs);
       },
@@ -326,7 +364,9 @@ export const executarAprovado = defineTool({
         }
         return a.canal === "email"
           ? sendApprovedEmail({ args: a.args as EmailApprovalArgs, op, trace, approvalId: a.id })
-          : a.canal === "card"
+          : a.canal === "equipe"
+            ? runApprovedMembro({ args: a.args as MembroApprovalArgs, op, trace })
+            : a.canal === "card"
             ? runApprovedIrreversivel({ args: a.args as CardApprovalArgs, op, trace })
             : sendApprovedWhatsapp({ args: a.args as WhatsappApprovalArgs, op, trace, approvalId: a.id });
       },
@@ -381,9 +421,19 @@ export const executarAprovado = defineTool({
         ...(progresso ? { progresso } : {}),
         ...(out.noop ? { aviso: "Já tinha sido enviado; nada saiu de novo." } : {}),
         resultado: out.result,
-        registro: out.noop ? null : "comentário e histórico do card gravados com o autor \"(via IA)\"",
+        registro: out.noop
+          ? null
+          : out.approval.canal === "equipe"
+            ? "histórico da equipe gravado com o autor \"(via IA)\""
+            : "comentário e histórico do card gravados com o autor \"(via IA)\"",
       },
-      summary: out.noop ? `${canal} já enviado (noop)` : `${canal} enviado (aprovação ${out.approval.code})`,
+      // Membro da equipe não é entrega da operação: o summary sem "enviado (aprova…"
+      // fica fora da contagem do rendimento (SQL de op/metrics.ts).
+      summary: out.noop
+        ? `${canal} já enviado (noop)`
+        : out.approval.canal === "equipe"
+          ? `${canal} criado (aprovação ${out.approval.code})`
+          : `${canal} enviado (aprovação ${out.approval.code})`,
       cardIds,
     };
   },

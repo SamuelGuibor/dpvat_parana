@@ -1,0 +1,22 @@
+{
+  "name": "crm",
+  "displayName": "CRM Seguros Paraná — Operação",
+  "version": "0.0.0",
+  "description": "IA de operação do CRM: consultar, agir no card, preparar documentos e enviar com aprovação. Tudo passa pelo token do app; as permissões ficam no CRM.",
+  "author": { "name": "Seguros Paraná" },
+  "userConfig": {
+    "crm_op_token": {
+      "type": "string",
+      "title": "Token do app",
+      "description": "Token pessoal da IA de operação (Equipe → seu nome → Token do app, gerado por um ADMIN++). Fica no cofre do Windows.",
+      "sensitive": true,
+      "required": true
+    },
+    "crm_op_url": {
+      "type": "string",
+      "title": "Endereço do CRM",
+      "description": "Deixe como está.",
+      "default": "https://segurosparana.com.br"
+    }
+  }
+}

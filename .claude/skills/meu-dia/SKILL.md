@@ -1,6 +1,6 @@
 ---
 name: meu-dia
-description: Operação por IA — plano de trabalho do dia do operador: tarefas e menções pendentes, cards que ele está conduzindo (pela IA ou no site), os parados além do prazo, pendências e as ações prontas para fazer. Use quando o operador pedir "/meu-dia", "meu dia", "o que tenho pra hoje", "minhas tarefas".
+description: Operação por IA — plano de trabalho do dia do operador — tarefas e menções pendentes, cards que ele está conduzindo (pela IA ou no site), os parados além do prazo, pendências e as ações prontas para fazer. Use quando o operador pedir "/meu-dia", "meu dia", "o que tenho pra hoje", "minhas tarefas".
 ---
 
 # /meu-dia — plano do dia
