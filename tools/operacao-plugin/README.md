@@ -15,14 +15,25 @@ O que cada pessoa pode fazer **não** está aqui: vem do CRM pelo token (permiss
 ## Publicar uma versão (dono, no computador com o repositório do CRM)
 1. Commit no repositório do CRM das mudanças em skills/MCP/hooks (e push da main, se a skill usa ferramenta nova).
 2. `npm run plugin:publicar` — gera em `D:\crm-operacao-plugin`, commita e dá push. Para só conferir antes: `node scripts/plugin-operacao.mjs` (dry-run).
-3. Os operadores recebem ao abrir o app (a versão muda a cada commit). Ferramenta nova do CRM só aparece depois do deploy da Vercel.
+3. Os operadores recebem sozinhos: com `autoUpdate` ligado (vem no `settings.json` da pasta), o app busca a versão nova até ~10 min depois da 1ª mensagem e carrega na **próxima vez que abrir**. Para forçar na hora: `claude plugin update crm@seguros-parana` no PowerShell e reabrir o app. Ferramenta nova do CRM só aparece depois do deploy da Vercel.
 
 Primeira vez: criar no GitHub o repositório **privado** `crm-operacao-plugin` (só este pacote), clonar em `D:/crm-operacao-plugin` e dar acesso de **leitura** à conta GitHub de cada operador.
 
 ## Instalar no PC de um operador
-1. ADMIN++ gera o token: Equipe → membro → Token do app (aparece uma vez).
-2. No PC da pessoa: baixar a pasta `operador/` deste repositório (ou clonar) e rodar `instalar.ps1`.
-3. App do Claude → Code → pasta `C:\CRM-Operacao` → confiar → instalar o plugin `crm` → colar o token → pedir `diagnostico_crm`.
+1. ADMIN++ gera o token: Equipe → membro → Token do app (aparece uma vez). A conta GitHub da pessoa recebe leitura neste repositório.
+2. No PC da pessoa: baixar a pasta `operador/` deste repositório (ou clonar) e rodar `instalar.ps1`. Ele confere Node, Git e o Claude Code de linha de comando, testa o acesso ao GitHub (salva a credencial), **instala o plugin** e pede o token (vai para o cofre do Windows), e cria `C:\CRM-Operacao`.
+3. Fechar o app do Claude por completo e abrir → Code → pasta `C:\CRM-Operacao` → confiar → sessão nova → `/` mostra `/crm:…` → pedir `diagnostico_crm`.
+
+Só declarar o plugin no `settings.json` da pasta **não instala**: o app não baixa sozinho e, sem credencial do GitHub salva, o clone do repositório privado falha sem aviso (foi o que aconteceu no 1º PC, 30/10).
+
+## Plugin não aparece no app
+| sintoma | causa | o que fazer |
+|---|---|---|
+| nem `/crm:…` nem `diagnostico_crm` | plugin não instalado neste Windows | `claude plugin list` no PowerShell; sem `crm@seguros-parana` → rodar o `instalar.ps1` |
+| `claude plugin list` mostra o plugin, o app não | app aberto antes da instalação | fechar o app por completo (bandeja também) e abrir; sessão nova |
+| instalar falha com erro de clone | sem acesso/credencial ao repositório | `git ls-remote https://github.com/SamuelGuibor/crm-operacao-plugin.git` deve funcionar; liberar a conta no GitHub |
+| `/crm:…` aparece, `diagnostico_crm` não | servidor crm-op não sobe | `node --version` (instalar Node LTS); token: `claude plugin configure crm@seguros-parana` mostra `set` |
+| `diagnostico_crm` diz token inválido/revogado | token errado | gerar outro em Equipe → Token do app e rodar o `instalar.ps1` de novo (responde "s" para trocar) |
 
 Saída da pessoa: revogar o token (Equipe → Token do app → Revogar) e tirar o acesso ao repositório do plugin.
 

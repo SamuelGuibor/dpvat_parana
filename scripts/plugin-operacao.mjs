@@ -106,7 +106,9 @@ function allowDoOperador() {
 function settingsDoOperador() {
   return {
     $schema: "https://json.schemastore.org/claude-code-settings.json",
-    extraKnownMarketplaces: { [MARKETPLACE]: { source: { source: "github", repo: REPO } } },
+    // autoUpdate: marketplace de terceiros nasce SEM atualização automática; com
+    // ela, o app busca a versão nova depois da 1ª mensagem e carrega na próxima abertura.
+    extraKnownMarketplaces: { [MARKETPLACE]: { source: { source: "github", repo: REPO }, autoUpdate: true } },
     enabledPlugins: { [`${PLUGIN}@${MARKETPLACE}`]: true },
     permissions: {
       allow: allowDoOperador(),
