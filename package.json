@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "plugin:publicar": "node scripts/plugin-operacao.mjs --apply --publicar",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

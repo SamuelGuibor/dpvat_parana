@@ -57,10 +57,10 @@ O mesmo assunto não pode dizer coisa diferente em dois lugares. Para o assunto 
 2. **Protegidas — nunca edite por ticket**: as skills `plano`, `validar`, `migration`, `mapa-atualizar`, `crm`; os blocos "Regras" / "Regras de operação" / "Regras de escrita" / "Regras de aprovação" de qualquer skill (são cópia da `crm`); frontmatter `name`; e qualquer arquivo fora de `.claude/skills/<alvo>/SKILL.md` (hooks, `settings.json`, `CLAUDE.md`, agentes, código). Pedido que exige isso → ticket DEV.
 3. Edite só o necessário com Edit (mantenha o estilo: passos numerados, bloco **Formato**, frases curtas). Se a mudança contradiz o vault ou o bot (checagem), pare e mostre o conflito antes.
 4. Mostre `git diff -- .claude/skills/<alvo>/SKILL.md`.
-5. Rode `/validar` na mudança (sem `.ts`, basta conferir): frontmatter com `name` igual à pasta e `description` em uma linha; o bloco de regras igual ao de antes (`git diff` não toca nele); nenhuma ferramenta citada que não exista no catálogo `crm-op`.
+5. Rode `/validar` na mudança (sem `.ts`, basta conferir): frontmatter com `name` igual à pasta e `description` em uma linha **sem `: `** (dois-pontos com espaço quebra o YAML e a skill perde a descrição); o bloco de regras igual ao de antes (`git diff` não toca nele); nenhuma ferramenta citada que não exista no catálogo `crm-op`.
 6. Peça OK → commit só do arquivo: `Skill <nome>: <assunto> (ticket <id>)`. **Não faça push** sem o dono pedir.
 7. `atualizar_ticket` com `skill`, `diff` (só as linhas mudadas, ≤ 8000 caracteres), `commit` (hash curto), `fase: "VALIDACAO_IA"`.
-8. Avise: os outros operadores recebem a skill quando a main for publicada (push) e eles abrirem o Claude Code (o hook `skills-sync` atualiza a pasta) e reiniciarem. Nesta máquina também: reinicie para carregar.
+8. Pergunte "Publico para a equipe?". Com o OK do dono: `git push` da main e `npm run plugin:publicar` (gera o plugin, commita e dá push no repositório do plugin; a equipe recebe ao abrir o app). Sem OK, avise que a skill fica só nesta máquina. Nesta máquina: reinicie para carregar.
 
 ### Destino bot
 1. `analisar_regra_bot` com o pedido do ticket (`ticket: <id>`; `contato` só se o ticket citar o telefone da conversa).

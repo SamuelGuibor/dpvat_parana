@@ -8,8 +8,11 @@
 // commita e dá push. Os operadores recebem a versão nova sozinhos ao abrir o
 // app (o plugin muda de versão a cada commit daqui).
 //
+//   npm run plugin:publicar                                  # o de sempre: gera, commita e dá push no repo do plugin
 //   node scripts/plugin-operacao.mjs                         # dry-run: lista o que geraria
-//   node scripts/plugin-operacao.mjs --saida=D:/crm-operacao-plugin --apply   (recusa com mudança sem commit; --forcar para teste)
+//   node scripts/plugin-operacao.mjs --apply                 # só grava na pasta (recusa com mudança sem commit; --forcar para teste)
+//   ... --publicar                                           # + commit e push no repo do plugin (exige --apply)
+//   ... --saida=<pasta> (padrão: crm-operacao-plugin ao lado de D:\dpvat_parana)
 //   ... --repo=SamuelGuibor/crm-operacao-plugin              # repo do catálogo (padrão)
 //
 // Mapa: docs/ai/operacao-ia.md (seção "Plugin do operador").
@@ -22,7 +25,9 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
 const APPLY = process.argv.includes("--apply");
-const SAIDA = resolve(arg("saida", join(ROOT, "..", "crm-operacao-plugin")));
+const PUBLICAR = process.argv.includes("--publicar");
+// Clone do repo do plugin: D:\crm-operacao-plugin (o repo do CRM fica em D:\dpvat_parana\dpvat_parana).
+const SAIDA = resolve(arg("saida", join(ROOT, "..", "..", "crm-operacao-plugin")));
 const REPO = arg("repo", "SamuelGuibor/crm-operacao-plugin");
 
 const PLUGIN = "crm";
@@ -55,9 +60,9 @@ const SKILLS = [
 ];
 
 // Ferramentas no allow da pasta do operador além das do .claude/settings.json
-// (criadas em 30/10; sair daqui quando o dono puser no settings.json).
+// (ponte para ferramenta nova antes de o dono pôr no settings.json).
 // preparar_membro_equipe e executar_aprovado ficam FORA, como no repositório.
-const ALLOW_EXTRA = ["criar_card", "criar_ticket_dev", "criar_ticket", "listar_tickets", "ler_ticket"];
+const ALLOW_EXTRA = [];
 const NUNCA_NO_ALLOW = new Set(["executar_aprovado", "preparar_acao_irreversivel", "preparar_membro_equipe", "aplicar_regra_bot"]);
 
 // Nota que entra no fim da skill dentro do plugin: na máquina do operador não
@@ -73,7 +78,8 @@ function sh(cmd) {
 
 function versao() {
   const hash = sh("git rev-parse --short HEAD");
-  const sujo = sh("git status --porcelain -- .claude/skills tools/crm-mcp .claude/hooks tools/operacao-plugin") !== "";
+  // settings.json entra porque o allow da pasta do operador sai dele; o script porque monta o pacote.
+  const sujo = sh("git status --porcelain -- .claude/skills tools/crm-mcp .claude/hooks tools/operacao-plugin .claude/settings.json scripts/plugin-operacao.mjs") !== "";
   // Data de Brasília: a Vercel/CI rodam em UTC, aqui é só rótulo.
   const dia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()).replaceAll("-", ".");
   return { versao: `${dia}-${hash}${sujo ? "-local" : ""}`, sujo };
@@ -186,4 +192,32 @@ for (const [rel, conteudo] of arquivos) {
   if (typeof conteudo === "string") writeFileSync(dest, conteudo);
   else cpSync(conteudo.from, dest);
 }
-console.log(`\n✔ Gravado. Agora, na pasta ${SAIDA}: git add -A && git commit -m "Plugin ${v}" && git push`);
+if (!PUBLICAR) {
+  console.log(`\n✔ Gravado. Para publicar: npm run plugin:publicar (ou, na pasta ${SAIDA}: git add -A && git commit && git push)`);
+  process.exit(0);
+}
+if (v.endsWith("-local")) {
+  console.error("\n✘ Versão -local não é publicada (pasta de teste gerada, nada enviado).");
+  process.exit(1);
+}
+// Commit + push no repo do plugin. Sem mudança = nada a publicar (a versão
+// só muda com commit novo aqui, e o operador só recebe quando ela muda).
+const git = (cmd) => execSync(`git ${cmd}`, { cwd: SAIDA, encoding: "utf8" }).trim();
+if (!existsSync(join(SAIDA, ".git"))) {
+  console.error(`\n✘ ${SAIDA} não é um clone do repo do plugin (git clone https://github.com/${REPO}.git).`);
+  process.exit(1);
+}
+// Skill que cita ferramenta nova antes do deploy = operador recebe ferramenta_desconhecida.
+try {
+  if (Number(sh("git rev-list --count @{u}..HEAD")) > 0) console.log("⚠ O commit do CRM ainda não foi para a main (push): ferramenta nova só existe depois do deploy da Vercel.");
+} catch {
+  // sem upstream configurado: só não avisa
+}
+git("add -A");
+if (!git("status --porcelain")) {
+  console.log("\n= Nada mudou no pacote desde a última publicação. Nada enviado.");
+  process.exit(0);
+}
+execSync(`git commit -q -F -`, { cwd: SAIDA, input: `Plugin ${v}\n\nGerado por scripts/plugin-operacao.mjs a partir de ${sh("git rev-parse --short HEAD")} do CRM.\n` });
+git("push -q");
+console.log(`\n✔ Publicado: ${PLUGIN}@${MARKETPLACE} ${v} no ${REPO}. A equipe recebe ao abrir o app.`);

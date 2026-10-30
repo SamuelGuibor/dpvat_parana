@@ -13,10 +13,9 @@ Pacote que a equipe instala no app do Claude (aba Code) para usar a IA de opera�
 O que cada pessoa pode fazer **não** está aqui: vem do CRM pelo token (permissões do banco, nível da ferramenta, interruptores, "aprovo <código>").
 
 ## Publicar uma versão (dono, no computador com o repositório do CRM)
-1. Commit no repositório do CRM das mudanças em skills/MCP/hooks.
-2. `node scripts/plugin-operacao.mjs --saida=D:/crm-operacao-plugin` (dry-run) → confira a lista → `--apply`.
-3. Em `D:/crm-operacao-plugin`: `git add -A`, `git commit -m "Plugin <versão>"`, `git push`.
-4. Os operadores recebem ao abrir o app (a versão muda a cada commit). Ferramenta nova do CRM só aparece depois do deploy da Vercel.
+1. Commit no repositório do CRM das mudanças em skills/MCP/hooks (e push da main, se a skill usa ferramenta nova).
+2. `npm run plugin:publicar` — gera em `D:\crm-operacao-plugin`, commita e dá push. Para só conferir antes: `node scripts/plugin-operacao.mjs` (dry-run).
+3. Os operadores recebem ao abrir o app (a versão muda a cada commit). Ferramenta nova do CRM só aparece depois do deploy da Vercel.
 
 Primeira vez: criar no GitHub o repositório **privado** `crm-operacao-plugin` (só este pacote), clonar em `D:/crm-operacao-plugin` e dar acesso de **leitura** à conta GitHub de cada operador.
 
