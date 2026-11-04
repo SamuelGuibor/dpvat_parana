@@ -84,6 +84,7 @@
       "mcp__crm-op__criar_ticket",
       "mcp__crm-op__listar_tickets",
       "mcp__crm-op__ler_ticket",
+      "mcp__crm-op__listar_conversas",
       "Read(//d/Chatbot_whatsapp/**)",
       "Read(//d/docx-converter/**)"
     ],
