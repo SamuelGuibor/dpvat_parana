@@ -27,6 +27,7 @@ import {
   prepareEmailLote,
   prepareWhatsapp,
   prepareWhatsappLote,
+  prepareWhatsappConversas,
   sendApprovedEmail,
   sendApprovedEmailLote,
   sendApprovedWhatsapp,
@@ -189,22 +190,50 @@ const whatsappSchema = z
       .max(LOTE_WHATSAPP_MAX)
       .optional()
       .describe(`LOTE: até ${LOTE_WHATSAPP_MAX} cards com a mesma mensagem (${VARS_DICA}); UM código para tudo. Card bloqueado (opt-out, janela…) fica em pulados e o resto segue.`),
+    conversas: z
+      .array(z.string().min(4).max(60))
+      .min(1)
+      .max(LOTE_WHATSAPP_MAX)
+      .optional()
+      .describe(
+        `LOTE POR CONVERSA: até ${LOTE_WHATSAPP_MAX} ids de contato (campo \`contato\` de listar_conversas), COM ou SEM card. Mesma mensagem (${VARS_DICA} — sem card, [[nome]] = nome do contato); UM código. Quem recebeu mensagem aprovada pela IA nas últimas 12 h fica em pulados (salvo permitir_repetir).`,
+      ),
+    permitir_repetir: z.boolean().optional().describe("Só com conversas: manda mesmo a quem recebeu mensagem aprovada pela IA nas últimas 12 h. Use só se o operador pedir."),
     contato: z.string().min(1).max(60).optional().describe("Id do contato quando o card tem conversa em mais de uma linha (a recusa `ambiguo` traz as opções). Só com card único."),
     texto: z.string().min(1).max(4000).optional().describe(`Texto livre (só com a janela de 24 h aberta). ${VARS_DICA}`),
     template: z.string().min(1).max(200).optional().describe("Nome EXATO de um template APROVADO da linha do contato (fora da janela)."),
     variaveis: z.array(z.string().max(500)).max(10).optional().describe(`Variáveis do corpo do template, na ordem {{1}}, {{2}}… ${VARS_DICA}`),
   })
-  .refine((a) => Boolean(a.card) !== Boolean(a.cards), { message: "mande card OU cards (um dos dois)" })
+  .refine((a) => [a.card, a.cards, a.conversas].filter(Boolean).length === 1, { message: "mande card OU cards OU conversas (um dos três)" })
+  .refine((a) => !a.permitir_repetir || Boolean(a.conversas), { message: "permitir_repetir só com conversas" })
   .refine((a) => Boolean(a.texto) !== Boolean(a.template), { message: "mande texto OU template (um dos dois)" });
 
 export const prepararWhatsapp = defineTool({
   name: "preparar_whatsapp",
   description:
-    "ENVIO. Prepara uma mensagem de WhatsApp ao cliente do card (ou a VÁRIOS cards, com `cards`), pela linha de cada contato — NADA é enviado. Já recusa o que seria bloqueado (opt-out, janela de 24 h fechada sem template, template não aprovado, templates pausados); no lote, o card bloqueado fica em `pulados` e o resto segue. Texto/variáveis aceitam [[nome]], [[primeiro_nome]], [[numero]], [[hospital]]. Devolve a prévia e UM código para tudo: o operador precisa DIGITAR \"aprovo <código>\" e só então chame executar_aprovado.",
+    "ENVIO. Prepara uma mensagem de WhatsApp ao cliente do card (ou a VÁRIOS cards, com `cards`, ou a QUALQUER conversa do inbox — com ou sem card — com `conversas`, ids vindos de listar_conversas), pela linha de cada contato — NADA é enviado. Já recusa o que seria bloqueado (opt-out, janela de 24 h fechada sem template, template não aprovado, templates pausados); no lote, o card bloqueado fica em `pulados` e o resto segue. Texto/variáveis aceitam [[nome]], [[primeiro_nome]], [[numero]], [[hospital]]. Devolve a prévia e UM código para tudo: o operador precisa DIGITAR \"aprovo <código>\" e só então chame executar_aprovado.",
   level: 4,
   permission: "view_whatsapp",
   schema: whatsappSchema,
   async run({ op, trace, previewOnly }, args) {
+    if (args.conversas) {
+      const r = await prepareWhatsappConversas({
+        op,
+        conversas: args.conversas,
+        texto: args.texto,
+        template: args.template,
+        variaveis: args.variaveis,
+        permitirRepetir: args.permitir_repetir,
+      });
+      const out = previewOnly
+        ? null
+        : await createApproval({ operatorId: op.userId, sessionId: trace.sessionId, tool: "preparar_whatsapp", canal: "whatsapp", args: r.args, cardId: r.cardIds[0] ?? null });
+      return {
+        data: { ...prepared(out, r.previa), lote: { preparados: r.args.itens.length, pulados: r.pulados } },
+        summary: `WhatsApp em lote por conversa preparado: ${r.args.itens.length} contato(s), ${r.pulados.length} pulado(s)`,
+        cardIds: r.cardIds,
+      };
+    }
     if (args.cards) {
       const r = await prepareWhatsappLote({ op, cards: args.cards, texto: args.texto, template: args.template, variaveis: args.variaveis });
       const out = previewOnly
@@ -375,8 +404,10 @@ export const executarAprovado = defineTool({
 
     if (isLote(out.approval.args)) {
       const r = out.result as LoteResult;
-      const itens = (out.approval.args as LoteApprovalArgs<{ cardId: string }>).itens;
-      const cardIds = [...new Set(itens.map((i) => i.cardId))];
+      const itens = (out.approval.args as LoteApprovalArgs<{ cardId: string | null }>).itens;
+      // Lote por conversa: contato sem card tem cardId null (registro só na conversa).
+      const cardIds = [...new Set(itens.map((i) => i.cardId).filter((x): x is string => !!x))];
+      const semCard = itens.some((i) => !i.cardId);
       const total = itens.length;
       return {
         data: {
@@ -388,7 +419,10 @@ export const executarAprovado = defineTool({
           naoEnviados: r.naoEnviados ?? total,
           itens: r.itens ?? [],
           aviso: out.noop ? "Este lote já tinha sido enviado; nada saiu de novo." : r.aviso ?? (r.sent ? undefined : "Nada saiu. A aprovação foi encerrada: corrija os motivos e prepare de novo."),
-          registro: r.sent && !out.noop ? "comentário e histórico gravados em cada card que recebeu, com o autor \"(via IA)\"" : null,
+          registro:
+            r.sent && !out.noop
+              ? `comentário e histórico gravados em cada card que recebeu, com o autor "(via IA)"${semCard ? "; contato sem card fica registrado só na conversa (inbox) e no histórico de envios" : ""}`
+              : null,
         },
         summary: out.noop ? `${canal} em lote já enviado (noop)` : `${canal} em lote: ${r.enviados ?? 0}/${total} enviado(s) (aprovação ${out.approval.code})`,
         cardIds,

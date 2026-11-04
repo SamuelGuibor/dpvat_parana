@@ -86,14 +86,20 @@ export function previaTextoLote(input: { canal: "WhatsApp" | "e-mail"; itens: Lo
   const textos = new Set(itens.map((i) => i.texto));
   const unico = textos.size === 1 && itens.length > 0;
   itens.forEach((i, n) => {
-    linhas.push(`${n + 1}. card ${i.cardNumber ?? "?"} (${i.nome ?? ""}) → ${i.destino}${i.saiComo ? ` · ${i.saiComo}` : ""}`);
+    // Lote por conversa (04/11): contato sem card não tem número para mostrar.
+    const quem = i.cardNumber !== null ? `card ${i.cardNumber}` : canal === "WhatsApp" ? "sem card" : "card ?";
+    linhas.push(`${n + 1}. ${quem} (${i.nome ?? ""}) → ${i.destino}${i.saiComo ? ` · ${i.saiComo}` : ""}`);
     if (!unico) linhas.push(indent(i.texto), "");
     for (const a of i.avisos ?? []) linhas.push(`   ⚠ ${a}`);
   });
   if (unico) linhas.push("", "Texto (igual para todos):", itens[0].texto);
   if (pulados.length) {
     linhas.push("", "NÃO VÃO (bloqueados na preparação):");
-    for (const p of pulados) linhas.push(`- card ${p.cardNumber ?? p.card} (${p.nome ?? ""}): ${p.code} — ${p.message}`);
+    for (const p of pulados) {
+      // Pulado de lote por conversa traz o telefone em `card` (sem nº de card).
+      const quem = p.cardNumber !== null ? `card ${p.cardNumber}` : /^(55\d{10,11}$|conversa )/.test(p.card) ? p.card : `card ${p.card}`;
+      linhas.push(`- ${quem} (${p.nome ?? ""}): ${p.code} — ${p.message}`);
+    }
   }
   return linhas.join("\n");
 }
@@ -106,7 +112,8 @@ function indent(t: string): string {
 }
 
 export interface LoteEnvioItem {
-  cardId: string;
+  /** null = contato sem card (lote por conversa). */
+  cardId: string | null;
   cardNumber: number | null;
   nome: string | null;
   sent: boolean;

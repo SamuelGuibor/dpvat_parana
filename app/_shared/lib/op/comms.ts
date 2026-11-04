@@ -282,7 +282,8 @@ export async function sendApprovedEmail(input: {
 // ---------------------------------------------------------------------------
 
 export interface WhatsappApprovalArgs extends Record<string, unknown> {
-  cardId: string;
+  /** null = contato sem card (envio por conversa, 04/11): sem comentário, log op_send sem userId. */
+  cardId: string | null;
   cardNumber: number | null;
   nome: string | null;
   contactId: string;
@@ -347,6 +348,40 @@ export async function prepareWhatsapp(input: {
     );
   }
 
+  const p = await planContactSend({ contact, texto: input.texto, template: input.template, variaveis: input.variaveis });
+  const args: WhatsappApprovalArgs = { ...p.args, cardId: card.id, cardNumber: card.cardNumber, nome: card.name };
+  const avisos = [
+    ...p.avisos,
+    card.archiveStatus ? `card arquivado (${card.archiveStatus})` : null,
+    manual ? null : "contato ligado ao card pelo telefone do cadastro (sem vínculo manual no inbox)",
+  ].filter((x): x is string => !!x);
+  const previa = {
+    canal: "WhatsApp",
+    card: { cardNumber: card.cardNumber, nome: card.name },
+    contato: { nome: contact.name, telefone: contact.phone },
+    linha: args.linha,
+    janela24hAberta: p.windowOpen,
+    ultimaMensagemDoCliente: p.lastIn ? brDateTime(p.lastIn) : null,
+    saiComo: args.via === "template" ? `template "${args.template}"` : "texto",
+    texto: args.textoFinal,
+    avisos,
+  };
+  return { args, previa, cardId: card.id };
+}
+
+type ContactForSend = { id: string; phone: string; name: string | null; optedOut: boolean; optedInAt: Date | null; numberId: string | null };
+
+/**
+ * A parte do preparo que só depende do CONTATO (linha, janela, template,
+ * régua do planWhatsAppSend, texto final). Card fica com quem chama.
+ */
+async function planContactSend(input: {
+  contact: ContactForSend;
+  texto?: string;
+  template?: string;
+  variaveis?: string[];
+}): Promise<{ args: Pick<WhatsappApprovalArgs, "contactId" | "numberId" | "linha" | "telefone" | "modo" | "template" | "variaveis" | "textoFinal" | "via">; avisos: string[]; windowOpen: boolean; lastIn: Date | null }> {
+  const { contact } = input;
   const number = await sendingNumber(contact.numberId);
   const windowOpen = await isWindowOpen(contact.id);
   const modo: "texto" | "template" = input.template ? "template" : "texto";
@@ -395,37 +430,22 @@ export async function prepareWhatsapp(input: {
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
-  const args: WhatsappApprovalArgs = {
-    cardId: card.id,
-    cardNumber: card.cardNumber,
-    nome: card.name,
-    contactId: contact.id,
-    numberId: contact.numberId,
-    linha: number?.label ?? "padrão",
-    telefone: contact.phone,
-    modo,
-    template: modo === "template" ? template!.name : null,
-    variaveis: modo === "template" ? variaveis : [],
-    textoFinal,
-    via: plan.via,
+  return {
+    args: {
+      contactId: contact.id,
+      numberId: contact.numberId,
+      linha: number?.label ?? "padrão",
+      telefone: contact.phone,
+      modo,
+      template: modo === "template" ? template!.name : null,
+      variaveis: modo === "template" ? variaveis : [],
+      textoFinal,
+      via: plan.via,
+    },
+    avisos: plan.aviso ? [plan.aviso] : [],
+    windowOpen,
+    lastIn: lastIn?.createdAt ?? null,
   };
-  const avisos = [
-    plan.aviso,
-    card.archiveStatus ? `card arquivado (${card.archiveStatus})` : null,
-    manual ? null : "contato ligado ao card pelo telefone do cadastro (sem vínculo manual no inbox)",
-  ].filter((x): x is string => !!x);
-  const previa = {
-    canal: "WhatsApp",
-    card: { cardNumber: card.cardNumber, nome: card.name },
-    contato: { nome: contact.name, telefone: contact.phone },
-    linha: args.linha,
-    janela24hAberta: windowOpen,
-    ultimaMensagemDoCliente: lastIn ? brDateTime(lastIn.createdAt) : null,
-    saiComo: plan.via === "template" ? `template "${args.template}"` : "texto",
-    texto: textoFinal,
-    avisos,
-  };
-  return { args, previa, cardId: card.id };
 }
 
 /** Contato trocou de linha desde a preparação → hash_diferente. */
@@ -464,9 +484,13 @@ export async function sendApprovedWhatsapp(input: {
   if (!res.sent) return { sent: false, via: res.via, reason: res.reason };
 
   const texto = `WhatsApp enviado ao cliente (aprovado por ${op.name ?? op.email} no app), linha ${args.linha}, como ${res.via === "template" ? `template "${args.template}"` : "texto"}:\n${args.textoFinal}`;
-  await addCardComment({ cardId: args.cardId, isProcess: false, author, source: "op", op: input.trace, text: texto, notify: false }).catch((err) =>
-    console.error("[op] WhatsApp enviado, mas o comentário falhou:", err),
-  );
+  // Contato sem card (envio por conversa): o registro fica na própria conversa
+  // (systemSource "op") + log op_send com contactId, sem userId.
+  if (args.cardId) {
+    await addCardComment({ cardId: args.cardId, isProcess: false, author, source: "op", op: input.trace, text: texto, notify: false }).catch((err) =>
+      console.error("[op] WhatsApp enviado, mas o comentário falhou:", err),
+    );
+  }
   await createLog({
     action: "op_send",
     message: `enviou WhatsApp ao cliente (aprovado no app)`,
@@ -477,6 +501,7 @@ export async function sendApprovedWhatsapp(input: {
       source: "op",
       op: input.trace,
       canal: "whatsapp",
+      ...(args.cardId ? {} : { semCard: true, telefone: args.telefone }),
       approvalId: input.approvalId,
       contactId: args.contactId,
       numberId: args.numberId,
@@ -592,6 +617,117 @@ export async function prepareWhatsappLote(input: {
   };
 }
 
+/** Contato que recebeu mensagem aprovada pela IA há menos disto fica de fora (salvo `permitirRepetir`). */
+export const CONVERSA_REPETIR_HORAS = 12;
+
+/**
+ * Lote por CONVERSA (04/11): contatos do inbox escolhidos por listar_conversas,
+ * com ou sem card. Mesma aprovação/lote/execução do lote por card; o item leva
+ * `cardId` do card vinculado no inbox (se houver) para o comentário, senão null.
+ */
+export async function prepareWhatsappConversas(input: {
+  op: OperatorContext;
+  conversas: string[];
+  texto?: string;
+  template?: string;
+  variaveis?: string[];
+  permitirRepetir?: boolean;
+}): Promise<LotePrep<WhatsappApprovalArgs>> {
+  const ids = [...new Set(input.conversas.map((c) => c.trim()).filter(Boolean))];
+  if (!ids.length) throw new OpToolError("argumentos_invalidos", "Lote sem conversas.", 400);
+  if (ids.length > LOTE_WHATSAPP_MAX) throw new OpToolError("argumentos_invalidos", `No máximo ${LOTE_WHATSAPP_MAX} conversas por lote.`, 400);
+
+  const contacts = await db.whatsAppContact.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true, userId: true, hospitalHint: true },
+  });
+  const byId = new Map(contacts.map((c) => [c.id, c]));
+  const userIds = [...new Set(contacts.map((c) => c.userId).filter((x): x is string => !!x))];
+  const cards = userIds.length
+    ? await db.user.findMany({
+        where: { id: { in: userIds }, role: { notIn: [...TEAM_ROLES, "GHOST"] } },
+        select: { id: true, cardNumber: true, name: true, hospital: true, archiveStatus: true },
+      })
+    : [];
+  const cardById = new Map(cards.map((c) => [c.id, c]));
+  const corte = new Date(Date.now() - CONVERSA_REPETIR_HORAS * 3_600_000);
+  const recentes = input.permitirRepetir
+    ? new Set<string>()
+    : new Set(
+        (
+          await db.whatsAppMessage.findMany({
+            where: { contactId: { in: ids }, systemSource: "op", createdAt: { gte: corte } },
+            select: { contactId: true },
+          })
+        ).map((m) => m.contactId),
+      );
+
+  const pulados: LotePulado[] = [];
+  const itens: WhatsappApprovalArgs[] = [];
+  const previas: LoteItemPrevia[] = [];
+  const cardIds: string[] = [];
+  // Mesmo telefone em duas linhas (231 duplicados entre as WABAs): uma mensagem por telefone.
+  const telefones = new Set<string>();
+  for (const id of ids) {
+    const contact = byId.get(id);
+    if (!contact) {
+      pulados.push({ card: `conversa ${id}`, cardNumber: null, nome: null, code: "nao_encontrado", message: "conversa não encontrada" });
+      continue;
+    }
+    const card = contact.userId ? cardById.get(contact.userId) ?? null : null;
+    const nome = card?.name ?? contact.name;
+    const base = { card: contact.phone, cardNumber: card?.cardNumber ?? null, nome };
+    if (recentes.has(contact.id)) {
+      pulados.push({ ...base, code: "ja_recebeu", message: `já recebeu mensagem aprovada pela IA nas últimas ${CONVERSA_REPETIR_HORAS} h` });
+      continue;
+    }
+    const tel = contact.phone.replace(/\D/g, "");
+    if (telefones.has(tel)) {
+      pulados.push({ ...base, code: "repetido", message: "mesmo telefone já está no lote (outra linha)" });
+      continue;
+    }
+    const vars = { nome, cardNumber: card?.cardNumber ?? null, hospital: card?.hospital ?? contact.hospitalHint };
+    try {
+      const p = await planContactSend({
+        contact,
+        texto: input.texto ? fillCardVars(input.texto, vars) : undefined,
+        template: input.template,
+        variaveis: input.variaveis?.map((v) => fillCardVars(v, vars)),
+      });
+      telefones.add(tel);
+      const usaNome = [input.texto ?? "", ...(input.variaveis ?? [])].some((t) => /\[\[\s*(nome|name|primeiro_nome)\s*\]\]/i.test(t));
+      const usaCard = [input.texto ?? "", ...(input.variaveis ?? [])].some((t) => /\[\[\s*(numero|hospital)\s*\]\]/i.test(t));
+      const avisos = [
+        ...p.avisos,
+        card ? null : "sem card no CRM: o registro fica só na conversa",
+        card?.archiveStatus ? `card arquivado (${card.archiveStatus})` : null,
+        usaNome && !nome ? "contato sem nome: [[nome]] saiu vazio" : null,
+        usaCard && !card ? "sem card: [[numero]]/[[hospital]] saíram vazios ou pelo hospital informado na conversa" : null,
+      ].filter((x): x is string => !!x);
+      itens.push({ ...p.args, cardId: card?.id ?? null, cardNumber: card?.cardNumber ?? null, nome });
+      if (card) cardIds.push(card.id);
+      previas.push({
+        cardNumber: card?.cardNumber ?? null,
+        nome: nome ?? contact.phone,
+        destino: `${contact.phone} · linha ${p.args.linha}`,
+        saiComo: p.args.via === "template" ? `template "${p.args.template}"` : "texto",
+        texto: p.args.textoFinal,
+        avisos,
+      });
+    } catch (err) {
+      if (!(err instanceof OpToolError)) throw err;
+      pulados.push({ ...base, code: err.code, message: err.message });
+    }
+  }
+  if (!itens.length) throw new OpToolError("lote_vazio", "Nenhuma conversa do lote pode receber a mensagem agora (veja os motivos em details).", 422, { pulados });
+  return {
+    args: { lote: true, itens },
+    previa: { canal: "WhatsApp", lote: true, total: itens.length, itens: previas, pulados },
+    cardIds,
+    pulados,
+  };
+}
+
 export interface LoteEmailItem {
   card: string;
   para?: string;
@@ -650,8 +786,10 @@ export async function prepareEmailLote(input: {
   };
 }
 
-function comCard(err: unknown, item: { cardNumber: number | null }): never {
-  if (err instanceof OpToolError) throw new OpToolError(err.code, `card ${item.cardNumber ?? "?"}: ${err.message}`, err.status, err.details);
+function comCard(err: unknown, item: { cardNumber: number | null; telefone?: unknown }): never {
+  // Lote por conversa: contato sem card é nomeado pelo telefone.
+  const quem = item.cardNumber !== null ? `card ${item.cardNumber}` : typeof item.telefone === "string" ? `contato ${item.telefone}` : "card ?";
+  if (err instanceof OpToolError) throw new OpToolError(err.code, `${quem}: ${err.message}`, err.status, err.details);
   throw err;
 }
 

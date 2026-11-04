@@ -19,6 +19,7 @@ import { listarCardsParados } from "./listar-cards-parados";
 import { listarCardsColuna } from "./listar-cards-coluna";
 import { verificarPendencias } from "./verificar-pendencias";
 import { consultarConversa } from "./consultar-conversa";
+import { listarConversas } from "./listar-conversas";
 import { consultarHospital } from "./consultar-hospital";
 import { minhasPermissoes } from "./minhas-permissoes";
 import { moverCard } from "./mover-card";
@@ -57,6 +58,7 @@ export const OP_TOOLS: OpTool[] = [
   listarCardsColuna,
   verificarPendencias,
   consultarConversa,
+  listarConversas,
   // Etapa 2: base de conhecimento (vault docs/operacao + automações vivas).
   consultarHospital,
   minhasPermissoes,

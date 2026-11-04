@@ -14,6 +14,8 @@ const ETAPA_1 = [
   "listar_cards_coluna",
   "verificar_pendencias",
   "consultar_conversa",
+  // 04/11: conversas do inbox por filtro (com ou sem card), base do envio por conversa.
+  "listar_conversas",
 ];
 const ETAPA_2 = ["consultar_hospital", "minhas_permissoes"];
 const ETAPA_3_L1 = ["meu_dia"];

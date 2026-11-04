@@ -30,7 +30,7 @@ const db = vi.hoisted(() => ({
   whatsAppContact: { findMany: vi.fn(), findUnique: vi.fn() },
   whatsAppNumber: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   whatsAppTemplate: { findFirst: vi.fn() },
-  whatsAppMessage: { findFirst: vi.fn() },
+  whatsAppMessage: { findFirst: vi.fn(), findMany: vi.fn() },
 }));
 vi.mock("@/app/_shared/lib/prisma", () => ({ db }));
 const ses = vi.hoisted(() => ({ configured: true, sendRaw: vi.fn() }));
@@ -73,6 +73,7 @@ import {
   prepareEmailLote,
   prepareWhatsapp,
   prepareWhatsappLote,
+  prepareWhatsappConversas,
   sendApprovedEmail,
   sendApprovedEmailLote,
   sendApprovedWhatsapp,
@@ -104,6 +105,7 @@ beforeEach(() => {
   db.whatsAppContact.findMany.mockResolvedValue([{ id: "ct1", phone: "5541999990000", name: "Ana", optedOut: false, optedInAt: new Date("2026-09-01"), numberId: "n1" }]);
   db.whatsAppNumber.findUnique.mockResolvedValue({ id: "n1", label: "Seguros Paraná IA", active: true, templatesPaused: false });
   db.whatsAppMessage.findFirst.mockResolvedValue({ createdAt: new Date() });
+  db.whatsAppMessage.findMany.mockResolvedValue([]);
 });
 
 const email = (over: Record<string, unknown> = {}) => prepareEmail({ op, card: "2342", assunto: "Pedido de prontuário", corpo: "Bom dia.", anexos: [DRAFT], ...over });
@@ -240,6 +242,66 @@ describe("enviar WhatsApp aprovado", () => {
     const { args } = await prepareWhatsapp({ op, card: "2342", texto: "Oi" });
     expect(await sendApprovedWhatsapp({ args, op, trace, approvalId: "apr2" })).toMatchObject({ sent: false });
     expect(writes.comment).not.toHaveBeenCalled();
+  });
+});
+
+describe("lote por conversa (04/11): contatos do inbox com ou sem card", () => {
+  const semCard = { id: "ct9", phone: "5541988887777", name: "Carlos Souza", optedOut: false, optedInAt: null, numberId: "n1", userId: null, hospitalHint: "Hospital do Trabalhador" };
+  const comCard = { id: "ct1", phone: "5541999990000", name: "Ana", optedOut: false, optedInAt: new Date("2026-09-01"), numberId: "n1", userId: "card1", hospitalHint: null };
+
+  beforeEach(() => {
+    db.whatsAppContact.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+      [semCard, comCard].filter((c) => where.id.in.includes(c.id)),
+    );
+    db.user.findMany.mockResolvedValue([{ id: "card1", cardNumber: 2342, name: "Ana Paula", hospital: "HOSP X", archiveStatus: null }]);
+  });
+
+  it("sem card: nome do contato nas variáveis, cardId null e aviso; com card: dados do card", async () => {
+    const r = await prepareWhatsappConversas({ op, conversas: ["ct9", "ct1"], texto: "Oi [[primeiro_nome]] ([[hospital]])" });
+    expect(r.args.itens).toHaveLength(2);
+    expect(r.args.itens[0]).toMatchObject({ contactId: "ct9", cardId: null, cardNumber: null, nome: "Carlos Souza", textoFinal: "Oi Carlos (Hospital do Trabalhador)" });
+    expect(r.args.itens[1]).toMatchObject({ contactId: "ct1", cardId: "card1", cardNumber: 2342, textoFinal: "Oi Ana (HOSP X)" });
+    expect(r.cardIds).toEqual(["card1"]);
+    const previas = r.previa.itens as { avisos: string[] }[];
+    expect(previas[0].avisos).toContain("sem card no CRM: o registro fica só na conversa");
+  });
+
+  it("quem recebeu mensagem aprovada nas últimas 12 h vira ja_recebeu (salvo permitirRepetir); id desconhecido = nao_encontrado", async () => {
+    db.whatsAppMessage.findMany.mockResolvedValue([{ contactId: "ct9" }]);
+    const r = await prepareWhatsappConversas({ op, conversas: ["ct9", "ct1", "ctX"], texto: "Oi" });
+    expect(r.args.itens.map((i) => i.contactId)).toEqual(["ct1"]);
+    expect(r.pulados).toEqual([
+      expect.objectContaining({ card: "5541988887777", code: "ja_recebeu" }),
+      expect.objectContaining({ card: "conversa ctX", code: "nao_encontrado" }),
+    ]);
+    const r2 = await prepareWhatsappConversas({ op, conversas: ["ct9"], texto: "Oi", permitirRepetir: true });
+    expect(r2.args.itens).toHaveLength(1);
+    expect(db.whatsAppMessage.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("travas da Meta valem: janela fechada sem opt-in = pulado; todos bloqueados = lote_vazio; > 20 recusa", async () => {
+    wa.window = false;
+    await expect(prepareWhatsappConversas({ op, conversas: ["ct9"], texto: "Oi" })).rejects.toMatchObject({
+      code: "lote_vazio",
+      details: { pulados: [expect.objectContaining({ code: "janela_fechada" })] },
+    });
+    await expect(prepareWhatsappConversas({ op, conversas: Array.from({ length: 21 }, (_, i) => `c${i}`), texto: "x" })).rejects.toMatchObject({ code: "argumentos_invalidos" });
+  });
+
+  it("mesmo telefone em duas linhas: uma mensagem só", async () => {
+    db.whatsAppContact.findMany.mockResolvedValue([semCard, { ...semCard, id: "ct8", numberId: "n2" }]);
+    const r = await prepareWhatsappConversas({ op, conversas: ["ct9", "ct8"], texto: "Oi" });
+    expect(r.args.itens).toHaveLength(1);
+    expect(r.pulados).toEqual([expect.objectContaining({ code: "repetido" })]);
+  });
+
+  it("envio sem card: sem comentário, log op_send sem userId com contactId", async () => {
+    const { args } = await prepareWhatsappConversas({ op, conversas: ["ct9"], texto: "Oi" });
+    const r = await sendApprovedWhatsappLote({ args, op, trace, approvalId: "apr10", gapMs: 0 });
+    expect(r).toMatchObject({ sent: true, enviados: 1 });
+    expect(wa.send.mock.calls[0][0]).toMatchObject({ contactId: "ct9", transactional: true, source: "op" });
+    expect(writes.comment).not.toHaveBeenCalled();
+    expect(writes.log.mock.calls[0][0]).toMatchObject({ action: "op_send", userId: null, metadata: { contactId: "ct9", semCard: true } });
   });
 });
 

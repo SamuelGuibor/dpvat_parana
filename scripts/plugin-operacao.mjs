@@ -62,7 +62,8 @@ const SKILLS = [
 // Ferramentas no allow da pasta do operador além das do .claude/settings.json
 // (ponte para ferramenta nova antes de o dono pôr no settings.json).
 // preparar_membro_equipe e executar_aprovado ficam FORA, como no repositório.
-const ALLOW_EXTRA = [];
+// listar_conversas (04/11): L1 só leitura; entra no allow do .claude/settings.json quando o dono mexer nele.
+const ALLOW_EXTRA = ["listar_conversas"];
 const NUNCA_NO_ALLOW = new Set(["executar_aprovado", "preparar_acao_irreversivel", "preparar_membro_equipe", "aplicar_regra_bot"]);
 
 // Nota que entra no fim da skill dentro do plugin: na máquina do operador não
