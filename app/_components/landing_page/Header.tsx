@@ -80,7 +80,7 @@ export function Header() {
 
             <div className="flex items-center gap-4">
               <a
-                href="tel:+5541997862323"
+                href="tel:+5541920077331"
                 className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
                 aria-label="Ligar agora"
               >

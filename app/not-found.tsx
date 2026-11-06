@@ -20,7 +20,7 @@ export default function NotFound() {
           Voltar para o início
         </Link>
         <a
-          href="https://wa.me/5541997862323"
+          href="https://wa.me/5541920077331"
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-xl border border-green-600 px-6 py-3 text-sm font-semibold text-green-700 transition-colors hover:bg-green-50"

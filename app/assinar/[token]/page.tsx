@@ -32,7 +32,7 @@ function Aviso({
         <h1 className="text-2xl font-bold text-slate-900 mb-3">{titulo}</h1>
         <p className="text-lg text-slate-600 leading-relaxed">{texto}</p>
         <a
-          href="https://wa.me/5541997862323"
+          href="https://wa.me/5541920077331"
           className="mt-8 inline-flex items-center justify-center w-full h-14 rounded-2xl bg-emerald-600 text-white text-lg font-semibold active:scale-[0.98] transition"
         >
           Falar no WhatsApp

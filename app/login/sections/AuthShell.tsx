@@ -22,7 +22,7 @@ const HIGHLIGHTS = [
   {
     icon: MessagesSquare,
     title: "Suporte pelo WhatsApp",
-    text: "Fale com a equipe sempre que precisar: (41) 99786-2323.",
+    text: "Fale com a equipe sempre que precisar: (41) 92007-7331.",
   },
 ];
 

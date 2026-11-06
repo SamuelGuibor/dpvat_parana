@@ -341,7 +341,7 @@ const CATEGORIES: FaqCategory[] = [
 ];
 
 // Mesmo número usado no login e na página 404.
-const WHATSAPP_URL = "https://wa.me/5541997862323";
+const WHATSAPP_URL = "https://wa.me/5541920077331";
 
 function Feature() {
   const [search, setSearch] = useState("");

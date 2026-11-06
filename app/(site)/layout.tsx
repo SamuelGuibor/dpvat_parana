@@ -57,11 +57,11 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
             description:
               "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná.",
             areaServed: "Paraná, Brasil",
-            telephone: "+5541997862323",
+            telephone: "+5541920077331",
             contactPoint: {
               "@type": "ContactPoint",
               contactType: "Customer Service",
-              telephone: "+5541997862323",
+              telephone: "+5541920077331",
               areaServed: "BR",
               availableLanguage: "Portuguese",
             },

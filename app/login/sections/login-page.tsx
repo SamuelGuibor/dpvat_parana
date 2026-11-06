@@ -163,7 +163,7 @@ const AuthSection = () => {
           <p className="text-xs text-gray-400">
             Ainda não é cliente?{" "}
             <a
-              href="https://wa.me/5541997862323"
+              href="https://wa.me/5541920077331"
               target="_blank"
               rel="noopener noreferrer"
               className="font-semibold text-green-600 hover:underline"

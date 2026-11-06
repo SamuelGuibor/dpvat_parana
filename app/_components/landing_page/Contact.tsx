@@ -139,7 +139,7 @@ export function Contact() {
 
             {/* TELEFONE */}
             <a
-              href="tel:+5541997862323"
+              href="tel:+5541920077331"
               className="block"
             >
               <div className="bg-white p-6 rounded-lg shadow-md flex items-start gap-4 hover:bg-gray-50 transition">
@@ -148,7 +148,7 @@ export function Contact() {
                 </div>
                 <div>
                   <h4 className="text-lg text-gray-900 mb-1">Telefone</h4>
-                  <p className="text-gray-600 font-bold">41 99786-2323</p>
+                  <p className="text-gray-600 font-bold">41 92007-7331</p>
                 </div>
               </div>
             </a>

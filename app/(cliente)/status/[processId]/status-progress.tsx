@@ -96,7 +96,7 @@ const inssSteps: Step[] = [
       <>
         Solicitamos junto ao INSS o seu dossiê contendo todas as suas informações do histórico previdenciário. Em caso de dúvidas, entre em contato conosco pelo{" "}
         <a
-          href="https://wa.me/5541999999999"
+          href="https://wa.me/5541920077331"
           className="text-blue-600 hover:underline"
           target="_blank"
           rel="noopener noreferrer"
