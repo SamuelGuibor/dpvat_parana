@@ -1,15 +1,15 @@
 # Guia Completo sobre o DPVAT - Paraná
 Versão: 2.0
 Última atualização: 02/04/2025
-Fonte: Paraná DPVAT
+Fonte: Brasil Benefícios e Indenizações
 
 ## Introdução
-O Seguro de Danos Pessoais Causados por Veículos Automotores de Via Terrestre (DPVAT) é um seguro obrigatório que indeniza vítimas de acidentes de trânsito em todo o Brasil. Este guia fornece informações atualizadas sobre como solicitar o DPVAT no Paraná, detalha os benefícios e coberturas disponíveis, e apresenta os novos serviços oferecidos pelo [Paraná DPVAT](https://dpvatparana.com.br/), incluindo acompanhamento online de processos, gerenciamento de documentos e suporte via chatbot.
+O Seguro de Danos Pessoais Causados por Veículos Automotores de Via Terrestre (DPVAT) é um seguro obrigatório que indeniza vítimas de acidentes de trânsito em todo o Brasil. Este guia fornece informações atualizadas sobre como solicitar o DPVAT no Paraná, detalha os benefícios e coberturas disponíveis, e apresenta os novos serviços oferecidos pela [Brasil Benefícios e Indenizações](https://dpvatparana.com.br/), incluindo acompanhamento online de processos, gerenciamento de documentos e suporte via chatbot.
 
 ## Como Solicitar o DPVAT
 Para solicitar a indenização do DPVAT no Paraná, siga os seguintes passos:
 
-1. **Acesse o portal do Paraná DPVAT:**
+1. **Acesse o portal da Brasil Benefícios e Indenizações:**
    - Visite [dpvatparana.com.br](https://dpvatparana.com.br/).
    - Preencha o formulário disponível na página inicial informando se sofreu um acidente nos últimos 3 anos.
 
@@ -21,7 +21,7 @@ Para solicitar a indenização do DPVAT no Paraná, siga os seguintes passos:
    - Documentos pessoais (RG e CPF) da vítima ou beneficiário;
    - Comprovantes de despesas médicas, se houver.
 
-4. **Autorize o Paraná DPVAT a entrar com o pedido:**
+4. **Autorize a Brasil Benefícios e Indenizações a entrar com o pedido:**
    - Assine o documento de representação que nos permite solicitar a indenização em seu nome junto à Caixa Econômica Federal.
 
 5. **Acompanhe o andamento do processo:**
@@ -36,7 +36,7 @@ O DPVAT oferece suporte financeiro às vítimas de acidentes de trânsito, indep
 - **Indenização por invalidez permanente:** Pagamento conforme o grau de invalidez constatado, até o limite de R$ 13.500,00.
 - **Indenização por morte:** Beneficiários legais recebem R$ 13.500,00 em caso de falecimento da vítima.
 
-<Tip>Além dos benefícios acima, o Paraná DPVAT oferece um processo mais ágil, com indenizações acima da média e suporte completo durante todo o trâmite.</Tip>
+<Tip>Além dos benefícios acima, a Brasil Benefícios e Indenizações oferece um processo mais ágil, com indenizações acima da média e suporte completo durante todo o trâmite.</Tip>
 
 ## Coberturas do DPVAT
 O DPVAT cobre exclusivamente danos pessoais, sem contemplar danos materiais. As principais coberturas incluem:
@@ -46,7 +46,7 @@ O DPVAT cobre exclusivamente danos pessoais, sem contemplar danos materiais. As 
 - **Morte:** Indenização de R$ 13.500,00 aos beneficiários legais.
 
 ## Novos Serviços Disponíveis
-O Paraná DPVAT agora oferece os seguintes serviços para facilitar ainda mais o processo de solicitação:
+A Brasil Benefícios e Indenizações agora oferece os seguintes serviços para facilitar ainda mais o processo de solicitação:
 
 - **Acompanhamento Online:** Acesse o status do seu processo em tempo real através do nosso portal.
 - **Gerenciamento de Documentos:** Envie e organize todos os documentos necessários de forma digital e segura.

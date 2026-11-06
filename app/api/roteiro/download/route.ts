@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     const pdfBuffer = await generatePDFFromText(
       content,
-      titulo || "Documento da Seguros Paraná"
+      titulo || "Documento da Brasil Benefícios e Indenizações"
     );
 
     const safeFilename = filename

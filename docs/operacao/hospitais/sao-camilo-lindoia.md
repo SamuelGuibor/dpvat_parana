@@ -42,7 +42,7 @@ Prazo: a Fonte não menciona. A devolutiva do prontuário é pelos correios.
 
 ## Observações
 
-- A Seguros Paraná paga a impressão e o envio do prontuário.
+- A Brasil Benefícios e Indenizações paga a impressão e o envio do prontuário.
 - Ver pendências: não está claro se o encaminhamento ao endereço é físico ou por e-mail.
 
 ## Fonte

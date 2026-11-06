@@ -26,7 +26,7 @@ export function DashboardTour({ onNavigate }: Props) {
   const steps: TourStep[] = [
     {
       emoji: '👋',
-      title: 'Bem-vindo(a) ao CRM Seguros Paraná',
+      title: 'Bem-vindo(a) ao CRM Brasil Benefícios e Indenizações',
       description:
         'Em menos de 2 minutos você vai conhecer as áreas do sistema e onde cada tarefa do dia a dia acontece. Use as setas para avançar, pule quando quiser e reveja tudo depois pelo botão (?) no topo.',
     },

@@ -1,6 +1,6 @@
-# Paraná Seguros — Site + CRM
+# Brasil Benefícios e Indenizações — Site + CRM
 
-Sistema completo do escritório Paraná Seguros (indenizações DPVAT e benefícios
+Sistema completo do escritório Brasil Benefícios e Indenizações (indenizações DPVAT e benefícios
 do INSS): site institucional, área do cliente e CRM interno da equipe.
 
 ## Módulos

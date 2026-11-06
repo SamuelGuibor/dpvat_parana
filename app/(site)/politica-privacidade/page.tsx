@@ -35,11 +35,11 @@ export default function PrivacyPolicy() {
           <div className="bg-white rounded-lg shadow-md p-8 prose max-w-none">
 
             <p className="text-lg text-gray-700 font-semibold">
-              POLÍTICA DE PRIVACIDADE — PARANÁ CONSULTORIA EM SEGUROS
+              POLÍTICA DE PRIVACIDADE — BRASIL BENEFÍCIOS E INDENIZAÇÕES
             </p>
 
             <p>
-              A <strong>PARANÁ CONSULTORIA EM SEGUROS</strong>,
+              A <strong>BRASIL BENEFÍCIOS E INDENIZAÇÕES</strong> (EDUARDO CAMARGO MARTINEZ LTDA, CNPJ 69.985.899/0001-45),
               pessoa jurídica de direito privado, leva a sua privacidade a sério
               e se compromete com a transparência no tratamento de dados pessoais
               dos usuários do site <strong>https://segurosparana.com.br</strong>.

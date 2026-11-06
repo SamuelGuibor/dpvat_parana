@@ -3,7 +3,7 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
-import { Phone, Send } from 'lucide-react';
+import { MapPin, Phone, Send } from 'lucide-react';
 import { FaInstagram } from "react-icons/fa";
 import { SlSocialFacebook } from "react-icons/sl";
 import { LuLinkedin } from "react-icons/lu";
@@ -14,8 +14,6 @@ import { ContactUsers } from "@/app/_actions/contacts/create-contact";
 import { toast } from 'sonner'
 import { Button } from '@/app/_shared/ui/button';
 import { FaWhatsapp } from "react-icons/fa";
-import Image from 'next/image';
-import Link from 'next/link';
 
 function SubmitButton() {
     const { pending } = useFormStatus();
@@ -157,7 +155,7 @@ export function Contact() {
 
             {/* FACEBOOK */}
             <a
-              href="https://www.facebook.com/paranadpvat"
+              href="https://www.facebook.com/brasilbeneficiosbr"
               target="_blank"
               rel="noopener noreferrer"
               className="block"
@@ -168,14 +166,14 @@ export function Contact() {
                 </div>
                 <div>
                   <h4 className="text-lg text-gray-900 mb-1">Facebook</h4>
-                  <p className="text-gray-600 font-bold">Seguros Paraná</p>
+                  <p className="text-gray-600 font-bold">Brasil Benefícios e Indenizações</p>
                 </div>
               </div>
             </a>
 
             {/* INSTAGRAM */}
             <a
-              href="https://www.instagram.com/paranasegurospr"
+              href="https://www.instagram.com/brasilbeneficiosbr"
               target="_blank"
               rel="noopener noreferrer"
               className="block"
@@ -186,7 +184,7 @@ export function Contact() {
                 </div>
                 <div>
                   <h4 className="text-lg text-gray-900 mb-1">Instagram</h4>
-                  <p className="text-gray-600 font-bold">@paranasegurospr</p>
+                  <p className="text-gray-600 font-bold">@brasilbeneficiosbr</p>
                 </div>
               </div>
             </a>
@@ -204,14 +202,14 @@ export function Contact() {
                 </div>
                 <div>
                   <h4 className="text-lg text-gray-900 mb-1">LinkedIn</h4>
-                  <p className="text-gray-600 font-bold">Seguros Paraná</p>
+                  <p className="text-gray-600 font-bold">Brasil Benefícios e Indenizações</p>
                 </div>
               </div>
             </a>
 
             {/* GOOGLE AVALIAÇÕES */}
             <a
-              href="https://www.google.com/maps/place/PARAN%C3%81+SEGUROS+%7C+Resgate+DPVAT+%7C+INSS+%7C+RCF+%7C+Seguros/data=!4m2!3m1!1s0x0:0x31b528852e233c24?sa=X&ved=1t:2428&ictx=111"
+              href="https://www.google.com/maps?cid=3581813631112920100"
               target="_blank"
               rel="noopener noreferrer"
               className="block"
@@ -235,10 +233,29 @@ export function Contact() {
               </div>
             </div>
 
-            <div className="p-8 rounded-lg">
-              <Link target="_blank" href='https://www.google.com/maps/place/PARAN%C3%81+SEGUROS+%7C+Resgate+DPVAT+%7C+INSS+%7C+RCF+%7C+Seguros/@-25.4499356,-49.3043702,17z/data=!4m6!3m5!1s0x94dce3b97d8af1ed:0x31b528852e233c24!8m2!3d-25.450018!4d-49.3028896!16s%2Fg%2F11bv30kx9_?entry=ttu&g_ep=EgoyMDI1MTIwOS4wIKXMDSoKLDEwMDc5MjA2OUgBUAM%3D'>
-                <Image src={'/maps.png'} width={500} height={200} alt='Endereço da Paraná Seguros no Google Maps' />
-              </Link>     
+            <div className="bg-white p-6 rounded-lg shadow-md flex items-start gap-4">
+              <div className="bg-blue-100 p-3 rounded-lg">
+                <MapPin className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="space-y-3">
+                <h4 className="text-lg text-gray-900">Endereços em Curitiba</h4>
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=Travessa%20Jorge%20Cuquel%2C%206%2C%20Curitiba%20-%20PR"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-gray-600 font-bold hover:text-blue-700"
+                >
+                  Travessa Jorge Cuquel, 6 · Seminário
+                </a>
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=Rua%20Visconde%20do%20Rio%20Branco%2C%201488%2C%20Curitiba%20-%20PR"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-gray-600 font-bold hover:text-blue-700"
+                >
+                  Rua Visconde do Rio Branco, 1488, conj. 909 · Centro
+                </a>
+              </div>
             </div>
 
           </div>

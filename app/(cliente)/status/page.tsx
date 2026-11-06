@@ -6,7 +6,7 @@ import Image from "next/image";
 const StatusPage = () => {
   return (
     <div className="flex h-screen flex-row bg-slate-50">
-      <Image src="/paranaseguros.png" alt="Logo" width={150} height={40} className="absolute left-4 top-4" />
+      <Image src="/logo-brasil-beneficios.png" alt="Logo" width={150} height={40} className="absolute left-4 top-4" />
       <Sidebar />
       
       <div className="m-4 mt-20 w-full overflow-auto rounded-2xl bg-white p-5 shadow-sm md:m-6 md:mt-6 md:p-8">

@@ -131,7 +131,7 @@ function cardSummary(card: Record<string, any>): string {
 // ─── Prompts ────────────────────────────────────────────────────────────────
 
 function personalDocPrompt(card: Record<string, any>, today: string): string {
-  return `Você é o auditor de documentos da Paraná Seguros (assessoria jurídica previdenciária). Hoje é ${today}. Esta é a "Checagem 1 — Documento Pessoal", disparada quando o cartão entra na coluna "FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL".
+  return `Você é o auditor de documentos da Brasil Benefícios e Indenizações (assessoria jurídica previdenciária). Hoje é ${today}. Esta é a "Checagem 1 — Documento Pessoal", disparada quando o cartão entra na coluna "FAZER PROTOCOLO DE SOLICITAÇÃO HOSPITAL".
 
 Analise os arquivos anexados ao cartão e localize o DOCUMENTO PESSOAL do cliente. Ignore os demais arquivos para esta auditoria.
 
@@ -169,7 +169,7 @@ Cada arquivo anexado está precedido do seu documentId e nome atual. Responda SO
 }
 
 function inssPreRoteiroPrompt(card: Record<string, any>, today: string): string {
-  return `Você é o auditor previdenciário da Paraná Seguros (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Checagem 2 — Previdenciário × Prontuário (PRÉ-ROTEIRO)", disparada quando o cartão entra na coluna "DISTRIBUIÇÃO DE PROCESSOS". Objetivo: relacionar prontuário(s) com benefício(s) do INSS (NB), decidir qual NB será usado no roteiro, organizar/renomear os arquivos e deixar um comentário-resumo.
+  return `Você é o auditor previdenciário da Brasil Benefícios e Indenizações (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Checagem 2 — Previdenciário × Prontuário (PRÉ-ROTEIRO)", disparada quando o cartão entra na coluna "DISTRIBUIÇÃO DE PROCESSOS". Objetivo: relacionar prontuário(s) com benefício(s) do INSS (NB), decidir qual NB será usado no roteiro, organizar/renomear os arquivos e deixar um comentário-resumo.
 
 ## Tipos de documento esperados
 
@@ -232,7 +232,7 @@ Cada arquivo anexado está precedido do seu documentId e nome atual. Responda SO
 }
 
 function inssPreEnvioPrompt(card: Record<string, any>, today: string): string {
-  return `Você é o auditor previdenciário da Paraná Seguros (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Auditoria PRÉ-ENVIO DE PASTAS": a checagem FINAL, feita quando o roteiro JÁ está preenchido e a pasta está prestes a ser enviada. Objetivo: verificar a completude documental do caso, reconfirmar que a documentação médica se correlaciona com o benefício do INSS, e validar se o roteiro preenchido está correto.
+  return `Você é o auditor previdenciário da Brasil Benefícios e Indenizações (assessoria jurídica, benefícios por incapacidade do INSS). Hoje é ${today}. Esta é a "Auditoria PRÉ-ENVIO DE PASTAS": a checagem FINAL, feita quando o roteiro JÁ está preenchido e a pasta está prestes a ser enviada. Objetivo: verificar a completude documental do caso, reconfirmar que a documentação médica se correlaciona com o benefício do INSS, e validar se o roteiro preenchido está correto.
 
 Você NÃO renomeia arquivos nesta auditoria.
 

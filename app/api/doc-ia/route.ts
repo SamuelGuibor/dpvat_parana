@@ -174,7 +174,7 @@ function pickVerifyDocs(docs: DocRow[]): DocRow[] {
 }
 
 function verifyPrompt(card: Record<string, any>): string {
-  return `Você é o auditor de documentos da Paraná Seguros (assessoria jurídica previdenciária — Auxílio-Acidente/INSS).
+  return `Você é o auditor de documentos da Brasil Benefícios e Indenizações (assessoria jurídica previdenciária — Auxílio-Acidente/INSS).
 
 Sua tarefa é CRUZAR AS DATAS E AS LESÕES entre o cartão do cliente (abaixo) e os documentos anexados.
 
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
       const chosen = docs.filter((d) => (docIds ?? []).includes(d.id));
       const { blocks, used, skipped } = await buildDocBlocks(chosen);
 
-      const baseInstruction = `Você é o redator jurídico da Paraná Seguros (assessoria previdenciária — Auxílio-Acidente/INSS).
+      const baseInstruction = `Você é o redator jurídico da Brasil Benefícios e Indenizações (assessoria previdenciária — Auxílio-Acidente/INSS).
 
 Gere o TEXTO pedido abaixo para entrar num documento oficial do escritório. Regras:
 - Use os documentos anexados e os dados do cartão como fonte. NUNCA invente dados; o que não encontrar, escreva "Não apurado".

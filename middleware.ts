@@ -21,7 +21,7 @@ const NEXTAUTH_SECRET = process.env.NEXT_AUTH_SECRET ?? process.env.NEXTAUTH_SEC
 /** Páginas do site institucional + área do cliente (acesso anônimo). */
 const PUBLIC_PAGE_PREFIXES = [
   "/login",
-  "/blog-seguros-parana",
+  "/blog",
   "/documents",
   "/exclusao-de-dados",
   "/faq",

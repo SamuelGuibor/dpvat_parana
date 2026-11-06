@@ -9,6 +9,14 @@ import { hash, compare } from "bcryptjs";
 const BCRYPT_PREFIX = /^\$2[aby]\$/;
 const SALT_ROUNDS = 10;
 
+/** Senha com que todo card de cliente nasce; é informada no fluxo "Área do cliente". */
+export const SENHA_PADRAO_CLIENTE = "brasilbeneficios1";
+
+// Troca de marca (06/11/2026): quem nunca mudou a senha ainda tem o hash da padrão
+// antiga, e o fluxo do WhatsApp agora informa a nova. A nova abre essas contas e
+// needsRehash faz o login regravar o hash; a antiga continua valendo até lá.
+const SENHA_PADRAO_ANTIGA = "segurosparana1";
+
 export function isHashedPassword(stored: string): boolean {
   return BCRYPT_PREFIX.test(stored);
 }
@@ -22,7 +30,10 @@ export async function verifyPassword(
   stored: string,
 ): Promise<{ ok: boolean; needsRehash: boolean }> {
   if (isHashedPassword(stored)) {
-    return { ok: await compare(plain, stored), needsRehash: false };
+    if (await compare(plain, stored)) return { ok: true, needsRehash: false };
+    if (plain !== SENHA_PADRAO_CLIENTE) return { ok: false, needsRehash: false };
+    const ok = await compare(SENHA_PADRAO_ANTIGA, stored);
+    return { ok, needsRehash: ok };
   }
   // Legado em texto puro: comparação em tempo constante pra não vazar por timing.
   const a = Buffer.from(plain);

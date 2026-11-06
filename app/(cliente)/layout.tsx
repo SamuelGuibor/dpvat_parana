@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Área do Cliente | Paraná Seguros",
+  title: "Área do Cliente",
   robots: "noindex, nofollow",
 };
 

@@ -32,7 +32,7 @@ export function Hero() {
           </div>
           <div className="hidden lg:block">
             {/* priority + sizes: esta é a imagem LCP da landing. */}
-            <Image src='/img1.2.png' width={700} height={200} priority sizes="(min-width: 1024px) 700px, 0px" alt='Atendimento da Paraná Seguros a vítimas de acidente de trânsito' className='rounded-xl'/>
+            <Image src='/img1.2.png' width={700} height={200} priority sizes="(min-width: 1024px) 700px, 0px" alt='Atendimento da Brasil Benefícios e Indenizações a vítimas de acidente de trânsito' className='rounded-xl'/>
             {/* <ImageWithFallback 
               src="https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGNvbnN1bHRhdGlvbiUyMG9mZmljZXxlbnwxfHx8fDE3NjU5Nzk5NjR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
               alt="Consultoria jurídica"

@@ -170,7 +170,7 @@ export async function requestPasswordReset(
       },
     });
 
-    const smsBody = `Parana Seguros: seu codigo de recuperacao de senha e ${code}. Ele expira em 10 minutos. Se nao foi voce, ignore esta mensagem.`;
+    const smsBody = `Brasil Beneficios: seu codigo de recuperacao de senha e ${code}. Ele expira em 10 minutos. Se nao foi voce, ignore esta mensagem.`;
 
     if (channel === "email") {
       if (!isRealEmail(user.email)) {
@@ -178,10 +178,10 @@ export async function requestPasswordReset(
       }
       const res = await sendEmailAws(
         user.email!.trim(),
-        "Código de recuperação de senha — Paraná Seguros",
-        `Olá${user.name ? `, ${user.name.split(" ")[0]}` : ""}!\n\nSeu código de recuperação de senha é: ${code}\n\nEle expira em 10 minutos. Se não foi você quem pediu, ignore este e-mail.\n\nParaná Seguros`,
+        "Código de recuperação de senha — Brasil Benefícios e Indenizações",
+        `Olá${user.name ? `, ${user.name.split(" ")[0]}` : ""}!\n\nSeu código de recuperação de senha é: ${code}\n\nEle expira em 10 minutos. Se não foi você quem pediu, ignore este e-mail.\n\nBrasil Benefícios e Indenizações`,
         `<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-          <h2 style="color:#1e3a8a;margin:0 0 8px">Paraná Seguros</h2>
+          <h2 style="color:#1e3a8a;margin:0 0 8px">Brasil Benefícios e Indenizações</h2>
           <p style="color:#374151">Olá${user.name ? `, <strong>${user.name.split(" ")[0]}</strong>` : ""}! Use o código abaixo para redefinir sua senha:</p>
           <p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1e3a8a;background:#eff6ff;border-radius:12px;padding:16px;text-align:center">${code}</p>
           <p style="color:#6b7280;font-size:13px">O código expira em 10 minutos. Se não foi você quem pediu, ignore este e-mail.</p>
@@ -211,7 +211,7 @@ export async function requestPasswordReset(
       if (!res.sent) console.error("[PASSWORD RESET] Twilio falhou:", res.error);
     }
     if (!delivered && isWhatsAppConfigured()) {
-      const wa = await sendText(phone, `Paraná Seguros: seu código de recuperação de senha é *${code}*. Ele expira em 10 minutos. Se não foi você, ignore esta mensagem.`);
+      const wa = await sendText(phone, `Brasil Benefícios e Indenizações: seu código de recuperação de senha é *${code}*. Ele expira em 10 minutos. Se não foi você, ignore esta mensagem.`);
       delivered = Boolean(wa.waMessageId);
       if (!delivered) console.error("[PASSWORD RESET] WhatsApp falhou:", wa.error);
     }

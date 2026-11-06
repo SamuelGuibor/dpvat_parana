@@ -1,4 +1,4 @@
-# Plugin do operador — CRM Seguros Paraná
+# Plugin do operador — CRM Brasil Benefícios e Indenizações
 
 Pacote que a equipe instala no app do Claude (aba Code) para usar a IA de operação **sem o repositório do CRM**. Este arquivo vai junto para o repositório privado do plugin.
 

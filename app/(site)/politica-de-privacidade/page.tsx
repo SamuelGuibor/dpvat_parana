@@ -3,8 +3,8 @@ import { Header } from "@/app/_components/landing_page/Header";
 import { Footer } from "@/app/_components/landing_page/Footer";
 
 export const metadata: Metadata = {
-  title: "Política de Privacidade - Paraná Seguros",
-  description: "Política de privacidade e tratamento de dados da Paraná Seguros.",
+  title: "Política de Privacidade",
+  description: "Política de privacidade e tratamento de dados da Brasil Benefícios e Indenizações.",
   alternates: { canonical: "https://www.segurosparana.com.br/politica-de-privacidade" },
   robots: { index: true, follow: true },
 };
@@ -19,7 +19,7 @@ export default function PrivacyPolicyPage() {
 
         <div className="space-y-6 text-gray-700 [&_h2]:mb-2 [&_h2]:mt-8 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-gray-900 [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-6">
           <p>
-            A Paraná Seguros (&quot;nós&quot;) respeita a privacidade das pessoas que atendemos e é
+            A Brasil Benefícios e Indenizações (EDUARDO CAMARGO MARTINEZ LTDA, CNPJ 69.985.899/0001-45, &quot;nós&quot;) respeita a privacidade das pessoas que atendemos e é
             transparente sobre como coleta, usa e protege os dados pessoais no contexto dos
             serviços de acompanhamento de indenizações DPVAT/SPVAT e benefícios do INSS.
           </p>

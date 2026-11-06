@@ -689,7 +689,7 @@ function Tela({ children }: { children: React.ReactNode }) {
     <main className="min-h-dvh bg-slate-50">
       <div className="mx-auto w-full max-w-md px-5 py-8 space-y-5">
         <p className="text-center text-sm font-bold tracking-wide text-emerald-700 uppercase">
-          Paraná Seguros
+          Brasil Benefícios e Indenizações
         </p>
         {children}
         <p className="pt-4 text-center text-xs text-slate-400 leading-relaxed">

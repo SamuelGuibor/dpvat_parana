@@ -14,7 +14,7 @@ const blogPosts = [
         date: '15 de Dezembro, 2025',
         category: 'DPVAT',
         author: 'Me Ajuda DPVAT',
-        link: '/blog-seguros-parana/dpvat'
+        link: '/blog/dpvat'
     },
     {
         id: 2,
@@ -24,7 +24,7 @@ const blogPosts = [
         date: '19 de dezembro de 2025',
         category: 'INSS',
         author: 'Dr. Hilário Bocchi Neto',
-        link: '/blog-seguros-parana/inss'
+        link: '/blog/inss'
     },
     {
         id: 3,
@@ -34,7 +34,7 @@ const blogPosts = [
         date: '5 de Dezembro, 2025',
         category: 'Documentação',
         author: 'Dr. Paulo Mendes',
-        link: '/blog-seguros-parana/documentacao'
+        link: '/blog/documentacao'
     },
     {
         id: 4,
@@ -44,7 +44,7 @@ const blogPosts = [
         date: '12 de maio, 2026',
         category: 'INSS',
         author: '',
-        link: '/blog-seguros-parana/auxilio-maternidade'
+        link: '/blog/auxilio-maternidade'
     },
     // {
     //     id: 5,
@@ -78,22 +78,22 @@ const popularPosts = [
     //{
     //    title: 'Como Funciona o Seguro DPVAT em 2025',
     //    date: '15 de Dezembro, 2025',
-    //    link: '/blog-seguros-parana/dpvat'
+    //    link: '/blog/dpvat'
     //},
     {
         title: 'Auxílio-Acidente do INSS: Guia Completo',
         date: '19 de dezembro de 2025',
-        link: '/blog-seguros-parana/inss'
+        link: '/blog/inss'
     },
     {
         title: 'Documentos Necessários para Processos de Indenização',
         date: '1 de Dezembro, 2025',
-        link: '/blog-seguros-parana/documentacao'
+        link: '/blog/documentacao'
     },
     {
         title: 'O que é e como solicitar o licença maternidade',
         date: '12 de maio, 2026',
-        link: '/blog-seguros-parana/auxilio-maternidade'
+        link: '/blog/auxilio-maternidade'
     },
 ];
 
@@ -165,7 +165,7 @@ export default function BlogPage() {
             <div className="min-h-screen bg-gray-50">
                 <div className="bg-gradient-to-br from-blue-900 to-blue-900 text-white py-16">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <h1 className="text-4xl lg:text-5xl mb-4">Blog Seguros Paraná</h1>
+                        <h1 className="text-4xl lg:text-5xl mb-4">Blog Brasil Benefícios e Indenizações</h1>
                         <p className="text-xl text-blue-100 max-w-3xl">
                             Artigos, guias e informações sobre seus direitos em casos de acidentes de trânsito
                         </p>

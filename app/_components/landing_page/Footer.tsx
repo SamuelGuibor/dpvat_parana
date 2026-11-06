@@ -8,7 +8,7 @@ export function Footer() {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div>
-                <Image src={'/logo_sem_fundo.png'} height={200} width={200} alt='Logo Parana Seguros' />
+                <Image src={'/logo-brasil-beneficios-branca.png'} height={200} width={200} alt='Logo Brasil Benefícios e Indenizações' />
               </div>
             </div>
             <p className="text-sm text-gray-400">
@@ -40,19 +40,19 @@ export function Footer() {
             <h4 className="text-white mb-4">Redes Sociais</h4>
             <div className="flex gap-4">
               <a
-                href="https://www.facebook.com/paranadpvat"
+                href="https://www.facebook.com/brasilbeneficiosbr"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Facebook da Paraná Seguros"
+                aria-label="Facebook da Brasil Benefícios e Indenizações"
                 className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors"
               >
                 <Facebook className="w-5 h-5" />
               </a>
               <a
-                href="https://www.instagram.com/paranasegurospr"
+                href="https://www.instagram.com/brasilbeneficiosbr"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Instagram da Paraná Seguros"
+                aria-label="Instagram da Brasil Benefícios e Indenizações"
                 className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors"
               >
                 <Instagram className="w-5 h-5" />
@@ -61,7 +61,7 @@ export function Footer() {
                 href="https://www.linkedin.com/company/paran%C3%A1-seguros-e-previd%C3%AAncia/"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="LinkedIn da Paraná Seguros"
+                aria-label="LinkedIn da Brasil Benefícios e Indenizações"
                 className="bg-gray-800 p-2 rounded-lg hover:bg-blue-600 transition-colors"
               >
                 <Linkedin className="w-5 h-5" />
@@ -71,14 +71,9 @@ export function Footer() {
         </div>
 
         <div className="border-t border-gray-800 pt-8 text-sm text-center">
-          <p>&copy; {new Date().getFullYear()} Paraná Seguros. Todos os direitos reservados.</p>
+          <p>&copy; {new Date().getFullYear()} Brasil Benefícios e Indenizações. Todos os direitos reservados.</p>
           <p className="mt-2">
-            Paraná Consultoria em Seguros 
-            CNPJ:  48.270.397/0001-68
-          </p>
-          <p>
-            Susep 221140431
-            @paranasegurospr
+            EDUARDO CAMARGO MARTINEZ LTDA · CNPJ: 69.985.899/0001-45
           </p>
           <p className="text-gray-500 mt-2">
             Desenvolvido por: Samuel Henrique Guibor

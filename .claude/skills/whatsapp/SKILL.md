@@ -1,6 +1,6 @@
 ---
 name: whatsapp
-description: Operação por IA — manda WhatsApp a um card, a VÁRIOS cards (coluna, lista de números, tag) ou a QUALQUER conversa do inbox, com ou sem card, escolhida por filtro (linha, não lidas, recuperação, fila, aguardando resposta, desde ontem, data, tag, desfecho, sem card), com um código de aprovação só para o lote. Use quando o operador pedir "/whatsapp", "manda mensagem pro cliente do 2342", "cobra os documentos dos cards da coluna X", "manda pra todos os não lidos desde ontem na linha Seguros Paraná IA", "avisa quem está em recuperação", "responde quem está esperando resposta".
+description: Operação por IA — manda WhatsApp a um card, a VÁRIOS cards (coluna, lista de números, tag) ou a QUALQUER conversa do inbox, com ou sem card, escolhida por filtro (linha, não lidas, recuperação, fila, aguardando resposta, desde ontem, data, tag, desfecho, sem card), com um código de aprovação só para o lote. Use quando o operador pedir "/whatsapp", "manda mensagem pro cliente do 2342", "cobra os documentos dos cards da coluna X", "manda pra todos os não lidos desde ontem na linha Brasil Benefícios IA", "avisa quem está em recuperação", "responde quem está esperando resposta".
 model: sonnet
 ---
 
@@ -21,7 +21,7 @@ Traduza o pedido em filtros do `listar_conversas` pela tabela abaixo — **um fi
 
 | o operador diz | filtro |
 |---|---|
-| "no número/linha Paraná Seguros IA", "na linha DPVAT" | `linha` (nome como ele disse; `ambiguo`/`nao_encontrado` traz as linhas → pergunte) |
+| "no número/linha Brasil Benefícios IA", "na linha DPVAT" | `linha` (nome como ele disse; `ambiguo`/`nao_encontrado` traz as linhas → pergunte) |
 | "não lidas", "não lidos", "bolinha verde" | `nao_lidas: true` |
 | "sem resposta nossa", "esperando resposta", "aguardando" | `aguardando_resposta: true` |
 | "em recuperação", "standby", "ciclo de recuperação" | `pastas: ["recuperacao"]` |

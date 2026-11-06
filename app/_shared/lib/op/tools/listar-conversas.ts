@@ -17,7 +17,7 @@ import { LOTE_WHATSAPP_MAX } from "@/app/_shared/utils/op-lote";
 const DIA = "hoje, ontem, anteontem, -N (há N dias), AAAA-MM-DD ou DD/MM/AAAA (dia de Brasília)";
 
 const schema = z.object({
-  linha: z.string().min(2).max(80).optional().describe("Linha do WhatsApp pelo nome (ex.: \"Seguros Paraná IA\"; parcial aceito se for única) ou pelo telefone. Sem = todas as linhas ativas."),
+  linha: z.string().min(2).max(80).optional().describe("Linha do WhatsApp pelo nome (ex.: \"Brasil Benefícios IA\"; parcial aceito se for única) ou pelo telefone. Sem = todas as linhas ativas."),
   pastas: z
     .array(z.enum(PASTAS_CONVERSA))
     .max(5)

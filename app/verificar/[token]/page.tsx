@@ -19,7 +19,7 @@ import Image from "next/image";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Verificar documento — Paraná Seguros",
+  title: "Verificar documento",
   robots: { index: false, follow: false },
 };
 
@@ -63,7 +63,7 @@ export default async function VerificarPage({
       <div className="mx-auto w-full max-w-lg px-5 py-10 space-y-6">
 
         <p className="text-center text-sm font-bold tracking-wide text-emerald-700 uppercase">
-          <Image src="/paranaseguros.png" width={200} height={64} alt="Paraná Seguros" className="mx-auto w-auto" />
+          <Image src="/logo-brasil-beneficios.png" width={200} height={64} alt="Brasil Benefícios e Indenizações" className="mx-auto w-auto" />
         </p>
 
 

@@ -1,4 +1,4 @@
-# CRM Seguros Paraná — pasta de trabalho do operador
+# CRM Brasil Benefícios e Indenizações — pasta de trabalho do operador
 
 Esta pasta não tem código. Aqui você só opera o CRM pelo plugin **crm**:
 - Comece por `/crm:meu-dia`, `/crm:processo 2342`, `/crm:cliente <CPF ou nome>`, `/crm:varredura`.

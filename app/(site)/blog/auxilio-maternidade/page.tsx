@@ -149,7 +149,7 @@ export default function BlogArticle() {
                     <div className="flex items-center gap-6 mt-10 text-sm text-zinc-500">
                         <div className="flex items-center gap-2">
                             <User className="w-4 h-4" />
-                            Seguros Paraná
+                            Brasil Benefícios e Indenizações
                         </div>
                         <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4" />
@@ -498,21 +498,21 @@ export default function BlogArticle() {
                                 category: "DPVAT",
                                 date: "15 de Dezembro, 2025",
                                 image: "https://images.unsplash.com/photo-1637763723578-79a4ca9225f7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBhY2NpZGVudCUyMGluc3VyYW5jZXxlbnwxfHx8fDE3NjU4OTY4OTd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                                link: '/blog-seguros-parana/dpvat'
+                                link: '/blog/dpvat'
                             },
                             {
                                 title: "Documentos Necessários para Processos",
                                 category: "Documentação",
                                 date: "5 de Dezembro, 2025",
                                 image: "https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHxsZWdhbCUyMGRvY3VtZW50cyUyMG9mZmljZXxlbnwxfHx8fDE3NjU5ODEwNDd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                                link: '/blog-seguros-parana/documentacao'
+                                link: '/blog/documentacao'
                             },
                             {
                                 title: "Auxílio-acidente: quem tem direito?",
                                 category: "INSS",
                                 date: "20 de Novembro, 2025",
                                 image: "https://images.unsplash.com/photo-1521791136064-7986c2920216?q=80&w=1740&auto=format&fit=crop",
-                                link: '/blog-seguros-parana/auxilio-acidente'
+                                link: '/blog/auxilio-acidente'
                             }
                         ].map((article, index) => (
                             <Link

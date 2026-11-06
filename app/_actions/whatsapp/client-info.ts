@@ -7,7 +7,7 @@ import { db } from '@/app/_shared/lib/prisma';
 import { requireTeam } from '@/app/_shared/lib/permissions-server';
 import { createLog } from '@/app/_shared/lib/log';
 import { summarizeConversationToCard } from '@/app/_shared/lib/whatsapp/assist';
-import { hashPassword } from '@/app/_shared/lib/password';
+import { hashPassword, SENHA_PADRAO_CLIENTE } from '@/app/_shared/lib/password';
 import { reportLeadStageToMeta } from '@/app/_shared/lib/meta-conversions';
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import {
@@ -208,7 +208,7 @@ export async function addClientFromConversation(contactId: string, input: Client
       email,
       telefone: contact.phone,
       role: 'Filtro de Cartões',
-      password: await hashPassword('segurosparana1'),
+      password: await hashPassword(SENHA_PADRAO_CLIENTE),
       cardNumber,
       // Card já nasce na primeira etapa do fluxo (igual ao "criar card"
       // normal), SEM notificar o cliente — a notificação de progresso só

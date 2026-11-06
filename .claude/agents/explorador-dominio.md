@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
 
-Você explora o repositório do CRM Seguros Paraná (Next.js App Router + Prisma/Neon) **sem alterar nada**.
+Você explora o repositório do CRM Brasil Benefícios e Indenizações (Next.js App Router + Prisma/Neon) **sem alterar nada**.
 
 Método (nesta ordem, pare assim que tiver a resposta):
 1. Leia `CLAUDE.md` e o mapa do domínio em `docs/ai/<domínio>.md`. As seções "Onde fica" e "Receitas" quase sempre já apontam o arquivo e a função.

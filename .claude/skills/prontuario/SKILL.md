@@ -16,7 +16,7 @@ Entrada: `$ARGUMENTS` = card(s) (número, CPF ou nome). Nada sai sem o operador 
 5. `anexar_rascunho` com `confirmar: true` e `rascunhos` = todos de uma vez.
 6. Modo ≠ e-mail (presencial, portal, WhatsApp do hospital) → diga **como** o operador faz (copiado da ferramenta) e pule para o 9. A IA não manda WhatsApp a hospital.
 7. Texto: `docs/operacao/modelos/email-prontuario.md` com `status: publicado` → use-o; senão o **texto padrão** abaixo (diga que é o padrão). Dados só do `obter_card`; campo vazio → tire a frase.
-   - Assunto: `Solicitação de prontuário — [[nome]]` · Corpo: `Bom dia.\n\nSolicitamos, por gentileza, a cópia integral do prontuário médico de [[nome]], CPF <cpf>, referente ao atendimento de <data do acidente, se houver>.\n\nSeguem em anexo o pedido assinado<, a procuração> e os documentos necessários.\n\nFicamos à disposição.\nSeguros Paraná`
+   - Assunto: `Solicitação de prontuário — [[nome]]` · Corpo: `Bom dia.\n\nSolicitamos, por gentileza, a cópia integral do prontuário médico de [[nome]], CPF <cpf>, referente ao atendimento de <data do acidente, se houver>.\n\nSeguem em anexo o pedido assinado<, a procuração> e os documentos necessários.\n\nFicamos à disposição.\nBrasil Benefícios e Indenizações`
    - Um card → `preparar_email` com `card`, `assunto`, `corpo`, `anexos` (keys `op-drafts/…` ou nomes exatos). **Sem `para`** (vai o cadastro do hospital); `para` só se o operador digitar outro (sai FORA DO CADASTRO).
    - Vários → `preparar_email` com `lote: [{card, anexos}]` e o mesmo assunto/corpo com `[[nome]]`. `pulados` → mostre o motivo por card.
    - `sem_destinatario` → pergunte para quem; `anexos_grandes` → tire um anexo.

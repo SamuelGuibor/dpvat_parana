@@ -1,11 +1,9 @@
 import { ShieldCheck, HeartHandshake, Award, Users } from "lucide-react";
-import Video from 'next-video';
-import getStarted from '/videos/video.mp4';
 
 const features = [
   {
     title: "Transparência",
-    description: "Clareza em todas as etapas do seu seguro, sem letras miúdas.",
+    description: "Clareza em todas as etapas do seu processo, sem letras miúdas.",
     icon: ShieldCheck,
   },
   {
@@ -14,7 +12,7 @@ const features = [
     icon: HeartHandshake,
   },
   {
-    title: "Especialistas em Seguros",
+    title: "Especialistas em Benefícios e Indenizações",
     description: "Equipe preparada para indicar a melhor solução para você.",
     icon: Award,
   },
@@ -27,22 +25,24 @@ const features = [
 
 export default function VideoSection() {
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center max-w-6xl mx-auto px-6 p-4">
-
-            {/* VIDEO */}
-            <div className="w-full aspect-video">
-                <div className='w-full max-w-[720px] mx-auto'>
-                    <Video src={getStarted} />
-                </div>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-12 items-center max-w-6xl mx-auto px-6 p-4">
+            {/* Vertical (576x1024) e servido de public/: não passa pelo Mux do next-video. */}
+            <video
+                className="w-full max-w-[340px] mx-auto rounded-xl shadow-md bg-gray-900"
+                src="/videos/apresentacao-brasil-beneficios.mp4"
+                poster="/videos/apresentacao-brasil-beneficios.jpg"
+                controls
+                playsInline
+                preload="metadata"
+            />
 
             <div className="space-y-10">
           <div>
             <h2 className="text-3xl font-semibold text-gray-900 mb-3">
-              Por que escolher a Paraná Seguros?
+              Por que escolher a Brasil Benefícios e Indenizações?
             </h2>
             <p className="text-gray-600 max-w-md">
-              Mais do que seguros, oferecemos tranquilidade, proximidade e confiança.
+              Mais do que um processo, oferecemos tranquilidade, proximidade e confiança.
             </p>
           </div>
 

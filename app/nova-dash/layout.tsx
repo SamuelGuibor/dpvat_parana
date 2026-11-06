@@ -6,7 +6,7 @@ import { checkDashboardIpAccess } from "@/app/_shared/lib/ip-access";
 // O CRM tem título próprio e fica fora dos buscadores — antes herdava o
 // título/keywords de SEO do site institucional.
 export const metadata: Metadata = {
-  title: "CRM | Paraná Seguros",
+  title: "CRM",
   robots: "noindex, nofollow",
 };
 

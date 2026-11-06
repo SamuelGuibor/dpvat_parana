@@ -265,7 +265,7 @@ export async function autoFillClientInfo(contactId: string, opts: FichaAiOptions
     const maskedTexts = maskSecretsInSequence(lines.map((l) => l.text));
     const transcriptText = lines.map((l, i) => `${l.who}: ${maskedTexts[i]}`).join("\n");
 
-    const prompt = `Você é o assistente da Paraná Seguros (assessoria previdenciária). Leia a conversa de WhatsApp abaixo (e os documentos anexados, se houver — RG, CNH, comprovantes etc.) e extraia SOMENTE os dados do CLIENTE para a ficha de cadastro.
+    const prompt = `Você é o assistente da Brasil Benefícios e Indenizações (assessoria previdenciária). Leia a conversa de WhatsApp abaixo (e os documentos anexados, se houver — RG, CNH, comprovantes etc.) e extraia SOMENTE os dados do CLIENTE para a ficha de cadastro.
 
 Campos que ainda estão VAZIOS na ficha (extraia apenas estes):
 ${missing.map((f) => `- ${f}: ${FIELD_LABELS[f]}`).join("\n")}

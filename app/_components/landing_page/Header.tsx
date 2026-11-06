@@ -63,10 +63,10 @@ export function Header() {
 
             <a href="/">
             <Image
-              src="/paranaseguros.png"
+              src="/logo-brasil-beneficios.png"
               width={180}
               height={60}
-              alt="Seguros Paraná"
+              alt="Brasil Benefícios e Indenizações"
             />
             </a>
 
@@ -160,7 +160,7 @@ export function Header() {
             </div>
           ) : (
             <div>
-              <p className="font-bold text-lg leading-tight">Paraná Seguros</p>
+              <p className="font-bold text-lg leading-tight">Brasil Benefícios e Indenizações</p>
               <p className="text-xs text-blue-100 mt-1">Indenização rápida e segura</p>
             </div>
           )}

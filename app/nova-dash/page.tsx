@@ -223,7 +223,7 @@ function PageInner() {
           <div className="flex items-center justify-between gap-2">
             <Link href='/' className="flex shrink-0 items-center">
               <Image
-                src={darkReaderOn ? '/logo_text_white.png' : '/paranaseguros.png'}
+                src={darkReaderOn ? '/logo-brasil-beneficios-branca.png' : '/logo-brasil-beneficios.png'}
                 width={200}
                 height={200}
                 alt="Logo"
@@ -439,7 +439,7 @@ function PageInner() {
           isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
         }`}>
           <div className="px-6 py-4 text-sm">
-            © 2025 Sistema de Gestão Seguros Paraná.
+            © 2025 Sistema de Gestão Brasil Benefícios e Indenizações.
           </div>
         </footer>
       )}

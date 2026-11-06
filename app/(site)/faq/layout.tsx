@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Perguntas Frequentes — DPVAT e INSS",
   description:
-    "Tire suas dúvidas sobre indenização DPVAT, auxílio-acidente do INSS, prazos, documentos necessários e como funciona o processo com a Paraná Seguros.",
+    "Tire suas dúvidas sobre indenização DPVAT, auxílio-acidente do INSS, prazos, documentos necessários e como funciona o processo com a Brasil Benefícios e Indenizações.",
   alternates: { canonical: "/faq" },
 };
 

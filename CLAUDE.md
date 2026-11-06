@@ -1,6 +1,6 @@
-# CRM Seguros Paraná — guia para IA
+# CRM Brasil Benefícios e Indenizações — guia para IA
 
-CRM jurídico (DPVAT/INSS) da Seguros Paraná: kanban de cards de clientes, inbox WhatsApp multi-número com bot de triagem por IA, assinatura eletrônica própria, documentos/IA, dashboards de gestão, site público e área do cliente. **O `.env` local aponta para o banco de PRODUÇÃO (Neon).**
+CRM jurídico (DPVAT/INSS) da Brasil Benefícios e Indenizações: kanban de cards de clientes, inbox WhatsApp multi-número com bot de triagem por IA, assinatura eletrônica própria, documentos/IA, dashboards de gestão, site público e área do cliente. **O `.env` local aponta para o banco de PRODUÇÃO (Neon).**
 
 ## Stack
 Next.js 14 (App Router, server actions) · TypeScript · Prisma 6 + Neon Postgres · NextAuth v4 (JWT) · Tailwind + shadcn/Radix · AWS S3/SES/SNS · Meta WhatsApp Cloud API · Anthropic + Gemini · Vercel Pro (deploy da `main`) · Railway (microserviços).

@@ -66,7 +66,7 @@ export async function handleChat(
     model: "gemini-2.5-flash",
     tools: allowedTools.length > 0 ? [{ functionDeclarations: allowedTools }] : undefined,
     systemInstruction: `
-      Você é um assistente inteligente do sistema DPVAT Paraná.
+      Você é um assistente inteligente do sistema da Brasil Benefícios e Indenizações.
       O usuário logado é ${userName}.
       Nível de acesso: ${isAdmin ? "ADMINISTRADOR (acesso total)" : "USUÁRIO COMUM (acesso restrito)"}.
 

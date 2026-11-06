@@ -31,7 +31,7 @@ const REMINDER = {
     "Olá, {{1}}! Seus documentos ainda estão aguardando a sua assinatura — falta só esse passo pra gente dar andamento no seu caso. " +
     "É rapidinho, direto pelo celular, no botão abaixo. Qualquer dificuldade, é só responder esta mensagem. 😊",
   example: "Maria",
-  footer: "Paraná Seguros",
+  footer: "Brasil Benefícios e Indenizações",
   buttonText: "Assinar documentos",
 };
 

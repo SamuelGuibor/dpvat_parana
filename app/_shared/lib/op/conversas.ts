@@ -76,7 +76,7 @@ async function linhas(): Promise<Linha[]> {
   return db.whatsAppNumber.findMany({ select: { id: true, label: true, displayPhone: true, active: true, isDefault: true, templatesPaused: true } });
 }
 
-/** Linha pelo nome ("Seguros Paraná IA", parcial aceito se única) ou pelo telefone (8 últimos dígitos). */
+/** Linha pelo nome ("Brasil Benefícios IA", parcial aceito se única) ou pelo telefone (8 últimos dígitos). */
 export function matchLinha(all: Linha[], ref: string): Linha {
   const digits = ref.replace(/\D/g, "");
   if (digits.length >= 8) {

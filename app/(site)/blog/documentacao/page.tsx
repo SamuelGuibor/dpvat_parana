@@ -53,7 +53,7 @@ export default function BlogArticle() {
                             <div className="flex flex-wrap items-center gap-6 text-gray-600 mb-8 pb-8 border-b border-gray-200">
                                 <div className="flex items-center gap-2">
                                     <User className="w-5 h-5" />
-                                    <span>Seguros Paraná</span>
+                                    <span>Brasil Benefícios e Indenizações</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <Calendar className="w-5 h-5" />
@@ -300,9 +300,9 @@ export default function BlogArticle() {
                                     SP
                                 </div>
                                 <div>
-                                    <h4 className="text-xl text-gray-900 mb-2">Seguros Paraná</h4>
+                                    <h4 className="text-xl text-gray-900 mb-2">Brasil Benefícios e Indenizações</h4>
                                     <p className="text-gray-600 mb-3">
-                                        Fonte: http://segurosparana.com.br/blog-seguros-parana/documentacao    
+                                        Fonte: http://segurosparana.com.br/blog/documentacao    
                                     </p>
                                 </div>
                             </div>
@@ -319,14 +319,14 @@ export default function BlogArticle() {
                                     category: "INSS",
                                     date: "19 de Dezembro, 2025",
                                     image: "https://images.unsplash.com/photo-1722336760994-8e33dc1c116a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx0cmFmZmljJTIwYWNjaWRlbnQlMjBsYXd8ZW58MXx8fHwxNzY1OTc5OTY0fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-                                    link: '/blog-seguros-parana/inss'
+                                    link: '/blog/inss'
                                 },
                                 {
                                     title: "Como Funciona o Seguro DPVAT em 2025",
                                     category: "DPVAT",
                                     date: "15 de Dezembro, 2025",
                                     image: "https://images.unsplash.com/photo-1637763723578-79a4ca9225f7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBhY2NpZGVudCUyMGluc3VyYW5jZXxlbnwxfHx8fDE3NjU4OTY4OTd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                                    link: '/blog-seguros-parana/dpvat'
+                                    link: '/blog/dpvat'
                                 }
                             ].map((article, index) => (
                                 <div key={index} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow cursor-pointer">

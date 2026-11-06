@@ -55,7 +55,7 @@ export async function sendSmsAws(phoneE164Digits: string, body: string): Promise
           "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" },
           "AWS.SNS.SMS.SenderID": {
             DataType: "String",
-            StringValue: process.env.SNS_SMS_SENDER_ID ?? "ParanaSeg",
+            StringValue: process.env.SNS_SMS_SENDER_ID ?? "BrasilBenef",
           },
         },
       }),

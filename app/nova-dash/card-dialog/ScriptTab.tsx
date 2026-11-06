@@ -543,7 +543,7 @@ export const RoteirosTab: React.FC<RoteirosTabProps> = ({ name, cardId, isProces
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content,
-          titulo: 'Roteiro Processual - Seguros Paraná',
+          titulo: 'Roteiro Processual - Brasil Benefícios e Indenizações',
           filename: `roteiro_${name}`,
           template,
           cardId,

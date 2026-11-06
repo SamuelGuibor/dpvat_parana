@@ -39,10 +39,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         <div className="relative z-10 p-10">
           <Link href="/" aria-label="Ir para o site">
             <Image
-              src="/logo_text_white.png"
+              src="/logo-brasil-beneficios-branca.png"
               width={190}
               height={56}
-              alt="Paraná Seguros"
+              alt="Brasil Benefícios e Indenizações"
               className="drop-shadow-sm"
             />
           </Link>
@@ -85,7 +85,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 
         <div className="relative z-10 border-t border-white/10 px-10 py-5">
           <p className="text-[11px] text-blue-200/70">
-            © {new Date().getFullYear()} Paraná Seguros · CNPJ 48.270.397/0001-68
+            © {new Date().getFullYear()} Brasil Benefícios e Indenizações · CNPJ 69.985.899/0001-45
           </p>
         </div>
       </aside>
@@ -95,7 +95,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         {/* Logo no mobile */}
         <div className="flex justify-center pt-10 lg:hidden">
           <Link href="/" aria-label="Ir para o site">
-            <Image src="/paranaseguros.png" width={170} height={50} alt="Paraná Seguros" />
+            <Image src="/logo-brasil-beneficios.png" width={170} height={50} alt="Brasil Benefícios e Indenizações" />
           </Link>
         </div>
 
@@ -111,7 +111,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <p className="pb-6 text-center text-[11px] text-gray-400 lg:hidden">
-          © {new Date().getFullYear()} Paraná Seguros
+          © {new Date().getFullYear()} Brasil Benefícios e Indenizações
         </p>
       </main>
     </div>

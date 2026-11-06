@@ -87,7 +87,7 @@ export interface SignaturePart {
 export const EXPECTED_SIGNATURE_SPOTS = 8;
 
 const ANCHOR = "assinatura_cliente";
-const BRAND = "Paraná Seguros";
+const BRAND = "Brasil Benefícios e Indenizações";
 
 // Paleta do manifesto (tirada do logo).
 const NAVY = rgb(0.12, 0.16, 0.29);
@@ -313,7 +313,7 @@ function brDateTimeFull(d: Date): string {
 /** Logo colorido usado no manifesto (não pode derrubar a assinatura se sumir). */
 function loadLogo(): Buffer | null {
   try {
-    return fs.readFileSync(path.join(process.cwd(), "public", "paranaseguros.png"));
+    return fs.readFileSync(path.join(process.cwd(), "public", "logo-brasil-beneficios.png"));
   } catch {
     return null;
   }
@@ -402,7 +402,7 @@ function drawLaurel(page: PDFPage, cx: number, cy: number, radius: number, color
 }
 
 /**
- * Selo decorativo da PRÓPRIA Paraná Seguros. De propósito, ele não cita
+ * Selo decorativo da PRÓPRIA Brasil Benefícios e Indenizações. De propósito, ele não cita
  * nenhuma certificadora nem número de certificado: selo de terceiro que não
  * existe é credencial inventada — num documento jurídico isso derruba a
  * confiança em vez de aumentar. O que dá validade é a MP 2.200-2/2001 e a
@@ -426,7 +426,7 @@ function drawBrandSeal(
   drawLaurel(page, cx, cy, radius * 0.72, goldLight);
 
   // Texto em arco encostado no anel interno.
-  drawArcText(page, "PARANÁ SEGUROS  •  ASSINATURA ELETRÔNICA  •  ", {
+  drawArcText(page, "BRASIL BENEFÍCIOS  •  ASSINATURA ELETRÔNICA  •  ", {
     cx, cy, radius: radius * 0.72, font: fontBold, size: radius * 0.12, color: gold,
   });
 

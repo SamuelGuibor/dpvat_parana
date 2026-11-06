@@ -10,14 +10,14 @@
 ## Onde fica
 | Arquivo/pasta | Responsabilidade | Símbolos-chave |
 |---|---|---|
-| `app/layout.tsx` | Layout raiz: metadata global (template `%s \| Paraná Seguros`, OG, `metadataBase`, canonical `/`), fonte, `AuthProvider` (SessionProvider) envolvendo `NotificationsProvider`, `Toaster` | `metadata`, `RootLayout` |
+| `app/layout.tsx` | Layout raiz: metadata global (template `%s \| Brasil Benefícios e Indenizações`, OG, `metadataBase`, canonical `/`), fonte, `AuthProvider` (SessionProvider) envolvendo `NotificationsProvider`, `Toaster` | `metadata`, `RootLayout` |
 | `app/store/provider.tsx` | Contexto de notificações em memória. **Montado no layout raiz, mas sem consumidor** (o sino real usa `app/_shared/hooks/use-notifications.ts`); apagar exige tirar o import do `app/layout.tsx` | `NotificationsProvider`, `useNotifications`, `Notification` |
 | `app/sitemap.ts` / `app/robots.ts` | `/sitemap.xml` (lista fixa de 10 URLs) / `/robots.txt` (bloqueia `/nova-dash`, `/api/`, `/area-do-cliente`, `/status`, `/login`) | `sitemap`, `robots` |
 | `app/error.tsx`, `app/not-found.tsx`, `app/global-error.tsx` | Páginas de erro com a marca | — |
 | `app/(site)/layout.tsx` | **Único** lugar com GA4, Meta Pixel, RD Station e JSON-LD `LegalService` | `SiteLayout` |
 | `app/(site)/page.tsx` + `section/stats.tsx` | Home `/`: monta as seções de `app/_components/landing_page/*` | `App`, `metadata`, `viewport`, `Stats` |
 | `app/_components/landing_page/*.tsx` | Seções da home: `Header` (link para a nova-dash se ADMIN*), `Hero` (CTA → `/area-do-cliente` se logado, senão `/login`), `Contact` (formulário), `BlogSection` (lista **própria** de posts), `video` (next-video) | `Header`, `Hero`, `Contact`, `BlogSection`, `Footer` |
-| `app/(site)/blog-seguros-parana/**` | Índice client (`blogPosts` fixo + busca) e 4 posts; metadata no `layout.tsx` de cada pasta | `BlogPage`, `BlogArticle`, `PostLayout` |
+| `app/(site)/blog/**` | Índice client (`blogPosts` fixo + busca) e 4 posts; metadata no `layout.tsx` de cada pasta | `BlogPage`, `BlogArticle`, `PostLayout` |
 | `app/(site)/faq/page.tsx` + `faq/section/feature.tsx` | FAQ em dados, com busca; reusa a `Sidebar` do cliente | `Feature`, `CATEGORIES`, `WHATSAPP_URL` |
 | `app/(site)/nossa-equipe/page.tsx` | Página da equipe (cards que viram, fotos em `public/`) | `TeamPage` |
 | `app/(site)/{politica-de-privacidade,politica-privacidade,termos-de-uso,exclusao-de-dados}/page.tsx` | Páginas legais. **Existem duas de privacidade**: o Footer aponta para a antiga, o sitemap para a nova | `PrivacyPolicyPage`, `PrivacyPolicy`, `TermsOfUse`, `DataDeletionPage` |
@@ -40,7 +40,7 @@
 | `app/api/zapier/route.ts` | Repassa o POST para um hook Zapier fixo no código; sem chamador | `POST` |
 | `app/api/migrate-hospitals/route.ts` | Migração única, só ADMIN++: catálogo `HOSPITALS` → Users `GHOST` | `POST`, `HOSPITALS`, `slugify` |
 | `app/_shared/lib/aws-messaging.ts` | SMS (SNS) e e-mail (SES) transacionais; **nunca lançam** | `sendSmsAws`, `sendEmailAws`, `isAwsSmsConfigured`, `isAwsEmailConfigured`, `SendResult` |
-| `public/` | Imagens do site e da equipe, `paranaseguros.png` (logo/OG), `fonts/`, `assinatura/` (vídeos da assinatura), `pdfjs/` (worker), `encoderWorker.min.js` (gravador de áudio do inbox), `llms.txt`/`llms-full.txt`. O vídeo da home fica em `videos/` (next-video, provider Mux) | — |
+| `public/` | Imagens do site e da equipe, `logo-brasil-beneficios.png` (fundo claro), `logo-brasil-beneficios-branca.png` (fundo escuro), `og-brasil-beneficios.png` (prévia de link), `fonts/`, `assinatura/` (vídeos da assinatura), `pdfjs/` (worker), `encoderWorker.min.js` (gravador de áudio do inbox), `llms.txt`/`llms-full.txt`. O vídeo da home é `public/videos/apresentacao-brasil-beneficios.mp4` (tag `<video>` em `landing_page/video.tsx`, sem Mux) | — |
 
 ## Fluxo principal
 **A) Visitante → lead do site**
@@ -114,7 +114,7 @@
 - **Cards criados pelo webhook têm credenciais provisórias.** Recebem senha padrão fixa (hasheada; o ideal seria aleatória ou null) e e-mail placeholder. Limpe placeholders `inserir-email`/`inserir_email-` em exportações; `isRealEmail` (password-reset) já os trata como "sem e-mail".
 - **CPF com máscara recupera a senha, mas não entra.** O login (`app/_shared/lib/auth.ts`) compara `cpf` por igualdade exata, com a UI mandando só dígitos. A recuperação compara só os dígitos (`regexp_replace`).
 - **Página sem `metadata.alternates.canonical` herda o canonical `/` do layout raiz.** Hoje é o caso de `/termos-de-uso` (que está no sitemap) e de `/politica-privacidade`.
-- **Título de página leva só o nome.** O template raiz já acrescenta "\| Paraná Seguros"; vários títulos atuais repetem a marca.
+- **Título de página leva só o nome.** O template raiz já acrescenta "\| Brasil Benefícios e Indenizações"; vários títulos atuais repetem a marca.
 - **Não reduza o intervalo de polling do portal (30s, pausado com a aba oculta)**: cada tick é uma invocação na Vercel.
 - **Datas agrupadas por dia ou mês passam por `app/_shared/utils/date-br.ts`** (`brDayKey`, `brMonthIndex`…): a Vercel roda em UTC. `fetchEventsByMonth` (agrupamento por `brMonthIndex`) e `getBotconversaAdsData` já seguem isso; os limites padrão do ano em `fetchEventsByMonth` (sem `range`) ainda são meia-noite UTC.
 - **`sendSmsAws` e `sendEmailAws` nunca lançam: verifique sempre `.sent`.**
@@ -131,8 +131,8 @@
   - Registre o prefixo em `PUBLIC_PAGE_PREFIXES` (`middleware.ts`) e a URL em `app/sitemap.ts`.
   - Cuidado: `alternates.canonical` próprio e título sem a marca.
   - Valide: aba anônima + `/sitemap.xml`.
-- **Post novo no blog** → crie a pasta `app/(site)/blog-seguros-parana/<slug>/` com `page.tsx` e `layout.tsx` (metadata).
-  - Adicione o post em `blogPosts` de `blog-seguros-parana/page.tsx`, em `blogPosts` de `app/_components/landing_page/BlogSection.tsx` (se for aparecer na home) e em `sitemap.ts`.
+- **Post novo no blog** → crie a pasta `app/(site)/blog/<slug>/` com `page.tsx` e `layout.tsx` (metadata).
+  - Adicione o post em `blogPosts` de `blog/page.tsx`, em `blogPosts` de `app/_components/landing_page/BlogSection.tsx` (se for aparecer na home) e em `sitemap.ts`.
   - Cuidado: imagem remota só de `images.unsplash.com` (`remotePatterns` em `next.config.mjs`); o resto vai em `public/`.
 - **Server action anônima em página pública** → inclua a rota em `PUBLIC_ACTION_PAGES`.
   - Cuidado: a action precisa validar a entrada e não pode aceitar id de usuário vindo do navegador.
@@ -153,7 +153,7 @@
 - **Testes automáticos**: nenhum teste em `tests/` cobre este domínio diretamente. `tests/date-br.test.ts` cobre os helpers de fuso usados por `fetchEventsByMonth` e `getBotconversaAdsData`.
 - **Gates do CI** (`.github/workflows/ci.yml`): `npx tsc --noEmit`, `npm run lint`, `npm test`. Nesta máquina o `next build` local para em silêncio (problema pré-existente); o build confiável é o da Vercel.
 - **Validação manual** (`npm run dev`):
-  1. Em aba anônima, `/`, `/blog-seguros-parana/dpvat`, `/faq`, `/termos-de-uso` e `/exclusao-de-dados` abrem sem login. `/nova-dash` redireciona para `/login`.
+  1. Em aba anônima, `/`, `/blog/dpvat`, `/faq`, `/termos-de-uso` e `/exclusao-de-dados` abrem sem login. `/nova-dash` redireciona para `/login`.
   2. `/sitemap.xml` e `/robots.txt` respondem.
   3. Envie o formulário de contato anônimo. Pelo código atual, espera-se falha 401.
   4. Faça login como cliente: deve cair em `/area-do-cliente`, com os cartões Acidente N. `/status` mostra a linha do tempo; no Network, o polling de 30s para quando a aba fica oculta.

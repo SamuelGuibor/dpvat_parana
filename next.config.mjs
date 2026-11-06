@@ -55,6 +55,14 @@ const nextConfig = {
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
     ],
   },
+  // O blog saiu de /blog-seguros-parana na troca de marca: links antigos e o
+  // Google continuam chegando pelo endereço velho.
+  async redirects() {
+    return [
+      { source: "/blog-seguros-parana", destination: "/blog", permanent: true },
+      { source: "/blog-seguros-parana/:path*", destination: "/blog/:path*", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

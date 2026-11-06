@@ -51,9 +51,9 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "LegalService",
-            name: "Paraná Seguros",
+            name: "Brasil Benefícios e Indenizações",
             url: "https://www.segurosparana.com.br/",
-            logo: "https://www.segurosparana.com.br/paranaseguros.png",
+            logo: "https://www.segurosparana.com.br/logo-brasil-beneficios.png",
             description:
               "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná.",
             areaServed: "Paraná, Brasil",
@@ -66,8 +66,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
               availableLanguage: "Portuguese",
             },
             sameAs: [
-              "https://www.facebook.com/paranadpvat/",
-              "https://www.instagram.com/paranadpvat/",
+              "https://www.facebook.com/brasilbeneficiosbr/",
+              "https://www.instagram.com/brasilbeneficiosbr/",
             ],
           }),
         }}

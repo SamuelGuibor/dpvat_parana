@@ -464,14 +464,14 @@ export default function BlogArticle() {
                   category: "DPVAT",
                   date: "15 de Dezembro, 2025",
                   image: "https://images.unsplash.com/photo-1637763723578-79a4ca9225f7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBhY2NpZGVudCUyMGluc3VyYW5jZXxlbnwxfHx8fDE3NjU4OTY4OTd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                  link: '/blog-seguros-parana/dpvat'
+                  link: '/blog/dpvat'
                 },
                 {
                   title: "Documentos Necessários para Processos",
                   category: "Documentação",
                   date: "5 de Dezembro, 2025",
                   image: "https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGRvY3VtZW50cyUyMG9mZmljZXxlbnwxfHx8fDE3NjU5ODEwNDd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                  link: '/blog-seguros-parana/documentacao'
+                  link: '/blog/documentacao'
                 }
               ].map((article, index) => (
                 <div key={index} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow cursor-pointer">

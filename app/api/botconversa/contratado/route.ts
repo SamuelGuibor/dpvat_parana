@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
-import { hashPassword } from '@/app/_shared/lib/password';
+import { hashPassword, SENHA_PADRAO_CLIENTE } from '@/app/_shared/lib/password';
 import { verifyWebhookSecret } from '@/app/_shared/lib/webhook-auth';
 import { recordSectorTask } from '@/app/_shared/lib/sector-tasks';
 
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
             email: `inserir_email-${telefone}@gmail.com`,
             telefone,
             role: 'Filtro de Cartões',
-            password: await hashPassword('segurosparana1'),
+            password: await hashPassword(SENHA_PADRAO_CLIENTE),
             cardNumber,
             ...(label && { labelId: label.id }),
           },

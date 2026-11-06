@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Nossa Equipe",
   description:
-    "Conheça a equipe da Paraná Seguros: especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná.",
+    "Conheça a equipe da Brasil Benefícios e Indenizações: especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná.",
   alternates: { canonical: "/nossa-equipe" },
 };
 

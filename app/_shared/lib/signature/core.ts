@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
 import { inferCategory } from "@/app/_shared/lib/document-categories";
 import { logWhatsAppEvent, createLog } from "@/app/_shared/lib/log";
-import { hashPassword } from "@/app/_shared/lib/password";
+import { hashPassword, SENHA_PADRAO_CLIENTE } from "@/app/_shared/lib/password";
 import { runAutomations } from "@/app/_shared/lib/automation-executor";
 import {
   sendBotReply,
@@ -644,7 +644,7 @@ async function ensureCardForContact(
         email: `inserir_email-${contact.phone}@gmail.com`,
         telefone: contact.phone,
         role: "Filtro de Cartões",
-        password: await hashPassword("segurosparana1"),
+        password: await hashPassword(SENHA_PADRAO_CLIENTE),
         cardNumber,
         service: "INSS",
         status: "INSS_S1",

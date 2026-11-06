@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60; // carimbar o PDF leva alguns segundos
 
 export const metadata: Metadata = {
-  title: "Assinar documentos — Paraná Seguros",
+  title: "Assinar documentos",
   robots: { index: false, follow: false },
 };
 

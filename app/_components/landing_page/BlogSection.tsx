@@ -9,7 +9,7 @@ const blogPosts = [
     image: '/fotodpvat.png',
     date: '15 de Dezembro, 2025',
     category: 'DPVAT',
-    src: '/blog-seguros-parana/dpvat'
+    src: '/blog/dpvat'
   },
   {
     id: 2,
@@ -18,7 +18,7 @@ const blogPosts = [
     image: 'https://images.unsplash.com/photo-1516069677018-378515003435?q=80&w=1829&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
     date: '10 de Dezembro, 2025',
     category: 'INSS',
-    src: '/blog-seguros-parana/inss'
+    src: '/blog/inss'
   },
 
   /*
@@ -29,7 +29,7 @@ const blogPosts = [
     image: '/documentation.jpeg',
     date: '5 de Dezembro, 2025',
     category: 'Documentação',
-    src: '/blog-seguros-parana/documentacao'
+    src: '/blog/documentacao'
   },
   */
 
@@ -41,7 +41,7 @@ const blogPosts = [
     date: '12 de maio, 2026',
     category: 'INSS',
     author: '',
-    src: '/blog-seguros-parana/auxilio-maternidade'
+    src: '/blog/auxilio-maternidade'
   },
 ];
 
@@ -90,7 +90,7 @@ export function BlogSection() {
         </div>
 
         <div className="text-center mt-12">
-          <a href="/blog-seguros-parana" className="inline-block bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+          <a href="/blog" className="inline-block bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors">
             Ver Todos os Artigos
           </a>
         </div>

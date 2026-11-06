@@ -5,7 +5,7 @@ import Image from "next/image";
 export default function NotFound() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 text-center">
-      <Image src="/paranaseguros.png" width={180} height={60} alt="Paraná Seguros" />
+      <Image src="/logo-brasil-beneficios.png" width={180} height={60} alt="Brasil Benefícios e Indenizações" />
       <p className="mt-8 text-6xl font-black text-blue-900">404</p>
       <h1 className="mt-2 text-xl font-semibold text-gray-800">Página não encontrada</h1>
       <p className="mt-2 max-w-md text-sm text-gray-500">

@@ -19,7 +19,7 @@ export default function Error({
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 text-center">
-      <Image src="/paranaseguros.png" width={180} height={60} alt="Paraná Seguros" />
+      <Image src="/logo-brasil-beneficios.png" width={180} height={60} alt="Brasil Benefícios e Indenizações" />
       <h1 className="mt-8 text-xl font-semibold text-gray-800">Algo deu errado</h1>
       <p className="mt-2 max-w-md text-sm text-gray-500">
         Ocorreu um erro inesperado. Tente novamente — se o problema continuar,

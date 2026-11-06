@@ -38,11 +38,11 @@ export default function TermsOfUse() {
           <div className="bg-white rounded-lg shadow-md p-8 prose max-w-none">
 
             <p className="text-lg text-gray-700">
-              <strong>TERMOS DE USO — PARANÁ CONSULTORIA EM SEGUROS</strong>
+              <strong>TERMOS DE USO — BRASIL BENEFÍCIOS E INDENIZAÇÕES</strong>
             </p>
 
             <p>
-              PARANÁ CONSULTORIA EM SEGUROS, pessoa jurídica
+              A BRASIL BENEFÍCIOS E INDENIZAÇÕES (EDUARDO CAMARGO MARTINEZ LTDA, CNPJ 69.985.899/0001-45), pessoa jurídica
               de direito privado, descreve neste documento as regras de uso do
               site <strong>https://segurosparana.com.br</strong> e quaisquer outros
               sites, lojas ou aplicativos operados pelo proprietário.

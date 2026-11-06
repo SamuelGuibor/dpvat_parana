@@ -42,7 +42,7 @@ const Sidebar = () => {
             className="flex items-center"
             onClick={close}
           >
-            <Image src="/paranaseguros.png" height={22} width={150} alt="DPVAT Paraná" />
+            <Image src="/logo-brasil-beneficios.png" height={22} width={150} alt="Brasil Benefícios e Indenizações" />
           </Link>
         </div>
 

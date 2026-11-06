@@ -851,7 +851,7 @@ export function SystemMap() {
         {/* HUD: título (compacto: com 11 módulos o anel encosta no canto) */}
         <div className="pointer-events-none absolute left-6 top-6 z-10 max-w-[220px]">
           <p className="mb-2 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: '#b18cff', fontFamily: MONO }}>
-            Seguros Paraná · Plataforma
+            Brasil Benefícios e Indenizações · Plataforma
           </p>
           <h3 className="text-3xl font-extrabold uppercase leading-none tracking-wider text-white" style={{ textShadow: '0 0 32px rgba(177,140,255,.5)' }}>
             Mapa do<br />Sistema

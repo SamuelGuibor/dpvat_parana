@@ -39,7 +39,7 @@ Prazo: 30 dias úteis. Retirada apenas presencial, pelo cliente; avisar o client
 ## Observações
 
 - Valor: R$20 pós análise.
-- Não há filial da Seguros Paraná em Mogi Guaçu; por isso o cliente retira.
+- Não há filial da Brasil Benefícios e Indenizações em Mogi Guaçu; por isso o cliente retira.
 - Mensagem a enviar ao cliente (texto da Fonte; [[name]] é o nome do cliente):
 
 > Boa tarde, [[name]].

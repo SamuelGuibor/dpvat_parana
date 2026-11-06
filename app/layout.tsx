@@ -16,28 +16,28 @@ const mulish = Mulish({
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.segurosparana.com.br"),
   title: {
-    default: "Paraná Seguros - Indenização Rápida e Segura",
-    template: "%s | Paraná Seguros",
+    default: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura",
+    template: "%s | Brasil Benefícios e Indenizações",
   },
   description:
     "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná. Atendemos vítimas de acidentes com rapidez e transparência.",
-  authors: [{ name: "Paraná Seguros" }],
+  authors: [{ name: "Brasil Benefícios e Indenizações" }],
   keywords:
-    "DPVAT Paraná, seguro DPVAT, indenização DPVAT, auxílio-acidente INSS, benefício INSS, indenização acidente de trânsito, Paraná Seguros, Curitiba DPVAT, advogado acidente de trânsito Paraná",
+    "seguro DPVAT, indenização DPVAT, auxílio-acidente INSS, benefício INSS, indenização acidente de trânsito, Brasil Benefícios e Indenizações, Curitiba DPVAT, advogado acidente de trânsito Paraná",
   robots: "index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Paraná Seguros - Indenização Rápida e Segura",
+    title: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura",
     description:
       "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná. Atendimento rápido e transparente.",
     url: "https://www.segurosparana.com.br/",
-    siteName: "Paraná Seguros",
+    siteName: "Brasil Benefícios e Indenizações",
     images: [
       {
-        url: "https://www.segurosparana.com.br/paranaseguros.png",
+        url: "https://www.segurosparana.com.br/og-brasil-beneficios.png",
         width: 1200,
         height: 630,
-        alt: "Paraná Seguros - Indenização de Acidentes de Trânsito",
+        alt: "Brasil Benefícios e Indenizações - Indenização de Acidentes de Trânsito",
       },
     ],
     locale: "pt_BR",
@@ -45,10 +45,10 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Paraná Seguros - Indenização Rápida de Acidentes de Trânsito",
+    title: "Brasil Benefícios e Indenizações - Indenização Rápida de Acidentes de Trânsito",
     description:
       "Garantimos sua indenização de acidentes de trânsito com rapidez e transparência no Paraná. Entre em contato hoje!",
-    images: ["https://www.segurosparana.com.br/paranaseguros.png"],
+    images: ["https://www.segurosparana.com.br/og-brasil-beneficios.png"],
   },
   other: {
     "facebook-domain-verification": "1rkpryx50xubl50ps6z82tb2is9887",

@@ -26,7 +26,7 @@ export default function GlobalError({
         >
           <h1 style={{ fontSize: "1.25rem", fontWeight: 600 }}>Algo deu errado</h1>
           <p style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#6b7280", maxWidth: 420 }}>
-            Ocorreu um erro inesperado na Paraná Seguros. Tente novamente em instantes.
+            Ocorreu um erro inesperado na Brasil Benefícios e Indenizações. Tente novamente em instantes.
           </p>
           {error.digest && (
             <p style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "#9ca3af" }}>
