@@ -88,7 +88,7 @@
 |---|---|---|---|---|---|
 | `/api/whatsapp/cron/sla` | `*/15 * * * *` | — | 120 | sim | fila, SLA humano, entrega travada, cards estourados (sem IA) |
 | `/api/whatsapp/cron/nudge` | `*/15 * * * *` | — | 300 | sim | aviso de 30 min + encerramento por inatividade (IA) |
-| `/api/whatsapp/cron/recovery` | `*/15 * * * *` | — | 300 | sim | ciclo de recuperação do standby |
+| `/api/whatsapp/cron/recovery` | `* 10-23 * * *` (7h–21h BRT) | — | 60 | sim | ciclo de recuperação do standby, um envio por rodada |
 | `/api/afastamentos/check` | `*/30 * * * *` | — | padrão | sim | `Notification` para admins |
 | `/api/automations/cron/time-check` | `*/30 * * * *` | — | 120 | **NÃO** | automações por tempo e prazo |
 | `/api/documents/trash/purge` | `0 6 * * *` | 03:00 | 300 | sim | apaga no banco o que tem mais de 30 dias; no S3 só o objeto que nada mais usa |

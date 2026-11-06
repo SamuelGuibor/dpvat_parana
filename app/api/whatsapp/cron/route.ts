@@ -29,6 +29,6 @@ export async function GET(req: NextRequest) {
   const PHASE_BUDGET_MS = 110_000;
   const sla = await runSlaPhase();
   const nudge = await runNudgePhase(PHASE_BUDGET_MS);
-  const recovery = await runRecoveryPhase(PHASE_BUDGET_MS);
+  const recovery = await runRecoveryPhase();
   return NextResponse.json({ ok: true, ...mergeResults(sla, nudge, recovery) });
 }

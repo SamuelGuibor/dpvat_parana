@@ -2494,8 +2494,16 @@ export function WhatsAppInbox() {
                 <HeaderButton
                   icon={Headset}
                   label="Assumir"
-                  onClick={() => {
+                  onClick={async () => {
                     const base = active;
+                    // Assumir tira do standby e cancela a cobrança programada, sem
+                    // nenhum sinal: já cancelou recuperação 2 s depois de agendada.
+                    if (base.status === 'standby' && !(await confirm({
+                      title: 'Cancelar a cobrança programada?',
+                      description: 'Esta conversa está em recuperação: a IA vai cobrar o cliente. Se você assumir, a cobrança é cancelada e a conversa fica com você.',
+                      tone: 'warning',
+                      confirmLabel: 'Assumir e cancelar',
+                    }))) return;
                     void runAction(() => assumeConversation(base.id), 'Conversa assumida.', {
                       base,
                       optimistic: assumePatch(me),

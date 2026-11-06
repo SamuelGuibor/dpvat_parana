@@ -11,7 +11,7 @@
     },
     {
       "path": "/api/whatsapp/cron/recovery",
-      "schedule": "*/15 * * * *"
+      "schedule": "* 10-23 * * *"
     },
     {
       "path": "/api/afastamentos/check",
