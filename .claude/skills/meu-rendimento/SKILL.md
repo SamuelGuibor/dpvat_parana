@@ -1,6 +1,7 @@
 ---
 name: meu-rendimento
 description: Operação por IA — o rendimento do PRÓPRIO operador no app num período (pedidos, consultas, ações, cards conduzidos, envios, falhas, fluxos parados) a partir de gerar_relatorio, sem texto dos pedidos. Quem tem a Visão do Gestor vê a equipe pela /auditoria-operacao. Use quando o operador pedir "/meu-rendimento", "meu rendimento", "como eu usei a IA", "minhas métricas da semana".
+model: haiku
 ---
 
 # /meu-rendimento — o seu uso da IA de operação

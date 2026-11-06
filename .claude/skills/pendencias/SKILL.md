@@ -1,6 +1,7 @@
 ---
 name: pendencias
 description: Operação por IA — mostra o que falta (documentos, checklist, cadastro, senha do INSS, tags de pendência) de um card pelo número, ou de todos os cards de uma coluna numa chamada só, e oferece resolver (completar cadastro pelos documentos, cobrar o cliente por WhatsApp em lote). Use quando o operador pedir "pendências", "o que falta", "quais documentos faltam", "pendências da coluna X".
+model: haiku
 ---
 
 # /pendencias — o que falta num card ou numa coluna

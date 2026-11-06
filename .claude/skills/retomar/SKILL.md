@@ -1,6 +1,7 @@
 ---
 name: retomar
 description: Operação por IA (Etapa 6) — retoma um fluxo longo parado (/prontuario, /procuracao, /pedido-prontuario, /contrato), do próprio operador ou de um colega, em outra conversa ou outro dia, sem repetir o que já foi feito - mostra onde parou e por quê, relê o que pode ter mudado e segue do próximo passo. Use quando o operador pedir "/retomar", "continua de onde parei", "retoma o prontuário do 2342", "o que eu deixei pela metade".
+model: sonnet
 ---
 
 # /retomar — continuar um fluxo parado

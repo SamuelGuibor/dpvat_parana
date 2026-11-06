@@ -1,6 +1,7 @@
 ---
 name: prontuario
 description: Operação por IA (Etapa 5) — pedido de prontuário de um ou vários cards de ponta a ponta - procedimento do hospital, pedido (e procuração, se o hospital pede) em rascunho, anexos no card, e-mail ao hospital montado e enviado SÓ depois de o operador digitar "aprovo <código>" (um código para o lote); depois registra e oferece mover. Use quando o operador pedir "/prontuario 2342", "pede o prontuário do 2342", "manda o pedido de prontuário do fulano pro hospital", "pede os prontuários da coluna X".
+model: sonnet
 ---
 
 # /prontuario — pedir o prontuário ao hospital (com aprovação do envio)
@@ -8,7 +9,7 @@ description: Operação por IA (Etapa 5) — pedido de prontuário de um ou vár
 Entrada: `$ARGUMENTS` = card(s) (número, CPF ou nome). Nada sai sem o operador digitar `aprovo <código>`.
 
 ## Passos (vários cards: passos 1–6 em paralelo por card; 7–9 num lote só)
-1. Em paralelo: `obter_card`, `consultar_hospital` (`card`), `verificar_pendencias`, `listar_modelos` (`tipo: "pedido_prontuario"`). Ambíguo → pergunte. Arquivado → avise. `aviso` de nota não validada/desatualizada → repita com a **Fonte**. `sem_hospital` → sem destinatário: pergunte (ou preencha com `editar_cadastro` se o operador disser o hospital).
+1. Em paralelo: `obter_card`, `consultar_hospital` (`card`), `verificar_pendencias`, `listar_modelos` (`tipo: "pedido_prontuario"`). Ambíguo → pergunte. Arquivado → avise. O procedimento é o texto da automação ativa (**Fonte**); falta de nota não é aviso. `sem_hospital` → sem destinatário: pergunte (ou preencha com `editar_cadastro` se o operador disser o hospital).
 2. Campo faltando (só os do pedido/procuração) → uma linha e pergunte: "me passa os dados (eu preencho), gero mesmo assim ou preenche no site?". Dados no chat → `editar_cadastro` (`confirmar: true`).
 3. `preparar_pedido_prontuario` (modelo exato; mais de um → pergunte). Link de prévia: peça para **conferir o PDF**.
 4. Procuração só se o hospital pede: `listar_modelos` (`tipo: "procuracao"`) → modelo do procedimento ou pergunte → `preparar_procuracao`.

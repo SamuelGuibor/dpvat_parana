@@ -1,6 +1,7 @@
 ---
 name: whatsapp
 description: Operação por IA — manda WhatsApp a um card, a VÁRIOS cards (coluna, lista de números, tag) ou a QUALQUER conversa do inbox, com ou sem card, escolhida por filtro (linha, não lidas, recuperação, fila, aguardando resposta, desde ontem, data, tag, desfecho, sem card), com um código de aprovação só para o lote. Use quando o operador pedir "/whatsapp", "manda mensagem pro cliente do 2342", "cobra os documentos dos cards da coluna X", "manda pra todos os não lidos desde ontem na linha Seguros Paraná IA", "avisa quem está em recuperação", "responde quem está esperando resposta".
+model: sonnet
 ---
 
 # /whatsapp — mensagem ao cliente, um ou muitos, um código só

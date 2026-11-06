@@ -1,6 +1,7 @@
 ---
 name: conhecimento
 description: Operação por IA — Cérebro APP - propor ou implementar melhoria da operação em três destinos - vault (procedimento de hospital, regra, etapa em docs/operacao/), skill da IA de operação (.claude/skills/) e bot do WhatsApp (regra do playbook). Sempre cruza com o que já existe nos três e aponta conflito. "sugerir" (qualquer operador; cria o ticket) e "implementar <ticket>" (só manage_knowledge; lê o ticket, aplica com OK e devolve o resultado ao quadro). Use quando pedirem "/conhecimento", "registrar que o hospital X mudou o e-mail", "a skill /meu-dia devia…", "o bot devia responder…", "implementar o ticket C-K2P9X".
+model: opus
 ---
 
 # /conhecimento — Cérebro APP: sugerir × implementar

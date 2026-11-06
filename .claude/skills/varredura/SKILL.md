@@ -1,6 +1,7 @@
 ---
 name: varredura
 description: Operação por IA (Etapa 7) — varre os cards ativos atrás de problemas (parados além do prazo, CPF ou telefone repetido, CPF inválido, card sem hospital nas colunas de prontuário, fluxo da IA bloqueado), já LÊ os documentos dos cards com CPF errado para achar o certo e oferece as correções prontas. Use quando pedirem "/varredura", "varrer o kanban", "cards com problema", "duplicados", "inconsistências", "cards com CPF errado".
+model: sonnet
 ---
 
 # /varredura — achar o problema e trazer a correção pronta

@@ -1,6 +1,7 @@
 ---
 name: parados
 description: Operação por IA — lista os cards do kanban parados na coluna atual há N dias ou mais (ou além do prazo da coluna), agrupados por coluna, e oferece agir em lote (avisar responsáveis, cobrar clientes por WhatsApp). Use quando o operador pedir "parados", "cards travados", "o que está atrasado", "processos parados há mais de 7 dias".
+model: haiku
 ---
 
 # /parados — cards parados por coluna

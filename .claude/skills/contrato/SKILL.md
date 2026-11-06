@@ -1,6 +1,7 @@
 ---
 name: contrato
 description: Operação por IA (Etapa 4b, NÃO TESTADA) — prepara o contrato (KIT procuração + contrato) de UM card como PDF e, com o operador já logado no ZapSign no próprio Chrome, sobe o PDF pelo Claude in Chrome, preenche o signatário com os dados do card e devolve o link de assinatura; depois comenta o link no card. Não manda nada ao cliente. Use quando o operador pedir "/contrato 2342", "sobe o contrato do 2342 no ZapSign", "gera o link de assinatura do fulano".
+model: sonnet
 ---
 
 # /contrato — KIT no ZapSign pelo navegador do operador

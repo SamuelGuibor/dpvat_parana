@@ -1,6 +1,7 @@
 ---
 name: pedido-prontuario
 description: Operação por IA — prepara o pedido de prontuário (PEDIDO_HOSPITALAR) de um ou vários cards como rascunho em PDF, diz COMO e PARA ONDE mandar ao hospital (procedimento com fonte) e anexa no card. Não envia ao hospital (isso é a /prontuario). Use quando o operador pedir "/pedido-prontuario 2342", "prepara o pedido de prontuário do 2342", "pedido hospitalar do fulano".
+model: sonnet
 ---
 
 # /pedido-prontuario — preparar o pedido e dizer como enviar
@@ -12,7 +13,7 @@ Entrada: `$ARGUMENTS` = card(s) (número, CPF ou nome).
 2. `preparar_pedido_prontuario` (`card`, `modelo`, sem `permitir_vazios`); vários cards em paralelo.
    - `gerado: false` → `camposFaltando` em uma linha e pergunte: "me passa os dados (eu preencho), gero mesmo assim ou preenche no site?". Dados no chat → `editar_cadastro` (`confirmar: true`) → prepare de novo.
    - `gerado: true` → **arquivo** · link (até `linkValidoAte`) · campos em branco.
-3. **Como enviar** (só do `consultar_hospital`): canal · contato copiado · pede procuração/formulário? · prazo · **Fonte** (nota validada / automação; aviso de nota não validada ou desatualizada).
+3. **Como enviar** (só do `consultar_hospital`): canal · contato copiado · pede procuração/formulário? · prazo · **Fonte** (automação ativa).
 4. "Anexo no card?" → `anexar_rascunho` com `confirmar: true` (`rascunhos` para vários). Pasta = `pastaSugerida`.
 5. `Próximo:` modo e-mail → "mando ao hospital com aprovação? (`/prontuario <card>`)"; senão, como o operador faz pelo canal acima; "precisa de procuração? (`/procuracao`)"; "movo para a coluna de protocolo?".
 

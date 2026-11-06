@@ -1,6 +1,7 @@
 ---
 name: documentos
 description: Operação por IA — lê com IA os documentos anexados de um ou vários cards de uma vez (RG, CNH, comprovante, laudo…), diz o que está escrito neles, aponta as divergências com o cadastro (CPF, nome, RG, nascimento, endereço) e oferece corrigir ou completar o cadastro na hora. Use quando pedirem "/documentos", "lê os documentos do 2342", "confere o CPF pelo RG", "o que tem na pasta do card", "completa o cadastro pelos documentos", "qual é o CPF certo desses cards".
+model: sonnet
 ---
 
 # /documentos — ler o que está nos arquivos e acertar o cadastro

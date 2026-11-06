@@ -1,6 +1,7 @@
 ---
 name: cliente
 description: Operação por IA — encontra um cliente do CRM por CPF, nome, telefone ou número do processo e mostra os cards dele (ativos e arquivados), a situação atual, as últimas ações e as pendências. Use quando o operador pedir "cliente", "encontre o cliente", "quem é o CPF X", "processos do fulano".
+model: haiku
 ---
 
 # /cliente — localizar cliente e mostrar a situação

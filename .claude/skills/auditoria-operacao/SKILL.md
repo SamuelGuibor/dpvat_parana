@@ -1,6 +1,7 @@
 ---
 name: auditoria-operacao
 description: Operação por IA (Etapa 7, só gestor) — auditoria do que a equipe fez pelo app num período - rendimento por pessoa, consultas mais frequentes, falhas por código, fluxos parados, envios aprovados/expirados e o que melhorar, sempre com evidência (ids, nº de card, código). Só leitura, sem texto dos pedidos. Use quando pedirem "/auditoria-operacao", "auditoria da semana passada", "como a equipe usou a IA", "rendimento da operação", "o que melhorar na IA".
+model: opus
 ---
 
 # /auditoria-operacao — auditoria da operação por IA

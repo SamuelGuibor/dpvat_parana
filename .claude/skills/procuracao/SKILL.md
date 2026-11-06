@@ -1,6 +1,7 @@
 ---
 name: procuracao
 description: Operação por IA — prepara a procuração (ou a declaração de hipossuficiência) de um ou vários cards como rascunho em PDF, completa o cadastro que faltar com o que o operador disser, e anexa na pasta PROCURAÇÃO. Use quando o operador pedir "/procuracao 2342", "prepara a procuração Curitiba do 2342", "gera a procuração do fulano", "declaração de hipossuficiência do card X", "procurações dos cards da coluna Y".
+model: sonnet
 ---
 
 # /procuracao — preparar procuração (rascunho → link → anexar)

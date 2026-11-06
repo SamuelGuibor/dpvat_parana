@@ -1,6 +1,7 @@
 ---
 name: publicar-conhecimento
 description: Publica um lote de notas do vault da operação (docs/operacao/) pelo pipeline agente redator → vault-check → agente validador → relatório com amostra de 10% para o dono. Use quando pedirem "publicar conhecimento", "rodar um lote do vault", "redigir as notas de hospital", "/publicar-conhecimento".
+model: sonnet
 ---
 
 # /publicar-conhecimento — lote do vault (redator → validador)

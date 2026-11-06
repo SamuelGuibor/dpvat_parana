@@ -8,11 +8,11 @@ import { activeCardsByHospital, ghostFor, loadHospitalGroups, loadVaultIndex } f
 import { automationAttachments, automationSourceText, normalizeHospitalName, parseNote } from "@/app/_shared/utils/vault";
 
 // Procedimento de pedido de prontuário por hospital (Etapa 2 do AI-First).
-// A verdade operacional continua sendo a automação da coluna "DISTRIBUIÇÃO DE
-// SOLICITAÇÕES" (é o que o CRM comenta no card); a nota do vault é a versão
-// redigida e validada. Por isso a resposta traz SEMPRE o texto vivo da
-// automação e, se houver nota publicada no S3, a nota + `desatualizado` quando a
-// automação mudou depois dela (fonte_hash ≠ hash atual).
+// A fonte é a automação ATIVA da coluna "DISTRIBUIÇÃO DE SOLICITAÇÕES" (é o que
+// o CRM comenta no card). Decisão do dono (05/11, T-R1ABP): falta de nota no
+// vault não é aviso nem bloqueio — só 163 de 279 hospitais têm nota e elas só
+// reescrevem o texto da automação. Nota publicada e em dia vem como complemento;
+// nota desatualizada não vem (contradiria a automação, que prevalece).
 
 const schema = z
   .object({
@@ -24,7 +24,7 @@ const schema = z
 export const consultarHospital = defineTool({
   name: "consultar_hospital",
   description:
-    "Como pedir o prontuário num hospital: texto vivo da automação do CRM (DISTRIBUIÇÃO DE SOLICITAÇÕES), nota publicada do vault da operação (se houver) com aviso de desatualizada, GHOST do catálogo com o contato cadastrado (`cadastro`: e-mail, telefone, modo) e quantos cards ativos têm esse hospital. Aceita nome aproximado ou nº do card.",
+    "Como pedir o prontuário num hospital: o texto da automação ATIVA do CRM (DISTRIBUIÇÃO DE SOLICITAÇÕES) é a fonte principal (de/para do e-mail, documentos, formulário, contato, anexos); nota do vault só como complemento, quando existe e está em dia. Também o GHOST do catálogo com o contato cadastrado (`cadastro`: e-mail, telefone, modo) e quantos cards ativos têm esse hospital. Aceita nome aproximado (mais de um = `ambiguo` com as opções) ou nº do card.",
   level: 1,
   permission: "op_use",
   schema,
@@ -62,29 +62,22 @@ export const consultarHospital = defineTool({
     const [ghost, cards, index] = await Promise.all([ghostFor(escolhido), activeCardsByHospital(), loadVaultIndex()]);
 
     const entrada = index.find((n) => n.hospital_norm === key) ?? null;
-    let nota: { caminho: string; atualizadaEm: string | null; desatualizado: boolean; texto: string } | null = null;
+    let nota: { caminho: string; atualizadaEm: string | null; texto: string } | null = null;
     if (entrada) {
       const raw = await readVaultText(`operacao-vault/${entrada.path}`);
       if (raw) {
         const { fm, body } = parseNote(raw);
         // Só a parte redigida; a Fonte já vai em `automacoes` (texto vivo).
         const texto = body.replace(/^## +Fonte\b[\s\S]*$/m, "").trim();
-        nota = { caminho: `docs/operacao/${entrada.path}`, atualizadaEm: entrada.atualizado_em, desatualizado: fm.fonte_hash !== g.hash, texto };
+        if (fm.fonte_hash === g.hash) nota = { caminho: `docs/operacao/${entrada.path}`, atualizadaEm: entrada.atualizado_em, texto };
       }
     }
-
-    const aviso = !nota
-      ? "procedimento ainda não validado: use o texto da automação e diga isso ao operador"
-      : nota.desatualizado
-        ? "a automação mudou depois da nota: confira o texto vivo da automação, ele prevalece"
-        : null;
 
     return {
       data: {
         hospital: g.nome,
         ...(cardNumber ? { card: cardNumber } : {}),
-        aviso,
-        nota,
+        fonte: "automacao_ativa",
         automacoes: g.autos.map((a) => ({
           id: a.id,
           nome: a.name,
@@ -100,8 +93,10 @@ export const consultarHospital = defineTool({
             ? { email: ghost.hospital_email, telefone: ghost.hospital_telefone, modo: ghost.hospital_modo, obs: ghost.hospital_obs }
             : null,
         cardsAtivos: cards.get(key)?.n ?? 0,
+        // Complemento: só existe se a nota está em dia com a automação.
+        nota,
       },
-      summary: `${g.nome}: ${nota ? (nota.desatualizado ? "nota desatualizada" : "nota publicada") : "sem nota"}, ${g.autos.length} automação(ões)`,
+      summary: `${g.nome}: ${g.autos.length} automação(ões) ativa(s)${nota ? ", com nota" : ""}`,
     };
   },
 });

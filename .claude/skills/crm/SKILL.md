@@ -1,6 +1,7 @@
 ---
 name: crm
 description: Operação por IA — entrada geral para qualquer pedido no CRM sem skill própria ("move o 2342 pra AUDITORIA", "marca a tag X nos cards da coluna Y", "comenta no 2310", "quem pediu o e-mail do 2310", "avisa a Isadora", "cria o card do João CPF X", "abre um ticket pro dev, o botão Y não salva", "cria a Bia na equipe") e a referência COMPLETA das regras de leitura, ação direta, confirmação, envio aprovado, lote e formato que as outras skills resumem. Use quando o operador pedir "/crm" ou qualquer ação/consulta no CRM que não caia em outra skill.
+model: sonnet
 ---
 
 # /crm — pedidos avulsos e regras completas da operação
