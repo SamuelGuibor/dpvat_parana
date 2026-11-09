@@ -179,6 +179,11 @@ export function qualifiedForCategory(category: string): boolean | null {
  * desfecho (`closeCategory`/`qualified`) é preservado, como no servidor; só o
  * rótulo some porque ele só aparece em conversa encerrada.
  */
+/** Liga/desliga as respostas em áudio: o mesmo no clique e na resposta da action. */
+export function voiceRepliesPatch(on: boolean): ConversationChanges {
+  return { voiceReplies: on };
+}
+
 export function assumePatch(me: Attendant): ConversationChanges {
   return { status: 'human', assignedToId: me.id, assignedToName: me.name, closeCategoryLabel: null };
 }

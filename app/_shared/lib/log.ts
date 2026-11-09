@@ -37,6 +37,7 @@ export type LogAction =
   | "wa_suggest"     // IA sugeriu resposta pro atendente (agent-assist)
   | "wa_summary"     // IA resumiu a conversa pro card do kanban
   | "wa_transcribe"  // IA transcreveu áudio: a pedido do atendente ou no /reply do bot (metadata.bySystem)
+  | "wa_tts"         // voz da ElevenLabs gerada para responder em áudio (metadata.usage em caracteres)
   | "wa_ficha_ai"    // ficha do cliente pela IA: preencheu, não achou nada (metadata.noop) ou falhou
   | "ficha_ai_fill"  // o mesmo preenchimento, registrado no HISTÓRICO do card
   | "roteiro_ai"     // gasto de IA do roteiro (docx-converter → sentinela no stream)
@@ -66,7 +67,7 @@ export type LogAction =
  */
 // tag_add/tag_remove do card: a rota de tag do site passou a logar (Etapa 3 da
 // IA de operação) — pelo mesmo motivo das tags de conversa, não viram tarefa.
-export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove", "op_doc_analysis"];
+export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tts", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove", "op_doc_analysis"];
 
 interface CreateLogInput {
   action: LogAction;

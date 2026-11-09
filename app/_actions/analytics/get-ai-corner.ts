@@ -33,6 +33,7 @@ const OPERATION_LABELS: Record<string, string> = {
   // IA do cron: decide se cutuca ou encerra a conversa calada.
   wa_followup: 'Bot — follow-up do cron',
   wa_transcribe: 'Transcrição de áudio',
+  wa_tts: 'Resposta em áudio (voz)',
   wa_suggest: 'Sugestão de resposta',
   wa_summary: 'Resumo da conversa',
   wa_ficha_ai: 'Ficha automática',
@@ -48,6 +49,7 @@ const OPERATION_ICONS: Record<string, string> = {
   wa_bot_discarded: 'bot',
   wa_followup: 'bot',
   wa_transcribe: 'mic',
+  wa_tts: 'mic',
   wa_suggest: 'message',
   wa_summary: 'file',
   wa_ficha_ai: 'id',

@@ -48,6 +48,14 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
   // o Gemini cobra entrada de ÁUDIO mais caro que texto (1,00 × 0,30 por 1M no
   // 2.5 Flash). Tem que vir ANTES de "gemini-2.5-flash": priceFor casa por
   // startsWith na ordem das chaves.
+  // Voz da ElevenLabs (respostas em áudio, 08/11/2026): cobra por CARACTERE,
+  // então "input" aqui é USD por 1 M de caracteres (o log grava os caracteres
+  // em inputTokens). Valor PROVISÓRIO do plano Creator (US$ 22 por 100 mil
+  // créditos, 1 crédito por caractere no multilingual_v2; flash/turbo gastam
+  // metade). Acertar pelo plano contratado e conferir contra a fatura.
+  "elevenlabs-eleven_flash": { input: 110, output: 0, label: "ElevenLabs Flash (voz)" },
+  "elevenlabs-eleven_turbo": { input: 110, output: 0, label: "ElevenLabs Turbo (voz)" },
+  "elevenlabs-": { input: 220, output: 0, label: "ElevenLabs (voz)" },
   "gemini-2.5-flash-audio": { input: 1, output: 2.5, label: "Gemini 2.5 Flash (áudio)" },
   "gemini-2.5-flash": { input: 0.3, output: 2.5, label: "Gemini 2.5 Flash" },
   "gemini-2.0-flash-lite": { input: 0.075, output: 0.3, label: "Gemini 2.0 Flash-Lite" },

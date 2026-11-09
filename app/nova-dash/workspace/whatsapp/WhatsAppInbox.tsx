@@ -13,7 +13,7 @@ import {
   HelpCircle, AlertTriangle, StickyNote, Play, Pause, Mic, Download, Sparkles,
   MoreVertical, Eye, RotateCcw, MessageSquareOff, Image as ImageIconWA, Video,
   UserCheck, Columns3, Users, Phone, BookUser, Smile,
-  Lock, ArrowDown, UserX, Pin, PinOff,
+  Lock, ArrowDown, UserX, Pin, PinOff, Volume2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -52,7 +52,7 @@ import {
 } from '@/app/_actions/whatsapp/send-message';
 import { listWhatsAppTags, setConversationTag, type WhatsAppTagDTO } from '@/app/_actions/whatsapp/tags';
 import {
-  assumePatch, closePatch, inboxListState, manualUnreadPatch, patchConversationList, patchConversationRow, readPatch,
+  assumePatch, closePatch, inboxListState, manualUnreadPatch, voiceRepliesPatch, patchConversationList, patchConversationRow, readPatch,
   returnToBotPatch, revertPatch, sameTags, sentMessagePatch, withTag, type ConversationPatch,
 } from '@/app/_shared/utils/whatsapp-inbox';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
@@ -64,7 +64,7 @@ import {
 } from '@/app/_shared/utils/thread-scroll';
 import { listCloseReasons, createCloseReason, deleteCloseReason, type CloseReasonDTO } from '@/app/_actions/whatsapp/close-reasons';
 import { createWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
-import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact } from '@/app/_actions/whatsapp/contacts';
+import { blockWhatsAppContact, unblockWhatsAppContact, deleteWhatsAppContact, setWhatsAppVoiceReplies } from '@/app/_actions/whatsapp/contacts';
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
 import { describeAssistError, requestAssistText } from '@/app/_shared/utils/assist-api';
 // SÓ POR 1 DEPLOY: a UI chama a IA do Copiloto por fetch, mas a aba aberta com
@@ -2422,6 +2422,16 @@ export function WhatsAppInbox() {
               >
                 <p className="truncate font-bold text-gray-900 underline-offset-2 hover:underline dark:text-zinc-100">
                   {active.contactName ?? formatPhone(active.contactPhone)}
+                  {/* Cliente que não lê: o bot, os fluxos e as automações saem
+                      em áudio (voz da IA). Liga/desliga no menu ⋮. */}
+                  {active.voiceReplies && (
+                    <span
+                      title="Este cliente recebe as mensagens do bot em áudio (voz da IA). Desligue no menu ⋮."
+                      className="ml-2 inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 align-middle text-[11px] font-bold text-violet-700 no-underline"
+                    >
+                      <Volume2 className="h-3 w-3" /> Responde em áudio
+                    </span>
+                  )}
                 </p>
                 {/* <p className="text-xs text-gray-400">
                   {formatPhone(active.contactPhone)}
@@ -2659,6 +2669,27 @@ export function WhatsAppInbox() {
                     className="text-base"
                   >
                     <CheckCheck className="mr-2 h-3.5 w-3.5 text-sky-500" /> Marcar como lida
+                  </DropdownMenuItem>
+                  {/* Respostas em áudio (08/11/2026): a IA liga quando o cliente
+                      diz que não sabe ler; aqui o atendente corrige na mão. */}
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const base = active;
+                      const on = !base.voiceReplies;
+                      void runAction(
+                        () => setWhatsAppVoiceReplies(base.contactId, on),
+                        on ? 'O bot vai responder este cliente em áudio.' : 'O bot volta a responder por texto.',
+                        {
+                          base,
+                          optimistic: voiceRepliesPatch(on),
+                          errorMsg: 'Não foi possível mudar o formato das respostas. Recarregue a página (F5) e tente de novo.',
+                        },
+                      );
+                    }}
+                    className="text-base"
+                  >
+                    <Volume2 className="mr-2 h-3.5 w-3.5 text-violet-600" />
+                    {active.voiceReplies ? 'Responder por texto' : 'Responder em áudio'}
                   </DropdownMenuItem>
                   {perms.manage_wa_contacts && (
                     <>

@@ -3,7 +3,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
-import { sendText, sendTemplate, type TemplateHeaderMedia } from "./client";
+import { sendTemplate, type TemplateHeaderMedia } from "./client";
+import { sendTextOrVoice, type SentPart } from "./voice-send";
+import { isVoiceSystemSource } from "@/app/_shared/utils/voice-text";
 // import { OPT_OUT_FOOTER } from "./opt-out";
 import { broadcastWhatsAppEvent, whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 import { renderTemplateThreadText } from "./template-text";
@@ -37,10 +39,11 @@ type ResolvedContact = {
   optedOut: boolean;
   optedInAt: Date | null;
   numberId: string | null;
+  voiceReplies: boolean;
 };
 
 const CONTACT_FIELDS = {
-  id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true,
+  id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true, voiceReplies: true,
 } as const;
 
 /**
@@ -211,8 +214,9 @@ const UNANSWERED_ALERT_THRESHOLD = 3;
 async function persistSystemMessage(
   contact: { id: string; phone: string; name: string | null; numberId?: string | null },
   waMessageId: string,
-  body: string,
+  body: string | null,
   systemSource: string,
+  media?: Pick<SentPart, "mediaKey" | "mediaType" | "transcript">,
 ): Promise<void> {
   const message = await db.whatsAppMessage.create({
     data: {
@@ -221,6 +225,9 @@ async function persistSystemMessage(
       waMessageId,
       direction: "out",
       body,
+      mediaKey: media?.mediaKey ?? null,
+      mediaType: media?.mediaType ?? null,
+      transcript: media?.transcript ?? null,
       status: "sent",
       sentByBot: true,
       systemSource,
@@ -238,8 +245,8 @@ async function persistSystemMessage(
     contactId: contact.id,
     direction: "out",
     body,
-    mediaKey: null,
-    mediaType: null,
+    mediaKey: media?.mediaKey ?? null,
+    mediaType: media?.mediaType ?? null,
     status: "sent",
     sentByBot: true,
     authorId: null,
@@ -382,7 +389,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
     const contact = input.contactId
       ? await db.whatsAppContact.findUnique({
           where: { id: input.contactId },
-          select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true },
+          select: { id: true, phone: true, name: true, optedOut: true, optedInAt: true, numberId: true, voiceReplies: true },
         })
       : await findOrCreateContactByPhone(input.phone, input.clientName, wantedNumberId);
     if (!contact) return { sent: false, via: null, reason: input.contactId ? "contato não encontrado" : "telefone do card inválido" };
@@ -421,7 +428,16 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
 
     if (windowOpen) {
       const body = input.text;
-      const result = await sendText(contact.phone, body, undefined, contact.numberId);
+      // Cliente que só entende áudio ouve automação, aviso de etapa e IA de
+      // operação (VOICE_SYSTEM_SOURCES, decisão do dono de 08/11). Cobrança e
+      // recuperação seguem em texto. Falha da voz = o mesmo texto por escrito.
+      const sent = await sendTextOrVoice({
+        phone: contact.phone,
+        text: body,
+        voiceReplies: !!contact.voiceReplies && isVoiceSystemSource(input.source),
+        ctx: { contactId: contact.id, numberId: contact.numberId, contactName: contact.name, contactPhone: contact.phone, source: input.source },
+      });
+      const result = { waMessageId: sent.parts[0]?.waMessageId ?? null, error: sent.error };
       if (!result.waMessageId) {
         await logWhatsAppEvent({
           action: "wa_text",
@@ -435,7 +451,9 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
         });
         return { sent: false, via: "text", reason: result.error ?? "Meta rejeitou o envio" };
       }
-      await persistSystemMessage(contact, result.waMessageId, body, input.source);
+      for (const part of sent.parts) {
+        await persistSystemMessage(contact, part.waMessageId, part.body, input.source, part);
+      }
       await logWhatsAppEvent({
         action: "wa_text",
         message: `enviou mensagem automática para ${contact.name ?? contact.phone}`,
@@ -444,7 +462,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
         contactId: contact.id,
         contactName: contact.name,
         contactPhone: contact.phone,
-        metadata: { source: input.source, automated: true, preview: input.text.slice(0, 120) },
+        metadata: { source: input.source, automated: true, preview: input.text.slice(0, 120), ...(sent.voice ? { voice: true } : {}) },
       });
       if (input.unansweredAlert !== false) await alertIfUnanswered(contact, input.authorId, input.authorName);
       return { sent: true, via: "text" };

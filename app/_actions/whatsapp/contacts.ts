@@ -4,10 +4,12 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/_shared/lib/auth';
 import { db } from '@/app/_shared/lib/prisma';
 import { logWhatsAppEvent } from '@/app/_shared/lib/log';
-import { requirePermission } from '@/app/_shared/lib/permissions-server';
+import { requirePermission, requireTeam } from '@/app/_shared/lib/permissions-server';
 import { captureConversation } from '@/app/_shared/lib/whatsapp/brain';
 import { syncCloseTag } from '@/app/_shared/lib/whatsapp/close-tags';
 import { collectRequestEndedData } from '@/app/_shared/utils/collect-request';
+import { voiceRepliesPatch } from '@/app/_shared/utils/whatsapp-inbox';
+import type { WhatsAppConversationDTO } from '@/app/_shared/lib/whatsapp/inbox-types';
 
 const TEAM_ROLES = ['ADMIN', 'ADMIN+', 'ADMIN++'];
 
@@ -265,4 +267,40 @@ export async function deleteWhatsAppContact(contactId: string): Promise<void> {
     contactPhone: contact.phone,
     metadata: { operation: 'delete', messages: contact._count.messages },
   });
+}
+
+/**
+ * Respostas em ÁUDIO (08/11/2026): o atendente liga/desliga na mão o modo
+ * "responde em áudio" do contato (a IA também liga quando o cliente diz que
+ * não sabe ler). Idempotente: recebe o estado desejado e devolve o patch.
+ */
+export async function setWhatsAppVoiceReplies(
+  contactId: string,
+  on: boolean,
+): Promise<Partial<WhatsAppConversationDTO>> {
+  const me = await requireTeam();
+  const contact = await db.whatsAppContact.findUnique({
+    where: { id: contactId },
+    select: { id: true, name: true, phone: true, numberId: true, voiceReplies: true },
+  });
+  if (!contact) throw new Error('Contato não encontrado.');
+  if (contact.voiceReplies !== on) {
+    // Toca o updatedAt do contato: o delta do inbox leva o selo às outras abas.
+    await db.whatsAppContact.update({
+      where: { id: contactId },
+      data: { voiceReplies: on, voiceRepliesAt: new Date(), voiceRepliesBy: me.userId },
+    });
+    await logWhatsAppEvent({
+      action: 'wa_contact',
+      message: on ? 'ligou as respostas em áudio' : 'desligou as respostas em áudio',
+      authorId: me.userId,
+      authorName: me.name ?? me.email,
+      contactId,
+      contactName: contact.name,
+      contactPhone: contact.phone,
+      numberId: contact.numberId,
+      metadata: { voiceReplies: on },
+    });
+  }
+  return voiceRepliesPatch(on);
 }

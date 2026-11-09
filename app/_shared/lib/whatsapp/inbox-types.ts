@@ -88,6 +88,9 @@ export interface WhatsAppConversationDTO {
   kanbanLabelId: string | null;
   // Contato em opt-out (pediu pra parar ou foi bloqueado pela equipe).
   optedOut: boolean;
+  // Cliente que recebe as mensagens em ÁUDIO (não lê/escreve; a IA ou o
+  // atendente ligou). Selo no cabeçalho da thread e liga/desliga no menu.
+  voiceReplies: boolean;
   // Número da empresa que atende esta conversa (multi-número): o inbox filtra
   // e etiqueta por ele. Null em conversa legada ainda não adotada.
   numberId: string | null;

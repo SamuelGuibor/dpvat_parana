@@ -2,7 +2,8 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
-import { sendText, sendMedia, sendVoiceNote } from "./client";
+import { sendMedia, sendVoiceNote } from "./client";
+import { sendTextOrVoice } from "./voice-send";
 import { applyFlowTagsToContact } from "./flow-tags";
 import { flowListText, sameCollectRequest } from "@/app/_shared/utils/collect-request";
 import { broadcastWhatsAppEvent, whatsappChannelId, type WhatsAppMessageDTO } from "./service";
@@ -86,6 +87,7 @@ async function persistAndBroadcast(
   body: string | null,
   mediaKey: string | null,
   mediaType: string | null,
+  transcript: string | null = null,
 ): Promise<void> {
   const message = await db.whatsAppMessage.create({
     data: {
@@ -95,6 +97,8 @@ async function persistAndBroadcast(
       body,
       mediaKey,
       mediaType,
+      // Passo de texto que saiu em ÁUDIO (cliente que não lê): o texto falado.
+      transcript,
       status: "sent",
       sentByBot: true,
     },
@@ -143,10 +147,11 @@ export async function runFlowForContact(
 
     // Multi-número: o fluxo sai pelo número que atende ESTE contato (sem isso
     // a resposta sairia pelo número default e a Meta recusaria fora da janela).
-    const numberId = (await db.whatsAppContact.findUnique({
+    const contactRow = await db.whatsAppContact.findUnique({
       where: { id: contact.id },
-      select: { numberId: true },
-    }))?.numberId ?? null;
+      select: { numberId: true, voiceReplies: true },
+    });
+    const numberId = contactRow?.numberId ?? null;
 
     let sentAny = false;
     for (let i = 0; i < steps.length; i++) {
@@ -155,9 +160,16 @@ export async function runFlowForContact(
 
       if (step.kind === "text") {
         if (!step.body?.trim()) continue;
-        const res = await sendText(contact.phone, step.body, undefined, numberId);
-        if (res.waMessageId) {
-          await persistAndBroadcast(contact, res.waMessageId, step.body, null, null);
+        // Cliente marcado como "responde em áudio" ouve o passo (voice-send.ts);
+        // falha da voz manda o mesmo texto por escrito.
+        const res = await sendTextOrVoice({
+          phone: contact.phone,
+          text: step.body,
+          voiceReplies: !!contactRow?.voiceReplies,
+          ctx: { contactId: contact.id, numberId, contactName: contact.name, contactPhone: contact.phone, source: "flow" },
+        });
+        for (const part of res.parts) {
+          await persistAndBroadcast(contact, part.waMessageId, part.body, part.mediaKey, part.mediaType, part.transcript);
           sentAny = true;
         }
         continue;

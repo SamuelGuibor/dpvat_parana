@@ -19,6 +19,7 @@ import {
   sameTags,
   sentMessagePatch,
   truncatePreview,
+  voiceRepliesPatch,
   withTag,
 } from "@/app/_shared/utils/whatsapp-inbox";
 
@@ -237,7 +238,7 @@ const conv = (extra: Partial<WhatsAppConversationDTO> = {}): WhatsAppConversatio
   handoffReason: "quer falar com atendente", adPlatform: null, createdAt: "2026-09-20T10:00:00.000Z",
   caseLesoes: null, caseCidade: null, caseDataAcidente: null, hasCpf: false, recoveryAttempts: 0, recoveryManualMax: null, pinnedNote: null,
   collectRequest: null,
-  unread: true, unreadCount: 2, manualUnread: false, kanbanColumn: null, kanbanLabelId: null, optedOut: false,
+  unread: true, unreadCount: 2, manualUnread: false, kanbanColumn: null, kanbanLabelId: null, optedOut: false, voiceReplies: false,
   numberId: "n1", readOnly: false, tags: [VIP],
   ...extra,
 });
@@ -468,5 +469,16 @@ describe("mergeCloseTag", () => {
     const current = [URG, P];
     mergeCloseTag(current, new Set(["p"]), Q);
     expect(current).toEqual([URG, P]);
+  });
+});
+
+describe("voiceRepliesPatch (respostas em áudio)", () => {
+  it("liga e desliga, e o rollback volta ao original", () => {
+    const original = conv();
+    const optimistic = voiceRepliesPatch(true);
+    const ligada = patchConversationRow(original, optimistic);
+    expect(ligada.voiceReplies).toBe(true);
+    expect(patchConversationRow(ligada, revertPatch(original, optimistic))).toEqual(original);
+    expect(patchConversationRow(ligada, voiceRepliesPatch(false)).voiceReplies).toBe(false);
   });
 });

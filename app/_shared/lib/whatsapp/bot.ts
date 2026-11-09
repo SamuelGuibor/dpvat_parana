@@ -2,7 +2,9 @@ import { Prisma } from "@prisma/client";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/app/_shared/lib/prisma";
-import { sendText, markMessageRead } from "./client";
+import { markMessageRead } from "./client";
+import { sendTextOrVoice, type VoiceBudget } from "./voice-send";
+import { parseVoiceRepliesDecision, type VoiceRepliesDecision } from "@/app/_shared/utils/voice-text";
 import { runFlowForContact, listFlowsForBot, flowListTextByName, flowNameForListText } from "./flow-runner";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { runAfterResponse } from "@/app/_shared/lib/background";
@@ -302,6 +304,10 @@ interface BotDecision {
   // IDs das regras do playbook (R1, R2...) que a IA declarou terem influenciado
   // esta resposta. Vira WhatsAppRuleEvent — telemetria da aba Métricas.
   appliedRules?: string[];
+  // Respostas em ÁUDIO (08/11/2026): "ligar" quando o cliente disse que não
+  // sabe ler/escrever ou pediu áudio, "desligar" quando pediu texto, "manter"
+  // no resto (quando usar é das instruções). Micro antigo não manda: manter.
+  voiceReplies?: VoiceRepliesDecision;
   // Silêncio DELIBERADO: a IA declarou que encerrar sem mensagem é o correto
   // (ex.: agradecimento pós-despedida). Sem esta flag, desfecho terminal com
   // reply vazio é tratado como falha da IA e recebe texto de fallback.
@@ -462,7 +468,14 @@ function sanitizeDecision(d: BotDecision): BotDecision {
       `replies=${JSON.stringify(rawReplies.map((r) => String(r).slice(0, 200)))}`,
     );
   }
-  return { ...d, reply, replies, leaked: leaked || d.leaked };
+  return {
+    ...d,
+    reply,
+    replies,
+    leaked: leaked || d.leaked,
+    // Valor fora do enum (micro antigo, lixo) vira "manter" (voice-text.ts).
+    voiceReplies: parseVoiceRepliesDecision(d.voiceReplies),
+  };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1100,6 +1113,7 @@ export async function sendBotReply(
   name: string | null,
   text: string,
   delayMs = 0,
+  voiceBudget?: VoiceBudget,
 ): Promise<boolean> {
   // Guard anti-spam (política da Meta):
   // 1. NUNCA responde a quem pediu opt-out.
@@ -1107,7 +1121,7 @@ export async function sendBotReply(
   //    evita o padrão de "mesma saudação repetida" que caracteriza spam.
   const contact = await db.whatsAppContact.findUnique({
     where: { id: contactId },
-    select: { optedOut: true, numberId: true },
+    select: { optedOut: true, numberId: true, voiceReplies: true },
   });
   if (contact?.optedOut) {
     console.warn("[WHATSAPP BOT] Envio bloqueado: contato em opt-out.", contactId);
@@ -1116,54 +1130,69 @@ export async function sendBotReply(
   const lastOut = await db.whatsAppMessage.findFirst({
     where: { contactId, direction: "out", deletedAt: null },
     orderBy: { createdAt: "desc" },
-    select: { body: true, createdAt: true },
+    select: { body: true, transcript: true, createdAt: true },
   });
-  if (lastOut?.body && lastOut.body.trim() === text.trim()
+  // Resposta em áudio grava o texto em `transcript` (body null): compara os dois.
+  const lastText = lastOut?.body ?? lastOut?.transcript;
+  if (lastOut && lastText && lastText.trim() === text.trim()
     && Date.now() - lastOut.createdAt.getTime() < 10 * 60_000) {
     console.warn("[WHATSAPP BOT] Envio bloqueado: mensagem idêntica recente (anti-spam).", contactId);
     return false;
   }
 
-  if (delayMs > 0) await sleep(delayMs);
-
-  const result = await sendText(phone, text, undefined, contact?.numberId);
-  if (!result.waMessageId) {
+  // Texto ou VOZ (08/11/2026): cliente marcado como "responde em áudio" ouve o
+  // mesmo texto pela ElevenLabs; a geração acontece dentro do delayMs, e falha
+  // da voz manda o texto por escrito (voice-send.ts).
+  const result = await sendTextOrVoice({
+    phone,
+    text,
+    voiceReplies: !!contact?.voiceReplies,
+    delayMs,
+    budget: voiceBudget,
+    ctx: { contactId, numberId: contact?.numberId ?? null, contactName: name, contactPhone: phone, source: "bot" },
+  });
+  if (!result.parts.length) {
     throw new Error(result.error ?? "Envio rejeitado pela Meta.");
   }
 
-  const message = await db.whatsAppMessage.create({
-    data: {
+  for (const part of result.parts) {
+    const message = await db.whatsAppMessage.create({
+      data: {
+        contactId,
+        numberId: contact?.numberId ?? null,
+        waMessageId: part.waMessageId,
+        direction: "out",
+        body: part.body,
+        mediaKey: part.mediaKey,
+        mediaType: part.mediaType,
+        transcript: part.transcript,
+        status: "sent",
+        sentByBot: true,
+      },
+    });
+    const conversation = await db.whatsAppConversation.update({
+      where: { contactId },
+      data: { lastMessageAt: new Date() },
+    });
+
+    const dto: WhatsAppMessageDTO = {
+      id: message.id,
+      channelId: whatsappChannelId(contactId),
       contactId,
-      numberId: contact?.numberId ?? null,
-      waMessageId: result.waMessageId,
       direction: "out",
-      body: text,
+      body: part.body,
+      mediaKey: part.mediaKey,
+      mediaType: part.mediaType,
       status: "sent",
       sentByBot: true,
-    },
-  });
-  const conversation = await db.whatsAppConversation.update({
-    where: { contactId },
-    data: { lastMessageAt: new Date() },
-  });
-
-  const dto: WhatsAppMessageDTO = {
-    id: message.id,
-    channelId: whatsappChannelId(contactId),
-    contactId,
-    direction: "out",
-    body: text,
-    mediaKey: null,
-    mediaType: null,
-    status: "sent",
-    sentByBot: true,
-    authorId: null,
-    createdAt: message.createdAt.toISOString(),
-    contactName: name,
-    contactPhone: phone,
-    conversationStatus: conversation.status,
-  };
-  broadcastWhatsAppEvent(dto);
+      authorId: null,
+      createdAt: message.createdAt.toISOString(),
+      contactName: name,
+      contactPhone: phone,
+      conversationStatus: conversation.status,
+    };
+    broadcastWhatsAppEvent(dto);
+  }
   return true;
 }
 
@@ -1312,6 +1341,10 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
   // Prazo total do turno (BOT_TURN_BUDGET_MS, contado de startedAt): toda
   // chamada ao cérebro cabe nele, para o handoff sair antes do maxDuration.
   const turnDeadline = startedAt + BOT_TURN_BUDGET_MS;
+  // Respostas em áudio: depois do prazo do turno (ou da 1ª falha da voz) os
+  // blocos restantes saem em texto — a síntese não pode empurrar o webhook
+  // além do maxDuration 120.
+  const voiceBudget: VoiceBudget = { deadlineAt: turnDeadline, failed: false };
 
   // ---- Transcrição antecipada do áudio (26/09/2026) ------------------------
   // O áudio DESTA mensagem começa a ser transcrito agora, junto com o
@@ -1648,6 +1681,12 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
     // (contract-pending.ts): o cliente que diz "não achei o link" ou manda
     // "podemos conversar?" recebe o MESMO link de novo, e a pendência continua.
     const cardColumn = card?.column ?? null;
+    // Flag "responde em áudio" do contato (fato para o cérebro; o envio lê de
+    // novo no sendBotReply).
+    const voiceRepliesOn = !!(await db.whatsAppContact.findUnique({
+      where: { id: contactId },
+      select: { voiceReplies: true },
+    }))?.voiceReplies;
     const contractPending = buildContractPending({ message: zapSignMsg, hasCard: !!card, cardColumn, now: turnNow });
 
     // Histórico em ordem cronológica, com senha/código mascarados
@@ -1738,6 +1777,10 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // bloco "PEDIDO DO ATENDENTE EM ABERTO" e as instruções v22 dizem
         // como conduzir. Micro antigo ignora.
         attendantRequest,
+        // O cliente recebe as respostas em ÁUDIO (não lê/escreve ou pediu
+        // áudio). Só o fato: quando ligar/desligar e como escrever para a voz
+        // ficam nas instruções. Micro antigo ignora.
+        voiceReplies: voiceRepliesOn,
       },
       business: businessHours(),
       // Contrato aguardando assinatura → bloco "ASSINATURA EM ANDAMENTO" no
@@ -1950,7 +1993,7 @@ ${emptyNote}`,
       const confirm = "Se você preferir não receber mais nenhuma mensagem nossa, é só responder SAIR, tá bom? 😊";
       const text = bye ? `${bye}\n\n${confirm}` : confirm;
       try {
-        markSent(await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text)));
+        markSent(await sendBotReply(contactId, message.contactPhone, message.contactName, text, humanDelay(text), voiceBudget));
       } catch (err) {
         console.error("[WHATSAPP BOT] Confirmação de opt-out não entregue (encerrando mesmo assim):", contactId, err);
       }
@@ -2032,6 +2075,23 @@ ${emptyNote}`,
     // conversa segue com o bot (regras em shouldAbortSend). Antes o bot mandava
     // tudo: falava depois de a conversa ir para o atendente e mandava o resto
     // do roteiro por cima da mensagem nova do cliente.
+    // Respostas em ÁUDIO: a IA ligou/desligou neste turno. Grava ANTES do 1º
+    // bloco, para a própria resposta já sair no formato novo ("pode deixar,
+    // vou mandar por áudio" chega em áudio). Sem nota interna: a última nota
+    // do bot é o motivo da Fila. O inbox mostra o selo pelo contato.
+    const voiceChange = decision.voiceReplies === "ligar" && !voiceRepliesOn
+      ? true
+      : decision.voiceReplies === "desligar" && voiceRepliesOn
+        ? false
+        : null;
+    if (voiceChange !== null) {
+      await db.whatsAppContact.update({
+        where: { id: contactId },
+        data: { voiceReplies: voiceChange, voiceRepliesAt: new Date(), voiceRepliesBy: "ia" },
+      });
+      // O selo chega às abas pelo delta: ele já olha o updatedAt do contato.
+    }
+
     let blocksSent = 0;
     let verdict: SendGuardVerdict = "continue_sending";
     // Motivo da parada total (vai para o log wa_bot_discarded).
@@ -2045,7 +2105,7 @@ ${emptyNote}`,
         break;
       }
       await persistMemory();
-      markSent(await sendBotReply(contactId, message.contactPhone, message.contactName, msg, 0));
+      markSent(await sendBotReply(contactId, message.contactPhone, message.contactName, msg, 0, voiceBudget));
       blocksSent += 1;
     }
     // Releitura depois do último bloco: o roteiro leva até ~15 s e a ação
@@ -2143,6 +2203,7 @@ ${emptyNote}`,
               ? "Obrigado! Em instantes seguimos por aqui com os próximos passos."
               : "Só um instante que vou verificar isso pra você com um de nossos atendentes, tá?",
             humanDelay("x".repeat(50)),
+            voiceBudget,
           ));
           const reason = handoffAfter ? `${handoffAfter} (${flowFailNote})` : "fluxo escolhido pela IA não pôde ser enviado";
           toQueue(await handoffToQueue(
@@ -2285,6 +2346,8 @@ ${emptyNote}`,
         handoffAfterFlow: decision.action === "send_flow" && decision.handoffAfterFlow === true ? true : undefined,
         // Transferência que manteve o pedido em aberto (keepRequest).
         keepRequest: decision.action === "handoff" && decision.keepRequest === true ? true : undefined,
+        // Respostas em áudio ligadas/desligadas pela IA neste turno.
+        voiceReplies: voiceChange === null ? undefined : voiceChange ? "ligar" : "desligar",
         conversationAgeMs,
         usage: decision.usage ?? undefined,
         // Onde a conversa ficou de fato ("continue" vazio termina na Fila) e

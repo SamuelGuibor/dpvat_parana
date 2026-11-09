@@ -175,19 +175,28 @@ export function sendMedia(
  * (bolha com forma de onda, "PTT"). A Meta só renderiza voz nesse caminho.
  */
 async function uploadMediaFromUrl(link: string, mimeType: string, filename: string, numberId?: string | null): Promise<string | null> {
-  const c = await getCreds(numberId);
-  if (!c) return null;
   try {
     const bin = await fetch(link, { cache: "no-store" });
     if (!bin.ok) {
       console.error(`[WHATSAPP] Falha ao baixar mídia para upload (HTTP ${bin.status}).`);
       return null;
     }
-    const buf = await bin.arrayBuffer();
+    return await uploadMediaBuffer(await bin.arrayBuffer(), mimeType, filename, numberId);
+  } catch (err) {
+    console.error("[WHATSAPP] Falha de rede ao baixar mídia para upload:", err);
+    return null;
+  }
+}
+
+/** Mesmo upload do /media, a partir dos bytes já em memória (voz gerada por TTS). */
+async function uploadMediaBuffer(buf: ArrayBuffer | Uint8Array, mimeType: string, filename: string, numberId?: string | null): Promise<string | null> {
+  const c = await getCreds(numberId);
+  if (!c) return null;
+  try {
     const form = new FormData();
     form.append("messaging_product", "whatsapp");
     form.append("type", mimeType);
-    form.append("file", new Blob([buf], { type: mimeType }), filename);
+    form.append("file", new Blob([buf as BlobPart], { type: mimeType }), filename);
     const res = await fetch(`${graphBase(c)}/${c.phoneNumberId}/media`, {
       method: "POST",
       headers: { Authorization: `Bearer ${c.token}` },
@@ -226,6 +235,39 @@ export async function sendVoiceNote(
     audio: { ...(mediaId ? { id: mediaId } : { link }), voice: true },
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
   }, numberId);
+}
+
+/**
+ * Mensagem de VOZ a partir dos bytes ogg/opus (respostas em áudio da IA,
+ * 08/11/2026). Sem link de fallback: se o upload falhar, devolve erro e quem
+ * chama manda o texto (o cliente nunca fica sem resposta).
+ */
+export async function sendVoiceBuffer(
+  phone: string,
+  buf: Uint8Array,
+  numberId?: string | null,
+): Promise<SendResult> {
+  const mediaId = await uploadMediaBuffer(buf, "audio/ogg", "voz.ogg", numberId);
+  if (!mediaId) return { waMessageId: null, error: "upload do áudio na Meta falhou" };
+  return postMessage({
+    to: phone,
+    type: "audio",
+    audio: { id: mediaId, voice: true },
+  }, numberId);
+}
+
+/** Guarda no S3 o áudio que o sistema gerou, para a bolha do inbox tocar. */
+export async function putOutboundAudioToS3(contactId: string, buf: Uint8Array): Promise<string> {
+  const key = `whatsapp/${contactId}/${Date.now()}-voz-bot.ogg`;
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET_NAME,
+      Key: key,
+      Body: buf,
+      ContentType: "audio/ogg",
+    }),
+  );
+  return key;
 }
 
 /**

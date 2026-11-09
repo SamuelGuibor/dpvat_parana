@@ -141,7 +141,7 @@ export async function loadConversations(
       contact: {
         select: {
           id: true, name: true, phone: true, optedOut: true, userId: true,
-          clientDraft: true, adPlatform: true,
+          clientDraft: true, adPlatform: true, voiceReplies: true,
         },
       },
       // Ordem de aplicação, a mesma de setConversationTag e do patch otimista
@@ -399,6 +399,7 @@ export async function loadConversations(
       kanbanColumn: column?.name ?? null,
       kanbanLabelId: column?.labelId ?? null,
       optedOut: c.contact.optedOut,
+      voiceReplies: c.contact.voiceReplies,
       numberId: c.numberId,
       readOnly: !!c.numberId && inactiveNumberIds.has(c.numberId),
       tags: c.tags.map((t) => ({ id: t.tag.id, name: t.tag.name, color: t.tag.color })),

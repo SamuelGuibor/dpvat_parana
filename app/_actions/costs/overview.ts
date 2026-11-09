@@ -27,6 +27,7 @@ const OPERATION_LABELS: Record<string, string> = {
   wa_ficha_ai: "Ficha automática",
   wa_followup: "Follow-up do bot",
   wa_transcribe: "Transcrição de áudio",
+  wa_tts: "Resposta em áudio (voz)",
   ai_audit: "Auditoria de documentos",
   op_doc_analysis: "Leitura de documentos (IA de operação)",
   roteiro_ai: "Roteiro (IA)",

@@ -48,6 +48,7 @@ const PURGEABLE_LOG_ACTIONS = [
   "wa_template",
   "wa_flow",
   "wa_transcribe",
+  "wa_tts",
   "wa_summary",
   "wa_suggest",
   "wa_media",

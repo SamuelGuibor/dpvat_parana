@@ -684,6 +684,13 @@ model WhatsAppContact {
   // 18/08/2026). Contato marcado NUNCA cai no bot: vai direto pra fila humana
   // com a nota de validação (ver service.ts).
   importSource        String?
+  // Respostas em ÁUDIO (08/11/2026): cliente que disse não saber ler/escrever
+  // ou pediu áudio. Ligado pela IA (`voiceRepliesBy = "ia"`) ou pelo atendente
+  // (id dele) no inbox; o bot, os fluxos e as automações passam a sair como
+  // mensagem de voz (ElevenLabs). Cobrança, recuperação e template seguem texto.
+  voiceReplies        Boolean               @default(false)
+  voiceRepliesAt      DateTime?
+  voiceRepliesBy      String?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   conversation        WhatsAppConversation?
