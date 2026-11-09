@@ -144,7 +144,7 @@ async function turno({ texto, audioId }) {
     memory: conversa.memory,
     state: conversa.state,
     failCount: conversa.failCount,
-    priorOutcome: { qualified: null, closeCategory: null, returnedByAttendant: false, returnedAt: null },
+    priorOutcome: { qualified: conversa.prior?.qualified ?? null, closeCategory: conversa.prior?.closeCategory ?? null, returnedByAttendant: false, returnedAt: null },
     conversationFacts: {
       docsReceived: 0, registeredClient: false, recentAttendant: false, docsThisTurn: 0,
       burstTruncated: false, cardColumn: null, contractPending: null, attendantRequest: null,
@@ -260,7 +260,11 @@ const server = http.createServer(async (req, res) => {
         return json(res, 502, { error: `produção respondeu HTTP ${r.status}` });
       }
       const data = await r.json();
-      if (SECAO_AUDIO && typeof data?.instructions?.rendered === "string") {
+      // Rascunho igual ao publicado: não duplica. Diferente: o rascunho entra
+      // como ADENDO no fim (testar a regra nova antes de publicar).
+      const ultimaFrase = SECAO_AUDIO.split(/\n/).filter(Boolean).at(-1) ?? "";
+      const jaPublicado = SECAO_AUDIO.split(/\n\n/).every((par) => data?.instructions?.rendered?.includes(par.trim().slice(0, 80)));
+      if (SECAO_AUDIO && ultimaFrase && typeof data?.instructions?.rendered === "string" && !jaPublicado) {
         data.instructions.rendered = `${data.instructions.rendered}\n\n${SECAO_AUDIO}`;
       }
       console.log(`[SIM] prompt de produção entregue ao micro${SECAO_AUDIO ? " + seção do áudio" : ""}`);
@@ -317,6 +321,24 @@ const server = http.createServer(async (req, res) => {
       const { id } = JSON.parse((await lerCorpo(req)).toString("utf8") || "{}");
       if (typeof id === "string" && /^[A-Za-z0-9]{10,40}$/.test(id.trim())) vozAtual = id.trim();
       return json(res, 200, { vozId: vozAtual });
+    }
+    // Reproduzir uma conversa real: começa com este histórico (papéis client/bot).
+    if (req.method === "POST" && url.pathname === "/api/semear") {
+      const { historico, voiceReplies, arquivoContexto } = JSON.parse((await lerCorpo(req)).toString("utf8") || "{}");
+      novaConversa();
+      // Contexto exportado por scripts/diag-voz-contexto.mjs (ficha, etapa,
+      // desfecho anterior), lido do disco para não passar pela página.
+      if (typeof arquivoContexto === "string" && arquivoContexto.endsWith(".json") && existsSync(arquivoContexto)) {
+        const ctx = JSON.parse(readFileSync(arquivoContexto, "utf8"));
+        conversa.memory = ctx?.botMemory ?? null;
+        conversa.state = ctx?.botState ?? null;
+        conversa.prior = { qualified: ctx?.qualified ?? null, closeCategory: ctx?.closeCategory ?? null };
+      }
+      conversa.history = (Array.isArray(historico) ? historico : [])
+        .filter((h) => (h?.role === "client" || h?.role === "bot") && typeof h.text === "string")
+        .map((h) => ({ role: h.role, source: null, text: h.text }));
+      conversa.voiceReplies = !!voiceReplies;
+      return json(res, 200, { ok: true, turnos: conversa.history.length });
     }
     if (req.method === "POST" && url.pathname === "/api/reset") {
       novaConversa();
