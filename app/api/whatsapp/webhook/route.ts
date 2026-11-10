@@ -41,6 +41,11 @@ export const maxDuration = 120;
 // rodada; a próxima rajada do cliente preenche.
 const FICHA_TIMEOUT_MS = 20_000;
 const FICHA_LATEST_START_MS = maxDuration * 1000 - FICHA_TIMEOUT_MS - 15_000;
+// Decisão do dono (09/11/2026, T-JH38P): a IA não preenche mais o cadastro
+// sozinha — só pelo botão "Preencher com IA" do Copiloto. WA_FICHA_AUTO=1 religa
+// sem deploy. Desligada, também some o debounce de espera das conversas fora do
+// modo bot (ele só existia para a ficha) e ~8 mil chamadas de Haiku a cada 14 dias.
+const FICHA_AUTO_ON = process.env.WA_FICHA_AUTO === "1";
 
 // phone_number_id já avisados de entry.id ≠ wabaId cadastrado (um aviso por instância).
 const wabaMismatchWarned = new Set<string>();
@@ -100,7 +105,9 @@ async function runContactTurn(
     } catch (err) {
       await reportCriticalError("WHATSAPP BOT", err, { contactId });
     }
-  } else {
+  }
+  if (!FICHA_AUTO_ON) return;
+  if (!botTurn) {
     // Conversa fora do modo bot (fila, atendente): espera o mesmo debounce
     // aqui, uma vez, e a ficha desiste se chegou mensagem mais nova (a
     // invocação dela preenche). Uma chamada ao Haiku por RAJADA, não por balão.

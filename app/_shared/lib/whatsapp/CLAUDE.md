@@ -30,7 +30,7 @@ Mapa completo: docs/ai/whatsapp-bot.md
 - Mudou teto/cadência da recuperação → `recovery-caps.ts` (o inbox lê o mesmo mapa). Não afrouxe cooldown, tetos nem marcapasso sem pedido: as duas WABAs já levaram aviso de spam da Meta. Única exceção (decisão do dono, 27/10): o WhatsApp **aprovado pelo operador** pela IA de operação (`op/comms.ts`) sai com `transactional: true` e o lote dela fica fora do marcapasso — as outras travas valem.
 - Schema Prisma: nunca `prisma migrate dev`; use `migrate diff` + `db execute` + `migrate resolve`.
 - Campo novo na ficha: `AI_FIELDS`/`FIELD_LABELS` (ficha-ai.ts), `CLIENT_FIELDS` (`copilot-data.ts`) e `FichaTab` (CopilotPanel) mudam juntos. A ficha grava no `User` com o mesmo nome de coluna: coluna `String?` (nunca data/número; `currentFields` faz `.trim()`) e migration ANTES do deploy. Receita no mapa.
-- `autoFillClientInfo` só pula a IA com TODOS os `AI_FIELDS` cheios, inclusive os opcionais: na prática roda a cada rajada (`afterMessage` + debounce no webhook). Campo novo ali custa IA. Toda chamada à IA grava o log com usage, inclusive a que não achou nada (`noop`).
+- Ficha automática do webhook desligada desde 09/11 (T-JH38P): só o botão do Copiloto chama `autoFillClientInfo`; `WA_FICHA_AUTO=1` religa. Com ela ligada: `autoFillClientInfo` só pula a IA com TODOS os `AI_FIELDS` cheios, inclusive os opcionais: na prática roda a cada rajada (`afterMessage` + debounce no webhook). Campo novo ali custa IA. Toda chamada à IA grava o log com usage, inclusive a que não achou nada (`noop`).
 - O cérebro não recebe a ficha (`dados_cadastro` devolve só o nome): campo de ficha não exige deploy do micro. Edição pelo Copiloto (`saveClientInfo`) não gera log no card.
 
 ## Validação

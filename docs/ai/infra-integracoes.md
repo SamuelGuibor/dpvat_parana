@@ -100,7 +100,7 @@
 2. **Webhook da Meta:** o POST lê `req.text()` cru e confere o HMAC (`x-hub-signature-256` com `WHATSAPP_APP_SECRET`). Depois faz `JSON.parse` e percorre cada `entry.changes`:
    - `field` diferente de `messages`: vai para `handleAccountEvent` (política, qualidade, status de template).
    - `metadata.phone_number_id` é resolvido por `getCredsByPhoneNumberId`. Número desconhecido: ignora e chama `reportCriticalError`.
-   - Mensagens: `ingestIncomingMessage` (todas) → `handleIncomingWhatsApp` (1 vez por contato em `bot`) → `autoFillClientInfo` → `applyStatusUpdate`.
+   - Mensagens: `ingestIncomingMessage` (todas) → `handleIncomingWhatsApp` (1 vez por contato em `bot`) → `autoFillClientInfo` (só com `WA_FICHA_AUTO=1`; desligada desde 09/11) → `applyStatusUpdate`.
    - Resposta **500 só se a ingestão falhou** (a Meta reenvia; o dedup é por `waMessageId`). Nos outros casos, 200.
 3. **Next → Railway:** fetch com `x-bot-secret` (chatbot), `x-api-key` (converter) ou `x-relay-secret` (relay). No sentido inverso, o microserviço busca `GET /api/whatsapp/brain-prompt` com `x-bot-secret`.
 4. **Upload:** o browser pede uma URL presign (server action em `app/_actions/documents/upload-s3.ts`), faz PUT direto no S3 e a rota ou action recebe só a `key`.

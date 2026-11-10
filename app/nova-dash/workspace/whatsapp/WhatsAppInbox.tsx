@@ -1671,11 +1671,17 @@ export function WhatsAppInbox() {
   }
 
   async function handleDelete(msg: WhatsAppThreadMessage) {
-    if (!(await confirm({
-      title: 'Apagar mensagem da thread',
-      description: 'Ela some só para a equipe — no celular do cliente a mensagem continua.',
-      confirmLabel: 'Apagar',
-    }))) return;
+    if (!(await confirm(msg.internal
+      ? {
+          title: 'Apagar nota interna',
+          description: 'A nota some para toda a equipe. Quem foi @mencionado continua com o aviso.',
+          confirmLabel: 'Apagar nota',
+        }
+      : {
+          title: 'Apagar mensagem da thread',
+          description: 'Ela some só para a equipe — no celular do cliente a mensagem continua.',
+          confirmLabel: 'Apagar',
+        }))) return;
     try {
       await deleteWhatsAppMessage(msg.id);
       await mutateMessages();
@@ -3526,6 +3532,10 @@ function ThreadMessageRow({
   // aviso centralizado em âmbar — motivo de transferência do bot, recado entre
   // atendentes etc.
   if (msg.internal) {
+    // Nota apagada some da thread (T-GE364); só o autor apaga, e nota do bot
+    // (motivo da transferência, lido pela Fila) não tem autor, então não apaga.
+    if (msg.deletedAt) return null;
+    const canDeleteNote = !isTemp && !msg.sentByBot && !!msg.authorId && msg.authorId === meId;
     return (
       <div ref={setRowRef} className={`mt-2 flex justify-center ${highlighted ? 'rounded-xl bg-amber-100/70' : ''}`}>
         <div className={`group max-w-[85%] rounded-xl border bg-amber-50 px-3 py-1.5 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200 ${pinned ? 'border-amber-400 ring-1 ring-amber-300' : 'border-amber-200'}`}>
@@ -3541,6 +3551,16 @@ function ThreadMessageRow({
                 className={`ml-1 rounded p-0.5 font-normal hover:bg-amber-200 ${pinned ? '' : 'opacity-0 group-hover:opacity-100'}`}
               >
                 {pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+              </button>
+            )}
+            {canDeleteNote && (
+              <button
+                type="button"
+                onClick={onDelete}
+                title="Apagar nota"
+                className="rounded p-0.5 font-normal opacity-0 hover:bg-amber-200 group-hover:opacity-100"
+              >
+                <Trash2 className="h-3 w-3" />
               </button>
             )}
           </span>

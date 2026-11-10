@@ -509,7 +509,7 @@ export async function deleteWhatsAppMessage(messageId: string): Promise<void> {
   const me = await requireTeamMember();
   const msg = await db.whatsAppMessage.findUnique({
     where: { id: messageId },
-    select: { direction: true, authorId: true },
+    select: { direction: true, authorId: true, internal: true, contactId: true, body: true },
   });
   if (!msg || msg.direction !== 'out') throw new Error('Só é possível apagar mensagens enviadas por você.');
   if (msg.authorId !== me.id) throw new Error('Só o autor pode apagar a mensagem.');
@@ -518,4 +518,28 @@ export async function deleteWhatsAppMessage(messageId: string): Promise<void> {
     where: { id: messageId },
     data: { deletedAt: new Date() },
   });
+
+  // Nota interna (T-GE364, 09/11/2026): o autor apaga pela própria nota. Se era
+  // a fixada, solta o topo (pinnedNoteId não tem FK e ficaria apontando para a
+  // apagada); o updateMany também toca o updatedAt, e o delta do inbox vê.
+  // Menção já enviada e o log da criação ficam (auditoria); o apagar também loga.
+  if (msg.internal) {
+    await db.whatsAppConversation.updateMany({
+      where: { contactId: msg.contactId, pinnedNoteId: messageId },
+      data: { pinnedNoteId: null, pinnedNoteAt: null },
+    });
+    const contact = await db.whatsAppContact.findUnique({ where: { id: msg.contactId }, select: { name: true, phone: true } });
+    const at = new Date();
+    runAfterResponse('log wa_note (apagada)', () => logWhatsAppEvent({
+      action: 'wa_note',
+      message: `apagou uma nota interna na conversa de ${contact?.name ?? contact?.phone ?? 'contato'}`,
+      authorId: me.id,
+      authorName: me.name,
+      contactId: msg.contactId,
+      contactName: contact?.name,
+      contactPhone: contact?.phone,
+      metadata: { deleted: true, messageId, preview: (msg.body ?? '').slice(0, 120) },
+      at,
+    }));
+  }
 }
