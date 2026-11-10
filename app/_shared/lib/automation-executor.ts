@@ -23,6 +23,25 @@ import {
 import { moveCardToLabel } from "./cards/move-card";
 import { setCardTag } from "./cards/tags";
 import { addCardComment } from "./cards/comment";
+import { ghostFor } from "./op/hospitais";
+
+/**
+ * [[hospital_email]] e [[hospital_telefone]] (T-PMEYS, 09/11/2026): o contato
+ * mora no GHOST do hospital, não no card — sem isto a variável sairia vazia (o
+ * card também tem as colunas hospital_*, sempre nulas). Cache de 5 min do
+ * catálogo (só o GHOST, sem ler nota do S3 por automação); nunca derruba a automação.
+ */
+async function hospitalVars(card: CardData): Promise<Record<string, string>> {
+  const hospital = typeof card.hospital === "string" ? card.hospital.trim() : "";
+  if (!hospital) return {};
+  try {
+    const g = await ghostFor(hospital);
+    return { hospital_email: g?.hospital_email ?? "", hospital_telefone: g?.hospital_telefone ?? "" };
+  } catch (err) {
+    console.error("[AUTOMATION] contato do hospital indisponível:", err);
+    return {};
+  }
+}
 
 /**
  * Tipos de ação que quem move pode pedir para pular. Só a IA de operação usa:
@@ -332,7 +351,7 @@ export async function runAutomations({
       : [];
 
     const cardData = card as unknown as CardData;
-    const vars = { ...getVars(cardData), ...brDateVars() };
+    const vars = { ...getVars(cardData), ...(await hospitalVars(cardData)), ...brDateVars() };
     const safeName = String(cardData.name ?? "")
       .normalize("NFD")
       .replace(/[̀-ͯ]/g, "")
@@ -431,7 +450,7 @@ export async function runTimeBasedAutomations() {
             continue; // corrida entre execuções do cron — outra já marcou
           }
 
-          const vars = { ...getVars(cardData), ...brDateVars() };
+          const vars = { ...getVars(cardData), ...(await hospitalVars(cardData)), ...brDateVars() };
           const safeName = String(cardData.name ?? "")
             .normalize("NFD")
             .replace(/[̀-ͯ]/g, "")

@@ -210,6 +210,7 @@ const VARIABLE_CHIPS = [
   "cidade", "estado", "cep", "hospital", "data_acidente",
   "lesoes", "service", "nome_mae", "estado_civil", "profissao",
   "nacionalidade", "rua", "bairro", "numero", "cep",
+  "hospital_email", "hospital_telefone",
   "dia", "mes", "mes_numerico", "ano",
 ];
 

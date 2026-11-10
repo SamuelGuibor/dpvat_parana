@@ -22,7 +22,8 @@ const INDEX_TTL_MS = 5 * 60_000;
 // cada preparar_email (2× por /prontuario). Cache por instância de 5 min, no
 // mesmo padrão do índice do vault. Quem edita automação chama
 // invalidateHospitalCache() (lib/db/automations.ts); o cadastro hospital_* do
-// GHOST só muda pelo script vault-hospitais-para-ghost.mjs (fora do app), e
+// GHOST muda pelo script vault-hospitais-para-ghost.mjs e, desde 09/11, pela tela
+// do card (updateHospitalContact, que também invalida — só nesta instância), e
 // o card novo aparece em até 5 min na contagem — aceitável para a leitura.
 // O cache é POR INSTÂNCIA da Vercel: outra instância segue com o dado velho
 // até o TTL. O valor devolvido é o mesmo objeto para todo chamador: só leia,

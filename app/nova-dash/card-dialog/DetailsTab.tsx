@@ -13,6 +13,7 @@ import {
   NACIONALIDADES,
 } from './constants';
 import { HospitalCombobox } from './HospitalCombobox';
+import { HospitalContactButton } from './HospitalContactDialog';
 import { SoftSelect } from './SoftSelect';
 import { maskCpf, maskPhone, maskCep, isValidCpf, formatPhone, onlyDigits } from '@/app/_shared/utils/format';
 
@@ -409,6 +410,7 @@ export function DetailsTab({ editedCard, onChange, labels, cardId, isProcess }: 
             options={ATENDIMENTO_VIA} onChange={onChange} placeholder="Selecione o atendimento via" /> */}
           <div className="min-w-0 lg:col-span-4">
             <HospitalCombobox id="hospital" label="Hospital" value={editedCard.hospital} onChange={onChange} />
+            <HospitalContactButton hospital={editedCard.hospital} />
           </div>
           <Field id="outro_hospital" label="Outro Hospital" value={editedCard.outro_hospital} onChange={onChange} className="lg:col-span-3" />
           <Field id="lesoes" label="Lesões" value={editedCard.lesoes} onChange={onChange} className="lg:col-span-3" />

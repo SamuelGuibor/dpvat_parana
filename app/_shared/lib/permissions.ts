@@ -134,8 +134,10 @@ export const PERMISSION_DEFS = [
   },
   {
     key: "create_hospitals",
-    label: "Criar hospitais",
-    description: "Pode adicionar hospitais novos no campo Hospital do card (quem não tem só seleciona os existentes).",
+    // Chave antiga mantida (overrides já gravados em User.permissions); desde
+    // 09/11 (T-PMEYS) cobre também remover hospital e editar o contato dele.
+    label: "Gerenciar hospitais",
+    description: "Pode adicionar e remover hospitais no campo Hospital do card e editar o contato do hospital (e-mail, telefone, como pedir o prontuário). Quem não tem só seleciona e consulta.",
     category: "Kanban",
   },
   {

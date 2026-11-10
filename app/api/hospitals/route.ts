@@ -1,4 +1,4 @@
-import { readOnlyBlock } from "@/app/_shared/lib/route-auth";
+import { readOnlyBlock, sameOrigin, teamRoute } from "@/app/_shared/lib/route-auth";
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/app/_shared/lib/prisma';
 
@@ -34,7 +34,13 @@ export async function GET() {
   }
 }
 
+// Remover tira o nome do hospital de TODOS os cards: exige "Gerenciar hospitais"
+// (até 09/11 bastava não ser somente leitura).
 export async function DELETE(req: NextRequest) {
+  const origin = sameOrigin(req);
+  if (origin) return origin;
+  const auth = await teamRoute('create_hospitals');
+  if ('res' in auth) return auth.res;
   const blocked = await readOnlyBlock();
   if (blocked) return blocked;
   try {
