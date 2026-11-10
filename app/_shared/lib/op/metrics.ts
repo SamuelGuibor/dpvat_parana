@@ -17,6 +17,7 @@ import { CARD_WHERE, columnName } from "./cards";
 import {
   buildOpMetrics,
   classifyPrompt,
+  isDevSessionCwd,
   type MetricApproval,
   type MetricCall,
   type MetricFlow,
@@ -77,7 +78,7 @@ export async function loadOpMetricRows(periodo: Pick<OpPeriod, "gte" | "lt">, op
       where: { createdAt: { gte: periodo.gte, lt: periodo.lt }, ...(operatorId ? { operatorId } : {}) },
       orderBy: { createdAt: "asc" },
       take: MAX_PROMPTS,
-      select: { id: true, operatorId: true, sessionId: true, skill: true, createdAt: true },
+      select: { id: true, operatorId: true, sessionId: true, skill: true, createdAt: true, session: { select: { cwd: true } } },
     }),
     // `args` fica no banco: só o booleano `confirmar` sai (a mesma régua do
     // scripts/op-relatorio.mjs). summary "noop…" = L3 que não mudou nada.
@@ -132,7 +133,7 @@ export async function loadOpMetricRows(periodo: Pick<OpPeriod, "gte" | "lt">, op
     enviados: Number(c.enviados ?? 0),
   }));
   return {
-    prompts: prompts as MetricPrompt[],
+    prompts: prompts.map(({ session, ...p }): MetricPrompt => ({ ...p, dev: isDevSessionCwd(session.cwd) })),
     calls: metricCalls,
     approvals: approvals as MetricApproval[],
     flows: flows as MetricFlow[],

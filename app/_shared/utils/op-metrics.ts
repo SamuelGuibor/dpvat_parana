@@ -277,6 +277,18 @@ export interface MetricPrompt {
   sessionId: string;
   skill: string | null;
   createdAt: Date;
+  /** Sessão aberta na pasta do código (desenvolvimento): não vira chat. */
+  dev?: boolean;
+}
+
+/**
+ * Sessão de desenvolvimento = Claude Code aberto na pasta do repositório do
+ * CRM (`…\dpvat_parana`). A equipe usa o plugin numa pasta própria
+ * (`C:\CRM-Operacao`, `C:\CRM-operador`); o dono, no repo, quase sempre está
+ * mexendo no código — esses chats poluíam a lista "Chats da equipe" (09/11).
+ */
+export function isDevSessionCwd(cwd: string | null | undefined): boolean {
+  return !!cwd && /[\\/]dpvat_parana[\\/]?$/i.test(cwd.trim());
 }
 
 export interface MetricCall {
@@ -563,16 +575,20 @@ export function buildOpMetrics(input: {
     // Conversa/desenvolvimento não entra em número nenhum (decisão 19).
     if (cls === "conversa") continue;
     const t = p.createdAt.getTime();
-    const chat = chats.get(p.sessionId) ?? { operatorId: p.operatorId, inicio: t, ultimo: t, pedidos: 0, entregas: 0, skills: {}, cards: new Set<string>() };
-    chat.pedidos++;
-    chat.inicio = Math.min(chat.inicio, t);
-    chat.ultimo = Math.max(chat.ultimo, t);
-    if (isOpSkill(p.skill)) bump(chat.skills, p.skill!);
+    // Sessão de desenvolvimento conta nos números, mas não aparece como chat
+    // (lista e contadores de ativos/fechados).
+    const chat = p.dev ? null : chats.get(p.sessionId) ?? { operatorId: p.operatorId, inicio: t, ultimo: t, pedidos: 0, entregas: 0, skills: {}, cards: new Set<string>() };
+    if (chat) {
+      chat.pedidos++;
+      chat.inicio = Math.min(chat.inicio, t);
+      chat.ultimo = Math.max(chat.ultimo, t);
+      if (isOpSkill(p.skill)) bump(chat.skills, p.skill!);
+      chats.set(p.sessionId, chat);
+    }
     if (cls === "consulta") {
       addEntrega(p.operatorId, "consulta", 1, p.createdAt);
-      chat.entregas++;
+      if (chat) chat.entregas++;
     }
-    chats.set(p.sessionId, chat);
     const s = stats(p.operatorId);
     s.pedidos++;
     if (cls === "acao") s.acoes++;

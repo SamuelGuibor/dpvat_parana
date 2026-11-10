@@ -499,6 +499,8 @@ function ChatList({ chats, parados, cardLabel, onOpen, nome, fotos }: {
   nome?: (id: string) => string;
   fotos?: Record<string, string | null>;
 }) {
+  // Chats de desenvolvimento (Claude Code aberto na pasta do código) já saem
+  // do servidor: isDevSessionCwd em op-metrics.ts.
   if (!chats.length && !parados.length) return <p className="text-xs text-gray-400">Nenhum chat no período.</p>;
   const titulo = (skill: string | null, cardIds: string[], totalCards: number) => {
     const base = skill ? `/${skill}` : 'Pedido livre';

@@ -8,6 +8,7 @@ import {
   dayKeyDiff,
   dayKeysBetween,
   flowStatus,
+  isDevSessionCwd,
   resolveOpPeriod,
   type MetricCall,
   type MetricPrompt,
@@ -184,6 +185,28 @@ describe("buildOpMetrics", () => {
     ]);
     expect(m.fluxos.bloqueios).toEqual([{ motivo: "campo:data_acidente", total: 1 }]);
     expect(flowStatus(velho, agora)).toBe("abandonado");
+  });
+
+  it("sessão aberta na pasta do código (dev) conta nos números mas não vira chat", () => {
+    expect(isDevSessionCwd("D:\\dpvat_parana\\dpvat_parana")).toBe(true);
+    expect(isDevSessionCwd("/home/x/dpvat_parana/")).toBe(true);
+    expect(isDevSessionCwd("C:\\CRM-Operacao")).toBe(false);
+    expect(isDevSessionCwd("D:\\dpvat_parana\\dpvat_parana\\scripts")).toBe(false);
+    expect(isDevSessionCwd(null)).toBe(false);
+    const m = buildOpMetrics({
+      periodo,
+      agora,
+      prompts: [
+        prompt({ id: "r1", skill: "whatsapp", sessionId: "dev", dev: true }),
+        prompt({ id: "r2", skill: "cliente", operatorId: "op2", sessionId: "s2" }),
+      ],
+      calls: [call({ id: "c1", requestId: "r1", sessionId: "dev", cardIds: [CARD] })],
+      approvals: [],
+      flows: [],
+    });
+    expect(m.chats.map((c) => c.sessionId)).toEqual(["s2"]);
+    expect(m.totais).toMatchObject({ pedidos: 2, chatsAtivos: 0, chatsFechados: 1 });
+    expect(m.operadores.find((o) => o.operatorId === "op1")).toMatchObject({ pedidos: 1, chatsAtivos: 0, chatsFechados: 0 });
   });
 
   it("resultado não carrega texto nem args (só o que entrou)", () => {
