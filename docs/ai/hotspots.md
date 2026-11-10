@@ -7,7 +7,7 @@ Como usar: ache o arquivo, escolha a seção pelo nome do componente/função e 
 | # | Arquivo | Linhas | Mapa de domínio |
 |---|---|---|---|
 | 1 | `app/nova-dash/workspace/whatsapp/WhatsAppInbox.tsx` | 3825 | whatsapp-bot |
-| 2 | `app/nova-dash/KanbanBoard.tsx` | 2407 | kanban-cards |
+| 2 | `app/nova-dash/KanbanBoard.tsx` | 2684 | kanban-cards |
 | 3 | `app/_shared/lib/signature/core.ts` | 1908 | assinatura |
 | 4 | `app/nova-dash/AutomationsPanel.tsx` | 1587 | kanban-cards |
 | 5 | `app/_shared/lib/whatsapp/bot.ts` | 1970 | whatsapp-bot |
@@ -45,24 +45,26 @@ Inbox multi-número do WhatsApp: rail de pastas + lista filtrável, thread com e
 - **L3489-3801** mídia: `WaMediaBubble` (nome legível por `mediaDisplayName`, o mesmo da rota; `useMediaUrl` com a `mediaUrl` da rota; `onError` → "Arquivo indisponível"), `fmtAudioTime`, `WaAudioBubble` (`onMediaError`; `handleTranscribe` por POST `/api/whatsapp/assist/transcribe`).
 - **L3802-3825** `MsgAction`, `HeaderButton`.
 
-## 2. `app/nova-dash/KanbanBoard.tsx` — 2407 linhas
-Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, CRUD de etiquetas, arquivar/mover/excluir.
+## 2. `app/nova-dash/KanbanBoard.tsx` — 2684 linhas
+Board Kanban da nova-dash: colunas = labels, cards arrastáveis, polling com versão, busca e filtros no cliente, CRUD de etiquetas, arquivar/mover/excluir.
 
-- **L1-66** imports, `dynamic`, `KANBAN_POLL_MS`, `COLLAPSED_STORAGE_KEY`, `hexToRgba`.
-- **L75-258** tipos exportados/internos: `KanbanCard`, `CardTagInfo`, `Comment`, `Attachment`, `ChecklistItem`, `Column`, `Label`, `LabelInput`, `Item`; `services` (cores hardcoded de fallback), `serviceStyles`.
-- **L259-308** badges: `renderTimerBadge`, `calendarDaysUntil`, `renderAfastamentoBadge`.
-- **L309-433** `LabelDialog` (criar/editar etiqueta).
-- **L434-631** `CreateLabelButton`, `CreatePerson` (novo cliente/card).
-- **L632-1051** `DraggableCardBase` (card: drop-alvo p/ inserir acima, permissões `archive_cards`/`delete_cards`, menu "Mover para", tags, badges) + `DraggableCard = React.memo(...)` com comparador (L1023).
-- **L1052-1365** `DroppableColumn`: auto-scroll no drag (`cacheDragRect`, `handleDragOverAutoScroll`), cor da coluna, editar/excluir coluna (`handleConfirmDelete`), render (L1228).
-- **L1366-1378** `ColumnDropZone` (persiste ordem das colunas ao soltar).
-- **L1382-2407 `KanbanBoard`** (principal):
-  - L1382-1540 estado, `filteredItems` (useMemo), tags dos cards, medida de altura, navegação horizontal (`updateScrollButtons`, `scrollBoardBy`), abertura pedida por busca global/Menções via sessionStorage.
-  - L1540-1640 busca: `searchMatches`, busca em arquivados, `openCardFromItem`, `openArchivedCard`.
-  - L1639-1815 sincronização: contador de mutações em voo, assinaturas por fonte, versão `?v=`, erros; `fetchData` (L1663) e polling (L1744).
-  - L1816-1872 CRUD de etiquetas: `createLabel`, `updateLabel`, `deleteLabel`.
-  - L1873-2115 ações de card/coluna: `moveCard` (L1876, persiste `boardOrder`), `handleDrop`, `handleMoveTo`, `moveTargets`, `handleCardDrop`, `handleQuickAction`, `handleCardUpdate`, `handleDeleteCard`, `performArchive` (com Desfazer), `handleArchiveCard`, colapsar colunas (`toggleCollapse`, `toggleAllColumns`), `handleColumnReorder`, `persistColumnOrder`.
-  - L2116-2407 JSX: barra de busca/filtros + ações (L2234-2260), colunas dentro de `ColumnDropZone` (L2323), `CardDialog` (L2352), `AutomationsPanel` (L2370), confirmação de arquivamento definitivo (L2376).
+- **L1-79** imports (filtros de `app/_shared/utils/kanban-filters.ts`, ordem de `app/_shared/utils/kanban-order.ts`, `Popover`/`Checkbox`), `dynamic`, `KANBAN_POLL_MS`, `COLLAPSED_STORAGE_KEY`, `hexToRgba`.
+- **L81-268** tipos exportados/internos: `KanbanCard`, `CardTagInfo`, `Comment`, `Attachment`, `ChecklistItem`, `Column` (com `totalCount` = total real), `Label`, `LabelInput`, `Item` (com `hospital`/`outro_hospital` só para o filtro); `services` (cores hardcoded de fallback), `serviceStyles`.
+- **L270-319** badges: `renderTimerBadge` (dias de Brasília via `daysInColumn`), `calendarDaysUntil`, `renderAfastamentoBadge`.
+- **L320-444** `LabelDialog` (criar/editar etiqueta).
+- **L445-643** `CreateLabelButton`, `CreatePerson` (novo cliente/card).
+- **L644-1066** `DraggableCardBase` (card: drop-alvo p/ inserir acima, permissões `archive_cards`/`delete_cards`, menu "Mover para", tags, badges) + `DraggableCard = React.memo(...)` com comparador (L1038).
+- **L1067-1397** `DroppableColumn`: prop `filtering` ("N de M" no cabeçalho, arrastar coluna desligado), auto-scroll no drag (`cacheDragRect`, `handleDragOverAutoScroll`), cor da coluna, editar/excluir coluna (`handleConfirmDelete`, aviso pelo `totalCount`), render (L1252).
+- **L1398-1458** filtros da barra: `filterChipCls`/`filterChipOnCls`, `FilterChecklist` (lista de marcar de tags/hospitais, com busca; escolhido que sumiu continua listado).
+- **L1459-1471** `ColumnDropZone` (persiste ordem das colunas ao soltar).
+- **L1472-2684 `KanbanBoard`** (principal):
+  - L1475-1587 estado; filtros da barra (`filters` restaurado de `sessionStorage['kanban-filters']` no inicializador + efeito que grava, `filtersActive`, `boardFiltering`, `clearFilters`, `toggleTagFilter`, `toggleHospitalFilter`, `tagOptions`, `hospitalOpts`), `filteredItems` (useMemo, L1560: busca + etapa + `matchesKanbanFilters`).
+  - L1588-1705 medida de altura, navegação horizontal (`updateScrollButtons`, `scrollBoardBy`), tags por evento, abertura pedida por busca global/Menções via sessionStorage.
+  - L1706-1805 busca: `searchMatches`, busca em arquivados, `openCardFromItem`, `openArchivedCard`.
+  - L1806-1988 sincronização: contador de mutações em voo, assinaturas por fonte, versão `?v=`, erros; `fetchData` (L1830), polling (L1911), montagem das colunas (totais reais, colunas vazias somem com busca/filtro).
+  - L1989-2042 CRUD de etiquetas: `createLabel`, `updateLabel`, `deleteLabel`.
+  - L2043-2313 ações de card/coluna: `itemsRef`, `moveCard` (L2056, ordem da coluna INTEIRA por `computeColumnOrder`, persiste `boardOrder`), `handleDrop`, `handleMoveTo`, `moveTargets`, `handleCardDrop`, `handleQuickAction`, `handleCardUpdate`, `handleDeleteCard`, `performArchive` (com Desfazer), `handleArchiveCard`, colapsar colunas (`toggleCollapse`, `toggleAllColumns`), `handleColumnReorder`, `persistColumnOrder`.
+  - L2314-2684 JSX: barra de busca + "Filtrar Etapa" (L2318-2430), filtros Tags/Hospital/Prazo estourado/Afastado + "Limpar filtros" (L2432), ações, colunas dentro de `ColumnDropZone` (L2599), `CardDialog` (L2629), `AutomationsPanel` (L2647), confirmação de arquivamento definitivo (depois do painel).
 
 ## 3. `app/_shared/lib/signature/core.ts` — 1908 linhas
 Orquestração da assinatura eletrônica própria: extração do KIT por IA, validação (CPF/CEP/rua), coleta/confirmação pelo bot, emissão do link, pós-assinatura e lembretes.

@@ -11,7 +11,7 @@ import {
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
   User, GripVertical, Zap, CheckSquare, Minimize2, Maximize2,
   Archive, DollarSign, XCircle,
-  RotateCcw,
+  RotateCcw, Filter, Hospital, AlarmClock, CalendarClock, X,
 } from 'lucide-react';
 import { AutomationsPanel } from './AutomationsPanel';
 import { getStatusOrderByService } from './card-dialog/constants';
@@ -33,7 +33,6 @@ import {
 import { CardDialog } from './CardDialog';
 import { cn } from '@/app/_shared/lib/utils';
 import { CreateNewCard } from '@/app/nova-dash/_components/create-newcard';
-import { differenceInDays } from 'date-fns';
 import { updateKanbanStatus } from '@/app/_actions/cards/update-kanban';
 import { reorderCards } from '@/app/_actions/cards/reorder-cards';
 import { deleteCard } from '../_actions/cards/delete-card';
@@ -54,6 +53,13 @@ import {
   UserX,
 } from "lucide-react";
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/_shared/ui/popover';
+import { Checkbox } from '@/app/_shared/ui/checkbox';
+import {
+  EMPTY_KANBAN_FILTERS, KANBAN_FILTERS_STORAGE_KEY, daysInColumn, hasActiveKanbanFilters,
+  hospitalOptions, matchesKanbanFilters, parseKanbanFilters, type KanbanFilters,
+} from '@/app/_shared/utils/kanban-filters';
+import { computeColumnOrder, orderIndexMap, orderKey, sortByBoardOrder } from '@/app/_shared/utils/kanban-order';
 
 // Intervalo de sincronização do board (tempo real "near real-time" via polling).
 const KANBAN_POLL_MS = 7000;
@@ -166,6 +172,9 @@ interface Column {
   color?: string;
   timeLimitDays?: number | null;
   cards: KanbanCard[];
+  // Total REAL de cards da coluna (sem busca/filtro). `cards` pode ser só a
+  // parte visível; contagem "N de M" e aviso de excluir coluna usam este.
+  totalCount: number;
 }
 
 interface Label {
@@ -254,13 +263,15 @@ interface Item {
   cardNumber?: number | null
   archiveStatus?: string | null
   boardOrder?: number | null
+  hospital?: string | null
+  outro_hospital?: string | null
 }
 
 const renderTimerBadge = (card: KanbanCard) => {
   if (!card.statusStartedAt) return <Badge variant="outline">Sem data</Badge>
-  const startedAt = new Date(card.statusStartedAt)
-  if (isNaN(startedAt.getTime())) return <Badge variant="outline">Data inválida</Badge>
-  const days = differenceInDays(new Date(), startedAt)
+  // Dias de calendário de Brasília — a mesma conta do filtro "Prazo estourado".
+  const days = daysInColumn(card.statusStartedAt)
+  if (days === null) return <Badge variant="outline">Data inválida</Badge>
   const limit = card.label?.timeLimitDays ?? null
   const overdue = limit !== null && days > limit
   return (
@@ -1072,11 +1083,13 @@ interface DroppableColumnProps {
   toggleCollapse: () => void;
   moveTargets: { id: string; title: string }[];
   onMoveTo: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
+  // Busca ou filtro ativos: o cabeçalho mostra "N de M" (visíveis de total).
+  filtering: boolean;
 }
 
 const DroppableColumn: React.FC<DroppableColumnProps> = ({
   column, index, onDrop, onCardDrop, onColumnReorder, onCardClick, onQuickAction, onDelete, onArchive,
-  onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse, moveTargets, onMoveTo,
+  onLabelEdit, onLabelDelete, isCollapsed, toggleCollapse, moveTargets, onMoveTo, filtering,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -1134,9 +1147,11 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
   const [{ isDraggingColumn }, columnDrag, columnPreview] = useDrag(() => ({
     type: 'COLUMN',
     item: { index },
-    canDrag: () => !colPerms.read_only,
+    // Com busca/filtro as colunas vazias somem e o índice da tela deixa de
+    // bater com o de `labels`: arrastar coluna aí gravaria a ordem errada.
+    canDrag: () => !colPerms.read_only && !filtering,
     collect: (monitor) => ({ isDraggingColumn: !!monitor.isDragging() }),
-  }), [index, colPerms.read_only]);
+  }), [index, colPerms.read_only, filtering]);
 
   drop(ref);
   columnDrop(ref);
@@ -1176,7 +1191,10 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
             <ChevronRight className="w-5 h-5 text-gray-400 dark:text-zinc-500" />
           </Button>
           <div className="flex-1 flex flex-col items-center gap-3 overflow-hidden">
-            <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-black h-7 w-7 flex items-center justify-center rounded-xl px-0 hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800">
+            <Badge
+              title={filtering ? `${column.cards.length} de ${column.totalCount} cards (com filtro)` : undefined}
+              className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-black h-7 w-7 flex items-center justify-center rounded-xl px-0 hover:bg-gray-200 dark:hover:bg-zinc-700 dark:bg-zinc-800"
+            >
               {column.cards.length}
             </Badge>
             <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-400 dark:text-zinc-500 [writing-mode:vertical-rl] whitespace-nowrap text-center">
@@ -1254,8 +1272,14 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
             <h3 title={column.title} className="font-black text-[10.5px] uppercase tracking-tight text-gray-700 dark:text-zinc-300 line-clamp-2 whitespace-normal leading-tight break-words min-w-0">{column.title}</h3>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
-            <Badge className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border-none font-bold px-2 py-0.5 rounded-lg text-[10px]">
-              {column.cards.length}
+            <Badge
+              title={filtering ? `${column.cards.length} de ${column.totalCount} cards (com filtro)` : undefined}
+              className={cn(
+                "border-none font-bold px-2 py-0.5 rounded-lg text-[10px] whitespace-nowrap",
+                filtering ? "bg-blue-50 text-blue-700" : "bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400",
+              )}
+            >
+              {filtering ? `${column.cards.length} de ${column.totalCount}` : column.cards.length}
             </Badge>
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
@@ -1351,9 +1375,10 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
             <DialogTitle>Excluir Coluna</DialogTitle>
             <DialogDescription>
               Tem certeza que deseja excluir <strong>{column.title}</strong>?
-              {column.cards.length > 0 && (
+              {/* Total real: com filtro ativo `cards` é só a parte visível. */}
+              {column.totalCount > 0 && (
                 <span className="block mt-2 text-red-600 font-medium">
-                  Atenção: {column.cards.length} card{column.cards.length > 1 ? 's' : ''} ficar{column.cards.length > 1 ? 'ão' : 'á'} sem etiqueta.
+                  Atenção: {column.totalCount} card{column.totalCount > 1 ? 's' : ''} ficar{column.totalCount > 1 ? 'ão' : 'á'} sem etiqueta.
                 </span>
               )}
             </DialogDescription>
@@ -1367,6 +1392,67 @@ const DroppableColumn: React.FC<DroppableColumnProps> = ({
         </DialogContent>
       </Dialog>
     </>
+  );
+};
+
+// =============================================
+// Filtros da barra do board
+// =============================================
+const filterChipCls =
+  'flex h-[30px] items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-gray-200 bg-gray-50 px-2.5 text-[12px] font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+const filterChipOnCls = 'border-blue-300 bg-blue-50 text-blue-700';
+
+interface FilterOption { key: string; name: string; count: number; color?: string }
+
+// Lista de marcar (tags/hospitais). Escolhido que não existe mais nos cards
+// continua listado para poder ser desmarcado — senão o filtro ficava preso
+// escondendo tudo.
+const FilterChecklist: React.FC<{
+  options: FilterOption[];
+  selected: string[];
+  onToggle: (key: string) => void;
+  emptyText: string;
+  searchable?: boolean;
+}> = ({ options, selected, onToggle, emptyText, searchable }) => {
+  const [q, setQ] = useState('');
+  const known = new Set(options.map((o) => o.key));
+  const all: FilterOption[] = [
+    ...selected.filter((k) => !known.has(k)).map((k) => ({ key: k, name: k, count: 0 })),
+    ...options,
+  ];
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? all.filter((o) => o.name.toLowerCase().includes(needle)) : all;
+  return (
+    <div className="flex flex-col gap-1">
+      {searchable && (
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Procurar…"
+          className="h-8 text-[12px]"
+        />
+      )}
+      {all.length === 0 ? (
+        <p className="px-1 py-2 text-[12px] text-gray-500">{emptyText}</p>
+      ) : (
+        <ul className="max-h-64 overflow-y-auto">
+          {shown.map((o) => {
+            const id = `kf-${o.key}`;
+            return (
+              <li key={o.key}>
+                <label htmlFor={id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12.5px] hover:bg-gray-50 dark:hover:bg-zinc-800">
+                  <Checkbox id={id} checked={selected.includes(o.key)} onCheckedChange={() => onToggle(o.key)} />
+                  {o.color && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />}
+                  <span className="min-w-0 flex-1 truncate" title={o.name}>{o.name}</span>
+                  <span className="shrink-0 text-[11px] text-gray-400">{o.count}</span>
+                </label>
+              </li>
+            );
+          })}
+          {shown.length === 0 && <li className="px-1.5 py-2 text-[12px] text-gray-500">Nada encontrado.</li>}
+        </ul>
+      )}
+    </div>
   );
 };
 
@@ -1393,7 +1479,81 @@ export const KanbanBoard: React.FC = () => {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('Todos');
 
-  // filteredItems é DERIVADO de items + busca + filtro de serviço. Calculado com
+  const [isLoading, setIsLoading] = useState(true);
+  const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
+  const { perms: boardPerms } = usePermissions();
+  const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY) || '{}'); } catch { return {}; }
+  });
+  const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [counts, setCounts] = useState<{
+    users: Record<string, { comments: number; attachments: number }>;
+    processes: Record<string, { comments: number; attachments: number }>;
+  }>({ users: {}, processes: {} });
+  // Tags dos cards (CardTag): buscadas em lote junto com as contagens e
+  // atualizadas na hora pelo evento 'card-tags-changed' (vindo do CardDialog).
+  const [cardTags, setCardTags] = useState<{
+    users: Record<string, CardTagInfo[]>;
+    processes: Record<string, CardTagInfo[]>;
+  }>({ users: {}, processes: {} });
+  // Filtros da barra (T-Y6ZGE): tag, prazo estourado, afastamento vigente e
+  // hospital. Rodam no cliente sobre os items do polling (o hash do
+  // board-state não muda). Ficam no sessionStorage para sobreviver à troca de
+  // aba da nova-dash, que desmonta o board (mesmo padrão do `wa-inbox-view`).
+  // Restaura no mount pelo inicializador (como `collapsedColumns`), então o
+  // efeito de gravação nunca vê o estado vazio por cima do salvo.
+  const [filters, setFilters] = useState<KanbanFilters>(() => {
+    if (typeof window === 'undefined') return EMPTY_KANBAN_FILTERS;
+    try { return parseKanbanFilters(sessionStorage.getItem(KANBAN_FILTERS_STORAGE_KEY)); } catch { return EMPTY_KANBAN_FILTERS; }
+  });
+  useEffect(() => {
+    try {
+      if (hasActiveKanbanFilters(filters)) sessionStorage.setItem(KANBAN_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+      else sessionStorage.removeItem(KANBAN_FILTERS_STORAGE_KEY);
+    } catch { /* storage bloqueado: só não persiste */ }
+  }, [filters]);
+  const filtersActive = hasActiveKanbanFilters(filters);
+  // Busca, etapa ou filtro: o board mostra só parte dos cards/colunas.
+  const boardFiltering = filtersActive || !!debouncedQuery.trim() || serviceFilter !== 'Todos';
+  const clearFilters = useCallback(() => {
+    setFilters(EMPTY_KANBAN_FILTERS);
+    setServiceFilter('Todos');
+  }, []);
+  const toggleTagFilter = useCallback((id: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      tagIds: prev.tagIds.includes(id) ? prev.tagIds.filter((t) => t !== id) : [...prev.tagIds, id],
+    }));
+  }, []);
+  const toggleHospitalFilter = useCallback((key: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      hospitals: prev.hospitals.includes(key) ? prev.hospitals.filter((h) => h !== key) : [...prev.hospitals, key],
+    }));
+  }, []);
+
+  // Opções dos filtros saem dos cards ativos do board (tag que nenhum card
+  // usa não aparece). Tag/hospital escolhido que sumiu continua no estado e
+  // aparece na lista para poder ser desmarcado.
+  const tagOptions = React.useMemo(() => {
+    const map = new Map<string, CardTagInfo & { count: number }>();
+    for (const bucket of [cardTags.users, cardTags.processes]) {
+      for (const list of Object.values(bucket ?? {})) {
+        for (const t of list) {
+          const cur = map.get(t.id);
+          if (cur) cur.count++;
+          else map.set(t.id, { ...t, count: 1 });
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [cardTags]);
+  const hospitalOpts = React.useMemo(() => hospitalOptions(items), [items]);
+
+  // filteredItems é DERIVADO de items + busca + filtro de etapa + filtros da barra. Calculado com
   // useMemo em vez de guardado em estado e sincronizado por effect — isso evitava
   // o ciclo render → effect → setState → render que dobrava os re-renders a cada
   // digitação/clique de filtro.
@@ -1415,28 +1575,16 @@ export const KanbanBoard: React.FC = () => {
     if (serviceFilter !== 'Todos') {
       filtered = filtered.filter((item) => item.label?.name === serviceFilter);
     }
+    if (filtersActive) {
+      // Um "agora" por recálculo: todos os cards comparados contra o mesmo dia.
+      const now = new Date();
+      filtered = filtered.filter((item) => {
+        const tags = (item.isProcess ? cardTags.processes : cardTags.users)?.[item.id] ?? [];
+        return matchesKanbanFilters(item, tags.map((t) => t.id), filters, now);
+      });
+    }
     return filtered;
-  }, [items, debouncedQuery, serviceFilter]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
-  const { perms: boardPerms } = usePermissions();
-  const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>(() => {
-    if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY) || '{}'); } catch { return {}; }
-  });
-  const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
-  const [labels, setLabels] = useState<Label[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [counts, setCounts] = useState<{
-    users: Record<string, { comments: number; attachments: number }>;
-    processes: Record<string, { comments: number; attachments: number }>;
-  }>({ users: {}, processes: {} });
-  // Tags dos cards (CardTag): buscadas em lote junto com as contagens e
-  // atualizadas na hora pelo evento 'card-tags-changed' (vindo do CardDialog).
-  const [cardTags, setCardTags] = useState<{
-    users: Record<string, CardTagInfo[]>;
-    processes: Record<string, CardTagInfo[]>;
-  }>({ users: {}, processes: {} });
+  }, [items, debouncedQuery, serviceFilter, filters, filtersActive, cardTags]);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
@@ -1812,6 +1960,13 @@ export const KanbanBoard: React.FC = () => {
       ? labels
       : labels.filter(l => l.name === serviceFilter);
 
+    // Total real por coluna (sem busca/filtro) para o "N de M" e o aviso de
+    // excluir coluna.
+    const totals = new Map<string, number>();
+    for (const it of items) {
+      if (it.labelId) totals.set(it.labelId, (totals.get(it.labelId) ?? 0) + 1);
+    }
+
     let newColumns = displayedLabels.map(label => ({
       id: label.id,
       title: label.name,
@@ -1819,18 +1974,17 @@ export const KanbanBoard: React.FC = () => {
       timeLimitDays: label.timeLimitDays,
       // Ordem manual (boardOrder) primeiro; cards sem ordem caem no fim, na
       // ordem natural (sort estável preserva a ordem de criação entre eles).
-      cards: kanbanCards
-        .filter(c => c.labelId === label.id)
-        .sort((a, b) => (a.boardOrder ?? Number.MAX_SAFE_INTEGER) - (b.boardOrder ?? Number.MAX_SAFE_INTEGER)),
+      cards: sortByBoardOrder(kanbanCards.filter(c => c.labelId === label.id)),
+      totalCount: totals.get(label.id) ?? 0,
     }));
 
-    // Durante busca, esconde colunas vazias
-    if (debouncedQuery.trim()) {
+    // Durante busca ou filtro, esconde colunas vazias
+    if (debouncedQuery.trim() || filtersActive) {
       newColumns = newColumns.filter(col => col.cards.length > 0);
     }
 
     setColumns(newColumns);
-  }, [filteredItems, labels, serviceFilter, counts, cardTags, debouncedQuery]);
+  }, [filteredItems, items, labels, serviceFilter, counts, cardTags, debouncedQuery, filtersActive]);
 
   // ============= LABEL CRUD =============
   async function createLabel(data: LabelInput) {
@@ -1888,10 +2042,17 @@ export const KanbanBoard: React.FC = () => {
 
   const columnsRef = useRef(columns);
   useEffect(() => { columnsRef.current = columns; }, [columns]);
+  // Items completos (sem busca/filtro): a ordem nova da coluna é calculada
+  // sobre eles, não sobre os cards visíveis.
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   // Move um card de coluna e/ou de posição. `beforeCardId` diz ANTES de qual
   // card inserir na coluna de destino (null = fim da coluna). A ordem final da
-  // coluna de destino é persistida por inteiro (índice → boardOrder).
+  // coluna de destino é persistida por inteiro (índice → boardOrder) — a
+  // coluna INTEIRA, inclusive os cards escondidos por busca/filtro: reindexar
+  // só os visíveis dava a eles índices que colidiam com o boardOrder dos
+  // escondidos e a coluna embaralhava ao limpar o filtro (`computeColumnOrder`).
   const moveCard = useCallback(async (
     cardId: string,
     sourceColumnId: string,
@@ -1914,9 +2075,20 @@ export const KanbanBoard: React.FC = () => {
     try {
       const targetLabel = labels.find(l => l.id === targetColumnId) ?? null;
       const nowIso = new Date().toISOString();
+      const movedRef = { id: cardId, isProcess: movedCard.isProcess };
+      const movedKey = orderKey(movedRef);
 
-      // Monta a nova lista da coluna de destino SEM clonar o board inteiro
-      // (structuredClone de centenas de cards por drop pesava o arrasto).
+      // Ordem completa da coluna de destino a partir dos items (todos os cards
+      // dela, visíveis ou não); o movido entra acima do card de referência.
+      const columnItems = itemsRef.current
+        .filter(it => it.labelId === targetColumnId)
+        .map(it => ({ id: it.id, isProcess: !!it.isProcess, boardOrder: it.boardOrder ?? null }));
+      const targetOrder = computeColumnOrder(columnItems, movedRef, beforeCardId);
+      const orderByKey = orderIndexMap(targetOrder);
+
+      // Otimista na tela: a lista VISÍVEL do destino com o movido inserido na
+      // mesma posição relativa, sem clonar o board inteiro (structuredClone
+      // de centenas de cards por drop pesava o arrasto).
       const newTargetCards = target.cards.filter(c => c.id !== cardId);
       let insertAt = beforeCardId ? newTargetCards.findIndex(c => c.id === beforeCardId) : -1;
       if (insertAt === -1) insertAt = newTargetCards.length;
@@ -1924,17 +2096,22 @@ export const KanbanBoard: React.FC = () => {
         ? { ...movedCard, labelId: targetColumnId, label: targetLabel, status: target.title, statusStartedAt: nowIso }
         : movedCard;
       newTargetCards.splice(insertAt, 0, movedClone);
-      // Índice = boardOrder. Só clona os cards cuja ordem mudou — os demais
-      // mantêm identidade e o React.memo evita o re-render deles.
-      const reindexed = newTargetCards.map((c, i) => (c.boardOrder === i ? c : { ...c, boardOrder: i }));
-      const targetOrder = reindexed.map(c => ({ id: c.id, isProcess: c.isProcess }));
-      const orderById = new Map(targetOrder.map((c, i) => [c.id, i]));
+      // Só clona os cards cuja ordem mudou — os demais mantêm identidade e o
+      // React.memo evita o re-render deles.
+      const reindexed = newTargetCards.map((c) => {
+        const i = orderByKey.get(orderKey(c));
+        return i === undefined || c.boardOrder === i ? c : { ...c, boardOrder: i };
+      });
 
       // Só as colunas de origem/destino trocam de identidade.
       setColumns((prev) =>
         prev.map((col) => {
-          if (col.id === targetColumnId) return { ...col, cards: reindexed };
-          if (col.id === sourceColumnId) return { ...col, cards: col.cards.filter(c => c.id !== cardId) };
+          if (col.id === targetColumnId) {
+            return { ...col, cards: reindexed, totalCount: columnChanged ? col.totalCount + 1 : col.totalCount };
+          }
+          if (col.id === sourceColumnId) {
+            return { ...col, cards: col.cards.filter(c => c.id !== cardId), totalCount: Math.max(0, col.totalCount - 1) };
+          }
           return col;
         })
       );
@@ -1943,15 +2120,17 @@ export const KanbanBoard: React.FC = () => {
       // recompute das colunas voltaria o card pra posição/coluna antiga.
       setItems((prev) =>
         prev.map((it) => {
-          const newOrder = orderById.get(it.id);
-          if (newOrder === undefined && it.id !== cardId) return it;
+          const key = orderKey({ id: it.id, isProcess: !!it.isProcess });
+          const newOrder = orderByKey.get(key);
+          const isMoved = key === movedKey;
+          if (newOrder === undefined && !isMoved) return it;
           const changed =
             (newOrder !== undefined && it.boardOrder !== newOrder) ||
-            (it.id === cardId && columnChanged);
+            (isMoved && columnChanged);
           if (!changed) return it;
           return {
             ...it,
-            ...(it.id === cardId && columnChanged
+            ...(isMoved && columnChanged
               ? { labelId: targetColumnId, label: targetLabel, statusStartedAt: nowIso }
               : {}),
             ...(newOrder !== undefined ? { boardOrder: newOrder } : {}),
@@ -2250,6 +2429,83 @@ export const KanbanBoard: React.FC = () => {
             </Select>
           </div>
 
+          {/* Filtros do board (T-Y6ZGE): só no cliente, sobre os cards já carregados. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(filterChipCls, filters.tagIds.length > 0 && filterChipOnCls)}
+                  title="Filtrar por tag (mostra cards com qualquer uma das escolhidas)"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  Tags{filters.tagIds.length > 0 ? ` (${filters.tagIds.length})` : ''}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-2">
+                <FilterChecklist
+                  emptyText="Nenhum card tem tag."
+                  options={tagOptions.map((t) => ({ key: t.id, name: t.name, count: t.count, color: t.color }))}
+                  selected={filters.tagIds}
+                  onToggle={toggleTagFilter}
+                />
+              </PopoverContent>
+            </Popover>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(filterChipCls, filters.hospitals.length > 0 && filterChipOnCls)}
+                  title="Filtrar por hospital do cadastro"
+                >
+                  <Hospital className="w-3.5 h-3.5" />
+                  Hospital{filters.hospitals.length > 0 ? ` (${filters.hospitals.length})` : ''}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 p-2">
+                <FilterChecklist
+                  searchable
+                  emptyText="Nenhum card tem hospital no cadastro."
+                  options={hospitalOpts.map((h) => ({ key: h.key, name: h.name, count: h.count }))}
+                  selected={filters.hospitals}
+                  onToggle={toggleHospitalFilter}
+                />
+              </PopoverContent>
+            </Popover>
+            <button
+              type="button"
+              aria-pressed={filters.overdue}
+              onClick={() => setFilters((prev) => ({ ...prev, overdue: !prev.overdue }))}
+              className={cn(filterChipCls, filters.overdue && 'border-red-300 bg-red-50 text-red-700')}
+              title="Só cards além do prazo da coluna"
+            >
+              <AlarmClock className="w-3.5 h-3.5" />
+              Prazo estourado
+            </button>
+            <button
+              type="button"
+              aria-pressed={filters.afastado}
+              onClick={() => setFilters((prev) => ({ ...prev, afastado: !prev.afastado }))}
+              className={cn(filterChipCls, filters.afastado && 'border-emerald-300 bg-emerald-50 text-emerald-700')}
+              title="Só cards com afastamento vigente (vencimento hoje ou depois)"
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              Afastado
+            </button>
+            {(filtersActive || serviceFilter !== 'Todos') && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-[30px] gap-1 rounded-[10px] px-2 text-[12px] text-gray-600"
+              >
+                <X className="w-3.5 h-3.5" />
+                Limpar filtros
+              </Button>
+            )}
+          </div>
+
           {/* Ações sem quebra entre si (a barra inteira quebra de linha se faltar
               espaço). Abaixo de 2xl viram só ícone, com tooltip no `title`;
               "Criar Card Cliente" mantém o texto. */}
@@ -2360,6 +2616,7 @@ export const KanbanBoard: React.FC = () => {
                       toggleCollapse={() => toggleCollapse(column.id)}
                       moveTargets={moveTargets}
                       onMoveTo={handleMoveTo}
+                      filtering={boardFiltering}
                     />
                   ))}
                 </div>

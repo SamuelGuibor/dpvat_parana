@@ -20,6 +20,9 @@ const processBasicSelect = {
   afastadoAte: true,
   archiveStatus: true,
   boardOrder: true,
+  // Filtro por hospital do board (T-Y6ZGE): só o filtro usa, não aparece no card.
+  hospital: true,
+  outro_hospital: true,
 };
 
 const processFullSelect = {

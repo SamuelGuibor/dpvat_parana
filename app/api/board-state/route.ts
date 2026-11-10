@@ -71,6 +71,10 @@ function mapBasic(row: any, isProcess: boolean) {
     afastadoAte: row.afastadoAte ? row.afastadoAte.toISOString() : null,
     archiveStatus: row.archiveStatus ?? null,
     boardOrder: row.boardOrder ?? null,
+    // Só para o filtro por hospital (cliente). Muda com updatedAt da linha,
+    // então o hash de computeBoardVersion já cobre.
+    hospital: row.hospital ?? null,
+    outro_hospital: row.outro_hospital ?? null,
     userId: isProcess ? row.userId : undefined,
   };
 }
