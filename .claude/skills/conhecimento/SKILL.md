@@ -8,6 +8,7 @@ model: opus
 
 Entrada: `$ARGUMENTS`.
 - `sugerir <assunto>` → modo sugerir.
+- `editar <ticket> <o que mudar>` ou "acrescenta X no S-…" → modo editar.
 - `implementar <ticket>` ou só um id de ticket (`C-K2P9X`, `S-…`, `B-…`, `L-…`, `D-…`) → modo implementar.
 - Texto livre sem modo e sem id → pergunte: "sugerir (vira ticket) ou implementar agora (só ADMIN++)?". Se vier a descrição desta skill colada como argumento, ignore-a e pergunte o mesmo.
 
@@ -36,6 +37,14 @@ O mesmo assunto não pode dizer coisa diferente em dois lugares. Para o assunto 
 4. `criar_ticket` (exige confirmação): sem `previa_hash` → mostre `details.previa` → "Confirma?" → repita com `confirmar: true` + `previa_hash`. Inclua os conflitos achados no fim da `proposta` ("Conflito: …").
 5. Responda com o id (`S-…`) e diga que quem tem permissão implementa com `/conhecimento implementar <id>`.
 - Skill protegida (`plano`, `validar`, `migration`, `mapa-atualizar`, `crm`) → `criar_ticket` recusa (`protegida`): diga que é ticket DEV.
+
+## Modo editar (quem abriu a sugestão, ou `manage_knowledge`)
+Só enquanto o ticket está em **Sugestões** (`EM_DISTRIBUICAO`). Da Em Análise em diante fica travado.
+1. `ler_ticket` com o id; `fase` diferente de `EM_DISTRIBUICAO` → "o ticket já está em <fase> e não pode mais ser alterado; se quiser, abro uma sugestão nova citando o id" e **pare**.
+2. "Acrescenta X" → `acrescentar` (junta ao fim da proposta, nas palavras do operador). Reescrever a proposta inteira → `proposta`. Também: `titulo`, `evidencia`, `hospital` (vault), `skill` (skill), `setor` (`"nenhum"` tira).
+3. Detalhe novo que toca outro lugar (vault/skill/bot) → refaça a checagem de conflito só desse detalhe e junte o conflito ao texto ("Conflito: …").
+4. `editar_ticket` (exige confirmação): sem `previa_hash` → mostre `details.previa.mudancas` (campo · de · para) → "Confirma?" → repita com `confirmar: true` + `previa_hash`. O histórico do ticket registra quem alterou e quando.
+- Recusas: `travado` (saiu de Sugestões), `sem_permissao` (sugestão de outra pessoa), `sem_mudanca` (já está assim), `estado_mudou` (mudou no site entre a prévia e o "sim": mostre a prévia de novo).
 
 ## Modo implementar (só `manage_knowledge`)
 1. `minhas_permissoes` → `manage_knowledge: false` → "você não tem permissão para implementar; use `/conhecimento sugerir`" e **pare**. Destino bot também precisa de `teach_bot`.
