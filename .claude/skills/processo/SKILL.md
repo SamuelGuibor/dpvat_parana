@@ -16,6 +16,7 @@ Entrada: `$ARGUMENTS` = número do processo (ou CPF, nome).
    - **Documentos**: por pasta, só a contagem; **pastas vazias** destacadas. Links só se pedirem (`listar_documentos` com `comLinks: true`).
    - **Pendências**: uma por linha (checklist nunca aberto = uma linha, não a lista).
    - **WhatsApp**: linha · status · atendente · última mensagem do cliente (data) · 3 mensagens resumidas.
+   - **Enviado na conversa**: confira as mensagens `de: "cliente"` que vieram como anexo (`[image]`, `[document]`, `[video]`, `[sticker]`; áudio vem pela transcrição e não conta) e liste uma por linha: data · tipo. Nenhum → "nenhum anexo nas últimas N mensagens". Só vê as mensagens devolvidas (padrão 20) e anexo com legenda chega só como texto: diga isso numa linha. Não diga o que o anexo é (RG, laudo) se o cliente não disse na conversa.
    - `Próximo:` a oferta mais útil: pasta PROCURAÇÃO vazia e campos completos → "preparo a procuração?"; pasta EXAME MÉDICO vazia e campos do pedido completos → "preparo o pedido de prontuário?"; identificação anexada e cadastro incompleto → "leio os documentos e completo o cadastro? (`/documentos`)"; documento faltando → "cobro o cliente por WhatsApp?".
 
 ## Regras (resumo — completas em `.claude/skills/crm/SKILL.md`)
