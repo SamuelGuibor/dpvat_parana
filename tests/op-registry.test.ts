@@ -38,7 +38,7 @@ const AJUSTES_L1 = ["quem_pediu"];
 const LOTE_L1 = ["analisar_documentos", "panorama_card", "iniciar_lote", "resultado_lote"];
 // Cérebro APP (docs/ai-first/11-plano-cerebro-app.md): tickets + frente bot.
 const CEREBRO_L1 = ["listar_tickets", "ler_ticket", "analisar_regra_bot"];
-const CEREBRO_L3 = ["criar_ticket", "atualizar_ticket", "aplicar_regra_bot"];
+const CEREBRO_L3 = ["criar_ticket", "editar_ticket", "atualizar_ticket", "aplicar_regra_bot"];
 // Decisão do dono (30/10): criar pela IA. Card e ticket DEV em L3; membro da
 // equipe em L4 com "aprovo <código>" (dá acesso ao CRM).
 const CRIACAO_L3 = ["criar_card", "criar_ticket_dev"];
@@ -273,6 +273,10 @@ describe("registry da operação por IA", () => {
     expect(getTool("ler_ticket")?.permission).toBe("op_use");
     expect(getTool("criar_ticket")?.permission).toBe("op_use");
     expect(getTool("atualizar_ticket")?.permission).toBe("manage_knowledge");
+    expect(getTool("editar_ticket")?.permission).toBe("op_use");
+    const editar = getTool("editar_ticket")!.schema;
+    expect(editar.safeParse({ ticket: "S-DK4AF", acrescentar: "conferir CTPS/CNIS" }).success).toBe(true);
+    expect(editar.safeParse({ acrescentar: "conferir CTPS/CNIS" }).success).toBe(false);
     expect(getTool("analisar_regra_bot")?.permission).toBe("teach_bot");
     expect(getTool("aplicar_regra_bot")?.permission).toBe("teach_bot");
     const criar = getTool("criar_ticket")!.schema;

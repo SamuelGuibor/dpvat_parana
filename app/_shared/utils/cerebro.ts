@@ -48,6 +48,37 @@ export function skillValida(nome: string): boolean {
 
 export const skillProtegida = (nome: string) => (SKILLS_PROTEGIDAS as readonly string[]).includes(nome);
 
+/**
+ * T-1Q1EB (09/11): a sugestão só é editada enquanto está em Sugestões
+ * (EM_DISTRIBUICAO). Da Em Análise em diante alguém já leu/assumiu e o texto
+ * é o que está sendo implementado: fica travado. Só as sugestões de pessoas
+ * (vault/skill/bot); lacuna e desatualizado são gerados pelo sistema. Edita
+ * quem abriu ou quem cuida da base (manage_knowledge).
+ * Devolve o motivo da recusa, ou null se pode.
+ */
+export function motivoSemEdicao(
+  t: { type: string; status: string; creatorId: string },
+  quem: { userId: string; manageKnowledge: boolean },
+): { code: "travado" | "sem_permissao" | "invalido"; message: string } | null {
+  if (!(Object.values(TIPO_DO_DESTINO) as string[]).includes(t.type)) {
+    return { code: "invalido", message: "Só sugestões de conhecimento (vault, skill, bot) são editadas pela IA; lacuna/desatualizado e ticket DEV ficam no site." };
+  }
+  if (t.status !== "EM_DISTRIBUICAO") {
+    return { code: "travado", message: "O ticket já saiu de Sugestões: não pode mais ser alterado. Para acrescentar algo, abra uma sugestão nova citando este id." };
+  }
+  if (t.creatorId !== quem.userId && !quem.manageKnowledge) {
+    return { code: "sem_permissao", message: "Só quem abriu a sugestão (ou quem cuida da Base de conhecimento) pode editá-la." };
+  }
+  return null;
+}
+
+/** "Acrescenta X": junta ao fim da proposta num parágrafo novo, sem apagar o que havia. */
+export function acrescentarTexto(atual: string | undefined, extra: string): string {
+  const a = (atual ?? "").trim();
+  const e = extra.trim();
+  return a ? `${a}\n\n${e}` : e;
+}
+
 /** Próxima fase: ticket comum pula a Validação IA (ela é só do conhecimento). */
 export function nextStatus(type: string, status: string): TicketStatus | null {
   switch (status) {

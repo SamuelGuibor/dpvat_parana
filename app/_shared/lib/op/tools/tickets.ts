@@ -2,13 +2,23 @@ import { z } from "zod/v4";
 import { db } from "../../prisma";
 import { defineTool, OpToolError } from "../registry";
 import { confirmSchema, previewOrExecute } from "../preview";
-import { CerebroError, acharTicket, asJson, criarSugestao, metaOf, withHistory } from "../../cerebro-tickets";
+import {
+  CerebroError,
+  acharTicket,
+  asJson,
+  criarSugestao,
+  gravarEdicaoSugestao,
+  metaOf,
+  planejarEdicaoSugestao,
+  withHistory,
+} from "../../cerebro-tickets";
 import {
   DESTINOS,
   KNOWLEDGE_TYPES,
   TICKET_STATUS_FLOW,
   destinoDoTipo,
   isKnowledgeType,
+  motivoSemEdicao,
   shortTicketId,
   skillProtegida,
   skillValida,
@@ -198,6 +208,76 @@ export const criarTicket = defineTool({
     if (!out.executed) return { data: { previa: out.previa }, summary: `prévia ticket ${args.destino}` };
     const id = shortTicketId(out.result.id, out.result.type);
     return { data: { feito: true, id, tipo: out.result.type }, summary: `criou ticket ${id}` };
+  },
+});
+
+// T-1Q1EB (09/11): o operador acrescenta/corrige a própria sugestão pelo app
+// do Claude, com prévia e "sim" (confirmação exigida, como o criar_ticket).
+// Só em Sugestões (EM_DISTRIBUICAO): da Em Análise em diante o texto é o que
+// está sendo implementado e fica travado.
+export const editarTicket = defineTool({
+  name: "editar_ticket",
+  description:
+    "ESCRITA. Edita uma sugestão do Cérebro APP (vault, skill ou bot) que ainda está em Sugestões: título, proposta (substitui) ou acrescentar (junta ao fim da proposta), evidência, hospital (destino vault), skill (destino skill) e setor. Só quem abriu a sugestão ou quem tem Base de conhecimento. Em Análise ou depois recusa com `travado`. Exige confirmação: chame sem previa_hash, mostre `mudancas` da prévia, pergunte e repita com confirmar: true + previa_hash.",
+  level: 3,
+  permission: "op_use",
+  schema: z.object({
+    ticket: z.string().min(3).max(40).describe("Id curto (ex.: S-DK4AF)."),
+    titulo: z.string().min(3).max(160).optional(),
+    proposta: z.string().min(5).max(6000).optional().describe("Substitui a proposta inteira. Para só juntar um detalhe, use acrescentar."),
+    acrescentar: z.string().min(3).max(3000).optional().describe("Texto que vai ao fim da proposta, num parágrafo novo."),
+    evidencia: z.string().max(1000).optional(),
+    hospital: z.string().max(160).optional().describe("Só destino vault."),
+    skill: z.string().max(40).optional().describe("Só destino skill: pasta da skill (ex.: pendencias)."),
+    setor: z.string().max(60).optional().describe("Nome do setor; \"nenhum\" tira o setor."),
+    ...confirmSchema,
+  }),
+  async run({ op }, args) {
+    const t = await acharTicket(args.ticket).catch(toOpError);
+    const id = shortTicketId(t.id, t.type);
+    const recusa = motivoSemEdicao(t, { userId: op.userId, manageKnowledge: op.permissions.manage_knowledge === true });
+    if (recusa) {
+      const status = recusa.code === "travado" ? 409 : recusa.code === "sem_permissao" ? 403 : 422;
+      throw new OpToolError(recusa.code === "invalido" ? "argumentos_invalidos" : recusa.code, `${id}: ${recusa.message}`, status, { fase: t.status });
+    }
+    let sectorId: string | null | undefined;
+    if (args.setor !== undefined) {
+      if (/^(nenhum|sem setor|-)$/i.test(args.setor.trim())) sectorId = null;
+      else {
+        const s = await db.sector.findFirst({
+          where: { OR: [{ name: { equals: args.setor, mode: "insensitive" } }, { slug: args.setor.toLowerCase().replace(/^@/, "") }] },
+          select: { id: true },
+        });
+        if (!s) throw new OpToolError("nao_encontrado", `Setor não encontrado: ${args.setor}`, 404);
+        sectorId = s.id;
+      }
+    }
+    const plano = await planejarEdicaoSugestao(t, {
+      title: args.titulo,
+      proposta: args.proposta,
+      acrescentar: args.acrescentar,
+      evidencia: args.evidencia,
+      hospital: args.hospital,
+      skill: args.skill,
+      sectorId,
+    }).catch(toOpError);
+    if (!plano.mudancas.length) throw new OpToolError("sem_mudanca", `${id}: nada a alterar (os valores já são esses).`, 422);
+    const autor = op.name ? `${op.name} (via IA)` : `${op.email} (via IA)`;
+    const out = await previewOrExecute({
+      tool: "editar_ticket",
+      args,
+      // Mudou o ticket entre a prévia e o "sim" (alguém assumiu, editou no
+      // site) → estado_mudou, e a IA mostra a prévia de novo.
+      estado: { status: t.status, updatedAt: t.updatedAt.toISOString() },
+      confirmacao: "exigida",
+      previa: { acao: "editar sugestão do Cérebro APP", ticket: id, mudancas: plano.mudancas },
+      execute: () => gravarEdicaoSugestao(t, plano, autor),
+    });
+    if (!out.executed) return { data: { previa: out.previa }, summary: `prévia edição ${id}` };
+    return {
+      data: { feito: true, id, campos: plano.mudancas.map((m) => m.campo) },
+      summary: `editou ticket ${id} (${plano.mudancas.map((m) => m.campo).join(", ")})`,
+    };
   },
 });
 

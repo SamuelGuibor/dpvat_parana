@@ -75,6 +75,9 @@ function mapBasic(row: any, isProcess: boolean) {
     // então o hash de computeBoardVersion já cobre.
     hospital: row.hospital ?? null,
     outro_hospital: row.outro_hospital ?? null,
+    // Só para a busca por cidade/estado (T-OM736). Também coluna da linha.
+    cidade: row.cidade ?? null,
+    estado: row.estado ?? null,
     userId: isProcess ? row.userId : undefined,
   };
 }

@@ -7,7 +7,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
-  MessageSquare, Paperclip, Edit, Briefcase,
+  MessageSquare, MessageCircle, Paperclip, Edit, Briefcase,
   ChevronRight, ChevronLeft, Search, Loader2, Trash2, MoreVertical, Plus, Tag,
   User, GripVertical, Zap, CheckSquare, Minimize2, Maximize2,
   Archive, DollarSign, XCircle,
@@ -39,7 +39,7 @@ import { deleteCard } from '../_actions/cards/delete-card';
 import { createUser } from '../_actions/users/create-user';
 import { findDuplicateClient, type DuplicateHit } from '../_actions/users/find-duplicate';
 import { searchArchivedCards, type ArchivedSearchHit } from '../_actions/cards/search-archived';
-import { maskCpf, isValidCpf, onlyDigits } from '@/app/_shared/utils/format';
+import { maskCpf, isValidCpf } from '@/app/_shared/utils/format';
 import { setArchiveStatus, getArchivedCardById, type ArchiveStatus } from '../_actions/cards/archive-card';
 import { ARCHIVE_LABELS, DESTRUCTIVE_ARCHIVE } from '../_shared/lib/archive-catalog';
 import { toast } from "sonner";
@@ -53,11 +53,15 @@ import {
   UserX,
 } from "lucide-react";
 import { usePermissions } from '@/app/nova-dash/_components/PermissionsProvider';
+import useSWR from 'swr';
+import { jsonFetcher } from '@/app/_shared/utils/fetch-json';
+import { CARD_UNREAD_POLL_MS, CARD_UNREAD_URL, readCardUnread } from '@/app/_shared/utils/card-unread';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/_shared/ui/popover';
 import { Checkbox } from '@/app/_shared/ui/checkbox';
 import {
   EMPTY_KANBAN_FILTERS, KANBAN_FILTERS_STORAGE_KEY, daysInColumn, hasActiveKanbanFilters,
   hospitalOptions, matchesKanbanFilters, parseKanbanFilters, type KanbanFilters,
+  kanbanSearchMatch, kanbanSearchHint,
 } from '@/app/_shared/utils/kanban-filters';
 import { computeColumnOrder, orderIndexMap, orderKey, sortByBoardOrder } from '@/app/_shared/utils/kanban-order';
 
@@ -132,6 +136,8 @@ export interface KanbanCard {
   attachmentCount?: number;
   cardNumber?: number | null;
   tags?: CardTagInfo[];
+  /** Contato com mensagem do cliente sem leitura (selo verde no canto, T-AJ2PT). */
+  unreadContactId?: string | null;
   // Posição manual dentro da coluna (menor = mais acima); null = sem ordem.
   boardOrder?: number | null;
 }
@@ -265,6 +271,8 @@ interface Item {
   boardOrder?: number | null
   hospital?: string | null
   outro_hospital?: string | null
+  cidade?: string | null
+  estado?: string | null
 }
 
 const renderTimerBadge = (card: KanbanCard) => {
@@ -736,6 +744,26 @@ const DraggableCardBase: React.FC<DraggableCardProps> = ({ card, columnId, onCar
                 )}
                 {card.title}
               </h4>
+              {/* T-AJ2PT: cliente mandou mensagem e ninguém leu ainda. Clique
+                  abre a conversa no inbox (que marca como lida; o selo some no
+                  próximo poll). sessionStorage antes do evento: o inbox pode
+                  ainda não estar montado. */}
+              {card.unreadContactId && (
+                <button
+                  type="button"
+                  title="Mensagem nova do cliente no WhatsApp — abrir conversa"
+                  aria-label="Mensagem nova do cliente no WhatsApp"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const contactId = card.unreadContactId!;
+                    try { sessionStorage.setItem('wa-open-contact', contactId); } catch { /* noop */ }
+                    window.dispatchEvent(new CustomEvent('open-whatsapp-conversation', { detail: { contactId } }));
+                  }}
+                  className="shrink-0 ml-1 mt-[2px] flex h-[14px] w-[14px] items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm ring-2 ring-white hover:bg-emerald-600"
+                >
+                  <MessageCircle className="h-[8px] w-[8px]" strokeWidth={3} />
+                </button>
+              )}
               {/* Só card de Process leva ícone: o bonequinho do card de cliente
                   não carregava informação (nem atribuía responsável) e roubava
                   largura do nome. */}
@@ -1059,6 +1087,7 @@ const DraggableCard = React.memo(DraggableCardBase, (prev, next) => {
     a.attachmentCount === b.attachmentCount &&
     a.status === b.status &&
     a.isProcess === b.isProcess &&
+    a.unreadContactId === b.unreadContactId &&
     (a.tags ?? []).map((t) => `${t.id}:${t.name}:${t.color}`).join(',') ===
       (b.tags ?? []).map((t) => `${t.id}:${t.name}:${t.color}`).join(',')
   );
@@ -1482,6 +1511,14 @@ export const KanbanBoard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
   const { perms: boardPerms } = usePermissions();
+  // Selo de mensagem não lida nos cards (T-AJ2PT): só para quem vê o WhatsApp.
+  // Poll próprio de 30 s fora do board-state (ver app/api/kanban/unread).
+  const { data: unreadRaw } = useSWR(boardPerms.view_whatsapp ? CARD_UNREAD_URL : null, jsonFetcher, {
+    refreshInterval: CARD_UNREAD_POLL_MS,
+    revalidateOnFocus: true,
+    dedupingInterval: 10_000,
+  });
+  const cardUnread = useMemo(() => readCardUnread(unreadRaw), [unreadRaw]);
   const [collapsedColumns, setCollapsedColumns] = useState<{ [key: string]: boolean }>(() => {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY) || '{}'); } catch { return {}; }
@@ -1559,18 +1596,10 @@ export const KanbanBoard: React.FC = () => {
   // digitação/clique de filtro.
   const filteredItems = React.useMemo(() => {
     let filtered = items;
-    if (debouncedQuery) {
-      const q = debouncedQuery.toLowerCase().trim();
-      const qDigits = q.replace(/\D/g, '');
-      filtered = filtered.filter((item) => {
-        const nameHit = item.name.toLowerCase().includes(q);
-        const numberHit = qDigits.length > 0 && item.cardNumber != null && String(item.cardNumber).includes(qDigits);
-        // Busca também por CPF e telefone (dígitos): "cliente ligou informando
-        // o CPF" deixa de exigir procurar pelo nome.
-        const cpfHit = qDigits.length >= 4 && onlyDigits(item.cpf).includes(qDigits);
-        const phoneHit = qDigits.length >= 4 && onlyDigits(item.telefone).includes(qDigits);
-        return nameHit || numberHit || cpfHit || phoneHit;
-      });
+    if (debouncedQuery.trim()) {
+      // Nome, nº, CPF/telefone (dígitos) e, desde o T-OM736, hospital, cidade
+      // e estado do cadastro (regra em kanban-filters.ts).
+      filtered = filtered.filter((item) => kanbanSearchMatch(item, debouncedQuery) !== null);
     }
     if (serviceFilter !== 'Todos') {
       filtered = filtered.filter((item) => item.label?.name === serviceFilter);
@@ -1953,6 +1982,7 @@ export const KanbanBoard: React.FC = () => {
         cardNumber: item.cardNumber ?? null,
         tags: (item.isProcess ? cardTags.processes : cardTags.users)?.[item.id] ?? [],
         boardOrder: item.boardOrder ?? null,
+        unreadContactId: (item.isProcess ? cardUnread.processes : cardUnread.users)[item.id]?.contactId ?? null,
       };
     });
 
@@ -1984,7 +2014,7 @@ export const KanbanBoard: React.FC = () => {
     }
 
     setColumns(newColumns);
-  }, [filteredItems, items, labels, serviceFilter, counts, cardTags, debouncedQuery, filtersActive]);
+  }, [filteredItems, items, labels, serviceFilter, counts, cardTags, cardUnread, debouncedQuery, filtersActive]);
 
   // ============= LABEL CRUD =============
   async function createLabel(data: LabelInput) {
@@ -2323,7 +2353,7 @@ export const KanbanBoard: React.FC = () => {
                 onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
                 onFocus={() => { if (searchQuery.trim()) setSearchOpen(true); }}
                 type="text"
-                placeholder="Pesquisar por nome ou nº do card (ex: 4001)..."
+                placeholder="Pesquisar por nome, nº do card, hospital, cidade ou estado..."
                 className="pl-10 h-[34px] text-[13px] w-full rounded-xl border-gray-200 dark:border-zinc-800 focus:ring-blue-500 bg-gray-50 dark:bg-zinc-950/50"
               />
               {searchOpen && searchQuery.trim() && (
@@ -2377,6 +2407,13 @@ export const KanbanBoard: React.FC = () => {
                                   </span>
                                 )}
                               </div>
+                              {/* Achou pelo hospital/cidade/estado: mostra o porquê. */}
+                              {(() => {
+                                const hint = kanbanSearchHint(item, kanbanSearchMatch(item, debouncedQuery));
+                                return hint ? (
+                                  <div className="mt-0.5 text-[11px] text-gray-500 dark:text-zinc-400 truncate">{hint}</div>
+                                ) : null;
+                              })()}
                             </div>
                             <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
                           </li>

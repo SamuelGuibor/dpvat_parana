@@ -21,6 +21,9 @@ const userBasicSelect = {
   // Filtro por hospital do board (T-Y6ZGE): só o filtro usa, não aparece no card.
   hospital: true,
   outro_hospital: true,
+  // Busca do board por cidade/estado (T-OM736): também só a busca usa.
+  cidade: true,
+  estado: true,
 };
 
 const userFullSelect = {

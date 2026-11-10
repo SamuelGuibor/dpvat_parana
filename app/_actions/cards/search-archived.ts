@@ -3,8 +3,10 @@
 import { db } from "../../_shared/lib/prisma";
 import { requireTeam } from "../../_shared/lib/permissions-server";
 import type { ArchiveStatus } from "./archive-card";
+import { UF_NAMES } from "../../_shared/utils/kanban-filters";
 
-// Busca leve em cards ARQUIVADOS por nome, nº do card, CPF ou telefone.
+// Busca leve em cards ARQUIVADOS por nome, nº do card, CPF, telefone,
+// hospital, cidade ou estado.
 // Usada pela busca do kanban e pelo Ctrl+K para evitar criar card duplicado
 // de um cliente que já passou pelo escritório (o board só carrega os ativos).
 // Devolve apenas dados de identificação — sem endereço/observações.
@@ -55,9 +57,34 @@ export async function searchArchivedCards(query: string): Promise<ArchivedSearch
       ]
     : [];
 
+  // T-OM736: hospital e cidade (3+ letras) e estado (sigla ou nome) também
+  // acham o card, como na busca dos ativos (kanban-filters.ts). Contains do
+  // Postgres não ignora acento: "parana" não acha "Paraná" aqui, só no board.
+  const textOnly = !/^[\d\s.\-()/+]+$/.test(q);
+  const uf = q.length === 2 && UF_NAMES[q.toUpperCase()] ? q.toUpperCase() : null;
+  const textFilters = textOnly
+    ? [
+        ...(q.length >= 3
+          ? [
+              { hospital: { contains: q, mode: "insensitive" as const } },
+              { outro_hospital: { contains: q, mode: "insensitive" as const } },
+              { cidade: { contains: q, mode: "insensitive" as const } },
+              { estado: { contains: q, mode: "insensitive" as const } },
+            ]
+          : []),
+        // Estado gravado como sigla ("PR") ou por extenso ("Paraná").
+        ...(uf
+          ? [
+              { estado: { equals: uf, mode: "insensitive" as const } },
+              { estado: { equals: UF_NAMES[uf], mode: "insensitive" as const } },
+            ]
+          : []),
+      ]
+    : [];
+
   const where = {
     archiveStatus: { not: null },
-    OR: [nameFilter, ...digitFilters],
+    OR: [nameFilter, ...digitFilters, ...textFilters],
   };
 
   const [users, processes] = await Promise.all([

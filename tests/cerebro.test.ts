@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   TIPO_DO_DESTINO,
+  acrescentarTexto,
+  motivoSemEdicao,
   compararContatos,
   destinoDoTipo,
   isKnowledgeType,
@@ -83,5 +85,32 @@ describe("destinos do Cérebro APP (vault, skill, bot)", () => {
     expect(skillValida("Meu Dia")).toBe(false);
     for (const s of ["plano", "validar", "migration", "mapa-atualizar", "crm"]) expect(skillProtegida(s)).toBe(true);
     expect(skillProtegida("meu-dia")).toBe(false);
+  });
+});
+
+// T-1Q1EB: edição da sugestão pelo app só em Sugestões.
+describe("motivoSemEdicao", () => {
+  const dono = { userId: "u1", manageKnowledge: false };
+  const t = { type: "SKILL", status: "EM_DISTRIBUICAO", creatorId: "u1" };
+  it("quem abriu edita enquanto está em Sugestões", () => {
+    expect(motivoSemEdicao(t, dono)).toBeNull();
+  });
+  it("Em Análise em diante fica travado, até para quem cuida da base", () => {
+    for (const status of ["EM_ANALISE", "EM_DESENVOLVIMENTO", "VALIDACAO_IA", "CONCLUIDO"]) {
+      expect(motivoSemEdicao({ ...t, status }, { userId: "u9", manageKnowledge: true })?.code).toBe("travado");
+    }
+  });
+  it("sugestão de outra pessoa só com manage_knowledge", () => {
+    expect(motivoSemEdicao(t, { userId: "u2", manageKnowledge: false })?.code).toBe("sem_permissao");
+    expect(motivoSemEdicao(t, { userId: "u2", manageKnowledge: true })).toBeNull();
+  });
+  it("lacuna, desatualizado e ticket DEV não são editados pela IA", () => {
+    for (const type of ["LACUNA", "DESATUALIZADO", "BUG", "MELHORIA"]) {
+      expect(motivoSemEdicao({ ...t, type }, dono)?.code).toBe("invalido");
+    }
+  });
+  it("acrescentar junta num parágrafo novo", () => {
+    expect(acrescentarTexto("Conferir RG.", "  Conferir CTPS/CNIS. ")).toBe("Conferir RG.\n\nConferir CTPS/CNIS.");
+    expect(acrescentarTexto(undefined, "X")).toBe("X");
   });
 });

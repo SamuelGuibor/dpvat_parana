@@ -171,3 +171,77 @@ export function parseKanbanFilters(raw: string | null | undefined): KanbanFilter
     afastado: o.afastado === true,
   };
 }
+
+// ---------------------------------------------------------------- busca
+// T-OM736 (09/11): a busca do board acha o card também pelo hospital, pela
+// cidade e pelo estado do cadastro ("todos os clientes do Cajuru", "quem é de
+// Ponta Grossa", "PR"). Antes era só nome, nº do card, CPF e telefone.
+
+export const UF_NAMES: Record<string, string> = {
+  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará',
+  DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão',
+  MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará',
+  PB: 'Paraíba', PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro',
+  RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima',
+  SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins',
+};
+const UF_BY_NAME = new Map(Object.entries(UF_NAMES).map(([uf, nome]) => [hospitalKey(nome), uf]));
+
+/** Estado do cadastro → { uf, nome } normalizados. Aceita "PR", "pr", "Paraná", "parana". */
+function estadoKeys(estado: string | null | undefined): { uf: string | null; nome: string } | null {
+  const k = hospitalKey(estado ?? '');
+  if (!k) return null;
+  const ufUpper = k.toUpperCase();
+  if (UF_NAMES[ufUpper]) return { uf: ufUpper, nome: hospitalKey(UF_NAMES[ufUpper]) };
+  return { uf: UF_BY_NAME.get(k) ?? null, nome: k };
+}
+
+export interface SearchableCard extends FilterableCard {
+  name: string;
+  cardNumber?: number | null;
+  cpf?: string | null;
+  telefone?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+}
+
+export type KanbanSearchField = 'nome' | 'numero' | 'cpf' | 'telefone' | 'hospital' | 'cidade' | 'estado';
+
+const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+
+/**
+ * Em que campo o card bate com a busca (o primeiro, na ordem de prioridade),
+ * ou null. Sem acento e sem caixa. Hospital e cidade pedem 3+ letras (com 1–2
+ * quase todo card bateria); estado aceita a sigla exata ("PR") ou o nome.
+ */
+export function kanbanSearchMatch(card: SearchableCard, query: string): KanbanSearchField | null {
+  const q = hospitalKey(query);
+  if (!q) return null;
+  const qDigits = q.replace(/\D/g, '');
+  if (hospitalKey(card.name).includes(q)) return 'nome';
+  if (qDigits.length > 0 && card.cardNumber != null && String(card.cardNumber).includes(qDigits)) return 'numero';
+  // CPF/telefone por dígitos: "cliente ligou informando o CPF".
+  if (qDigits.length >= 4 && onlyDigits(card.cpf).includes(qDigits)) return 'cpf';
+  if (qDigits.length >= 4 && onlyDigits(card.telefone).includes(qDigits)) return 'telefone';
+  // Busca só de número (CPF, telefone, nº) não procura em texto.
+  if (/^[\d\s.\-()/+]+$/.test(q)) return null;
+  if (q.length >= 3) {
+    const h = hospitalOf(card);
+    if (h && hospitalKey(h).includes(q)) return 'hospital';
+    if (hospitalKey(card.cidade ?? '').includes(q)) return 'cidade';
+  }
+  const est = estadoKeys(card.estado);
+  if (est) {
+    if (q.length === 2 && est.uf === q.toUpperCase()) return 'estado';
+    if (q.length >= 3 && est.nome.includes(q)) return 'estado';
+  }
+  return null;
+}
+
+/** O que mostrar na lista da busca quando o card não bateu pelo nome/número. */
+export function kanbanSearchHint(card: SearchableCard, field: KanbanSearchField | null): string | null {
+  if (field === 'hospital') return `Hospital: ${hospitalOf(card)}`;
+  if (field === 'cidade') return `Cidade: ${(card.cidade ?? '').trim()}${card.estado ? ` / ${card.estado.trim()}` : ''}`;
+  if (field === 'estado') return `Estado: ${(card.estado ?? '').trim()}${card.cidade ? ` (${card.cidade.trim()})` : ''}`;
+  return null;
+}

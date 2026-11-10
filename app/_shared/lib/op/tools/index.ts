@@ -41,7 +41,7 @@ import { quemPediu } from "./quem-pediu";
 import { analisarDocumentos } from "./analisar-documentos";
 import { panoramaCard } from "./panorama-card";
 import { iniciarLote, resultadoLote } from "./lotes";
-import { atualizarTicket, criarTicket, lerTicket, listarTickets } from "./tickets";
+import { atualizarTicket, criarTicket, editarTicket, lerTicket, listarTickets } from "./tickets";
 import { analisarRegraBot, aplicarRegraBot } from "./cerebro-bot";
 
 export const OP_TOOLS: OpTool[] = [
@@ -112,6 +112,8 @@ export const OP_TOOLS: OpTool[] = [
   listarTickets,
   lerTicket,
   criarTicket,
+  // T-1Q1EB (09/11): editar a própria sugestão enquanto está em Sugestões.
+  editarTicket,
   atualizarTicket,
   analisarRegraBot,
   aplicarRegraBot,
