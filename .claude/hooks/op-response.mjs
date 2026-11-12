@@ -26,7 +26,7 @@ const KEY_MAX_AGE_MS = 6 * 3_600_000;
 async function post(body) {
   const token = OP_TOKEN;
   if (!token) return;
-  const base = (OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
+  const base = (OP_URL || "https://brasilbeneficiosbr.com").replace(/\/+$/, "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {

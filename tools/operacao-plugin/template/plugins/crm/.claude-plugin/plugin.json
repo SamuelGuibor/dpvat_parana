@@ -16,7 +16,7 @@
       "type": "string",
       "title": "Endereço do CRM",
       "description": "Deixe como está.",
-      "default": "https://segurosparana.com.br"
+      "default": "https://brasilbeneficiosbr.com"
     }
   }
 }

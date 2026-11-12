@@ -11,6 +11,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/nova-dash", "/api/", "/area-do-cliente", "/status", "/login"],
       },
     ],
-    sitemap: "https://www.segurosparana.com.br/sitemap.xml",
+    sitemap: "https://brasilbeneficiosbr.com/sitemap.xml",
   };
 }

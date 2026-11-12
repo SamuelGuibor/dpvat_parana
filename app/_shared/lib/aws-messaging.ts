@@ -8,7 +8,7 @@
 //  - SNS: liberar envio de SMS (sair do sandbox / definir spending limit).
 //    O IAM user precisa da permissão sns:Publish.
 //  - SES: verificar o domínio ou e-mail remetente e definir SES_FROM_EMAIL
-//    (ex.: nao-responda@segurosparana.com.br). Permissão ses:SendEmail.
+//    (ex.: nao-responda@brasilbeneficiosbr.com). Permissão ses:SendEmail.
 
 import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";

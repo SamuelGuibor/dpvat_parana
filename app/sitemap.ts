@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const BASE = "https://www.segurosparana.com.br";
+const BASE = "https://brasilbeneficiosbr.com";
 
 // Sitemap gerado pelo Next em /sitemap.xml — só as páginas públicas do site.
 export default function sitemap(): MetadataRoute.Sitemap {

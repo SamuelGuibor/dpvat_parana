@@ -43,7 +43,7 @@ const EVT_MAX_AGE_MS = 60 * 60_000;
 async function post(body) {
   const token = OP_TOKEN;
   if (!token) return;
-  const base = (OP_URL || "https://segurosparana.com.br").replace(/\/+$/, "");
+  const base = (OP_URL || "https://brasilbeneficiosbr.com").replace(/\/+$/, "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {

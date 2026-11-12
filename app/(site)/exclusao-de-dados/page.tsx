@@ -5,7 +5,7 @@ import { Footer } from "@/app/_components/landing_page/Footer";
 export const metadata: Metadata = {
   title: "Exclusão de Dados",
   description: "Como solicitar a exclusão dos seus dados pessoais na Brasil Benefícios e Indenizações.",
-  alternates: { canonical: "https://www.segurosparana.com.br/exclusao-de-dados" },
+  alternates: { canonical: "https://brasilbeneficiosbr.com/exclusao-de-dados" },
   robots: { index: true, follow: true },
 };
 

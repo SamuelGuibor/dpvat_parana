@@ -52,8 +52,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
             "@context": "https://schema.org",
             "@type": "LegalService",
             name: "Brasil Benefícios e Indenizações",
-            url: "https://www.segurosparana.com.br/",
-            logo: "https://www.segurosparana.com.br/logo-brasil-beneficios.png",
+            url: "https://brasilbeneficiosbr.com/",
+            logo: "https://brasilbeneficiosbr.com/logo-brasil-beneficios.png",
             description:
               "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná.",
             areaServed: "Paraná, Brasil",
