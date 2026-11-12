@@ -14,17 +14,17 @@ export const metadata: Metadata = {
   description:
     "Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia.",
   alternates: {
-    canonical: "https://brasilbeneficiosbr.com/",
+    canonical: "https://www.brasilbeneficiosbr.com/",
   },
   openGraph: {
     title: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura com DPVAT",
     description:
       "Especialistas em indenizações de Acidentes de Transito no Paraná.",
-    url: "https://brasilbeneficiosbr.com/",
+    url: "https://www.brasilbeneficiosbr.com/",
     siteName: "Brasil Benefícios e Indenizações",
     images: [
       {
-        url: "https://brasilbeneficiosbr.com/og-brasil-beneficios.png",
+        url: "https://www.brasilbeneficiosbr.com/og-brasil-beneficios.png",
         width: 1200,
         height: 630,
         alt: "Brasil Benefícios e Indenizações - Indenização DPVAT",
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     title: "Brasil Benefícios e Indenizações - Indenização Rápida DPVAT",
     description:
       "Garantimos sua indenização DPVAT com rapidez e transparência no Paraná. Entre em contato hoje!",
-    images: ["https://brasilbeneficiosbr.com/og-brasil-beneficios.png"],
+    images: ["https://www.brasilbeneficiosbr.com/og-brasil-beneficios.png"],
   },
   robots: {
     index: true,

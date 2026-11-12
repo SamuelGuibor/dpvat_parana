@@ -42,7 +42,7 @@ export default function PrivacyPolicy() {
               A <strong>BRASIL BENEFÍCIOS E INDENIZAÇÕES</strong> (EDUARDO CAMARGO MARTINEZ LTDA, CNPJ 69.985.899/0001-45),
               pessoa jurídica de direito privado, leva a sua privacidade a sério
               e se compromete com a transparência no tratamento de dados pessoais
-              dos usuários do site <strong>https://brasilbeneficiosbr.com</strong>.
+              dos usuários do site <strong>https://www.brasilbeneficiosbr.com</strong>.
             </p>
 
             <p className="text-red-600 font-semibold uppercase">

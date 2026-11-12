@@ -302,7 +302,7 @@ export default function BlogArticle() {
                                 <div>
                                     <h4 className="text-xl text-gray-900 mb-2">Brasil Benefícios e Indenizações</h4>
                                     <p className="text-gray-600 mb-3">
-                                        Fonte: https://brasilbeneficiosbr.com/blog/documentacao    
+                                        Fonte: https://www.brasilbeneficiosbr.com/blog/documentacao    
                                     </p>
                                 </div>
                             </div>

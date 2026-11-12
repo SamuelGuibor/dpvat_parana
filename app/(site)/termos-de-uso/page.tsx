@@ -44,7 +44,7 @@ export default function TermsOfUse() {
             <p>
               A BRASIL BENEFÍCIOS E INDENIZAÇÕES (EDUARDO CAMARGO MARTINEZ LTDA, CNPJ 69.985.899/0001-45), pessoa jurídica
               de direito privado, descreve neste documento as regras de uso do
-              site <strong>https://brasilbeneficiosbr.com</strong> e quaisquer outros
+              site <strong>https://www.brasilbeneficiosbr.com</strong> e quaisquer outros
               sites, lojas ou aplicativos operados pelo proprietário.
             </p>
 

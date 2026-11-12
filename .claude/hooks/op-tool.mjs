@@ -21,7 +21,7 @@ async function main() {
   const m = raw.match(LOCAL_FAILURE_RE);
   if (!m) return;
 
-  const base = (OP_URL || "https://brasilbeneficiosbr.com").replace(/\/+$/, "");
+  const base = (OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {

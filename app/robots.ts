@@ -11,6 +11,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/nova-dash", "/api/", "/area-do-cliente", "/status", "/login"],
       },
     ],
-    sitemap: "https://brasilbeneficiosbr.com/sitemap.xml",
+    sitemap: "https://www.brasilbeneficiosbr.com/sitemap.xml",
   };
 }

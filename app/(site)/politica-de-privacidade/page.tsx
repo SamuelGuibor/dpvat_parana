@@ -5,7 +5,7 @@ import { Footer } from "@/app/_components/landing_page/Footer";
 export const metadata: Metadata = {
   title: "Política de Privacidade",
   description: "Política de privacidade e tratamento de dados da Brasil Benefícios e Indenizações.",
-  alternates: { canonical: "https://brasilbeneficiosbr.com/politica-de-privacidade" },
+  alternates: { canonical: "https://www.brasilbeneficiosbr.com/politica-de-privacidade" },
   robots: { index: true, follow: true },
 };
 

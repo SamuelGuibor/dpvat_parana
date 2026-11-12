@@ -7,7 +7,7 @@
 //
 // Configuração (variáveis de ambiente DO USUÁRIO, nunca do .env do repo):
 //   CRM_OP_TOKEN  token do app gerado na tela Equipe (obrigatório)
-//   CRM_OP_URL    padrão https://brasilbeneficiosbr.com
+//   CRM_OP_URL    padrão https://www.brasilbeneficiosbr.com
 //
 // Protocolo: JSON-RPC 2.0, uma mensagem por linha (transporte stdio do MCP).
 // Implementado à mão (initialize, ping, tools/list, tools/call) para não
@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 
-const BASE_URL = (process.env.CRM_OP_URL || "https://brasilbeneficiosbr.com").replace(/\/+$/, "");
+const BASE_URL = (process.env.CRM_OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, "");
 const TOKEN = process.env.CRM_OP_TOKEN || "";
 const PROCESS_SESSION = `mcp-${randomUUID()}`;
 const SESSION_FILE = join(homedir(), ".claude", "crm-op", "session.json");

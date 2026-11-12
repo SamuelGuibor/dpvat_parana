@@ -47,7 +47,7 @@ let velocidade = (() => {
 const BOT_SECRET = (microEnv.BOT_SECRET || crmEnv.CHATBOT_SECRET || "").trim();
 // Prompt publicado em produção: endereço do CRM (o micro local costuma ter o
 // campo vazio) e o segredo de PRODUÇÃO (CHATBOT_SECRET do CRM).
-const PROD_BRAIN = (process.env.SIM_PROD_URL || microEnv.BRAIN_PROMPT_URL || "https://brasilbeneficiosbr.com")
+const PROD_BRAIN = (process.env.SIM_PROD_URL || microEnv.BRAIN_PROMPT_URL || "https://www.brasilbeneficiosbr.com")
   .trim().replace(/\/$/, "");
 const PROD_SECRET = (crmEnv.CHATBOT_SECRET || microEnv.BOT_SECRET || "").trim();
 // Voz padrão da ElevenLabs (liberada no plano grátis): usada quando a voz

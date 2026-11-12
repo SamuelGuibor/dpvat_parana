@@ -14,7 +14,7 @@ const mulish = Mulish({
 // final). Os scripts de marketing (GA/Pixel/RD Station) vivem no layout do
 // (site): a equipe navegando no CRM não deve poluir o Analytics/Pixel.
 export const metadata: Metadata = {
-  metadataBase: new URL("https://brasilbeneficiosbr.com"),
+  metadataBase: new URL("https://www.brasilbeneficiosbr.com"),
   title: {
     default: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura",
     template: "%s | Brasil Benefícios e Indenizações",
@@ -30,11 +30,11 @@ export const metadata: Metadata = {
     title: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura",
     description:
       "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná. Atendimento rápido e transparente.",
-    url: "https://brasilbeneficiosbr.com/",
+    url: "https://www.brasilbeneficiosbr.com/",
     siteName: "Brasil Benefícios e Indenizações",
     images: [
       {
-        url: "https://brasilbeneficiosbr.com/og-brasil-beneficios.png",
+        url: "https://www.brasilbeneficiosbr.com/og-brasil-beneficios.png",
         width: 1200,
         height: 630,
         alt: "Brasil Benefícios e Indenizações - Indenização de Acidentes de Trânsito",
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
     title: "Brasil Benefícios e Indenizações - Indenização Rápida de Acidentes de Trânsito",
     description:
       "Garantimos sua indenização de acidentes de trânsito com rapidez e transparência no Paraná. Entre em contato hoje!",
-    images: ["https://brasilbeneficiosbr.com/og-brasil-beneficios.png"],
+    images: ["https://www.brasilbeneficiosbr.com/og-brasil-beneficios.png"],
   },
   other: {
     "facebook-domain-verification": "1rkpryx50xubl50ps6z82tb2is9887",
