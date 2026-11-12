@@ -30,6 +30,12 @@ import { fileURLToPath } from "node:url";
 // userConfig do plugin (cofre do sistema), exportado como CLAUDE_PLUGIN_OPTION_*;
 // neste repositório, da variável de ambiente.
 const OP_TOKEN = process.env.CRM_OP_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_TOKEN || "";
+// Endereço antigo salvo no plugin (segurosparana.com.br, ou o apex sem www) vira o
+// atual: o domínio antigo saiu do ar e o POST não deve depender de redirect.
+const normalizarUrl = (u) =>
+  /^https?:\/\/(www\.)?(segurosparana\.com\.br|brasilbeneficiosbr\.com)(\/|$)/i.test(u)
+    ? "https://www.brasilbeneficiosbr.com"
+    : u;
 const OP_URL = process.env.CRM_OP_URL || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_URL || "";
 
 const DIR = join(homedir(), ".claude", "crm-op");
@@ -43,7 +49,7 @@ const EVT_MAX_AGE_MS = 60 * 60_000;
 async function post(body) {
   const token = OP_TOKEN;
   if (!token) return;
-  const base = (OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, "");
+  const base = normalizarUrl((OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, ""));
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {

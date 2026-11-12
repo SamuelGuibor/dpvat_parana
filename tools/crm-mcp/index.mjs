@@ -19,7 +19,13 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 
-const BASE_URL = (process.env.CRM_OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, "");
+// Endereço antigo salvo no plugin (segurosparana.com.br, ou o apex sem www) vira o
+// atual: o domínio antigo saiu do ar e o POST não deve depender de redirect.
+const normalizarUrl = (u) =>
+  /^https?:\/\/(www\.)?(segurosparana\.com\.br|brasilbeneficiosbr\.com)(\/|$)/i.test(u)
+    ? "https://www.brasilbeneficiosbr.com"
+    : u;
+const BASE_URL = normalizarUrl((process.env.CRM_OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, ""));
 const TOKEN = process.env.CRM_OP_TOKEN || "";
 const PROCESS_SESSION = `mcp-${randomUUID()}`;
 const SESSION_FILE = join(homedir(), ".claude", "crm-op", "session.json");

@@ -6,6 +6,12 @@ import { readFileSync } from "node:fs";
 
 // Token/URL: variável de ambiente ou userConfig do plugin do operador (ver op-prompt.mjs).
 const OP_TOKEN = process.env.CRM_OP_TOKEN || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_TOKEN || "";
+// Endereço antigo salvo no plugin (segurosparana.com.br, ou o apex sem www) vira o
+// atual: o domínio antigo saiu do ar e o POST não deve depender de redirect.
+const normalizarUrl = (u) =>
+  /^https?:\/\/(www\.)?(segurosparana\.com\.br|brasilbeneficiosbr\.com)(\/|$)/i.test(u)
+    ? "https://www.brasilbeneficiosbr.com"
+    : u;
 const OP_URL = process.env.CRM_OP_URL || process.env.CLAUDE_PLUGIN_OPTION_CRM_OP_URL || "";
 
 // Códigos que o próprio MCP gera sem falar com o CRM (tools/crm-mcp/index.mjs).
@@ -21,7 +27,7 @@ async function main() {
   const m = raw.match(LOCAL_FAILURE_RE);
   if (!m) return;
 
-  const base = (OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, "");
+  const base = normalizarUrl((OP_URL || "https://www.brasilbeneficiosbr.com").replace(/\/+$/, ""));
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
