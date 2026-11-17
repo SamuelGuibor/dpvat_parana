@@ -11,6 +11,7 @@ import { runAfterResponse } from "../background";
 import { reportCriticalError } from "../report-error";
 import { runAutomations, type SkippableActionType } from "../automation-executor";
 import { CardWriteError, cardRef, sourceMeta, type WriteCommon } from "./types";
+import { checkTermsGate } from "./terms-gate";
 
 export interface MoveCardInput extends WriteCommon {
   labelId: string;
@@ -53,6 +54,13 @@ export async function moveCardToLabel(input: MoveCardInput): Promise<MoveCardRes
 
   const from = current.label?.name ?? current.role ?? null;
   if (current.labelId === label.id) return { noop: true, from, to: label.name, toLabelId: label.id };
+
+  // Trava aceite × ZapSign (T-B40K0, decisão do dono em 13/11): sair de
+  // Filtro de Cartões/COLHER-ASSINATURA exige o aceite dos termos ou a tag
+  // ZAPSIGN ASSINADO; DISTRIBUIÇÃO DE PROCESSOS em diante exige a tag.
+  // Aqui cobre site, automação e IA de operação de uma vez.
+  const gate = await checkTermsGate({ cardId, isProcess, fromLabelId: current.labelId, to: label });
+  if (!gate.ok) throw new CardWriteError(gate.code, gate.message);
 
   const data = { labelId: label.id, role: label.name, statusStartedAt: new Date() };
   if (isProcess) await db.process.update({ where: { id: cardId }, data });

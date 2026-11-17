@@ -110,6 +110,7 @@ export function toThreadMessage(dto: SentMessageDTO, authorName: string | null):
     replyToDirection: dto.replyToDirection ?? null,
   };
   if (dto.waMessageId != null) msg.waMessageId = dto.waMessageId;
+  if (dto.interactive != null) msg.interactive = dto.interactive;
   if (dto.mediaUrl && dto.mediaUrlExpiresAt) {
     msg.mediaUrl = dto.mediaUrl;
     msg.mediaUrlExpiresAt = dto.mediaUrlExpiresAt;

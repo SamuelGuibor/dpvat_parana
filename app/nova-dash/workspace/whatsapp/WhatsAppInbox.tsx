@@ -88,6 +88,8 @@ import { ContactsDirectory } from './ContactsDirectory';
 import { CloseWithRequestDialog, CollectRequestBar, CollectRequestPill, ReturnToBotDialog } from './CollectRequest';
 import { listWaContactsDirectory } from '@/app/_actions/whatsapp/contacts';
 import { formatWaText, stripWaMarkup } from './wa-format';
+import { WaFormBubble } from './WaFormBubble';
+import { parseInteractive } from '@/app/_shared/utils/wa-forms';
 import { renderFormattedText } from '@/app/_shared/utils/render-message';
 import { resolveMimeType } from './media-rules';
 import {
@@ -3511,12 +3513,14 @@ function ThreadMessageRow({
 }) {
   const mine = msg.direction === 'out';
   const isTemp = msg.id.startsWith('temp-');
-  const canEdit = mine && !isTemp && msg.authorId === meId && !msg.mediaKey && !msg.deletedAt;
+  const canEdit = mine && !isTemp && msg.authorId === meId && !msg.mediaKey && !msg.deletedAt && !msg.interactive;
   const canDelete = mine && !isTemp && msg.authorId === meId && !msg.deletedAt;
   // Reagir exige que a mensagem exista na Meta (waMessageId) — nota interna e
   // envio otimista ficam de fora.
   const canReact = !isTemp && !msg.internal && !msg.deletedAt && !!msg.waMessageId;
   const [reactOpen, setReactOpen] = useState(false);
+  // Formulário do WhatsApp (Meta Flow) enviado ou respondido: bolha própria.
+  const formData = msg.interactive ? parseInteractive(msg.interactive) : null;
 
   if (msg.deletedAt) {
     return (
@@ -3626,7 +3630,9 @@ function ThreadMessageRow({
           )}
           {msg.mediaKey && <WaMediaBubble msg={msg} mine={mine} onAttachToCard={onAttachToCard} />}
           {!msg.mediaKey && msg.mediaType && <PendingMediaPreview msg={msg} mine={mine} />}
-          {msg.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{formatWaText(msg.body)}</p>}
+          {formData
+            ? <WaFormBubble data={formData} body={msg.body} mine={mine} messageId={msg.id} contactId={msg.contactId} />
+            : msg.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{formatWaText(msg.body)}</p>}
           <span className={`ml-2 mt-0.5 flex items-center justify-end gap-1 text-xs ${mine ? 'text-white/70' : 'text-gray-400'}`}>
             {msg.editedAt && <span className="italic">editada ·</span>}
             {timeShort(msg.createdAt)}

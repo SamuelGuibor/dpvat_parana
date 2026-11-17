@@ -29,6 +29,8 @@ export type LogAction =
   | "wa_media"       // enviou imagem/vídeo/áudio
   | "wa_flow"        // disparou um fluxo pré-setado
   | "wa_template"    // enviou um template aprovado na Meta
+  | "wa_form"        // formulário do WhatsApp (Meta Flow): enviou, editou/publicou versão ou aplicou a resposta ao cadastro (metadata.op)
+  | "terms_accept"   // cliente aceitou os termos pelo formulário do WhatsApp; comprovante em PDF (terms_acceptances)
   | "wa_note"        // registrou uma nota interna na thread (só equipe vê)
   | "wa_reaction"    // reagiu com emoji a uma mensagem da thread
   | "wa_bot"         // decisão da IA (qualify/disqualify/handoff/continue/erro)

@@ -21,6 +21,7 @@ import {
   type CardData, getVars, evalConditions, fireCycleKey,
 } from "./automation-conditions";
 import { moveCardToLabel } from "./cards/move-card";
+import { CardWriteError } from "./cards/types";
 import { setCardTag } from "./cards/tags";
 import { addCardComment } from "./cards/comment";
 import { ghostFor } from "./op/hospitais";
@@ -270,6 +271,18 @@ async function executeAction(action: AutomationAction, ctx: ActionCtx): Promise<
       if (moved.noop) return;
     } catch (err) {
       console.warn(`[AUTOMATION] Ação de mover ignorada (auto ${auto.id}):`, err);
+      // Trava aceite × ZapSign (T-B40K0): o histórico do card diz por que a
+      // automação não moveu — senão o card "fica parado" sem explicação.
+      if (err instanceof CardWriteError && (err.code === "falta_aceite" || err.code === "falta_zapsign")) {
+        await createLog({
+          action: "update",
+          message: `automação "${auto.name}" não moveu o card: ${err.message}`,
+          authorId,
+          authorName: BOT_AUTHOR_NAME,
+          ...(isProcess ? { processId: cardId } : { userId: cardId }),
+          metadata: { automationId: auto.id, blocked: err.code },
+        });
+      }
       return;
     }
     return "moved";

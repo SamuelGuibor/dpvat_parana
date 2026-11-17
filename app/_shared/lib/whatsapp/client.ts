@@ -32,12 +32,12 @@ export function isWhatsAppConfigured(): boolean {
   return !!process.env.WHATSAPP_TOKEN && !!process.env.WHATSAPP_PHONE_NUMBER_ID;
 }
 
-interface SendResult {
+export interface SendResult {
   waMessageId: string | null;
   error?: string;
 }
 
-interface SendResultRaw extends SendResult {
+export interface SendResultRaw extends SendResult {
   errorCode?: number;
 }
 
@@ -121,6 +121,52 @@ export function sendText(phone: string, body: string, replyToWaId?: string, numb
     type: "text",
     text: { body, preview_url: false },
     ...(replyToWaId ? { context: { message_id: replyToWaId } } : {}),
+  }, numberId);
+}
+
+/**
+ * Formulário do WhatsApp (Meta Flow, T-7ZQH6): mensagem interativa com o botão
+ * que abre o Flow publicado. Só dentro da janela de 24h (fora dela a Meta
+ * devolve 131047; template com botão de Flow é outro caminho, não implementado).
+ * `flow_token` volta no `nfm_reply` e liga a resposta a este envio. Devolve o
+ * código de erro da Graph para a mensagem própria em `describeFlowSendError`.
+ */
+export function sendFlowMessage(
+  phone: string,
+  p: {
+    flowId: string;
+    token: string;
+    cta: string;
+    body: string;
+    header?: string | null;
+    footer?: string | null;
+    screen: string;
+    data?: Record<string, unknown> | null;
+  },
+  numberId?: string | null,
+): Promise<SendResultRaw> {
+  const hasData = !!p.data && Object.keys(p.data).length > 0;
+  return postMessageRaw({
+    recipient_type: "individual",
+    to: phone,
+    type: "interactive",
+    interactive: {
+      type: "flow",
+      ...(p.header?.trim() ? { header: { type: "text", text: p.header.trim() } } : {}),
+      body: { text: p.body.trim() },
+      ...(p.footer?.trim() ? { footer: { text: p.footer.trim() } } : {}),
+      action: {
+        name: "flow",
+        parameters: {
+          flow_message_version: "3",
+          flow_token: p.token,
+          flow_id: p.flowId,
+          flow_cta: p.cta.trim(),
+          flow_action: "navigate",
+          flow_action_payload: { screen: p.screen, ...(hasData ? { data: p.data } : {}) },
+        },
+      },
+    },
   }, numberId);
 }
 

@@ -228,11 +228,16 @@ export const CardDialog: React.FC<CardDialogProps> = ({
       const labelChanged = editedCard.labelId !== card.labelId && !!editedCard.labelId;
 
       if (labelChanged) {
-        await updateKanbanStatus({
+        const res = await updateKanbanStatus({
           id: editedCard.id,
           labelId: editedCard.labelId!,
           isProcess,
         });
+        // Trava aceite × ZapSign (T-B40K0): nada é salvo e o motivo aparece.
+        if (!res.success) {
+          toast.error(res.error, { duration: 9000 });
+          return;
+        }
       }
 
       const changes: any = { id: editedCard.id };

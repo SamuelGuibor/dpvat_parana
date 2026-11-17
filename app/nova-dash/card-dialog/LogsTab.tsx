@@ -6,7 +6,7 @@ import { Button } from '@/app/_shared/ui/button';
 import {
   History, Pencil, ArrowRightLeft, FilePlus, FileMinus,
   MessageSquare, Sparkles, Clock, RefreshCw, ArrowRight,
-  ListChecks, Archive, Building2, Code2, Send,
+  ListChecks, Archive, Building2, Code2, Send, ClipboardList, ShieldCheck,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -100,6 +100,20 @@ const ACTION_STYLES: Record<
     node: 'bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400',
     badge: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800',
     label: 'Envio (IA)',
+  },
+  // Formulário do WhatsApp (Meta Flow): envio na conversa e resposta aplicada ao cadastro.
+  wa_form: {
+    icon: ClipboardList,
+    node: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900/40 dark:text-cyan-400',
+    badge: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800',
+    label: 'Formulário WhatsApp',
+  },
+  // Cliente aceitou os termos pelo formulário do WhatsApp (comprovante em PDF).
+  terms_accept: {
+    icon: ShieldCheck,
+    node: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+    badge: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+    label: 'Aceite de termos',
   },
   dev_commit: {
     icon: Code2,

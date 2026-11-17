@@ -668,6 +668,13 @@ export interface QueueOpts {
   onlyIfStatus?: "bot";
   extraNote?: string;
   concludeRequest?: boolean;
+  /**
+   * Trata como lead NOVO mesmo com `qualified` já gravado (aviso no sino,
+   * tarefa de card, CAPI): o aceite de termos (T-B40K0) segurou a Fila até o
+   * cliente aceitar, então para a equipe ele chega agora — inclusive o lead
+   * de um ciclo anterior que voltou e passou pelo aceite.
+   */
+  asNewLead?: boolean;
 }
 
 /** Motivo da nota interna + o texto extra (transcrição), numa nota só. */
@@ -833,7 +840,7 @@ export async function qualifyToQueue(
     select: { id: true, qualified: true, assignedToId: true, collectRequest: true, collectRequestSource: true },
   });
   if (!existing) return false;
-  const alreadyQualified = existing.qualified === true;
+  const alreadyQualified = existing.qualified === true && !opts.asNewLead;
   const owner = await queueOwner(contactId, existing.assignedToId);
   // Pedido em aberto na MESMA nota da Fila (com o motivo do cérebro).
   const extraNote = joinExtraNotes(opts.extraNote, queueRequestNote(existing, opts));
@@ -867,6 +874,31 @@ export async function qualifyToQueue(
   // as campanhas por qualidade. Fire-and-forget, nunca quebra o fluxo.
   runAfterResponse("meta capi qualificado", () => reportLeadStageToMeta(contactId, "qualificado"));
   return true;
+}
+
+/**
+ * Aceite de termos chegou (T-B40K0) numa conversa que o bot segurava esperando
+ * o aceite: confirma ao cliente e manda para a Fila como lead qualificado novo
+ * (aviso no sino, tarefa de card, CAPI). Condicional ao modo bot: atendente que
+ * assumiu no meio não perde a conversa.
+ */
+export async function queueAfterTermsAccepted(contactId: string, brainReason: string | null): Promise<boolean> {
+  const contact = await db.whatsAppContact.findUnique({ where: { id: contactId }, select: { name: true, phone: true } });
+  if (!contact) return false;
+  const label = contact.name ?? contact.phone;
+  // O motivo do `qualify` do cérebro viajou no formulário enviado: a nota da
+  // Fila é uma só e mostra o motivo dele + o aceite.
+  const reason = `${brainReason?.trim() || "triagem aprovada pela IA"} — termos aceitos pelo cliente`;
+  // Fila primeiro (UPDATE condicional): só confirma ao cliente se a conversa
+  // estava mesmo com o bot; atendente que assumiu no meio conduz ele mesmo.
+  const moved = await qualifyToQueue(contactId, label, reason, { onlyIfStatus: "bot", asNewLead: true, concludeRequest: true });
+  if (moved) {
+    await sendBotReply(
+      contactId, contact.phone, contact.name,
+      "Recebemos a sua autorização ✅ Obrigado! Agora um dos nossos atendentes vai dar sequência ao seu pedido por aqui.",
+    );
+  }
+  return moved;
 }
 
 /**
@@ -1721,6 +1753,9 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
       returnedAt: returnedByAttendant && conversation?.returnedToBotAt ? conversation.returnedToBotAt.toISOString() : null,
     };
 
+    // Aceite de termos pendente (T-B40K0): sem WA_TERMS_FORM sai null sem consulta.
+    const termsPending = await (await import("./terms")).termsPendingFact(contactId);
+
     const basePayload = {
       // Qual dos NOSSOS números atende esta conversa (multi-tenant): hoje o
       // cérebro ignora, mas o campo já viaja para permitir variação por número
@@ -1781,6 +1816,11 @@ export async function handleIncomingWhatsApp(ingest: IngestResult): Promise<void
         // áudio). Só o fato: quando ligar/desligar e como escrever para a voz
         // ficam nas instruções. Micro antigo ignora.
         voiceReplies: voiceRepliesOn,
+        // Formulário de aceite dos termos enviado neste atendimento e ainda
+        // sem aceite: { sentAt, sends } | null (T-B40K0). Só o fato; lembrar o
+        // botão e não transferir antes do aceite ficam nas instruções. Micro
+        // antigo ignora.
+        termsPending,
       },
       business: businessHours(),
       // Contrato aguardando assinatura → bloco "ASSINATURA EM ANDAMENTO" no
@@ -2215,7 +2255,28 @@ ${emptyNote}`,
         }
         break;
       }
-      case "qualify":
+      case "qualify": {
+        // Aceite de termos (T-B40K0; decisão do dono em 13/11: o bot ESPERA o
+        // aceite antes da Fila). Com WA_TERMS_FORM ligada e o cliente sem
+        // aceite, o formulário sai DEPOIS dos blocos do cérebro e a conversa
+        // fica no bot. A qualificação (qualified, tag "Qualificada", aviso,
+        // CAPI) vem com o aceite (queueAfterTermsAccepted, chamado pela
+        // ingestão da resposta, com o motivo deste qualify guardado no
+        // formulário). Sem marcar `qualified` aqui de propósito: quem não
+        // responde continua elegível à recuperação automática, que lembra do
+        // botão. O cérebro sabe que está pendente pelo fato `termsPending`.
+        const terms = await (await import("./terms")).maybeRequestTermsAcceptance(contactId, { queueReason: decision.handoffReason ?? null });
+        if (terms.state === "sent" || terms.state === "waiting") {
+          if (outgoing.length === 0 && terms.state === "waiting") {
+            markSent(await sendMutedFallback(
+              contactId, message,
+              "Para seguirmos, é só tocar no botão do formulário que te enviei e marcar \"SIM, autorizo\" 😊",
+              "qualify esperando o aceite",
+            ));
+          }
+          effective = { status: "terms", reason: terms.state === "sent" ? "formulário de aceite enviado" : `esperando o aceite (${terms.sends} envio(s))` };
+          break;
+        }
         // Qualificar sem nenhum texto deixaria o lead no vácuo até um humano
         // assumir — garante ao menos a ponte pro atendente.
         if (outgoing.length === 0) {
@@ -2225,6 +2286,8 @@ ${emptyNote}`,
             "qualify sem texto",
           ));
         }
+        // Falha NOSSA ao pedir o aceite não segura o lead: vai à Fila com o motivo.
+        const termsNote = terms.state === "failed" ? `⚠️ Aceite de termos não foi pedido: ${terms.error}. Mande o formulário pelo composer.` : undefined;
         // Assinatura automática (SIGNATURE_AUTO_ENABLED): tenta extrair os
         // dados e mandar o RESUMO pro cliente confirmar. "confirming" = a
         // conversa FICA em modo bot esperando o "sim" (a fila vem depois de
@@ -2233,11 +2296,14 @@ ${emptyNote}`,
         if ((await signature.maybeStartSignatureFlow(contactId, contactRef)) === "queue") {
           const reason = decision.handoffReason ?? "triagem aprovada pela IA";
           // Qualificar é decisão do cérebro: conclui o pedido em aberto.
-          toQueue(await qualifyToQueue(contactId, contactLabel, reason, { ...queueOpts, concludeRequest: true }), reason);
+          toQueue(await qualifyToQueue(contactId, contactLabel, reason, {
+            ...queueOpts, concludeRequest: true, extraNote: joinExtraNotes(queueOpts.extraNote, termsNote),
+          }), reason);
         } else {
           effective = { status: "signature" };
         }
         break;
+      }
       case "disqualify":
         // Encerrar MUDO só quando a IA declarou silêncio deliberado (silent) —
         // ex.: agradecimento pós-despedida. Vazio sem a flag = falha da IA:

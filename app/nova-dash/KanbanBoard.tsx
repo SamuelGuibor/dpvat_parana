@@ -2093,6 +2093,7 @@ export const KanbanBoard: React.FC = () => {
     const columnChanged = sourceColumnId !== targetColumnId;
 
     const prevCols = columnsRef.current;
+    const prevItems = itemsRef.current;
     const source = prevCols.find(c => c.id === sourceColumnId);
     const target = prevCols.find(c => c.id === targetColumnId);
     if (!source || !target) return;
@@ -2170,11 +2171,19 @@ export const KanbanBoard: React.FC = () => {
 
       try {
         if (columnChanged) {
-          await updateKanbanStatus({
+          const res = await updateKanbanStatus({
             id: cardId,
             labelId: targetColumnId,
             isProcess: movedCard.isProcess,
           });
+          // Trava aceite × ZapSign (T-B40K0): o card volta para onde estava e o
+          // motivo aparece (com tempo de leitura: é uma regra nova para a equipe).
+          if (!res.success) {
+            setColumns(prevCols);
+            setItems(prevItems);
+            toast.error(res.error, { duration: 9000 });
+            return;
+          }
         }
         await reorderCards({ cards: targetOrder });
       } catch (err) {

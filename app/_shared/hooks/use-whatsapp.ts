@@ -54,6 +54,9 @@ export interface WhatsAppThreadMessage {
   // Reação da equipe aplicada a esta mensagem (1 emoji, estilo WhatsApp).
   reaction?: string | null;
   reactionAuthorId?: string | null;
+  // Formulário do WhatsApp (Meta Flow) enviado ou respondido; ler com
+  // `parseInteractive` (app/_shared/utils/wa-forms.ts).
+  interactive?: unknown;
   // URL de leitura da mídia já assinada pela rota da thread (janela estável de
   // 30 min: a mesma URL entre polls). Ausente em mensagem otimista e em key
   // fora da allowlist: a bolha cai no fallback do media-url-cache.

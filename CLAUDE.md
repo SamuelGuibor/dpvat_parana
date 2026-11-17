@@ -82,7 +82,7 @@ Hooks ativos (`.claude/settings.json`): bloqueiam `prisma migrate dev/reset`, `d
 - Modo escuro é o Dark Reader (`darkreader`): classes `dark:` do Tailwind não têm efeito.
 - O board atualiza por polling com hash e o inbox por delta (só as conversas que mudaram desde o cursor), sem `revalidatePath` ao mover/arquivar. Troca de aba da nova-dash: grave o `sessionStorage` antes de disparar o `CustomEvent`.
 
-**Features desligadas de propósito** (não reative sem pedido): assinatura eletrônica (flags em código + `SIGNATURE_AUTO_ENABLED`), chat da equipe, envio de templates na linha pausada (`WhatsAppNumber.templatesPaused`).
+**Features desligadas de propósito** (não reative sem pedido): assinatura eletrônica (flags em código + `SIGNATURE_AUTO_ENABLED`), chat da equipe, envio de templates na linha pausada (`WhatsAppNumber.templatesPaused`). O aceite de termos antes da Fila só liga com a env `WA_TERMS_FORM` (o dono decide quando). A trava aceite × ZapSign do kanban (`moveCardToLabel`) já vale sem env.
 
 ## Convenções
 - Código, UI, comentários e commits em **português**. Commits curtos no imperativo por área (`Bot WhatsApp: …`, `Kanban: …`).

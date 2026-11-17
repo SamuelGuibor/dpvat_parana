@@ -965,6 +965,15 @@ model WhatsAppMessage {
   // WhatsApp). Enviada à Meta via type:"reaction"; null = sem reação.
   reaction         String?
   reactionAuthorId String?
+  // Mensagem interativa estruturada (13/11/2026, T-7ZQH6). Hoje só formulário
+  // do WhatsApp (Meta Flow). Shape (fonte: WaInteractive em
+  // app/_shared/utils/wa-forms.ts):
+  //   enviado:   { kind: "flow", formVersionId, metaFlowId, flowName, version,
+  //                token, cta, header?, footer?, screen }
+  //   resposta:  { kind: "flow_reply", token?, formVersionId?, flowName?,
+  //                fields: [{ key, label, value }] }
+  // O `body` continua com o texto legível (prévia da lista, histórico do bot).
+  interactive      Json?
   createdAt        DateTime        @default(now())
   contact          WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
@@ -993,6 +1002,77 @@ model WhatsAppFlow {
   updatedAt   DateTime @updatedAt
 
   @@map("whatsapp_flows")
+}
+
+// FORMULÁRIO do WhatsApp (Meta "WhatsApp Flows", 13/11/2026, T-7ZQH6) — NÃO
+// confundir com WhatsAppFlow acima (sequência de textos pré-setados).
+// Cada linha = UMA versão = UM Flow na Meta. Flow publicado não pode ser
+// alterado lá: editar cria outro Flow (clonado) como rascunho, e publicar faz
+// dele a versão ativa da família. Flows criados direto na Meta entram pela
+// sincronização (forms.ts) como família própria, versão 1.
+model WhatsAppFormVersion {
+  id          String    @id @default(cuid())
+  // WABA dona do Flow (Flows são por WABA, como templates).
+  wabaId      String
+  metaFlowId  String    @unique
+  // metaFlowId da 1ª versão da família (na 1ª versão = o próprio metaFlowId).
+  familyId    String
+  version     Int       @default(1)
+  name        String // nome na Meta (ex.: "aceite_termos_servico v2")
+  // Espelho do status na Meta: DRAFT | PUBLISHED | DEPRECATED | BLOCKED | THROTTLED.
+  // DISCARDED = rascunho descartado pelo CRM (apagado na Meta).
+  status      String
+  categories  Json? // string[] da Meta (OTHER, LEAD_GENERATION, ...)
+  // A versão que sai no envio (no máximo uma por família).
+  active      Boolean   @default(false)
+  // JSON do Flow (cópia da Meta, buscada sob demanda; no rascunho, o que foi salvo).
+  flowJson    Json?
+  // Padrões da MENSAGEM que leva o Flow (não fazem parte do Flow na Meta).
+  bodyText    String? // corpo (até 1024)
+  cta         String? // texto do botão (flow_cta)
+  headerText  String?
+  footerText  String?
+  createdById String? // null = veio da sincronização
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([wabaId, familyId])
+  @@map("whatsapp_form_versions")
+}
+
+// ACEITE DE TERMOS pelo WhatsApp (13/11/2026, T-B40K0): o cliente marca "SIM,
+// autorizo" no formulário de aceite (Meta Flow) e o sistema gera o comprovante
+// em PDF. Prova complementar à ZapSign, que continua obrigatória adiante: com o
+// aceite o card já pode ir para Poupatempo e prontuário (trava em
+// app/_shared/utils/terms-gate.ts). Um aceite por contato e versão dos termos:
+// o segundo toque não gera outro documento.
+model TermsAcceptance {
+  id            String   @id @default(cuid())
+  // Código impresso no PDF e conferido em /verificar/aceite/<code>.
+  code          String   @unique
+  contactId     String // WhatsAppContact (sem FK: o aceite sobrevive à exclusão do contato)
+  numberId      String?
+  phone         String // E.164 sem "+" que aceitou
+  userId        String? // card vinculado no momento do aceite (sem FK; null = ainda sem card)
+  termsVersion  String // `versao_termos` do formulário (ex.: "v1")
+  formVersionId String? // WhatsAppFormVersion enviada
+  waMessageId   String   @unique // nfm_reply que originou o aceite
+  flowToken     String?
+  nameGiven     String? // nome completo digitado pelo cliente
+  cpfGiven      String? // CPF digitado pelo cliente (só dígitos)
+  acceptedAt    DateTime // instante da mensagem na Meta
+  recordHash    String // SHA-256 do registro canônico (impresso no PDF)
+  pdfSha256     String? // SHA-256 do arquivo PDF final (mostrado na verificação)
+  pdfKey        String? // chave no S3
+  documentId    String? // Document do card (null enquanto o PDF é rascunho da ficha)
+  responseJson  Json // payload bruto do formulário (response_json)
+  createdAt     DateTime @default(now())
+
+  @@unique([contactId, termsVersion])
+  @@index([userId])
+  @@index([phone])
+  @@map("terms_acceptances")
 }
 
 // CÉREBRO DA IA — fila de revisão humana dos atendimentos encerrados.

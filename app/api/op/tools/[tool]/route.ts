@@ -98,7 +98,10 @@ export async function POST(req: Request, { params }: Ctx) {
     }
     if (err instanceof CardWriteError) {
       record({ ok: false, code: err.code, summary: err.message });
-      return opFail(err.code === "destinatario_invalido" || err.code === "texto_vazio" ? 422 : 404, err.code, err.message);
+      // Trava aceite × ZapSign (T-B40K0): o card existe, mas não pode ir para a coluna ainda.
+      const status = err.code === "falta_aceite" || err.code === "falta_zapsign" ? 409
+        : err.code === "destinatario_invalido" || err.code === "texto_vazio" ? 422 : 404;
+      return opFail(status, err.code, err.message);
     }
     await reportCriticalError(`op_tool:${tool.name}`, err, { metadata: { operatorId: op.userId } });
     record({ ok: false, code: "erro_interno", summary: "erro inesperado" });

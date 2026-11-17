@@ -1,5 +1,5 @@
 # Autenticação, permissões e segurança — mapa para IA
-> Verificado em 2026-10-24 · Escopo: `middleware.ts`, `app/_shared/lib/{auth,permissions,permissions-server,route-auth,ip-access,password,rate-limit,webhook-auth,managers,sector-admin,chatbot-access,chat-access,ponto-access,ai-review-access,sms,aws-messaging}.ts`, `app/_shared/utils/route-guards.ts`, `app/login/**`, `app/_actions/{auth,security,team,users}/**`, `app/api/{auth,admins,user-status}/**`, `app/nova-dash/workspace/security/**`, `app/nova-dash/layout.tsx`, `tests/{permissions,route-guards}.test.ts`, `scripts/{bootstrap-permissions,hash-passwords}.mjs`
+> Verificado em 2026-11-13 · Escopo: `middleware.ts`, `app/_shared/lib/{auth,permissions,permissions-server,route-auth,ip-access,password,rate-limit,webhook-auth,managers,sector-admin,chatbot-access,chat-access,ponto-access,ai-review-access,sms,aws-messaging}.ts`, `app/_shared/utils/route-guards.ts`, `app/login/**`, `app/_actions/{auth,security,team,users}/**`, `app/api/{auth,admins,user-status}/**`, `app/nova-dash/workspace/security/**`, `app/nova-dash/layout.tsx`, `tests/{permissions,route-guards}.test.ts`, `scripts/{bootstrap-permissions,hash-passwords}.mjs`
 
 ## TL;DR
 - Login por **CPF + senha** (NextAuth v4, Credentials, sessão **JWT** de 30 dias). Equipe e clientes são linhas da **mesma tabela `User`**; o que separa é `User.role` (`ADMIN`/`ADMIN+`/`ADMIN++` = equipe; qualquer outra coisa = card de cliente, `GHOST` = card-fantasma).
@@ -81,7 +81,7 @@ flowchart LR
 - Permissões: **34 chaves** em `PERMISSION_DEFS`, em **7 categorias** de `PERMISSION_CATEGORIES` (nomes exatos, na ordem da tela):
   - "Kanban" (6): `delete_cards`, `manage_automations`, `create_columns`, `edit_columns`, `delete_columns`, `create_hospitals`.
   - "Arquivados e pagamentos" (4): `view_archived`, `view_pagos_caique`, `view_pagos_uni`, `archive_cards`.
-  - "WhatsApp e IA" (7): `review_ai`, `teach_bot`, `manage_wa_contacts`, `manage_wa_numbers`, `run_ai_audit`, `view_ai_brain`, `view_whatsapp`.
+  - "WhatsApp e IA" (8): `review_ai`, `teach_bot`, `manage_wa_contacts`, `manage_wa_numbers`, `manage_wa_forms` (editar/publicar formulário do WhatsApp; enviar só exige `view_whatsapp`; padrão só ADMIN++), `run_ai_audit`, `view_ai_brain`, `view_whatsapp`.
   - "Documentos e contratos" (2): `manage_contracts`, `manage_templates`.
   - "Gestão e equipe" (7): `view_tickets`, `manager_dashboard`, `view_costs`, `view_all_mentions`, `manage_ponto`, `export_leads_csv`, `manage_team`.
   - "Operação por IA" (4): `op_use` (3 cargos), `op_write`, `op_approve`, `manage_knowledge` (só ADMIN++). Checadas pela API `/api/op` sobre o operador do token (`docs/ai/operacao-ia.md`), não pela sessão.

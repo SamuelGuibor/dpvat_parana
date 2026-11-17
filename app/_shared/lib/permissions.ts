@@ -126,6 +126,13 @@ export const PERMISSION_DEFS = [
     category: "WhatsApp e IA",
   },
   {
+    key: "manage_wa_forms",
+    label: "Editar formulários do WhatsApp",
+    description:
+      "Edita os formulários interativos do WhatsApp (Flows da Meta): textos, campos, botões e ordem das telas, salvando nova versão e publicando. Sem ela, o atendente só envia.",
+    category: "WhatsApp e IA",
+  },
+  {
     key: "view_costs",
     label: "Custos do projeto",
     description:
@@ -288,6 +295,9 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     teach_bot: false,
     manage_wa_contacts: false,
     manage_wa_numbers: false,
+    // Editar formulário muda o que todo cliente recebe (e cria versão na
+    // Meta): nasce exclusivo do ADMIN++, concedível por override.
+    manage_wa_forms: false,
     view_costs: false,
     view_all_mentions: false,
     manage_ponto: false,
@@ -340,6 +350,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     manage_wa_contacts: false,
     // Números/API keys são infraestrutura — nasce exclusivo do ADMIN++.
     manage_wa_numbers: false,
+    manage_wa_forms: false,
     // Custo do projeto é informação de sócio — nasce exclusivo do ADMIN++,
     // concedível por override a quem o Super Admin quiser.
     view_costs: false,
@@ -385,6 +396,7 @@ const ROLE_DEFAULTS: Record<TeamRole, PermissionMap> = {
     teach_bot: true,
     manage_wa_contacts: true,
     manage_wa_numbers: true,
+    manage_wa_forms: true,
     view_costs: true,
     view_all_mentions: true,
     manage_ponto: true,

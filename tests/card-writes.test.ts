@@ -15,6 +15,11 @@ vi.mock("@/app/_shared/lib/prisma", () => ({ db }));
 vi.mock("@vercel/functions", () => ({ waitUntil: () => {} }));
 const runAutomations = vi.hoisted(() => vi.fn(async (...a: unknown[]) => a.length));
 vi.mock("@/app/_shared/lib/automation-executor", () => ({ runAutomations: (...a: unknown[]) => runAutomations(...a) }));
+// Trava aceite × ZapSign (T-B40K0): regra testada em tests/terms.test.ts; aqui
+// libera para conferir só a gravação do movimento.
+type GateResult = { ok: true } | { ok: false; code: string; message: string };
+const termsGate = vi.hoisted(() => vi.fn<(...a: unknown[]) => Promise<GateResult>>(async () => ({ ok: true })));
+vi.mock("@/app/_shared/lib/cards/terms-gate", () => ({ checkTermsGate: (...a: unknown[]) => termsGate(...a) }));
 
 import { moveCardToLabel } from "@/app/_shared/lib/cards/move-card";
 import { setCardTag } from "@/app/_shared/lib/cards/tags";
@@ -64,6 +69,17 @@ describe("moveCardToLabel", () => {
   it("coluna inexistente → erro tipado", async () => {
     db.label.findUnique.mockResolvedValue(null);
     await expect(moveCardToLabel({ cardId: "c1", isProcess: false, labelId: "X", author })).rejects.toMatchObject({ code: "coluna_nao_encontrada" });
+  });
+
+  it("trava aceite × ZapSign recusa → erro tipado, sem gravar coluna nem log", async () => {
+    db.label.findUnique.mockResolvedValue({ id: "L9", name: "POUPA TEMPO" });
+    db.user.findUnique.mockResolvedValueOnce({ labelId: "L1", role: "COLHER-ASSINATURA", name: "Ana", service: "INSS", label: { name: "COLHER-ASSINATURA" } });
+    termsGate.mockResolvedValueOnce({ ok: false, code: "falta_aceite", message: "falta o aceite" });
+    db.user.update.mockClear();
+    db.log.create.mockClear();
+    await expect(moveCardToLabel({ cardId: "c1", isProcess: false, labelId: "L9", author })).rejects.toMatchObject({ code: "falta_aceite", message: "falta o aceite" });
+    expect(db.user.update).not.toHaveBeenCalled();
+    expect(db.log.create).not.toHaveBeenCalled();
   });
 });
 

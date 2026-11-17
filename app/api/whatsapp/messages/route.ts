@@ -52,6 +52,9 @@ export async function GET(req: NextRequest) {
         editedAt: true, deletedAt: true, transcript: true,
         replyToId: true, replyToBody: true, replyToDirection: true,
         waMessageId: true, reaction: true, reactionAuthorId: true,
+        // Formulário do WhatsApp enviado/respondido (WaInteractive): a bolha
+        // mostra os campos; null em quase toda mensagem.
+        interactive: true,
       },
     });
 

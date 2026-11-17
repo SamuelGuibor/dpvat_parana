@@ -1,4 +1,5 @@
-import type { WhatsAppConversation, WhatsAppContact } from "@prisma/client";
+import type { Prisma, WhatsAppConversation, WhatsAppContact } from "@prisma/client";
+import { flowReplyBody, parseFlowReply, parseInteractive, readFlowJson, type WaFlowReply } from "@/app/_shared/utils/wa-forms";
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay, isRelayConfigured } from "@/app/_shared/lib/chat-relay";
 import { runAfterResponse } from "@/app/_shared/lib/background";
@@ -87,6 +88,8 @@ export interface WhatsAppMessageDTO {
   replyToId?: string | null;
   replyToBody?: string | null;
   replyToDirection?: string | null;
+  // Formulário do WhatsApp enviado/respondido (WaInteractive em wa-forms.ts).
+  interactive?: unknown;
 }
 
 // Formato relevante de uma mensagem no payload do webhook da Meta
@@ -103,7 +106,14 @@ export interface IncomingWaMessage {
   document?: { id?: string; caption?: string; filename?: string; mime_type?: string };
   sticker?: { id?: string; mime_type?: string };
   button?: { text?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  interactive?: {
+    type?: string; // button_reply | list_reply | nfm_reply (resposta de formulário/Flow)
+    button_reply?: { title?: string };
+    list_reply?: { title?: string };
+    // Formulário do WhatsApp enviado (Meta Flow): `response_json` é uma STRING
+    // com o payload do `complete` + o `flow_token` do envio.
+    nfm_reply?: { name?: string; body?: string; response_json?: string };
+  };
   // Tipos sem texto — viram uma representação legível no extractBody (antes
   // caíam como body=null e o inbox mostrava um balão vazio).
   reaction?: { message_id?: string; emoji?: string };
@@ -127,6 +137,38 @@ export interface IncomingWaMessage {
   };
 }
 
+/**
+ * Resposta de formulário (nfm_reply): campos com rótulo (do JSON da versão
+ * enviada, quando achamos o envio) e o texto legível que vai no `body` — é ele
+ * que a lista, a busca e o histórico do bot leem. Nunca lança: sem o envio, os
+ * rótulos saem da própria chave.
+ */
+async function formReplyOf(
+  responseJson: string | undefined,
+  sentInteractive: Prisma.JsonValue | undefined,
+): Promise<{ body: string; interactive: WaFlowReply }> {
+  const sent = parseInteractive(sentInteractive);
+  let flowJson = null;
+  if (sent?.kind === "flow") {
+    try {
+      const v = await db.whatsAppFormVersion.findUnique({ where: { id: sent.formVersionId }, select: { flowJson: true } });
+      flowJson = readFlowJson(v?.flowJson);
+    } catch { /* sem rótulos: segue com a chave legível */ }
+  }
+  const { token, fields } = parseFlowReply(responseJson ?? "", flowJson);
+  const flowName = sent?.kind === "flow" ? sent.flowName : null;
+  return {
+    body: flowReplyBody(flowName, fields),
+    interactive: {
+      kind: "flow_reply",
+      token: token ?? (sent?.kind === "flow" ? sent.token : null),
+      formVersionId: sent?.kind === "flow" ? sent.formVersionId : null,
+      flowName,
+      fields,
+    },
+  };
+}
+
 // Facebook e Instagram usam o mesmo objeto referral; a plataforma é deduzida
 // pela URL de origem do clique.
 function detectAdPlatform(sourceUrl?: string): string {
@@ -143,7 +185,11 @@ function extractBody(msg: IncomingWaMessage): string | null {
     case "video":       return msg.video?.caption ?? null;
     case "document":    return msg.document?.caption ?? null;
     case "button":      return msg.button?.text ?? null;
-    case "interactive": return msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? null;
+    case "interactive":
+      // nfm_reply ganha o texto completo (campos com rótulo) em formReplyOf,
+      // que conhece o formulário enviado; aqui fica só a marca para o regex.
+      if (msg.interactive?.nfm_reply) return "📋 Formulário respondido";
+      return msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? null;
     // Áudio e figurinha viram anexo (baixados pro S3) — o balão renderiza o
     // player/imagem; o corpo fica null MESMO (o bot transcreve o áudio).
     case "audio":       return null;
@@ -412,14 +458,18 @@ export async function ingestIncomingMessage(
   // e guarda um snapshot do texto pro render ficar estável. Reação aponta a
   // mensagem reagida do mesmo jeito (reaction.message_id) — o balão da reação
   // mostra a que mensagem ela se refere.
-  let replyTo: { id: string; body: string | null; direction: string } | null = null;
+  let replyTo: { id: string; body: string | null; direction: string; interactive: Prisma.JsonValue } | null = null;
   const quotedWaId = msg.context?.id ?? msg.reaction?.message_id;
   if (quotedWaId) {
     replyTo = await db.whatsAppMessage.findUnique({
       where: { waMessageId: quotedWaId },
-      select: { id: true, body: true, direction: true },
+      select: { id: true, body: true, direction: true, interactive: true },
     });
   }
+
+  // Resposta de formulário (Meta Flow, T-7ZQH6): o `context.id` aponta o
+  // formulário que mandamos; dele vem a versão, e do JSON dela os rótulos.
+  const formReply = msg.interactive?.nfm_reply ? await formReplyOf(msg.interactive.nfm_reply.response_json, replyTo?.interactive) : null;
 
   const message = await db.whatsAppMessage.create({
     data: {
@@ -427,13 +477,14 @@ export async function ingestIncomingMessage(
       numberId: contact.numberId,
       waMessageId: msg.id,
       direction: "in",
-      body: extractBody(msg),
+      body: formReply?.body ?? extractBody(msg),
       mediaKey,
       mediaType,
       status: "delivered",
       replyToId: replyTo?.id ?? null,
       replyToBody: replyTo ? replyTo.body ?? "📎 Anexo" : null,
       replyToDirection: replyTo?.direction ?? null,
+      ...(formReply ? { interactive: formReply.interactive as unknown as Prisma.InputJsonValue } : {}),
     },
   });
 
@@ -466,6 +517,7 @@ export async function ingestIncomingMessage(
     replyToId: message.replyToId,
     replyToBody: message.replyToBody,
     replyToDirection: message.replyToDirection,
+    interactive: message.interactive,
   };
 
   // Best-effort, igual ao chat interno: se o relay estiver fora, o polling cobre.
@@ -537,6 +589,22 @@ export async function ingestIncomingMessage(
         status: "sent",
       },
     });
+  }
+
+  // Aceite de termos pelo formulário (T-B40K0): registra, gera o comprovante e,
+  // se foi o bot que pediu, manda para a Fila ANTES do turno do bot — que então
+  // vê a conversa fora do modo bot e não responde ao formulário. Nunca lança.
+  if (msg.interactive?.nfm_reply) {
+    const { handleTermsReply } = await import("./terms");
+    await handleTermsReply({
+      contact: { id: contact.id, phone: contact.phone, name: contact.name, numberId: contact.numberId, userId: contact.userId },
+      conversationStatus: conversation.status,
+      message: { id: message.id, waMessageId: message.waMessageId, createdAt: message.createdAt },
+      metaTimestamp: msg.timestamp,
+      responseJson: msg.interactive.nfm_reply.response_json,
+      replyToInteractive: replyTo?.interactive,
+    });
+    conversation = (await db.whatsAppConversation.findUnique({ where: { id: conversation.id } })) ?? conversation;
   }
 
   // Notificação (sino) do "cliente respondeu": NUNCA para todo mundo quando

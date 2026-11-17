@@ -28,7 +28,8 @@ export interface AiUsage {
  * - `skipped`: o bot quis transferir, mas a conversa já tinha saído do modo bot
  *   (atendente assumiu no meio) e ficou como estava.
  */
-export type EffectiveStatus = "bot" | "queued" | "closed" | "signature" | "skipped";
+// "terms" = qualificou, mas a conversa ficou no bot esperando o aceite dos termos (T-B40K0).
+export type EffectiveStatus = "bot" | "queued" | "closed" | "signature" | "terms" | "skipped";
 
 export interface EffectiveOutcome {
   status: EffectiveStatus;
