@@ -51,10 +51,13 @@ function FormReply({ data, messageId, contactId }: {
   messageId: string;
   contactId: string;
 }) {
-  const applicable = formFieldsToFicha(data.fields).length > 0;
   // Resposta do formulário de aceite (T-B40K0): baixa o comprovante em PDF, o
   // mesmo que foi anexado sozinho (o servidor gera se ainda não existir).
   const isTerms = data.fields.some((f) => f.key === 'aceite_termos' && f.value === 'Sim');
+  // No aceite fica SÓ o PDF (decisão do dono, 17/11): nome e CPF ali são os
+  // que o cliente digitou para o termo, não um pedido de atualizar o cadastro.
+  // Nos demais formulários continua o "Aplicar ao cadastro".
+  const applicable = !isTerms && formFieldsToFicha(data.fields).length > 0;
   const [downloading, setDownloading] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
