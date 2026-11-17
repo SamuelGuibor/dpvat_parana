@@ -29,6 +29,8 @@ export interface WaFlowSent {
   purpose?: 'terms' | null;
   /** Motivo do `qualify` do cérebro, guardado para a nota da Fila quando o aceite chegar. */
   queueReason?: string | null;
+  /** Saiu como TEMPLATE com botão de formulário (o corpo é o texto do template). */
+  viaTemplate?: boolean | null;
 }
 
 export interface WaFlowReply {
@@ -65,6 +67,7 @@ export function parseInteractive(raw: unknown): WaInteractive | null {
       screen: str(o.screen) ?? '',
       purpose: o.purpose === 'terms' ? 'terms' : null,
       queueReason: str(o.queueReason),
+      viaTemplate: o.viaTemplate === true,
     };
   }
   if (o.kind === 'flow_reply') {
@@ -217,9 +220,13 @@ export function entryScreen(json: FlowJson): FlowScreen {
   return json.screens.find((s) => !targets.has(s.id)) ?? json.screens[0];
 }
 
-/** Dados que a tela de entrada espera receber no envio (`data` da tela). */
-export function entryScreenData(json: FlowJson): FirstScreenData[] {
-  const screen = entryScreen(json);
+/**
+ * Dados que uma tela espera receber no envio (`data` da tela). Sem `screenId`
+ * (ou id que não existe), a tela de entrada; o template com botão de
+ * formulário diz a tela no `navigate_screen`.
+ */
+export function entryScreenData(json: FlowJson, screenId?: string | null): FirstScreenData[] {
+  const screen = (screenId ? json.screens.find((s) => s.id === screenId) : null) ?? entryScreen(json);
   return Object.entries(screen.data ?? {}).map(([key, d]) => ({
     key,
     type: typeof d?.type === 'string' ? d.type : 'string',
@@ -232,9 +239,9 @@ export function entryScreenData(json: FlowJson): FirstScreenData[] {
  * simples são convertidos; lista/objeto usa o exemplo do próprio JSON (a Meta
  * recusa a mensagem se faltar uma chave declarada na tela).
  */
-export function buildEntryData(json: FlowJson, values: Record<string, string>): Record<string, unknown> {
+export function buildEntryData(json: FlowJson, values: Record<string, string>, screenId?: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const d of entryScreenData(json)) {
+  for (const d of entryScreenData(json, screenId)) {
     const raw = (values[d.key] ?? '').trim();
     if (d.type === 'number') out[d.key] = Number(raw.replace(',', '.')) || 0;
     else if (d.type === 'boolean') out[d.key] = raw === 'true' || raw === 'sim';
@@ -662,6 +669,36 @@ export function isAdAutoForm(name: string): boolean {
 /** Nome da versão nova na Meta: "<base> vN" (tira um " vN" que já exista). */
 export function nextVersionName(baseName: string, version: number): string {
   return `${baseName.replace(/\s+v\d+$/i, '').trim()} v${version}`;
+}
+
+export interface TemplateFlowButton {
+  /** Posição do botão entre os botões do template (o `index` do componente de envio). */
+  index: number;
+  flowId: string;
+  /** Tela que o botão abre (`navigate_screen`); null = a de entrada. */
+  screen: string | null;
+  text: string;
+}
+
+/**
+ * Botão de FORMULÁRIO de um template, lido dos `components` da Meta. Template
+ * com botão FLOW só é aceito no envio com o componente `button`/`flow`
+ * (token + dados da tela) — sem ele a Meta recusa.
+ */
+export function findTemplateFlowButton(components: unknown): TemplateFlowButton | null {
+  if (!Array.isArray(components)) return null;
+  const block = components.find((c) => c && typeof c === 'object' && String((c as { type?: unknown }).type).toUpperCase() === 'BUTTONS') as { buttons?: unknown } | undefined;
+  const buttons = Array.isArray(block?.buttons) ? block!.buttons as Record<string, unknown>[] : [];
+  const index = buttons.findIndex((b) => String(b?.type).toUpperCase() === 'FLOW');
+  if (index < 0) return null;
+  const b = buttons[index];
+  if (b.flow_id == null) return null;
+  return {
+    index,
+    flowId: String(b.flow_id),
+    screen: typeof b.navigate_screen === 'string' ? b.navigate_screen : null,
+    text: typeof b.text === 'string' ? b.text : 'Abrir formulário',
+  };
 }
 
 /** Erro do envio do Flow em português, a partir do código da Graph API. */

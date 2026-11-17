@@ -410,6 +410,12 @@ export async function sendTemplate(
    * template com botão dinâmico quando este componente falta.
    */
   buttonVar?: string | null,
+  /**
+   * Botão de FORMULÁRIO (Meta Flow) do template: a Meta só aceita o envio com
+   * o componente `button`/`flow` (token que volta no nfm_reply + dados da tela
+   * que o botão abre). Montado por `prepareTemplateFlow` (forms.ts).
+   */
+  flowButton?: { index: number; token: string; data?: Record<string, unknown> | null } | null,
 ): Promise<SendResult> {
   // Número com templates PAUSADOS (ex.: pagamento da WABA configurado errado,
   // cada template vira custo indevido): barra aqui, no único ponto por onde
@@ -455,6 +461,18 @@ export async function sendTemplate(
       parameters: [{ type: "text", text: clean(buttonVar) }],
     });
   }
+  if (flowButton) {
+    const hasData = !!flowButton.data && Object.keys(flowButton.data).length > 0;
+    components.push({
+      type: "button",
+      sub_type: "flow",
+      index: String(flowButton.index),
+      parameters: [{
+        type: "action",
+        action: { flow_token: flowButton.token, ...(hasData ? { flow_action_data: flowButton.data } : {}) },
+      }],
+    });
+  }
 
   const result = await postMessageRaw({
     to: phone,
@@ -497,6 +515,38 @@ export function countTemplateVars(bodyText: string | null | undefined): number {
   const varNumbers = new Set<string>();
   for (const m of (bodyText ?? "").matchAll(/\{\{\s*(\d+)\s*\}\}/g)) varNumbers.add(m[1]);
   return varNumbers.size;
+}
+
+// Componentes (com BOTÕES) de um template na Meta: o catálogo do CRM não guarda
+// os botões, e o de formulário (FLOW) exige componente próprio no envio. Cache
+// de 10 min por instância: cron/automação mandam o mesmo template em série.
+const TEMPLATE_COMPONENTS_TTL_MS = 10 * 60_000;
+const templateComponentsCache = new Map<string, { at: number; components: unknown[] | null }>();
+
+export async function fetchTemplateComponents(
+  templateName: string,
+  language: string,
+  numberId?: string | null,
+): Promise<unknown[] | null> {
+  const c = await getCreds(numberId);
+  if (!c?.token || !c.wabaId) return null;
+  const key = `${c.wabaId}|${templateName}|${language}`;
+  const hit = templateComponentsCache.get(key);
+  if (hit && Date.now() - hit.at < TEMPLATE_COMPONENTS_TTL_MS) return hit.components;
+  try {
+    const res = await fetch(
+      `${graphBase(c)}/${c.wabaId}/message_templates?name=${encodeURIComponent(templateName)}&fields=name,language,components`,
+      { headers: { Authorization: `Bearer ${c.token}` }, cache: "no-store", signal: AbortSignal.timeout(10_000) },
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return null; // sem cache: a próxima tentativa consulta de novo
+    const t = (data?.data ?? []).find((x: { name?: string; language?: string }) => x.name === templateName && x.language === language);
+    const components = Array.isArray(t?.components) ? t.components : null;
+    templateComponentsCache.set(key, { at: Date.now(), components });
+    return components;
+  } catch {
+    return null;
+  }
 }
 
 /**

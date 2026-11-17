@@ -217,6 +217,8 @@ async function persistSystemMessage(
   body: string | null,
   systemSource: string,
   media?: Pick<SentPart, "mediaKey" | "mediaType" | "transcript">,
+  /** Template com botão de formulário: liga a resposta à versão do formulário. */
+  interactive?: unknown,
 ): Promise<void> {
   const message = await db.whatsAppMessage.create({
     data: {
@@ -231,6 +233,7 @@ async function persistSystemMessage(
       status: "sent",
       sentByBot: true,
       systemSource,
+      ...(interactive ? { interactive: interactive as Prisma.InputJsonValue } : {}),
     },
   });
   const conversation = await db.whatsAppConversation.upsert({
@@ -610,7 +613,13 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
     // AUTHENTICATION: o botão "copiar código" repete a variável do corpo (o
     // próprio código). Nos demais, vale o sufixo de URL passado pelo chamador.
     const buttonVar = template.category === "AUTHENTICATION" ? vars[0] : input.templateButtonVar;
-    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId, headerMedia, buttonVar);
+    // Botão de FORMULÁRIO (Meta Flow): componente obrigatório no envio + o
+    // vínculo da resposta ao formulário. Import dinâmico: forms.ts importa este
+    // arquivo (isWindowOpen).
+    const flow = await (await import("./forms")).prepareTemplateFlow({
+      contactId: contact.id, numberId: contact.numberId ?? null, templateName: template.name, language: template.language,
+    });
+    const result = await sendTemplate(contact.phone, template.name, vars, template.language, undefined, contact.numberId, headerMedia, buttonVar, flow?.button);
     if (!result.waMessageId) {
       await logWhatsAppEvent({
         action: "wa_text",
@@ -627,7 +636,7 @@ export async function sendSystemWhatsApp(input: SystemSendInput): Promise<System
 
     // Sem headerVar: templates com variável no cabeçalho já foram barrados acima.
     const preview = renderTemplateThreadText(template, vars);
-    await persistSystemMessage(contact, result.waMessageId, preview, input.source);
+    await persistSystemMessage(contact, result.waMessageId, preview, input.source, undefined, flow?.interactive ?? null);
     await logWhatsAppEvent({
       action: "wa_template",
       message: `enviou o template automático "${template.name}" para ${contact.name ?? contact.phone}`,

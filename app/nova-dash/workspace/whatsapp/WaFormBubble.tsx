@@ -24,9 +24,10 @@ export function WaFormBubble({ data, body, mine, messageId, contactId }: {
   contactId: string;
 }) {
   if (data.kind === 'flow') {
-    // body = "📋 Formulário enviado — X\n<texto>\n[botão: Y]": a bolha mostra o texto.
+    // body = "📋 Formulário enviado — X\n<texto>\n[botão: Y]": a bolha mostra o
+    // texto. Por template, o body já é o texto do template (cabeçalho/rodapé).
     const lines = (body ?? '').split('\n');
-    const text = lines.length > 2 ? lines.slice(1, -1).join('\n') : body ?? '';
+    const text = data.viaTemplate ? body ?? '' : lines.length > 2 ? lines.slice(1, -1).join('\n') : body ?? '';
     return (
       <div className="min-w-[220px]">
         <p className={`mb-1 flex items-center gap-1.5 text-xs font-bold ${mine ? 'text-white/80' : 'text-cyan-700'}`}>

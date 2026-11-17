@@ -15,6 +15,8 @@ import {
 } from '@/app/_shared/lib/whatsapp/service';
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import { renderTemplateThreadText } from '@/app/_shared/lib/whatsapp/template-text';
+import { prepareTemplateFlow } from '@/app/_shared/lib/whatsapp/forms';
+import type { Prisma } from '@prisma/client';
 
 // Templates aprovados na Meta Business Manager — único jeito de iniciar
 // mensagem fora da janela de 24h. O nome/idioma/nº de variáveis aqui só
@@ -440,8 +442,26 @@ export async function deleteWhatsAppTemplate(id: string): Promise<{ error?: stri
 /**
  * Envia um template aprovado — funciona mesmo com a janela de 24h expirada
  * (é o único tipo de mensagem que a Meta aceita nesse caso).
+ *
+ * DEVOLVE `{ ok: false, error }` em vez de lançar: erro de server action chega
+ * mascarado em produção, e o atendente precisa ler o motivo (era o que
+ * escondia a recusa da Meta ao template com botão de formulário).
  */
 export async function sendWhatsAppTemplateMessage(
+  contactId: string,
+  templateId: string,
+  vars: string[],
+  headerVar?: string,
+): Promise<{ ok: true; message: WhatsAppMessageDTO } | { ok: false; error: string }> {
+  try {
+    return { ok: true, message: await sendTemplateMessageOrThrow(contactId, templateId, vars, headerVar) };
+  } catch (err) {
+    console.error('[WA templates] envio manual falhou:', err);
+    return { ok: false, error: err instanceof Error && err.message ? err.message : 'Falha ao enviar o template.' };
+  }
+}
+
+async function sendTemplateMessageOrThrow(
   contactId: string,
   templateId: string,
   vars: string[],
@@ -489,8 +509,14 @@ export async function sendWhatsAppTemplateMessage(
     };
   }
 
+  // Botão de FORMULÁRIO (ex.: aceite_termos_v2): a Meta exige o componente
+  // `flow` no envio; o `interactive` liga a resposta à versão do formulário.
+  const flow = await prepareTemplateFlow({
+    contactId, numberId: contact.numberId, templateName: template.name, language: template.language,
+  });
+
   const result = await sendTemplate(
-    contact.phone, template.name, vars, template.language, headerVar, contact.numberId, headerMedia,
+    contact.phone, template.name, vars, template.language, headerVar, contact.numberId, headerMedia, undefined, flow?.button,
   );
   if (!result.waMessageId) {
     throw new Error(result.error ?? 'Falha ao enviar o template pela WhatsApp API.');
@@ -509,6 +535,7 @@ export async function sendWhatsAppTemplateMessage(
       body: preview,
       status: 'sent',
       authorId: me.id,
+      ...(flow?.interactive ? { interactive: flow.interactive as unknown as Prisma.InputJsonValue } : {}),
     },
   });
 
@@ -547,6 +574,7 @@ export async function sendWhatsAppTemplateMessage(
     contactName: contact.name,
     contactPhone: contact.phone,
     conversationStatus: conversation.status,
+    interactive: message.interactive,
   };
 
   broadcastWhatsAppEvent(dto);

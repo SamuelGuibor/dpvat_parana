@@ -89,12 +89,14 @@ export function WhatsAppSendTemplateModal({ open, onOpenChange, contactId, onSen
     if (!selected) return;
     setSending(true);
     try {
-      const dto = await sendWhatsAppTemplateMessage(contactId, selected.id, vars, headerVar);
+      // A action devolve o erro em texto (lançado, chegaria mascarado em produção).
+      const r = await sendWhatsAppTemplateMessage(contactId, selected.id, vars, headerVar);
+      if (!r.ok) { toast.error(r.error, { duration: 9000 }); return; }
       toast.success('Template enviado.');
       onOpenChange(false);
-      onSent(dto);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao enviar o template.');
+      onSent(r.message);
+    } catch {
+      toast.error('Falha ao enviar o template. Atualize a página (F5) e tente de novo.');
     } finally {
       setSending(false);
     }

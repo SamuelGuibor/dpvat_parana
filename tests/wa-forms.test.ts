@@ -3,7 +3,7 @@ import {
   readFlowJson, entryScreen, entryScreenData, buildEntryData, suggestEntryValues,
   summarizeFlow, extractEditableFields, applyEditableFields, moveScreen,
   parseFlowReply, flowReplyBody, formFieldsToFicha, parseInteractive,
-  validateFormMessage, isAdAutoForm, nextVersionName, describeFlowSendError,
+  validateFormMessage, isAdAutoForm, nextVersionName, describeFlowSendError, findTemplateFlowButton,
   type FlowJson,
 } from "@/app/_shared/utils/wa-forms";
 
@@ -193,6 +193,23 @@ describe("mensagem e catálogo", () => {
     expect(isAdAutoForm("Padrão CTWA_eed61")).toBe(true);
     expect(isAdAutoForm("aceite_termos_servico")).toBe(false);
     expect(nextVersionName("aceite_termos_servico v2", 3)).toBe("aceite_termos_servico v3");
+  });
+
+  it("botão de formulário do template (aceite_termos_v2) e dados da tela que ele abre", () => {
+    const components = [
+      { type: "BODY", text: "Olá, *{{1}}*!" },
+      { type: "BUTTONS", buttons: [
+        { type: "URL", text: "Site" },
+        { type: "FLOW", text: "Ler e aceitar", flow_id: 2989776964703903, flow_action: "NAVIGATE", navigate_screen: "ACEITE_TERMOS" },
+      ] },
+    ];
+    expect(findTemplateFlowButton(components)).toEqual({ index: 1, flowId: "2989776964703903", screen: "ACEITE_TERMOS", text: "Ler e aceitar" });
+    expect(findTemplateFlowButton([{ type: "BUTTONS", buttons: [{ type: "URL" }] }])).toBeNull();
+    expect(findTemplateFlowButton(null)).toBeNull();
+    // A tela pedida pelo botão vence a de entrada; id que não existe cai na de entrada.
+    expect(entryScreenData(ACEITE, "CONFIRMAR_ACEITE").map((d) => d.key)).toEqual(["nome_completo", "cpf"]);
+    expect(entryScreenData(ACEITE, "NAO_EXISTE").map((d) => d.key)).toEqual(["nome"]);
+    expect(buildEntryData(ACEITE, { nome: "Maria" }, "ACEITE_TERMOS")).toEqual({ nome: "Maria" });
   });
 
   it("erro da Meta em português", () => {

@@ -2,11 +2,11 @@ import { randomBytes } from "crypto";
 import type { Prisma, WhatsAppFormVersion } from "@prisma/client";
 import { db } from "@/app/_shared/lib/prisma";
 import { getCreds, getDefaultCreds, type WaCreds } from "./numbers";
-import { sendFlowMessage } from "./client";
+import { fetchTemplateComponents, sendFlowMessage } from "./client";
 import { isWindowOpen } from "./outbound";
 import {
   readFlowJson, entryScreen, buildEntryData, validateFormMessage, describeFlowSendError,
-  flowSentBody, isAdAutoForm, nextVersionName,
+  flowSentBody, isAdAutoForm, nextVersionName, findTemplateFlowButton, entryScreenData, suggestEntryValues,
   type FlowJson, type FlowValidationError, type FormFamilyDTO, type FormVersionDTO, type WaFlowSent,
 } from "@/app/_shared/utils/wa-forms";
 
@@ -469,6 +469,59 @@ export async function sendFormToContact(input: SendFormInput): Promise<SendFormR
   // A lista do inbox ordena por lastMessageAt e sincroniza por delta (updatedAt).
   await db.whatsAppConversation.updateMany({ where: { contactId: contact.id }, data: { lastMessageAt: new Date() } });
   return { ok: true, message, contact, version };
+}
+
+/**
+ * Template com botão de FORMULÁRIO (ex.: "aceite_termos_v2"): monta o
+ * componente que a Meta exige no envio (token + dados da tela que o botão
+ * abre, com o nome/CPF do contato ou do card) e o `interactive` da mensagem,
+ * que liga a resposta à versão do formulário (rótulos e texto do termo no
+ * PDF). null = template sem botão de formulário (envio normal). Nunca lança:
+ * falha na leitura vira null e a Meta diz o motivo no envio.
+ */
+export async function prepareTemplateFlow(input: {
+  contactId: string;
+  numberId: string | null;
+  templateName: string;
+  language: string;
+}): Promise<{ button: { index: number; token: string; data: Record<string, unknown> | null }; interactive: WaFlowSent | null } | null> {
+  try {
+    const button = findTemplateFlowButton(await fetchTemplateComponents(input.templateName, input.language, input.numberId));
+    if (!button) return null;
+    const c = await getCreds(input.numberId);
+    let version = await db.whatsAppFormVersion.findUnique({ where: { metaFlowId: button.flowId } });
+    if (!version && c) {
+      await syncFormCatalog(c, { force: true });
+      version = await db.whatsAppFormVersion.findUnique({ where: { metaFlowId: button.flowId } });
+    }
+    const json = version && c ? await ensureFlowJson(version, c) : null;
+    let data: Record<string, unknown> | null = null;
+    if (json?.ok) {
+      const contact = await db.whatsAppContact.findUnique({ where: { id: input.contactId }, select: { name: true, phone: true, userId: true } });
+      const card = contact?.userId ? await db.user.findUnique({ where: { id: contact.userId }, select: { name: true, cpf: true } }) : null;
+      const fields = entryScreenData(json.data, button.screen);
+      const values = suggestEntryValues(fields, { name: card?.name ?? contact?.name, cpf: card?.cpf ?? null, phone: contact?.phone ?? null });
+      data = buildEntryData(json.data, values, button.screen);
+    }
+    const token = `crm.${(version?.id ?? "tpl00000").slice(-8)}.${randomBytes(6).toString("hex")}`;
+    const interactive: WaFlowSent | null = version
+      ? {
+        kind: "flow",
+        formVersionId: version.id,
+        metaFlowId: version.metaFlowId,
+        flowName: version.name,
+        version: version.version,
+        token,
+        cta: button.text,
+        screen: button.screen ?? (json?.ok ? entryScreen(json.data).id : ""),
+        viaTemplate: true,
+      }
+      : null;
+    return { button: { index: button.index, token, data }, interactive };
+  } catch (err) {
+    console.error("[WA forms] falha ao preparar o botão de formulário do template:", err);
+    return null;
+  }
 }
 
 /** A versão ativa e publicada de uma família, pelo nome (ex.: o aceite de termos). */
