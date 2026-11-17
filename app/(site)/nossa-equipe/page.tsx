@@ -68,14 +68,14 @@ const teamMembers = [
   },
   {
     id: 6,
-    name: 'Lincoln Gustavo Marcondes Silva',
-    role: 'Analista Administrativo',
-    specialty: 'Especialista na Aréa Administrativa',
-    image: '/lin.jpeg',
-    email: 'lincoln.gustavo@segurosparana.com.br',
-    experience: '3 anos de experiência',
-    education: 'Estudante de Direito',
-    bio: 'Atendimento humanizado e dedicado aos clientes.',
+    name: 'Matheus Kovalski de Lima Correa',
+    role: 'Auditor Administrativo',
+    specialty: 'Especialista em Revisão Documental e Administrativa',
+    image: '/matheus.jpeg',
+    email: 'matheuskovalski.paranaseguros@gmail.com',
+    experience: '', // não informado no ticket: o card esconde a linha
+    education: 'Bacharelado em Relações Internacionais',
+    bio: 'Revisão documental e administrativa.',
   },
   {
     id: 7,
@@ -233,12 +233,14 @@ function TeamMemberCard({ member }: TeamMemberCardProps) {
             </div>
             <div className="p-6 flex-1 flex flex-col">
               <p className="text-gray-600 mb-4">{member.specialty}</p>
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center gap-2 text-sm text-gray-700">
-                  <Briefcase className="w-4 h-4 text-blue-600" />
-                  {member.experience}
+              {member.experience && (
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <Briefcase className="w-4 h-4 text-blue-600" />
+                    {member.experience}
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="mt-auto pt-4 border-t border-gray-200">
                 <p className="text-sm text-blue-600 text-center">Passe o mouse para mais informações</p>
               </div>
