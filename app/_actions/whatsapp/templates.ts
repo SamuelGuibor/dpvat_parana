@@ -16,6 +16,7 @@ import {
 import { runAfterResponse } from '@/app/_shared/lib/background';
 import { renderTemplateThreadText } from '@/app/_shared/lib/whatsapp/template-text';
 import { prepareTemplateFlow } from '@/app/_shared/lib/whatsapp/forms';
+import { flowButtonOf, readTemplateButtons, type TemplateButtonDTO } from '@/app/_shared/utils/wa-forms';
 import type { Prisma } from '@prisma/client';
 
 // Templates aprovados na Meta Business Manager — único jeito de iniciar
@@ -91,20 +92,28 @@ export interface WhatsAppTemplateDTO {
   // Cabeçalho de mídia: se true, o envio já tem a mídia padrão no S3.
   hasHeaderMedia: boolean;
   footerText: string | null;
+  // Botões do template (17/11): null = ainda não sincronizado depois da coluna.
+  buttons: TemplateButtonDTO[] | null;
+  // Botão de FORMULÁRIO (Meta Flow), se houver: selo e prévia na tela.
+  flowButton: { flowId: string; screen: string | null; text: string } | null;
 }
 
 function toDTO(t: {
   id: string; name: string; language: string; bodyVars: number; bodyPreview: string | null;
   status: string; category: string; rejectedReason: string | null; numberId: string | null;
   headerText: string | null; headerFormat: string | null; headerMediaKey: string | null;
-  footerText: string | null;
+  footerText: string | null; buttons?: Prisma.JsonValue | null;
 }, numberLabel: string | null = null): WhatsAppTemplateDTO {
+  const buttons = readTemplateButtons(t.buttons ?? null);
+  const fb = flowButtonOf(buttons);
   return {
     id: t.id, name: t.name, language: t.language, bodyVars: t.bodyVars, bodyPreview: t.bodyPreview,
     status: t.status, category: t.category, rejectedReason: t.rejectedReason,
     numberId: t.numberId, numberLabel,
     headerText: t.headerText, headerFormat: t.headerFormat, hasHeaderMedia: !!t.headerMediaKey,
     footerText: t.footerText,
+    buttons,
+    flowButton: fb ? { flowId: fb.flowId, screen: fb.screen, text: fb.text } : null,
   };
 }
 
@@ -299,6 +308,8 @@ export async function createWhatsAppTemplate(input: {
       bodyPreview: bodyText,
       status: created.status || 'PENDING',
       metaId: created.metaId,
+      // createMetaTemplate não monta BUTTONS: nasce sem botão.
+      buttons: [],
     },
   });
   return { template: toDTO(template) };
@@ -400,6 +411,7 @@ export async function syncWhatsAppTemplatesFromMeta(): Promise<{
         category: t.category,
         rejectedReason: t.rejectedReason,
         metaId: t.metaId,
+        buttons: t.buttons as unknown as Prisma.InputJsonValue,
       };
       const existing = await db.whatsAppTemplate.findFirst({
         where: { name: t.name, numberId: number.id }, select: { id: true },
@@ -452,9 +464,10 @@ export async function sendWhatsAppTemplateMessage(
   templateId: string,
   vars: string[],
   headerVar?: string,
+  flowValues?: Record<string, string> | null,
 ): Promise<{ ok: true; message: WhatsAppMessageDTO } | { ok: false; error: string }> {
   try {
-    return { ok: true, message: await sendTemplateMessageOrThrow(contactId, templateId, vars, headerVar) };
+    return { ok: true, message: await sendTemplateMessageOrThrow(contactId, templateId, vars, headerVar, flowValues) };
   } catch (err) {
     console.error('[WA templates] envio manual falhou:', err);
     return { ok: false, error: err instanceof Error && err.message ? err.message : 'Falha ao enviar o template.' };
@@ -466,6 +479,7 @@ async function sendTemplateMessageOrThrow(
   templateId: string,
   vars: string[],
   headerVar?: string,
+  flowValues?: Record<string, string> | null,
 ): Promise<WhatsAppMessageDTO> {
   const me = await requireTeamMember();
 
@@ -513,6 +527,8 @@ async function sendTemplateMessageOrThrow(
   // `flow` no envio; o `interactive` liga a resposta à versão do formulário.
   const flow = await prepareTemplateFlow({
     contactId, numberId: contact.numberId, templateName: template.name, language: template.language,
+    // Dados da tela conferidos pelo atendente (aba de Template); sem eles, a sugestão pelo card.
+    values: flowValues ?? null,
   });
 
   const result = await sendTemplate(

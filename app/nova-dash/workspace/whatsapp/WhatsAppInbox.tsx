@@ -2903,6 +2903,7 @@ export function WhatsAppInbox() {
               open={sendTemplateOpen}
               onOpenChange={setSendTemplateOpen}
               contactId={active.contactId}
+              windowOpen={false}
               onSent={(dto) => { handleSentOutside(dto); void revalidateThread(dto.contactId); }}
             />
           </>

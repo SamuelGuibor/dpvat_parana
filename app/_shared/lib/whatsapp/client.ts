@@ -1,3 +1,4 @@
+import { normalizeTemplateButtons, type TemplateButtonDTO } from "@/app/_shared/utils/wa-forms";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getCreds, type WaCreds } from "./numbers";
 import { reportCriticalError } from "@/app/_shared/lib/report-error";
@@ -508,6 +509,8 @@ export interface MetaTemplate {
   footerText: string | null;
   bodyVars: number;
   rejectedReason: string | null;
+  /** Botões normalizados (FLOW, QUICK_REPLY, URL…), na ordem do envio. */
+  buttons: TemplateButtonDTO[];
 }
 
 /** Conta as variáveis posicionais {{1}} {{2}}... de um corpo de template. */
@@ -595,6 +598,7 @@ export async function fetchMetaTemplates(numberId?: string | null): Promise<Meta
         footerText,
         bodyVars: countTemplateVars(bodyText),
         rejectedReason: rejected && rejected !== "NONE" ? rejected : null,
+        buttons: normalizeTemplateButtons(t.components),
       });
     }
 

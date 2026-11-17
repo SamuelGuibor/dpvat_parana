@@ -4,6 +4,7 @@ import {
   summarizeFlow, extractEditableFields, applyEditableFields, moveScreen,
   parseFlowReply, flowReplyBody, formFieldsToFicha, parseInteractive,
   validateFormMessage, isAdAutoForm, nextVersionName, describeFlowSendError, findTemplateFlowButton,
+  normalizeTemplateButtons, readTemplateButtons, flowButtonOf, templateFormWarning,
   type FlowJson,
 } from "@/app/_shared/utils/wa-forms";
 
@@ -215,5 +216,96 @@ describe("mensagem e catálogo", () => {
   it("erro da Meta em português", () => {
     expect(describeFlowSendError(131047, "Re-engagement")).toMatch(/24 h/);
     expect(describeFlowSendError(100, "Invalid flow")).toMatch(/publicado/);
+  });
+});
+
+describe("botões do template (17/11)", () => {
+  const components = [
+    { type: "BODY", text: "Olá" },
+    {
+      type: "BUTTONS",
+      buttons: [
+        { type: "QUICK_REPLY", text: "Sim" },
+        { type: "URL", text: "Site", url: "https://exemplo.com" },
+        { type: "FLOW", text: "Aceitar termos", flow_id: 123, navigate_screen: "DADOS" },
+      ],
+    },
+  ];
+
+  it("normalizeTemplateButtons lê FLOW, QUICK_REPLY e URL na ordem", () => {
+    const b = normalizeTemplateButtons(components);
+    expect(b.map((x) => x.type)).toEqual(["QUICK_REPLY", "URL", "FLOW"]);
+    expect(b[1].url).toBe("https://exemplo.com");
+    expect(b[2]).toMatchObject({ flowId: "123", navigateScreen: "DADOS", text: "Aceitar termos" });
+  });
+
+  it("FLOW sem navigate_screen fica com tela null", () => {
+    const b = normalizeTemplateButtons([{ type: "BUTTONS", buttons: [{ type: "FLOW", text: "Abrir", flow_id: "9" }] }]);
+    expect(b[0].navigateScreen).toBeNull();
+  });
+
+  it("entrada lixo vira lista vazia", () => {
+    expect(normalizeTemplateButtons(null)).toEqual([]);
+    expect(normalizeTemplateButtons("x")).toEqual([]);
+    expect(normalizeTemplateButtons([{ type: "BUTTONS", buttons: "x" }])).toEqual([]);
+  });
+
+  it("readTemplateButtons: null = não sincronizado; lixo é filtrado", () => {
+    expect(readTemplateButtons(null)).toBeNull();
+    expect(readTemplateButtons({ a: 1 })).toBeNull();
+    expect(readTemplateButtons([1, { text: "sem tipo" }, { type: "URL", text: "x" }])).toEqual([
+      { type: "URL", text: "x", flowId: null, navigateScreen: null, url: null, phone: null },
+    ]);
+  });
+
+  it("flowButtonOf devolve o índice certo com botão antes do FLOW", () => {
+    const fb = flowButtonOf(normalizeTemplateButtons(components));
+    expect(fb).toEqual({ index: 2, flowId: "123", screen: "DADOS", text: "Aceitar termos" });
+    expect(flowButtonOf(null)).toBeNull();
+    expect(flowButtonOf([{ type: "QUICK_REPLY", text: "Sim" }])).toBeNull();
+  });
+});
+
+describe("summarizeFlow com valores", () => {
+  const json: FlowJson = {
+    screens: [{
+      id: "A",
+      layout: {
+        children: [
+          { type: "TextHeading", text: "Olá, ${data.nome}!" },
+          { type: "TextBody", text: "CPF ${data.cpf}" },
+          { type: "TextBody", text: "`'Nome: ' ${data.nome}`" },
+        ],
+      },
+    }],
+  };
+  it("troca pelo valor, mantém «x» sem valor e resolve a expressão entre crases", () => {
+    const items = summarizeFlow(json, { nome: "Samuel", cpf: " " })[0].items.map((i) => i.text);
+    expect(items).toEqual(["Olá, Samuel!", "CPF «cpf»", "Nome: Samuel"]);
+  });
+  it("sem values continua como antes", () => {
+    expect(summarizeFlow(json)[0].items[0].text).toBe("Olá, «nome»!");
+  });
+});
+
+describe("templateFormWarning", () => {
+  const v = (version: number, status = "PUBLISHED") => ({ version, status });
+  it("sem versão no banco", () => {
+    expect(templateFormWarning({ version: null, activeVersion: null, jsonError: null })?.text).toMatch(/Não encontrei/);
+  });
+  it("desativado bloqueia", () => {
+    const w = templateFormWarning({ version: v(1, "DEPRECATED"), activeVersion: null, jsonError: null });
+    expect(w).toMatchObject({ blocking: true });
+    expect(w?.text).toMatch(/Desativado/);
+  });
+  it("limitado avisa sem bloquear", () => {
+    expect(templateFormWarning({ version: v(1, "THROTTLED"), activeVersion: null, jsonError: null })?.blocking).toBe(false);
+  });
+  it("versão antiga", () => {
+    expect(templateFormWarning({ version: v(1), activeVersion: { version: 2 }, jsonError: null })?.text).toMatch(/v1 .*v2/);
+  });
+  it("erro de leitura não bloqueia; tudo certo = null", () => {
+    expect(templateFormWarning({ version: v(1), activeVersion: { version: 1 }, jsonError: "x" })).toMatchObject({ blocking: false });
+    expect(templateFormWarning({ version: v(1), activeVersion: { version: 1 }, jsonError: null })).toBeNull();
   });
 });

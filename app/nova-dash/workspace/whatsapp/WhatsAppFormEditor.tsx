@@ -14,7 +14,7 @@ import {
   saveWhatsAppFormDefaults, saveWhatsAppFormDraft,
 } from '@/app/_actions/whatsapp/forms';
 import {
-  FORM_MESSAGE_LIMITS, FORM_STATUS_LABEL, applyEditableFields, entryScreen, extractEditableFields, moveScreen, readFlowJson,
+  FORM_MESSAGE_LIMITS, FORM_STATUS_LABEL, FORMS_URL, applyEditableFields, entryScreen, extractEditableFields, moveScreen, readFlowJson,
   validateFormMessage,
   type FlowJson, type FlowValidationError, type FormDetailResponse, type FormFamilyDTO,
 } from '@/app/_shared/utils/wa-forms';
@@ -28,7 +28,6 @@ import { WaFormPreview } from './WaFormPreview';
 // que a Meta valida — os erros dela aparecem na tela.
 
 type Tab = 'textos' | 'json' | 'mensagem' | 'versoes';
-const FORMS_URL = '/api/whatsapp/forms';
 
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '—');
 
@@ -348,7 +347,7 @@ export function WhatsAppFormEditor({ family, onBack, onChanged }: Props) {
                 </a>
               )}
             </div>
-            {current && <WaFormPreview json={tab === 'json' ? readFlowJson(rawJson) ?? current : current} entryId={entryScreen(current).id} />}
+            {current && <WaFormPreview layout="stacked" json={tab === 'json' ? readFlowJson(rawJson) ?? current : current} openScreen={entryScreen(current).id} />}
           </div>
         </div>
       )}

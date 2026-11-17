@@ -281,6 +281,14 @@ export interface PreviewItem {
   kind: PreviewItemKind;
   text: string;
   required?: boolean;
+  /** Texto de ajuda do campo (`helper-text`). */
+  helper?: string;
+  /** Títulos das opções quando o `data-source` é lista fixa. */
+  options?: string[];
+  /** Imagem em base64 (`src` do componente Image). */
+  src?: string;
+  /** Tipo do componente da Meta (TextInput, CheckboxGroup…), para desenhar. */
+  inputType?: string;
 }
 
 export interface PreviewScreen {
@@ -293,40 +301,60 @@ export interface PreviewScreen {
 const INPUT_TYPES = new Set(['TextInput', 'TextArea', 'DatePicker', 'CalendarPicker', 'PhotoPicker', 'DocumentPicker']);
 const CHOICE_TYPES = new Set(['Dropdown', 'RadioButtonsGroup', 'CheckboxGroup', 'ChipsSelector', 'NavigationList']);
 
-/** Texto de exibição: tira a crase das expressões e o `${...}` vira «campo». */
-function displayText(v: unknown): string {
+/**
+ * Texto de exibição: tira a crase das expressões e o `${...}` vira o valor
+ * digitado (`values[x]`) ou, sem valor, «campo».
+ */
+function displayText(v: unknown, values?: Record<string, string> | null): string {
   const raw = Array.isArray(v) ? v.filter((x) => typeof x === 'string').join('\n') : typeof v === 'string' ? v : '';
-  const ref = /\$\{(?:data|form)\.(\w+)\}/g;
+  const fill = (k: string) => {
+    const val = values?.[k];
+    return typeof val === 'string' && val.trim() ? val.trim() : `«${k}»`;
+  };
   // Expressão entre crases: sequência de 'literais' e ${data.x} (ex.:
   // `'Nome: ' ${data.nome}`) — junta os pedaços na ordem.
   if (raw.startsWith('`') && raw.endsWith('`')) {
     const parts: string[] = [];
     const token = /'((?:[^'\\]|\\.)*)'|\$\{(?:data|form)\.(\w+)\}/g;
     let m: RegExpExecArray | null;
-    while ((m = token.exec(raw))) parts.push(m[1] !== undefined ? m[1] : `«${m[2]}»`);
+    while ((m = token.exec(raw))) parts.push(m[1] !== undefined ? m[1] : fill(m[2]));
     return parts.join('').trim();
   }
-  return raw.replace(ref, '«$1»').trim();
+  return raw.replace(/\$\{(?:data|form)\.(\w+)\}/g, (_, k: string) => fill(k)).trim();
 }
 
-/** Resumo legível das telas do Flow (a prévia do modal; não é o render da Meta). */
-export function summarizeFlow(json: FlowJson): PreviewScreen[] {
+function fixedOptions(c: FlowComponent): string[] | undefined {
+  if (!Array.isArray(c['data-source'])) return undefined;
+  const out = (c['data-source'] as { title?: unknown }[]).flatMap((o) => (typeof o?.title === 'string' ? [o.title] : []));
+  return out.length ? out : undefined;
+}
+
+/**
+ * Resumo legível das telas do Flow (a prévia; não é o render da Meta).
+ * `values` troca `${data.x}` pelo valor digitado nos dados da tela.
+ */
+export function summarizeFlow(json: FlowJson, values?: Record<string, string> | null): PreviewScreen[] {
+  const d = (v: unknown) => displayText(v, values);
   return json.screens.map((s) => {
     const items: PreviewItem[] = [];
     walkComponents(s, (c) => {
       const t = c.type ?? '';
-      if (t === 'TextHeading') items.push({ kind: 'heading', text: displayText(c.text) });
-      else if (t === 'TextSubheading') items.push({ kind: 'subheading', text: displayText(c.text) });
-      else if (t === 'TextBody' || t === 'RichText') items.push({ kind: 'text', text: displayText(c.text) });
-      else if (t === 'TextCaption') items.push({ kind: 'caption', text: displayText(c.text) });
-      else if (INPUT_TYPES.has(t)) items.push({ kind: 'input', text: displayText(c.label) || c.name || t, required: c.required === true });
-      else if (CHOICE_TYPES.has(t)) items.push({ kind: 'choice', text: displayText(c.label) || c.name || t, required: c.required === true });
-      else if (t === 'OptIn') items.push({ kind: 'optin', text: displayText(c.label), required: c.required === true });
-      else if (t === 'Footer') items.push({ kind: 'button', text: displayText(c.label) });
-      else if (t === 'EmbeddedLink') items.push({ kind: 'link', text: displayText(c.text) });
-      else if (t === 'Image') items.push({ kind: 'image', text: displayText(c['alt-text']) || 'Imagem' });
+      const helper = typeof c['helper-text'] === 'string' ? d(c['helper-text']) || undefined : undefined;
+      if (t === 'TextHeading') items.push({ kind: 'heading', text: d(c.text) });
+      else if (t === 'TextSubheading') items.push({ kind: 'subheading', text: d(c.text) });
+      else if (t === 'TextBody' || t === 'RichText') items.push({ kind: 'text', text: d(c.text) });
+      else if (t === 'TextCaption') items.push({ kind: 'caption', text: d(c.text) });
+      else if (INPUT_TYPES.has(t)) items.push({ kind: 'input', text: d(c.label) || c.name || t, required: c.required === true, helper, inputType: t });
+      else if (CHOICE_TYPES.has(t)) items.push({ kind: 'choice', text: d(c.label) || c.name || t, required: c.required === true, helper, options: fixedOptions(c), inputType: t });
+      else if (t === 'OptIn') items.push({ kind: 'optin', text: d(c.label), required: c.required === true, inputType: t });
+      else if (t === 'Footer') items.push({ kind: 'button', text: d(c.label) });
+      else if (t === 'EmbeddedLink') items.push({ kind: 'link', text: d(c.text) });
+      else if (t === 'Image') {
+        const src = typeof c.src === 'string' && !isDynamic(c.src) ? c.src : undefined;
+        items.push({ kind: 'image', text: d(c['alt-text']) || 'Imagem', ...(src ? { src } : {}) });
+      }
     });
-    return { id: s.id, title: s.title ?? s.id, terminal: s.terminal === true, items: items.filter((i) => i.text) };
+    return { id: s.id, title: d(s.title) || s.id, terminal: s.terminal === true, items: items.filter((i) => i.text) };
   });
 }
 
@@ -700,6 +728,110 @@ export function findTemplateFlowButton(components: unknown): TemplateFlowButton 
     text: typeof b.text === 'string' ? b.text : 'Abrir formulário',
   };
 }
+
+// ─── Botões do template (coluna WhatsAppTemplate.buttons) ─────────────────────
+
+export interface TemplateButtonDTO {
+  /** FLOW | QUICK_REPLY | URL | PHONE_NUMBER | COPY_CODE | outro */
+  type: string;
+  text: string;
+  flowId?: string | null;
+  navigateScreen?: string | null;
+  url?: string | null;
+  phone?: string | null;
+}
+
+/** Botões do bloco BUTTONS dos `components` da Meta, na ordem (o índice é o do envio). */
+export function normalizeTemplateButtons(components: unknown): TemplateButtonDTO[] {
+  if (!Array.isArray(components)) return [];
+  const block = components.find((c) => c && typeof c === 'object' && String((c as { type?: unknown }).type).toUpperCase() === 'BUTTONS') as { buttons?: unknown } | undefined;
+  if (!Array.isArray(block?.buttons)) return [];
+  return (block!.buttons as unknown[]).flatMap((raw): TemplateButtonDTO[] => {
+    if (!raw || typeof raw !== 'object') return [];
+    const b = raw as Record<string, unknown>;
+    const type = String(b.type ?? '').toUpperCase() || 'OTHER';
+    const out: TemplateButtonDTO = { type, text: typeof b.text === 'string' ? b.text : '' };
+    if (type === 'FLOW') {
+      out.flowId = b.flow_id == null ? null : String(b.flow_id);
+      out.navigateScreen = typeof b.navigate_screen === 'string' ? b.navigate_screen : null;
+    }
+    if (typeof b.url === 'string') out.url = b.url;
+    if (typeof b.phone_number === 'string') out.phone = b.phone_number;
+    return [out];
+  });
+}
+
+/** Lê a coluna `buttons` do banco sem confiar no formato. null = não sincronizado. */
+export function readTemplateButtons(raw: unknown): TemplateButtonDTO[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.flatMap((r): TemplateButtonDTO[] => {
+    if (!r || typeof r !== 'object') return [];
+    const o = r as Record<string, unknown>;
+    if (typeof o.type !== 'string') return [];
+    return [{
+      type: o.type,
+      text: typeof o.text === 'string' ? o.text : '',
+      flowId: str(o.flowId),
+      navigateScreen: str(o.navigateScreen),
+      url: str(o.url),
+      phone: str(o.phone),
+    }];
+  });
+}
+
+/** O botão de formulário de uma lista normalizada, com o índice. */
+export function flowButtonOf(buttons: TemplateButtonDTO[] | null): TemplateFlowButton | null {
+  if (!buttons) return null;
+  return findTemplateFlowButton([{
+    type: 'BUTTONS',
+    buttons: buttons.map((b) => ({ type: b.type, text: b.text, flow_id: b.flowId ?? undefined, navigate_screen: b.navigateScreen ?? undefined })),
+  }]);
+}
+
+/** Aviso em português sobre o formulário que o template abre, ou null. */
+export function templateFormWarning(input: {
+  version: { version: number; status: string } | null;
+  activeVersion: { version: number } | null;
+  jsonError: string | null;
+}): { text: string; blocking: boolean } | null {
+  const { version, activeVersion, jsonError } = input;
+  if (!version) return { text: 'Não encontrei o formulário deste template nesta conta.', blocking: false };
+  if (['DEPRECATED', 'BLOCKED', 'DISCARDED'].includes(version.status)) {
+    return { text: `O formulário deste template está ${FORM_STATUS_LABEL[version.status] ?? version.status} na Meta: o envio vai ser recusado.`, blocking: true };
+  }
+  if (version.status === 'THROTTLED') {
+    return { text: `O formulário deste template está ${FORM_STATUS_LABEL.THROTTLED} na Meta: o envio pode demorar ou falhar.`, blocking: false };
+  }
+  if (activeVersion && activeVersion.version !== version.version) {
+    return {
+      text: `Este template abre a v${version.version} do formulário; a versão ativa é a v${activeVersion.version}. Para o cliente receber a v${activeVersion.version} é preciso um template novo.`,
+      blocking: false,
+    };
+  }
+  if (jsonError) return { text: `Não consegui ler o formulário na Meta: ${jsonError}`, blocking: false };
+  return null;
+}
+
+/** GET /api/whatsapp/forms?templateId=[&contactId=] */
+export interface TemplateFormResponse {
+  /** null = template sem formulário. */
+  button: { index: number; flowId: string; screen: string | null; text: string } | null;
+  /** A versão que o template abre (pelo metaFlowId do botão). */
+  version: FormVersionDTO | null;
+  /** A ativa da mesma família (para o aviso de versão). */
+  activeVersion: FormVersionDTO | null;
+  flowJson: FlowJson | null;
+  jsonError: string | null;
+  previewUrl: string | null;
+  openScreen: string | null;
+  entryData: FirstScreenData[];
+  suggested: Record<string, string>;
+  warning: { text: string; blocking: boolean } | null;
+  canEdit: boolean;
+}
+
+/** Rota de leitura dos formulários (painel, aba de template e editor). */
+export const FORMS_URL = '/api/whatsapp/forms';
 
 /** Erro do envio do Flow em português, a partir do código da Graph API. */
 export function describeFlowSendError(code: number | undefined, metaMessage: string | undefined): string {

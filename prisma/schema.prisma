@@ -1282,6 +1282,10 @@ model WhatsAppTemplate {
   headerMediaKey  String?
   headerMediaType String?
   footerText      String?
+  // Botões do template na Meta (17/11/2026), normalizados por
+  // normalizeTemplateButtons (wa-forms.ts). null = ainda não sincronizado.
+  // Serve à TELA (selo e prévia do formulário); o envio continua lendo a Meta.
+  buttons         Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
 

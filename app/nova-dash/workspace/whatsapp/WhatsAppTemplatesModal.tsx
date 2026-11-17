@@ -5,8 +5,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Loader2, Plus, Trash2, FileBadge, RefreshCw, Clock, CheckCircle2, XCircle,
   PauseCircle, ArrowLeft, Send, AlertTriangle, Image as ImageIcon, Video,
-  FileText, Type, Ban, Upload, X,
+  FileText, Type, Ban, Upload, X, ClipboardList, ChevronDown, ChevronRight,
 } from 'lucide-react';
+import { jsonFetcher, describeFetchError } from '@/app/_shared/utils/fetch-json';
+import { FORMS_URL, type TemplateFormResponse } from '@/app/_shared/utils/wa-forms';
+import { WaFormPreview } from './WaFormPreview';
 import { toast } from 'sonner';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
 import {
@@ -113,6 +116,8 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
   const [syncing, setSyncing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState('ALL');
+  const [onlyForms, setOnlyForms] = useState(false);
+  const [formOpenId, setFormOpenId] = useState<string | null>(null);
   const [view, setView] = useState<'list' | 'create'>('list');
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [uploadingHeader, setUploadingHeader] = useState(false);
@@ -242,7 +247,8 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
     return map;
   }, [templates]);
 
-  const visible = filter === 'ALL' ? templates : templates.filter((t) => t.status === filter);
+  const visible = (filter === 'ALL' ? templates : templates.filter((t) => t.status === filter))
+    .filter((t) => !onlyForms || !!t.flowButton);
   const draftVars = varNumbers(draft.bodyText);
 
   // Prévia do corpo com os exemplos já substituídos (é o que o cliente vê).
@@ -300,6 +306,15 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                     {f.label} <span className="opacity-60">{counts[f.key] ?? 0}</span>
                   </button>
                 ))}
+                <button
+                  onClick={() => setOnlyForms((v) => !v)}
+                  aria-pressed={onlyForms}
+                  className={`flex items-center gap-1 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ${
+                    onlyForms ? 'bg-cyan-600 text-white' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
+                  }`}
+                >
+                  <ClipboardList className="h-3.5 w-3.5" /> Com formulário <span className="opacity-60">{templates.filter((t) => t.flowButton).length}</span>
+                </button>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={handleSync} disabled={syncing} className="gap-2">
@@ -358,8 +373,13 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                                 {!t.hasHeaderMedia && ' · sem mídia'}
                               </span>
                             )}
+                            {t.flowButton && (
+                              <span className="flex items-center gap-1 rounded-full bg-cyan-50 px-2.5 py-0.5 text-xs font-bold text-cyan-700">
+                                <ClipboardList className="h-3.5 w-3.5" /> Formulário
+                              </span>
+                            )}
                             <span className="text-xs text-gray-400">
-                              {t.language} · {t.bodyVars} variável(is)
+                              {t.language} · {t.bodyVars === 1 ? '1 variável' : `${t.bodyVars} variáveis`}
                             </span>
                           </div>
 
@@ -393,6 +413,27 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
                               )}
                             </div>
                           ) : null}
+
+                          {!!t.buttons?.length && (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {t.buttons.map((b, i) => (
+                                <span key={i} className={`flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${b.type === 'FLOW' ? 'border-cyan-200 text-cyan-700' : 'border-gray-200 text-gray-600'}`}>
+                                  {b.type === 'FLOW' && <ClipboardList className="h-3 w-3" />} {b.text || b.type}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {t.flowButton && (
+                            <button
+                              type="button"
+                              onClick={() => setFormOpenId((cur) => (cur === t.id ? null : t.id))}
+                              className="mt-2 flex items-center gap-1 text-sm font-semibold text-cyan-700 hover:underline"
+                            >
+                              {formOpenId === t.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />} Ver formulário
+                            </button>
+                          )}
+                          {formOpenId === t.id && <TemplateFormPreview templateId={t.id} template={t} />}
                         </div>
 
                         <div className="flex shrink-0 items-center gap-1">
@@ -666,5 +707,49 @@ export function WhatsAppTemplatesModal({ open, onOpenChange, onChanged }: Props)
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Prévia do formulário que o botão FLOW do template abre (sem contato: sem sugestão de dados). */
+function TemplateFormPreview({ templateId, template }: { templateId: string; template: WhatsAppTemplateDTO }) {
+  const [data, setData] = useState<TemplateFormResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setData(null); setError(null);
+    jsonFetcher<TemplateFormResponse>(`${FORMS_URL}?templateId=${encodeURIComponent(templateId)}`)
+      .then((d) => { if (alive) setData(d); })
+      .catch((err) => { if (alive) setError(describeFetchError(err)); });
+    return () => { alive = false; };
+  }, [templateId, tick]);
+
+  if (error) {
+    return (
+      <p className="mt-2 text-sm text-red-600">
+        {error} <button type="button" onClick={() => setTick((n) => n + 1)} className="font-semibold underline">Tentar de novo</button>
+      </p>
+    );
+  }
+  if (!data) return <div className="mt-2 flex py-4"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
+  return (
+    <div className="mt-2 space-y-2 rounded-xl bg-gray-50 p-3">
+      {data.version && (
+        <p className="text-xs text-gray-500">Abre <b>{data.version.name}</b> (v{data.version.version}).</p>
+      )}
+      {data.warning && (
+        <p className={`flex items-start gap-1.5 text-sm ${data.warning.blocking ? 'text-red-600' : 'text-amber-700'}`}>
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {data.warning.text}
+        </p>
+      )}
+      {data.flowJson ? (
+        <WaFormPreview
+          json={data.flowJson}
+          openScreen={data.openScreen}
+          previewUrl={data.previewUrl}
+          message={{ header: template.headerText, body: template.bodyPreview ?? '', footer: template.footerText, buttons: template.buttons ?? [] }}
+        />
+      ) : !data.button ? <p className="text-sm text-gray-500">Este template não tem botão de formulário na Meta.</p> : null}
+    </div>
   );
 }

@@ -3,10 +3,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  ClipboardList, Loader2, Search, Send, Pencil, RefreshCw, ExternalLink, AlertTriangle, ChevronDown, ChevronRight, Check,
+  Loader2, Search, Send, Pencil, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/app/_shared/ui/dialog';
 import { Button } from '@/app/_shared/ui/button';
 import { Input } from '@/app/_shared/ui/input';
 import { Textarea } from '@/app/_shared/ui/textarea';
@@ -15,31 +14,28 @@ import { jsonFetcher, describeFetchError } from '@/app/_shared/utils/fetch-json'
 import { sendWhatsAppForm } from '@/app/_actions/whatsapp/forms';
 import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import {
-  FORM_MESSAGE_LIMITS, FORM_STATUS_LABEL, validateFormMessage,
+  FORM_MESSAGE_LIMITS, FORM_STATUS_LABEL, FORMS_URL, humanizeKey, validateFormMessage,
   type FormCatalogResponse, type FormDetailResponse, type FormFamilyDTO,
 } from '@/app/_shared/utils/wa-forms';
 import { WaFormPreview } from './WaFormPreview';
 import { WhatsAppFormEditor } from './WhatsAppFormEditor';
 
-// Formulários do WhatsApp (Meta "WhatsApp Flows", T-7ZQH6) no composer:
+// Formulários do WhatsApp (Meta "WhatsApp Flows", T-7ZQH6) — aba "Formulários"
+// do modal de Template (o composer não tem mais botão próprio, 17/11):
 // escolher um formulário PUBLICADO da conta (WABA) do contato, ver a prévia,
 // ajustar a mensagem que leva o botão e enviar com confirmação. Quem tem
 // `manage_wa_forms` também edita (nova versão → rascunho → publicar).
 // Não confundir com "Fluxos" (sequências de textos pré-setados do CRM).
-
-export const FORMS_URL = '/api/whatsapp/forms';
 const DEFAULT_BODY = 'Para seguirmos com o seu atendimento, toque no botão abaixo e preencha o formulário. Leva menos de 1 minuto.';
 const DEFAULT_CTA = 'Abrir formulário';
 
 interface Props {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   contactId: string;
   /** Enviado: o Inbox põe a mensagem na thread e aplica o patch da conversa. */
   onSent: (dto: WhatsAppMessageDTO) => void;
 }
 
-export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Props) {
+export function WhatsAppFormsPanel({ contactId, onSent }: Props) {
   const [catalog, setCatalog] = useState<FormCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -79,18 +75,14 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
   }
 
   useEffect(() => {
-    if (open) {
-      void loadCatalog();
-    } else {
-      setSearch(''); setEditing(false); setDetail(null); setShowAds(false); setShowExtras(false);
-    }
-  }, [open, contactId]); // eslint-disable-line react-hooks/exhaustive-deps
+    void loadCatalog();
+  }, [contactId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const family: FormFamilyDTO | null = catalog?.families.find((f) => f.familyId === familyId) ?? null;
   const sendVersion = family?.active ?? null;
 
   useEffect(() => {
-    if (!open || editing || !sendVersion) { setDetail(null); return; }
+    if (editing || !sendVersion) { setDetail(null); return; }
     const req = ++detailReq.current;
     setDetailLoading(true);
     setDetailError(null);
@@ -106,7 +98,7 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
       })
       .catch((err) => { if (req === detailReq.current) setDetailError(describeFetchError(err)); })
       .finally(() => { if (req === detailReq.current) setDetailLoading(false); });
-  }, [open, editing, sendVersion?.id, sendVersion?.updatedAt, contactId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editing, sendVersion?.id, sendVersion?.updatedAt, contactId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const term = search.trim().toLowerCase();
   const families = catalog?.families ?? [];
@@ -122,7 +114,7 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
     const ok = await confirm({
       title: `Enviar o formulário "${family.name}"?`,
       description: missingData.length
-        ? `O cliente recebe a mensagem com o botão "${cta.trim()}". Atenção: ${missingData.map((d) => d.key).join(', ')} ficou em branco e aparece vazio no formulário.`
+        ? `O cliente recebe a mensagem com o botão "${cta.trim()}". Atenção: ${missingData.map((d) => humanizeKey(d.key)).join(', ')} ficou em branco e aparece vazio no formulário.`
         : `O cliente recebe a mensagem com o botão "${cta.trim()}" e preenche dentro do WhatsApp.`,
       tone: missingData.length ? 'warning' : 'default',
       confirmLabel: 'Enviar',
@@ -133,7 +125,6 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
       const r = await sendWhatsAppForm({ contactId, versionId: sendVersion.id, body, cta, header, footer, values });
       if (!r.ok) { toast.error(r.error); return; }
       toast.success('Formulário enviado.');
-      onOpenChange(false);
       onSent(r.message);
     } catch {
       toast.error('Falha ao enviar o formulário. Atualize a página (F5) e tente de novo.');
@@ -144,19 +135,12 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex h-[88vh] max-h-[88vh] w-[96vw] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-gray-100 py-4 pl-5 pr-12 dark:border-zinc-800">
-            <DialogTitle className="flex items-center gap-2.5 text-lg">
-              <ClipboardList className="h-5 w-5 text-cyan-600" /> {editing && family ? `Editar formulário — ${family.name}` : 'Enviar formulário do WhatsApp'}
-            </DialogTitle>
-            <DialogDescription className="text-sm">
-              {editing
-                ? 'Formulário publicado não muda na Meta: salvar cria uma nova versão em rascunho, e publicar faz dela a versão enviada.'
-                : 'O cliente preenche dentro do WhatsApp e a resposta aparece aqui na conversa. Só sai dentro da janela de 24 h.'}
-            </DialogDescription>
-          </DialogHeader>
-
+      <div className="flex min-h-0 flex-1 flex-col">
+          {editing && family && (
+            <p className="shrink-0 border-b border-gray-100 px-5 py-2 text-xs text-gray-500">
+              Editar formulário — <b>{family.name}</b>. Formulário publicado não muda na Meta: salvar cria uma nova versão em rascunho, e publicar faz dela a versão enviada.
+            </p>
+          )}
           {editing && family ? (
             <WhatsAppFormEditor
               family={family}
@@ -220,7 +204,7 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
                     );
                   })}
                   {adCount > 0 && !term && (
-                    <button type="button" onClick={() => setShowAds((s) => !s)} className="flex w-full items-center gap-1 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-zinc-300">
+                    <button type="button" onClick={() => setShowAds((s) => !s)} className="mt-2 flex w-full items-center gap-1 px-3 py-2 text-[11px] text-gray-400 hover:text-gray-700 dark:hover:text-zinc-300">
                       {showAds ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       {showAds ? 'Esconder' : 'Mostrar'} {adCount} formulário(s) automático(s) de anúncio
                     </button>
@@ -271,7 +255,7 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
                           <div className="space-y-2">
                             {detail.entryData.map((d) => (
                               <div key={d.key} className="flex items-center gap-2">
-                                <span className="w-28 shrink-0 truncate font-mono text-xs text-gray-500" title={d.key}>{d.key}</span>
+                                <span className="w-28 shrink-0 truncate text-xs font-semibold text-gray-500" title={d.key}>{humanizeKey(d.key)}</span>
                                 {d.type === 'string' || d.type === 'number' || d.type === 'boolean' ? (
                                   <Input
                                     value={values[d.key] ?? ''}
@@ -289,17 +273,16 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
                       )}
 
                       <section>
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold text-gray-600 dark:text-zinc-300">Prévia das telas</span>
-                          {detail.previewUrl && (
-                            <a href={detail.previewUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline dark:text-sky-300">
-                              Prévia interativa da Meta <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
-                        </div>
-                        {detail.flowJson
-                          ? <WaFormPreview json={detail.flowJson} entryId={detail.entryScreen} />
-                          : <p className="text-sm text-red-600">{detail.jsonError ?? 'Não consegui ler o formulário na Meta.'}</p>}
+                        <span className="mb-1.5 block text-sm font-semibold text-gray-600 dark:text-zinc-300">Prévia: o que o cliente recebe</span>
+                        {detail.flowJson ? (
+                          <WaFormPreview
+                            json={detail.flowJson}
+                            openScreen={detail.entryScreen}
+                            values={values}
+                            previewUrl={detail.previewUrl}
+                            message={{ header, body, footer, buttons: [{ type: 'FLOW', text: cta }] }}
+                          />
+                        ) : <p className="text-sm text-red-600">{detail.jsonError ?? 'Não consegui ler o formulário na Meta.'}</p>}
                       </section>
                     </>
                   ) : null}
@@ -319,8 +302,7 @@ export function WhatsAppFormsModal({ open, onOpenChange, contactId, onSent }: Pr
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+      </div>
       {confirmDialog}
     </>
   );

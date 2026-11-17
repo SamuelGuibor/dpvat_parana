@@ -5,8 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Send, ImagePlus, X, Workflow, Loader2, Settings2, Pencil,
   Reply as ReplyIcon, FileText, Image as ImageIcon, Video, Mic, Check, FileBadge,
-  StickyNote, Zap, Search, Sparkles, Smile, ClipboardList,
-} from 'lucide-react';
+  StickyNote, Zap, Search, Sparkles, Smile, } from 'lucide-react';
 import { toast } from 'sonner';
 import { MentionsInput, Mention } from 'react-mentions';
 import { useConfirm } from '@/app/_shared/ui/confirm-dialog';
@@ -26,7 +25,6 @@ import type { WhatsAppMessageDTO } from '@/app/_shared/lib/whatsapp/service';
 import { WhatsAppFlowsModal } from './WhatsAppFlowsModal';
 import { WhatsAppQuickRepliesModal } from './WhatsAppQuickRepliesModal';
 import { WhatsAppSendTemplateModal } from './WhatsAppSendTemplateModal';
-import { WhatsAppFormsModal } from './WhatsAppFormsModal';
 import { checkFileForWhatsApp } from './media-rules';
 import { useVoiceRecorder, formatRecordingTime } from './use-voice-recorder';
 import { EmojiPicker } from './EmojiPicker';
@@ -94,7 +92,6 @@ export function WhatsAppComposer({
   const { confirm, confirmDialog } = useConfirm();
 
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [formsOpen, setFormsOpen] = useState(false);
 
   // Modo NOTA INTERNA: o texto vai só pra thread da equipe, nunca pro cliente.
   // Funciona mesmo com a janela de 24h expirada (não passa pela Meta).
@@ -564,23 +561,11 @@ export function WhatsAppComposer({
         <button
           onClick={() => setTemplateModalOpen(true)}
           disabled={editing}
-          title="Enviar mensagem de template (funciona mesmo com a janela de 24h expirada)"
+          title="Enviar template ou formulário (template funciona mesmo com a janela de 24h expirada)"
           className={iconPillCls('text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30')}
         >
           <FileBadge className="h-[18px] w-[18px] shrink-0" />
           <span className={iconPillLabelCls}>Template</span>
-        </button>
-
-        {/* Formulário do WhatsApp (Meta Flow): o cliente preenche dentro do
-            app. Só dentro da janela de 24h (a Meta recusa fora dela). */}
-        <button
-          onClick={() => setFormsOpen(true)}
-          disabled={disabled || editing}
-          title={disabled ? 'Formulário só sai com a janela de 24h aberta' : 'Enviar formulário do WhatsApp (o cliente preenche no app)'}
-          className={iconPillCls('text-cyan-600 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:bg-cyan-900/30')}
-        >
-          <ClipboardList className="h-[18px] w-[18px] shrink-0" />
-          <span className={iconPillLabelCls}>Formulário</span>
         </button>
 
         {/* Toggle nota interna — ativo fica âmbar preenchido (e o contorno da
@@ -715,17 +700,12 @@ export function WhatsAppComposer({
       </div>
 
       <WhatsAppFlowsModal open={flowsOpen} onOpenChange={setFlowsOpen} onChanged={reloadFlows} />
-      <WhatsAppFormsModal
-        open={formsOpen}
-        onOpenChange={setFormsOpen}
-        contactId={contactId}
-        onSent={(dto) => { onSent(dto); void onRefreshThread(); }}
-      />
       <WhatsAppQuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} onChanged={reloadQuickReplies} />
       <WhatsAppSendTemplateModal
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         contactId={contactId}
+        windowOpen={!disabled}
         onSent={(dto) => { onSent(dto); void onRefreshThread(); }}
       />
     </div>

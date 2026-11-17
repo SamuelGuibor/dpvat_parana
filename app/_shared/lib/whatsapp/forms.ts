@@ -484,6 +484,8 @@ export async function prepareTemplateFlow(input: {
   numberId: string | null;
   templateName: string;
   language: string;
+  /** Dados da tela editados pelo atendente: vão por cima da sugestão. */
+  values?: Record<string, string> | null;
 }): Promise<{ button: { index: number; token: string; data: Record<string, unknown> | null }; interactive: WaFlowSent | null } | null> {
   try {
     const button = findTemplateFlowButton(await fetchTemplateComponents(input.templateName, input.language, input.numberId));
@@ -500,7 +502,10 @@ export async function prepareTemplateFlow(input: {
       const contact = await db.whatsAppContact.findUnique({ where: { id: input.contactId }, select: { name: true, phone: true, userId: true } });
       const card = contact?.userId ? await db.user.findUnique({ where: { id: contact.userId }, select: { name: true, cpf: true } }) : null;
       const fields = entryScreenData(json.data, button.screen);
-      const values = suggestEntryValues(fields, { name: card?.name ?? contact?.name, cpf: card?.cpf ?? null, phone: contact?.phone ?? null });
+      const values = {
+        ...suggestEntryValues(fields, { name: card?.name ?? contact?.name, cpf: card?.cpf ?? null, phone: contact?.phone ?? null }),
+        ...(input.values ?? {}),
+      };
       data = buildEntryData(json.data, values, button.screen);
     }
     const token = `crm.${(version?.id ?? "tpl00000").slice(-8)}.${randomBytes(6).toString("hex")}`;
