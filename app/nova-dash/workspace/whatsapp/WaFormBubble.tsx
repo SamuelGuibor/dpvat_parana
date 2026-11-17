@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { mutate } from 'swr';
-import { ClipboardList, ClipboardCheck, Loader2, UserCheck } from 'lucide-react';
+import { ClipboardList, ClipboardCheck, FileDown, Loader2, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/app/_shared/ui/dialog';
 import { Button } from '@/app/_shared/ui/button';
-import { applyFormReplyToCadastro, previewFormReplyApply } from '@/app/_actions/whatsapp/forms';
+import { applyFormReplyToCadastro, downloadTermsReceipt, previewFormReplyApply } from '@/app/_actions/whatsapp/forms';
 import { copilotUrl } from '@/app/_shared/utils/copilot-api';
 import { formFieldsToFicha, type WaInteractive } from '@/app/_shared/utils/wa-forms';
 import { formatWaText } from './wa-format';
@@ -51,6 +51,10 @@ function FormReply({ data, messageId, contactId }: {
   contactId: string;
 }) {
   const applicable = formFieldsToFicha(data.fields).length > 0;
+  // Resposta do formulário de aceite (T-B40K0): baixa o comprovante em PDF, o
+  // mesmo que foi anexado sozinho (o servidor gera se ainda não existir).
+  const isTerms = data.fields.some((f) => f.key === 'aceite_termos' && f.value === 'Sim');
+  const [downloading, setDownloading] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,6 +73,28 @@ function FormReply({ data, messageId, contactId }: {
       setPreview({ ok: false, error: 'Falha ao ler o cadastro. Atualize a página (F5).' });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function downloadReceipt() {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const r = await downloadTermsReceipt(messageId);
+      if (!r.ok) { toast.error(r.error); return; }
+      // URL pré-assinada com Content-Disposition attachment: o navegador baixa.
+      const a = document.createElement('a');
+      a.href = r.url;
+      a.download = r.fileName;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      void mutate(copilotUrl(contactId));
+    } catch {
+      toast.error('Falha ao gerar o comprovante. Atualize a página (F5) e tente de novo.');
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -104,14 +130,29 @@ function FormReply({ data, messageId, contactId }: {
           ))}
         </dl>
       )}
-      {applicable && (
-        <button
-          type="button"
-          onClick={openApply}
-          className="mt-2 flex items-center gap-1.5 rounded-lg border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700 transition-colors hover:bg-cyan-50 dark:border-cyan-800 dark:hover:bg-cyan-900/30"
-        >
-          <UserCheck className="h-3.5 w-3.5" /> Aplicar ao cadastro
-        </button>
+      {(applicable || isTerms) && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {applicable && (
+            <button
+              type="button"
+              onClick={openApply}
+              className="flex items-center gap-1.5 rounded-lg border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700 transition-colors hover:bg-cyan-50 dark:border-cyan-800 dark:hover:bg-cyan-900/30"
+            >
+              <UserCheck className="h-3.5 w-3.5" /> Aplicar ao cadastro
+            </button>
+          )}
+          {isTerms && (
+            <button
+              type="button"
+              onClick={downloadReceipt}
+              disabled={downloading}
+              title="Baixar o comprovante do aceite em PDF (o mesmo anexado no card)"
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:hover:bg-emerald-900/30"
+            >
+              {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />} Baixar termo (PDF)
+            </button>
+          )}
+        </div>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>

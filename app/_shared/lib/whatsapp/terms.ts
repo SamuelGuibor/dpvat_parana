@@ -256,6 +256,62 @@ export async function handleTermsReply(args: {
   }
 }
 
+/**
+ * "Baixar termo (PDF)" da bolha da resposta: devolve o comprovante do aceite
+ * desta resposta — o mesmo que foi anexado sozinho. Sem aceite registrado
+ * (resposta que chegou antes do recurso, falha na hora) ou sem PDF, gera agora
+ * pelo MESMO caminho automático (linha + PDF + anexo + nota), a partir dos
+ * campos guardados na mensagem. Sem guarda: a action chama depois do requireTeam.
+ */
+export async function ensureTermsReceiptForMessage(
+  messageId: string,
+): Promise<{ ok: true; key: string; code: string } | { ok: false; error: string }> {
+  const msg = await db.whatsAppMessage.findUnique({
+    where: { id: messageId },
+    select: { id: true, contactId: true, direction: true, waMessageId: true, createdAt: true, interactive: true, replyToId: true },
+  });
+  const reply = msg ? parseInteractive(msg.interactive) : null;
+  if (!msg || msg.direction !== "in" || reply?.kind !== "flow_reply") return { ok: false, error: "Resposta de formulário não encontrada." };
+  // Os campos guardados têm a chave do payload e o valor legível ("Sim"):
+  // parseTermsReply aceita os dois formatos.
+  const payload = Object.fromEntries(reply.fields.map((f) => [f.key, f.value]));
+  const terms = parseTermsReply(payload);
+  if (!terms) return { ok: false, error: "Esta resposta não é de um formulário de aceite de termos." };
+  if (!terms.accepted) return { ok: false, error: "O cliente não marcou o aceite nesta resposta." };
+  if (!msg.waMessageId) return { ok: false, error: "Mensagem sem o id do WhatsApp: não dá para registrar o aceite." };
+
+  const contact = await db.whatsAppContact.findUnique({
+    where: { id: msg.contactId },
+    select: { id: true, phone: true, name: true, numberId: true, userId: true },
+  });
+  if (!contact) return { ok: false, error: "Contato não encontrado." };
+  const conv = await db.whatsAppConversation.findUnique({ where: { contactId: contact.id }, select: { status: true } });
+  const sent = msg.replyToId
+    ? parseInteractive((await db.whatsAppMessage.findUnique({ where: { id: msg.replyToId }, select: { interactive: true } }))?.interactive)
+    : null;
+  const args: Parameters<typeof handleTermsReply>[0] = {
+    contact,
+    conversationStatus: conv?.status ?? "human",
+    message: { id: msg.id, waMessageId: msg.waMessageId, createdAt: msg.createdAt },
+    responseJson: JSON.stringify(payload),
+    replyToInteractive: null,
+  };
+
+  let row = await db.termsAcceptance.findUnique({
+    where: { contactId_termsVersion: { contactId: contact.id, termsVersion: terms.termsVersion } },
+  });
+  if (!row) {
+    row = await createAcceptanceRow(args, terms, sent?.kind === "flow" ? sent.formVersionId : null)
+      ?? await db.termsAcceptance.findUnique({ where: { contactId_termsVersion: { contactId: contact.id, termsVersion: terms.termsVersion } } });
+    if (row && !row.pdfKey) await completeReceipt(row, args);
+  } else if (!row.pdfKey) {
+    await completeReceipt(row, args);
+  }
+  const fresh = row ? await db.termsAcceptance.findUnique({ where: { id: row.id }, select: { pdfKey: true, code: true } }) : null;
+  if (!fresh?.pdfKey) return { ok: false, error: "Não consegui gerar o comprovante agora. Tente de novo em instantes." };
+  return { ok: true, key: fresh.pdfKey, code: fresh.code };
+}
+
 // Aceite sem PDF só é completado depois disto: antes, o 1º processamento pode
 // ainda estar gerando (dois toques no mesmo segundo).
 const RECEIPT_RETRY_AFTER_MS = 2 * 60_000;

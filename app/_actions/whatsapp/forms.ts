@@ -11,6 +11,9 @@ import { broadcastWhatsAppEvent, whatsappChannelId, type WhatsAppMessageDTO } fr
 import {
   activateFormVersion, discardFormDraft, publishFormDraft, saveFormDraft, sendFormToContact, toFormVersionDTO,
 } from '@/app/_shared/lib/whatsapp/forms';
+import { ensureTermsReceiptForMessage } from '@/app/_shared/lib/whatsapp/terms';
+import { signGetUrl } from '@/app/_shared/lib/s3-presign';
+import { fileNameFromKey } from '@/app/_shared/utils/s3-keys';
 import {
   FICHA_FIELD_LABELS, formFieldsToFicha, parseInteractive, readFlowJson, validateFormMessage,
   type FichaFieldFromForm, type FlowValidationError, type FormVersionDTO,
@@ -242,6 +245,27 @@ export async function saveWhatsAppFormDefaults(
     return { ok: true };
   } catch (err) {
     return failure(err, 'Falha ao salvar o texto padrão da mensagem.');
+  }
+}
+
+// ─── Comprovante do aceite ───────────────────────────────────────────────────
+
+/**
+ * "Baixar termo (PDF)" na bolha da resposta de aceite: o comprovante que foi
+ * anexado sozinho (gera agora se ainda não existir). Devolve URL pré-assinada
+ * de download — o PDF não passa pelo corpo da action (limite de 4,5 MB).
+ */
+export async function downloadTermsReceipt(messageId: string): Promise<{ ok: true; url: string; fileName: string } | Fail> {
+  const ctx = await guard('view_whatsapp');
+  if (isFail(ctx)) return ctx;
+  try {
+    const r = await ensureTermsReceiptForMessage(messageId);
+    if (!r.ok) return r;
+    const fileName = fileNameFromKey(r.key);
+    const { url } = await signGetUrl(r.key, { inline: false, fileName });
+    return { ok: true, url, fileName };
+  } catch (err) {
+    return failure(err, 'Falha ao gerar o comprovante. Atualize a página (F5) e tente de novo.');
   }
 }
 
