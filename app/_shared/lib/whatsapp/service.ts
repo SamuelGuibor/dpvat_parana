@@ -3,6 +3,7 @@ import { flowReplyBody, parseFlowReply, parseInteractive, readFlowJson, type WaF
 import { db } from "@/app/_shared/lib/prisma";
 import { broadcastToRelay, isRelayConfigured } from "@/app/_shared/lib/chat-relay";
 import { runAfterResponse } from "@/app/_shared/lib/background";
+import { autoAttachInboundMedia } from "./auto-docs";
 import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sameBrDay } from "@/app/_shared/utils/alert-policy";
 import { COLLECT_REQUEST_CLEARED } from "@/app/_shared/utils/collect-request";
@@ -522,6 +523,13 @@ export async function ingestIncomingMessage(
 
   // Best-effort, igual ao chat interno: se o relay estiver fora, o polling cobre.
   broadcastWhatsAppEvent(dto);
+
+  // T-ZAPXG: contato com card → a IA lê a mídia e anexa no card (pasta + nota de
+  // afastamento). Depois da resposta: a Meta não espera a IA (auto-docs.ts).
+  if (mediaKey) {
+    const media = { contactId: contact.id, messageId: message.id, mediaKey, mediaType, createdAt: message.createdAt };
+    runAfterResponse("wa_auto_doc", () => autoAttachInboundMedia(media));
+  }
 
   // Opt-out por REGEX. Duas situações:
   //   1. COMANDO exato ("SAIR"/"STOP"/"DESCADASTRAR"...): honrado SEMPRE,

@@ -39,6 +39,7 @@ const OPERATION_LABELS: Record<string, string> = {
   wa_ficha_ai: 'Ficha automática',
   ai_audit: 'Auditoria de documentos',
   op_doc_analysis: 'Leitura de documentos (IA de operação)',
+  wa_auto_doc: 'Anexo automático de documentos (WhatsApp)',
   roteiro_ai: 'Roteiro (IA)',
   doc_ia: 'Gerador de documento',
 };
@@ -55,6 +56,7 @@ const OPERATION_ICONS: Record<string, string> = {
   wa_ficha_ai: 'id',
   ai_audit: 'shield',
   op_doc_analysis: 'file',
+  wa_auto_doc: 'file',
   roteiro_ai: 'scroll',
   doc_ia: 'file',
 };

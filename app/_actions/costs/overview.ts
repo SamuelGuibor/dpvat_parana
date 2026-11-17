@@ -30,6 +30,7 @@ const OPERATION_LABELS: Record<string, string> = {
   wa_tts: "Resposta em áudio (voz)",
   ai_audit: "Auditoria de documentos",
   op_doc_analysis: "Leitura de documentos (IA de operação)",
+  wa_auto_doc: "Anexo automático de documentos (WhatsApp)",
   roteiro_ai: "Roteiro (IA)",
   doc_ia: "Gerador de documento",
 };
