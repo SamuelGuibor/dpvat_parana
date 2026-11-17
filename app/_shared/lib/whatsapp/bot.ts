@@ -2265,7 +2265,9 @@ ${emptyNote}`,
         // formulário). Sem marcar `qualified` aqui de propósito: quem não
         // responde continua elegível à recuperação automática, que lembra do
         // botão. O cérebro sabe que está pendente pelo fato `termsPending`.
-        const terms = await (await import("./terms")).maybeRequestTermsAcceptance(contactId, { queueReason: decision.handoffReason ?? null });
+        // Cliente já cadastrado (card vinculado) não passa pelo aceite: o termo é
+        // etapa do filtro inicial de lead novo; quem tem card segue como sempre.
+        const terms = await (await import("./terms")).maybeRequestTermsAcceptance(contactId, { queueReason: decision.handoffReason ?? null, hasCard: !!card });
         if (terms.state === "sent" || terms.state === "waiting") {
           if (outgoing.length === 0 && terms.state === "waiting") {
             markSent(await sendMutedFallback(

@@ -110,10 +110,13 @@ export type TermsRequestState =
  */
 export async function maybeRequestTermsAcceptance(
   contactId: string,
-  opts: { queueReason?: string | null } = {},
+  opts: { queueReason?: string | null; hasCard?: boolean } = {},
 ): Promise<TermsRequestState> {
   const formName = termsFormName();
   if (!formName) return { state: "off" };
+  // O aceite é etapa do filtro inicial de LEAD NOVO: cliente que já tem card
+  // (retorno, consulta de status) segue para a Fila como sempre.
+  if (opts.hasCard) return { state: "off" };
   try {
     const [contact, conv] = await Promise.all([
       db.whatsAppContact.findUnique({ where: { id: contactId }, select: { id: true, phone: true, name: true, numberId: true, userId: true } }),
