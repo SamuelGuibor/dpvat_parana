@@ -16,8 +16,10 @@ Guarde duas variáveis no ambiente do **seu** sistema (nunca no código, nunca e
 
 | Variável (sugestão) | Valor |
 |---|---|
-| `CRM_API_URL` | URL base do CRM, sem barra no fim. Produção: o mesmo domínio em que a equipe faz login no CRM. Local: `http://localhost:3000`. |
+| `CRM_API_URL` | URL base do CRM, sem barra no fim. Produção: `https://www.brasilbeneficiosbr.com` (**com `www`**). Local: `http://localhost:3000`. |
 | `CRM_API_TOKEN` | O token `crmapi_...` recebido do responsável pelo CRM. |
+
+> **Use o host final, sem redirecionamento.** `https://brasilbeneficiosbr.com` (sem `www`) responde **307** e manda para o `www`. Postman, curl, o `fetch` do Node e a maioria dos clientes HTTP **apagam o header `Authorization`** ao seguir um redirect para outro host. A chamada chega sem token e volta 401, mesmo com o token certo. Para conferir, rode `curl -sI "$CRM_API_URL/api/external/whatsapp/messages"`: a resposta não pode ser 301, 302, 307 ou 308.
 
 Regras do token:
 - Vai **só** no header `Authorization: Bearer <token>`. Na query string ele não vale e ainda vazaria para o log de acesso da Vercel.
@@ -39,6 +41,9 @@ node -r dotenv/config scripts/gerar-token-api.mjs --gerar --label="Sistema X" --
 
 # Revogar (vale na hora, sem deploy)
 node -r dotenv/config scripts/gerar-token-api.mjs --revogar=<id> --apply
+
+# Token dá 401? Ponha o token num arquivo e confira se ele bate com algum ativo (não imprime o valor)
+node -r dotenv/config scripts/gerar-token-api.mjs --conferir=token.txt
 ```
 
 - O `.env` do repositório aponta para o banco de **produção**. Os comandos acima mexem nele.
@@ -230,7 +235,7 @@ Com `includeMedia=1`, toda mensagem ganha também `mediaUrl` e `mediaUrlExpiresA
 | HTTP | Corpo | Quando |
 |---|---|---|
 | 400 | `{"error":"phone inválido…"}` | `phone` ausente ou fora do formato; `before`/`after` sem data válida; `numberId` com caractere estranho |
-| 401 | `{"error":"Token da API ausente, inválido ou revogado."}` | sem header, token errado, token revogado ou token só na query. A mensagem é a mesma nos três casos, de propósito |
+| 401 | `{"error":"Token da API ausente, inválido ou revogado."}` | sem header, token errado, token revogado ou token só na query. A mensagem é a mesma nos três casos, de propósito. **Token novo e mesmo assim 401?** Quase sempre é a URL sem `www`: o redirect apagou o header (seção 1). Do lado do CRM, `scripts/gerar-token-api.mjs --conferir=<arquivo com o token>` diz se o token bate com algum ativo |
 | 401 | `{"error":"Não autenticado"}` | o prefixo `/api/external` não está liberado no middleware desse deploy (seção 3) |
 | 404 | `{"error":"Nenhuma conversa de WhatsApp com este telefone."}` | nenhum contato com esse número (ou com esse `numberId`) |
 | 429 | `{"error":"Muitas requisições. Espere um minuto."}` | estourou o limite (seção 8) |

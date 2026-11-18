@@ -6,13 +6,14 @@
 //   node -r dotenv/config scripts/gerar-token-api.mjs --listar
 //   node -r dotenv/config scripts/gerar-token-api.mjs --gerar --label="Sistema X" --autor=<e-mail ou nome> [--saida=<arquivo>] [--apply]
 //   node -r dotenv/config scripts/gerar-token-api.mjs --revogar=<id> [--apply]
+//   node -r dotenv/config scripts/gerar-token-api.mjs --conferir=<arquivo com o token>   (deu 401? diz se o token bate)
 //   (sem --apply = dry-run: só mostra o que faria)
 //
 // --saida grava o token em claro num arquivo em vez de imprimir (para não
 // ficar no histórico do terminal). Entregue ao sistema de fora por canal
 // seguro e apague o arquivo. Nunca commite o token.
 import { createHash, randomBytes } from "crypto";
-import { writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { PrismaClient } from "@prisma/client";
 
 const API_TOKEN_PREFIX = "crmapi_";
@@ -65,6 +66,16 @@ try {
       } else {
         console.log(`TOKEN (aparece só agora): ${token}`);
       }
+    }
+  } else if (typeof flags.conferir === "string") {
+    // Suporte ao "dá 401 com token novo": confere se o token do arquivo (um
+    // por linha) bate com algum da tabela, sem imprimir o valor.
+    const linhas = readFileSync(flags.conferir, "utf8").replace(/^﻿/, "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    for (const [i, raw] of linhas.entries()) {
+      const token = raw.replace(/^Bearer\s+/i, "");
+      if (!token.startsWith(API_TOKEN_PREFIX)) { console.log(`linha ${i + 1}: não começa com ${API_TOKEN_PREFIX}`); continue; }
+      const t = await db.apiToken.findUnique({ where: { tokenHash: createHash("sha256").update(token).digest("hex") } });
+      console.log(`linha ${i + 1}: ${t ? `bate com "${t.label}" (${t.id}) — ${t.revokedAt ? "REVOGADO" : "ativo"}` : "não bate com nenhum token"} [${token.length} caracteres]`);
     }
   } else if (typeof flags.revogar === "string") {
     const t = await db.apiToken.findUnique({ where: { id: flags.revogar } });
