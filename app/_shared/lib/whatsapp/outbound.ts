@@ -6,6 +6,7 @@ import { logWhatsAppEvent } from "@/app/_shared/lib/log";
 import { sendTemplate, type TemplateHeaderMedia } from "./client";
 import { sendTextOrVoice, type SentPart } from "./voice-send";
 import { isVoiceSystemSource } from "@/app/_shared/utils/voice-text";
+import { normalizePhoneBR } from "@/app/_shared/utils/phone-variants";
 // import { OPT_OUT_FOOTER } from "./opt-out";
 import { broadcastWhatsAppEvent, whatsappChannelId, whatsappRecipients, type WhatsAppMessageDTO } from "./service";
 import { renderTemplateThreadText } from "./template-text";
@@ -20,17 +21,9 @@ import { renderTemplateThreadText } from "./template-text";
 //   - Janela EXPIRADA → só template aprovado na Meta. Se nenhum template
 //     estiver configurado, o envio é pulado (registramos no log o motivo).
 
-/** Normaliza telefone BR para o formato E.164 sem "+" (55 + DDD + número). */
-export function normalizePhoneBR(raw: string): string | null {
-  let digits = raw.replace(/\D/g, "");
-  if (!digits) return null;
-  // Remove zeros de operadora à esquerda (ex: 041...).
-  digits = digits.replace(/^0+/, "");
-  if (!digits.startsWith("55")) digits = `55${digits}`;
-  // 55 + DDD(2) + número(8 ou 9)
-  if (digits.length < 12 || digits.length > 13) return null;
-  return digits;
-}
+// A normalização mora em utils (pura, testada e usada também pela API
+// externa); o re-export mantém os imports antigos deste módulo.
+export { normalizePhoneBR };
 
 type ResolvedContact = {
   id: string;

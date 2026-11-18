@@ -58,6 +58,9 @@ const PURGEABLE_LOG_ACTIONS = [
   // Diagnóstico de erro engolido (reportCriticalError): serve para investigar
   // falha recente; nenhuma tela o lê.
   "critical_error",
+  // Uma linha por chamada da API externa de mensagens (até 60/min por token):
+  // auditoria recente de quem leu o quê; nenhuma tela o lê.
+  "api_wa_messages",
 ];
 
 export interface RetentionResult {

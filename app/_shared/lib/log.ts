@@ -60,6 +60,7 @@ export type LogAction =
   | "ai_audit_feedback" // feedback humano sobre uma auditoria da IA
   | "op_send"          // IA de operação enviou e-mail/WhatsApp APROVADO pelo operador (metadata.canal, approvalId)
   | "wa_auto_doc"     // T-ZAPXG: IA leu a mídia que o cliente mandou, anexou no card (pasta) e checou afastamento; metadata.usage
+  | "api_wa_messages" // T-WOJYR: sistema externo leu a conversa pela API (metadata.tokenId, phone, conversas, total); autor "api-externa"
   | "op_doc_analysis"; // IA de operação leu documentos do card (27/10): metadata.usage, files, divergencias
 
 /**
@@ -70,7 +71,7 @@ export type LogAction =
  */
 // tag_add/tag_remove do card: a rota de tag do site passou a logar (Etapa 3 da
 // IA de operação) — pelo mesmo motivo das tags de conversa, não viram tarefa.
-export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tts", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove", "op_doc_analysis", "wa_auto_doc"];
+export const NON_ACTIVITY_LOG_ACTIONS: LogAction[] = ["wa_transcribe", "wa_tts", "wa_tag_add", "wa_tag_remove", "tag_add", "tag_remove", "op_doc_analysis", "wa_auto_doc", "api_wa_messages"];
 
 interface CreateLogInput {
   action: LogAction;
@@ -93,7 +94,7 @@ interface CreateLogInput {
 // perguntar ao banco era 1 query jogada fora a cada log — o bot sozinho grava
 // milhares por semana.
 const SYSTEM_AUTHOR_IDS = new Set([
-  "whatsapp-bot", "whatsapp-client", "whatsapp-meta", "system", "roteiro", "kanban-overdue",
+  "whatsapp-bot", "whatsapp-client", "whatsapp-meta", "system", "roteiro", "kanban-overdue", "api-externa",
 ]);
 
 /** Autor sem linha em User (bot, cron…): não pode ir para coluna com FK (Comment.authorId). */

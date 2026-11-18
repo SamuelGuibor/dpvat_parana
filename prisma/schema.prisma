@@ -1606,6 +1606,24 @@ model OperatorToken {
   @@map("operator_tokens")
 }
 
+// Token de SISTEMA EXTERNO (18/11/2026, T-WOJYR) para as rotas /api/external/*
+// (hoje: GET /api/external/whatsapp/messages). Diferente do OperatorToken, não
+// é de uma pessoa: é de uma integração (label = qual sistema usa). Gerado e
+// revogado por scripts/gerar-token-api.mjs; o claro aparece uma vez só.
+// createdById = User.id de quem gerou (sem FK, como no OperatorToken).
+model ApiToken {
+  id          String    @id @default(cuid())
+  // sha256 hex do token em claro (prefixo "crmapi_").
+  tokenHash   String    @unique
+  label       String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@map("api_tokens")
+}
+
 // Uma por conversa do Claude Code (clientSessionId = id da sessão do app).
 model OpSession {
   id              String       @id @default(cuid())
