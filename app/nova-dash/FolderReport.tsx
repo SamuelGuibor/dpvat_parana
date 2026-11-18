@@ -47,7 +47,7 @@ const KIND_CONFIG: Record<FolderKind, {
   caique: {
     fetch: getCaiqueFolders,
     errorMsg: 'Erro ao carregar as pastas do Caique',
-    emptyHint: 'Cards que entram na coluna CAIQUE do Kanban aparecem aqui automaticamente.',
+    emptyHint: 'Cards que entram nas colunas CCS/CAIQUE do Kanban aparecem aqui automaticamente.',
     csvName: 'pastas-caique',
   },
   uni: {

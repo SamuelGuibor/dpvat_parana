@@ -23,6 +23,33 @@ export interface FolderStatuses {
   denied: string;
 }
 
+/**
+ * Quais colunas do Kanban marcam o envio da pasta a um destino, pelo NOME que a
+ * coluna tinha no dia do movimento (o log `move` grava o nome, não o id).
+ * Nome de coluna muda: em 16/11 "… CAIQUE" virou "ENVIAR  EMAIL CCS" /
+ * "ENVIADOS P/ CCS" e a planilha do Caique parou de contar pasta nova. Por isso
+ * cada destino aceita mais de um trecho.
+ */
+export interface FolderColumnMatch {
+  /** Trechos que marcam a coluna do destino (basta um; sem diferenciar maiúscula). */
+  include: string[];
+  /** Trechos que tiram a coluna do destino mesmo batendo no include. */
+  exclude?: string[];
+}
+
+// CCS = Caique. "UNI/CCS" (ENVIAR EMAIL UNI/CCS e ENVIADOS P/ UNI/CCS, de 05/10
+// a 16/11) era coluna conjunta, mas nenhuma das ~290 pastas que passaram por
+// ela saiu APTOS CCS (156 APTOS UNI, 70 negadas UNI): fica só na da UNI.
+export const CAIQUE_COLUMNS: FolderColumnMatch = { include: ["CAIQUE", "CCS"], exclude: ["UNI/CCS"] };
+export const UNI_COLUMNS: FolderColumnMatch = { include: ["UNI"] };
+
+export function matchesFolderColumn(column: string | null | undefined, match: FolderColumnMatch): boolean {
+  if (!column) return false;
+  const name = column.toUpperCase();
+  if (!match.include.some((k) => name.includes(k.toUpperCase()))) return false;
+  return !(match.exclude ?? []).some((k) => name.includes(k.toUpperCase()));
+}
+
 export function inPeriod(d: Date | null, from: Date, to: Date): boolean {
   return !!d && d >= from && d <= to;
 }

@@ -2,7 +2,9 @@ import { db } from "./prisma";
 import {
   computeFolderTotals,
   inPeriod,
+  matchesFolderColumn,
   outcomeAsOf,
+  type FolderColumnMatch,
   type FolderOutcome,
   type FolderPeriodTotals,
   type FolderStatuses,
@@ -83,8 +85,8 @@ const ARCHIVE_LABELS: Record<string, string> = {
 };
 
 interface BuildFolderReportProps {
-  /** Trecho do nome da coluna que marca o envio (ex.: "CAIQUE", "UNI"). */
-  keyword: string;
+  /** Colunas que marcam o envio, pelo nome (CAIQUE_COLUMNS / UNI_COLUMNS). */
+  columns: FolderColumnMatch;
   /** Status de arquivamento que são pago/negado NESTE destino. */
   statuses: FolderStatuses;
   /** ISO — início do período. */
@@ -94,14 +96,13 @@ interface BuildFolderReportProps {
 }
 
 export async function buildFolderReport({
-  keyword,
+  columns,
   statuses,
   from,
   to,
 }: BuildFolderReportProps): Promise<FolderReportResult> {
   const fromDate = new Date(from);
   const toDate = new Date(to);
-  const needle = keyword.toUpperCase();
 
   // O `message` do log de movimento sempre cita as colunas de origem/destino
   // ("moveu de X para Y"), então o contains no message é um pré-filtro barato
@@ -110,7 +111,7 @@ export async function buildFolderReport({
   const logs = await db.log.findMany({
     where: {
       action: "move",
-      message: { contains: keyword, mode: "insensitive" },
+      OR: columns.include.map((k) => ({ message: { contains: k, mode: "insensitive" as const } })),
     },
     select: { userId: true, processId: true, metadata: true, createdAt: true },
     orderBy: { createdAt: "asc" },
@@ -123,7 +124,7 @@ export async function buildFolderReport({
   for (const log of logs) {
     const meta = (log.metadata ?? {}) as { to?: string | null };
     const dest = typeof meta.to === "string" ? meta.to : null;
-    if (!dest || !dest.toUpperCase().includes(needle)) continue;
+    if (!dest || !matchesFolderColumn(dest, columns)) continue;
     const key = log.processId ? `p:${log.processId}` : log.userId ? `u:${log.userId}` : null;
     if (!key || firstEntry.has(key)) continue;
     firstEntry.set(key, { at: log.createdAt, column: dest });

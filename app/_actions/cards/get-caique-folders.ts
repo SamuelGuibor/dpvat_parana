@@ -8,9 +8,11 @@ import {
   type FolderRow,
   type FolderReportResult,
 } from "../../_shared/lib/folder-report";
+import { CAIQUE_COLUMNS } from "../../_shared/utils/folder-period";
 
 // Planilha de controle das "pastas enviadas pro Caique" — colunas do Kanban
-// que citam CAIQUE. A lógica mora em _shared/lib/folder-report.ts, comum a
+// que citam CAIQUE ou CCS (fora as conjuntas UNI/CCS; regra em
+// CAIQUE_COLUMNS). A lógica mora em _shared/lib/folder-report.ts, comum a
 // esta e à planilha da UNI (get-uni-folders.ts).
 
 export type CaiqueOutcome = FolderOutcome;
@@ -31,7 +33,7 @@ export async function getCaiqueFolders({ from, to }: GetCaiqueFoldersProps): Pro
   // CCS = Caique: "APTOS CCS"/"PASTAS NEGADAS CCS" são o desfecho das pastas
   // dele; pasta que foi pro UNI e saiu "APTOS UNI" não conta como paga aqui.
   return buildFolderReport({
-    keyword: "CAIQUE",
+    columns: CAIQUE_COLUMNS,
     statuses: { paid: "pagos_ccs", denied: "pastas_negadas_ccs" },
     from,
     to,

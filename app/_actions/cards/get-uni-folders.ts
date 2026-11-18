@@ -8,6 +8,7 @@ import {
   type FolderRow,
   type FolderReportResult,
 } from "../../_shared/lib/folder-report";
+import { UNI_COLUMNS } from "../../_shared/utils/folder-period";
 
 // Planilha de controle das "pastas enviadas pra UNI" — colunas do Kanban que
 // citam UNI ("ENVIAR EMAIL UNI" / "ENVIADOS P/ UNI"). Espelho exato da do
@@ -29,7 +30,7 @@ export async function getUniFolders({ from, to }: GetUniFoldersProps): Promise<U
   // Permissão própria (antes herdava view_archived — hoje é granular).
   await requirePermission("view_pagos_uni");
   return buildFolderReport({
-    keyword: "UNI",
+    columns: UNI_COLUMNS,
     statuses: { paid: "pagos_uni", denied: "pastas_negadas_uni" },
     from,
     to,

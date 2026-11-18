@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { computeFolderTotals, inPeriod, outcomeAsOf, type FolderPeriodRow } from "../app/_shared/utils/folder-period";
+import {
+  CAIQUE_COLUMNS,
+  UNI_COLUMNS,
+  computeFolderTotals,
+  inPeriod,
+  matchesFolderColumn,
+  outcomeAsOf,
+  type FolderPeriodRow,
+} from "../app/_shared/utils/folder-period";
+
+// Nomes reais que já apareceram nos logs `move` (o log grava o nome do dia).
+describe("matchesFolderColumn", () => {
+  it("Caique conta as colunas CAIQUE antigas e as CCS novas", () => {
+    for (const col of [
+      "ENVIAR EMAIL CAIQUE",
+      "ENVIADO P/ CAIQUE",
+      "REVISÃO PRÉ-PASTA | CAIQUE",
+      "REVISÃO PRÉ-PASTA | CAIQUE/UNI",
+      "ENVIAR  EMAIL CCS",
+      "ENVIADOS P/ CCS",
+      "enviados p/ ccs",
+    ]) expect(matchesFolderColumn(col, CAIQUE_COLUMNS), col).toBe(true);
+  });
+
+  it("coluna conjunta UNI/CCS fica só na da UNI", () => {
+    for (const col of ["ENVIAR  EMAIL UNI/CCS", "ENVIADOS P/ UNI/CCS"]) {
+      expect(matchesFolderColumn(col, CAIQUE_COLUMNS), col).toBe(false);
+      expect(matchesFolderColumn(col, UNI_COLUMNS), col).toBe(true);
+    }
+  });
+
+  it("UNI não pega as colunas CCS nem colunas sem destino", () => {
+    expect(matchesFolderColumn("ENVIADOS P/ CCS", UNI_COLUMNS)).toBe(false);
+    expect(matchesFolderColumn("ENVIADOS P/ UNI", UNI_COLUMNS)).toBe(true);
+    expect(matchesFolderColumn("AFASTADOS", CAIQUE_COLUMNS)).toBe(false);
+    expect(matchesFolderColumn(null, CAIQUE_COLUMNS)).toBe(false);
+  });
+});
 
 const UNI = { paid: "pagos_uni", denied: "pastas_negadas_uni" };
 // Setembro/2026 em Brasília (00:00 BRT = 03:00Z).
