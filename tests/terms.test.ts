@@ -2,8 +2,61 @@ import { describe, it, expect } from "vitest";
 import {
   parseTermsReply, formatVerificationCode, normalizeVerificationCode, canonicalTermsRecord,
   brDateTimeLabel, maskCpf, maskName, maskPhone, formatCpf, termsGate, normalizeColumnName,
+  termsAskStep, termsPendingSince, TERMS_MAX_SENDS, TERMS_RESEND_MS, TERMS_PENDING_CARRY_MS,
   type TermsGateInput,
 } from "@/app/_shared/utils/terms";
+
+// T-TC5IR (17/11): o formulário saía no qualify antes do RG/CNH.
+describe("pedido do aceite pelo bot (termsAskStep)", () => {
+  const now = Date.parse("2026-11-17T22:30:00Z");
+  const ago = (min: number) => new Date(now - min * 60_000);
+
+  const base = { sends: [] as Date[], sentEarlier: false, now };
+
+  it("sem documento com foto neste atendimento, o 1º formulário não sai", () => {
+    expect(termsAskStep({ ...base, docsReceived: 0 })).toBe("no_document");
+  });
+
+  it("com documento, o 1º formulário sai", () => {
+    expect(termsAskStep({ ...base, docsReceived: 1 })).toBe("send");
+    expect(termsAskStep({ ...base, docsReceived: 3 })).toBe("send");
+  });
+
+  it("formulário já enviado neste atendimento segue a regra de reenvio, com ou sem documento", () => {
+    // Recente: espera (o cérebro lembra o botão).
+    expect(termsAskStep({ ...base, sends: [ago(2)], docsReceived: 0 })).toBe("waiting");
+    expect(termsAskStep({ ...base, sends: [ago(2)], docsReceived: 2 })).toBe("waiting");
+    // Passou do intervalo: reenvia, mesmo sem documento (não vira "no_document").
+    const old = new Date(now - TERMS_RESEND_MS - 1);
+    expect(termsAskStep({ ...base, sends: [old], docsReceived: 0 })).toBe("send");
+  });
+
+  it("cliente que sumiu e voltou (formulário de atendimento anterior) recebe o reenvio sem documento", () => {
+    expect(termsAskStep({ ...base, sentEarlier: true, docsReceived: 0 })).toBe("send");
+  });
+
+  it("no teto de envios, só espera", () => {
+    const sends = Array.from({ length: TERMS_MAX_SENDS }, (_, i) => ago(60 * (i + 1)));
+    expect(termsAskStep({ ...base, sends, docsReceived: 5 })).toBe("waiting");
+  });
+});
+
+describe("janela do fato termsPending (termsPendingSince)", () => {
+  const now = Date.parse("2026-11-18T13:00:00Z");
+
+  it("encerramento recente (silêncio) não esconde o formulário de antes dele", () => {
+    // Caso do Manuel: formulário às 12:02, sem_resposta às 14:15 do dia 17.
+    const closedAt = new Date("2026-11-17T17:15:21Z");
+    const since = termsPendingSince(closedAt, now);
+    expect(since.getTime()).toBe(now - TERMS_PENDING_CARRY_MS);
+    expect(since.getTime()).toBeLessThan(Date.parse("2026-11-17T15:02:05Z"));
+  });
+
+  it("atendimento longo continua valendo inteiro", () => {
+    const createdAt = new Date(now - 20 * 86_400_000);
+    expect(termsPendingSince(createdAt, now).getTime()).toBe(createdAt.getTime());
+  });
+});
 
 describe("resposta do formulário de aceite", () => {
   it("lê o payload do Flow aceite_termos_servico", () => {

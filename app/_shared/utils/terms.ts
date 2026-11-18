@@ -1,6 +1,7 @@
 // Aceite de termos pelo WhatsApp (T-B40K0) — regras PURAS: leitura da resposta
 // do formulário de aceite, código de verificação, registro canônico (hash),
-// máscaras da página pública e a TRAVA do kanban (aceite × ZapSign).
+// máscaras da página pública, a TRAVA do kanban (aceite × ZapSign) e quando o
+// bot pede o aceite (`termsAskStep`, `termsPendingSince`).
 // Sem banco: quem consulta o card monta a entrada de `termsGate`.
 
 import { brDateTimeParts } from "./date-br";
@@ -194,4 +195,51 @@ export function termsGate(i: TermsGateInput): TermsGateResult {
   }
   if (toSigned && !fromSigned && i.hasAcceptance && !i.hasZapsignTag) return needZapsign;
   return { ok: true };
+}
+
+// ─── Pedido do aceite pelo bot ───────────────────────────────────────────────
+
+// Reenvio só depois de 10 min e no máximo 3 por atendimento: o cliente que
+// escreve "pronto" sem tocar no botão recebe o lembrete do cérebro, não um
+// formulário novo a cada mensagem.
+export const TERMS_RESEND_MS = 10 * 60_000;
+export const TERMS_MAX_SENDS = 3;
+
+export type TermsAskStep = "waiting" | "no_document" | "send";
+
+/** Motivo do "no_document": vai na nota da Fila e no `effective.reason` do log `wa_bot`. */
+export const TERMS_NO_DOCUMENT_NOTE = "Aceite não pedido: o cliente ainda não enviou documento com foto";
+
+/**
+ * O que o `qualify` do bot faz com o aceite de quem ainda não aceitou, dados os
+ * formulários que o bot já mandou NESTE atendimento (mais novo primeiro) e as
+ * fotos/PDFs do cliente neste atendimento (o fato `docsReceived` que o cérebro
+ * vê). Rede de segurança de T-TC5IR (17/11): o formulário saía no qualify antes
+ * de o cliente mandar o RG/CNH, e as mensagens em volta se contradiziam. O 1º
+ * formulário do atendimento só sai depois de um documento com foto; sem ele a
+ * conversa vai à Fila sem formulário (o atendente pede o documento e manda pelo
+ * composer). Com formulário já enviado neste atendimento vale o reenvio de
+ * sempre (10 min, até 3). `sentEarlier` = o bot já mandou o formulário num
+ * atendimento anterior da janela do fato (`termsPendingSince`): o cliente que
+ * sumiu, voltou e pediu o botão de novo recebe o reenvio.
+ */
+export function termsAskStep(i: { sends: Date[]; sentEarlier: boolean; docsReceived: number; now: number }): TermsAskStep {
+  if (i.sends.length >= TERMS_MAX_SENDS) return "waiting";
+  if (i.sends[0] && i.now - i.sends[0].getTime() < TERMS_RESEND_MS) return "waiting";
+  if (!i.sends.length && !i.sentEarlier && i.docsReceived < 1) return "no_document";
+  return "send";
+}
+
+/** Por quanto tempo um formulário de atendimento ANTERIOR ainda conta no fato termsPending. */
+export const TERMS_PENDING_CARRY_MS = 7 * 86_400_000;
+
+/**
+ * Desde quando procurar os formulários de aceite do bot para o fato
+ * `termsPending`: o atendimento atual inteiro e, no mínimo, os últimos 7 dias.
+ * Antes era só o atendimento atual: o encerramento por silêncio (sem_resposta)
+ * com o formulário pendente zerava o fato, e na volta do cliente o cérebro não
+ * sabia do botão que já estava na conversa (T-TC5IR, caso de 17/11).
+ */
+export function termsPendingSince(attendanceStart: Date, now: number): Date {
+  return new Date(Math.min(attendanceStart.getTime(), now - TERMS_PENDING_CARRY_MS));
 }

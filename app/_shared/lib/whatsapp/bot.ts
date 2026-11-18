@@ -16,6 +16,7 @@ import { reportLeadStageToMeta } from "@/app/_shared/lib/meta-conversions";
 import { signUrlFor } from "@/app/_shared/lib/signature/tokens";
 import { getStatusLabel, getStatusDescription } from "@/app/nova-dash/card-dialog/constants";
 import { clientDocumentMediaWhere, docsReceivedSince } from "@/app/_shared/utils/wa-media";
+import { TERMS_NO_DOCUMENT_NOTE } from "@/app/_shared/utils/terms";
 import { mediaOriginalName } from "@/app/_shared/utils/media-name";
 import { MASK_CONTEXT_MESSAGES, maskMemorySecrets, maskSecrets, maskSecretsInSequence } from "@/app/_shared/utils/mask-secrets";
 import {
@@ -893,9 +894,15 @@ export async function queueAfterTermsAccepted(contactId: string, brainReason: st
   // estava mesmo com o bot; atendente que assumiu no meio conduz ele mesmo.
   const moved = await qualifyToQueue(contactId, label, reason, { onlyIfStatus: "bot", asNewLead: true, concludeRequest: true });
   if (moved) {
+    // Fora do horário comercial, o aviso de quando a equipe responde sai AQUI,
+    // quando a conversa vai mesmo à Fila (T-TC5IR): no qualify que manda o
+    // formulário, "a equipe responde amanhã às 08h" contradizia o botão.
+    const hours = businessHours();
     await sendBotReply(
       contactId, contact.phone, contact.name,
-      "Recebemos a sua autorização ✅ Obrigado! Agora um dos nossos atendentes vai dar sequência ao seu pedido por aqui.",
+      hours.open
+        ? "Recebemos a sua autorização ✅ Obrigado! Agora um dos nossos atendentes vai dar sequência ao seu pedido por aqui."
+        : `Recebemos a sua autorização ✅ Obrigado! Um dos nossos atendentes vai dar sequência ao seu pedido por aqui: nossa equipe responde ${hours.reopens}.`,
     );
   }
   return moved;
@@ -2267,7 +2274,11 @@ ${emptyNote}`,
         // botão. O cérebro sabe que está pendente pelo fato `termsPending`.
         // Cliente já cadastrado (card vinculado) não passa pelo aceite: o termo é
         // etapa do filtro inicial de lead novo; quem tem card segue como sempre.
-        const terms = await (await import("./terms")).maybeRequestTermsAcceptance(contactId, { queueReason: decision.handoffReason ?? null, hasCard: !!card });
+        // Sem foto/PDF do cliente neste atendimento (docsReceived, o mesmo fato
+        // do cérebro), o 1º formulário não sai (T-TC5IR): vai à Fila com nota.
+        const terms = await (await import("./terms")).maybeRequestTermsAcceptance(contactId, {
+          queueReason: decision.handoffReason ?? null, hasCard: !!card, docsReceived,
+        });
         if (terms.state === "sent" || terms.state === "waiting") {
           if (outgoing.length === 0 && terms.state === "waiting") {
             markSent(await sendMutedFallback(
@@ -2289,7 +2300,15 @@ ${emptyNote}`,
           ));
         }
         // Falha NOSSA ao pedir o aceite não segura o lead: vai à Fila com o motivo.
-        const termsNote = terms.state === "failed" ? `⚠️ Aceite de termos não foi pedido: ${terms.error}. Mande o formulário pelo composer.` : undefined;
+        // Rede de segurança de T-TC5IR (17/11): qualify de lead novo sem nenhum
+        // documento com foto (o formulário saía antes do RG e as mensagens se
+        // contradiziam) vai à Fila SEM formulário; o atendente pede o documento
+        // e manda o formulário pelo composer.
+        const termsNote = terms.state === "failed"
+          ? `⚠️ Aceite de termos não foi pedido: ${terms.error}. Mande o formulário pelo composer.`
+          : terms.state === "no_document"
+            ? `⚠️ ${TERMS_NO_DOCUMENT_NOTE}. Peça o RG/CNH e mande o formulário pelo composer.`
+            : undefined;
         // Assinatura automática (SIGNATURE_AUTO_ENABLED): tenta extrair os
         // dados e mandar o RESUMO pro cliente confirmar. "confirming" = a
         // conversa FICA em modo bot esperando o "sim" (a fila vem depois de
@@ -2300,7 +2319,7 @@ ${emptyNote}`,
           // Qualificar é decisão do cérebro: conclui o pedido em aberto.
           toQueue(await qualifyToQueue(contactId, contactLabel, reason, {
             ...queueOpts, concludeRequest: true, extraNote: joinExtraNotes(queueOpts.extraNote, termsNote),
-          }), reason);
+          }), terms.state === "no_document" ? TERMS_NO_DOCUMENT_NOTE : reason);
         } else {
           effective = { status: "signature" };
         }

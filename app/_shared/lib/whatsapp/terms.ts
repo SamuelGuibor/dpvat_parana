@@ -9,7 +9,9 @@ import { buildTermsReceiptPdf } from "@/app/_shared/lib/terms/receipt-pdf";
 import { cardUploadKey } from "@/app/_shared/utils/s3-keys";
 import { parseDraftDocuments } from "@/app/_shared/utils/draft-documents";
 import { parseInteractive, readFlowJson, walkComponents, type FlowJson } from "@/app/_shared/utils/wa-forms";
-import { canonicalTermsRecord, formatVerificationCode, parseTermsReply } from "@/app/_shared/utils/terms";
+import {
+  canonicalTermsRecord, formatVerificationCode, parseTermsReply, termsAskStep, termsPendingSince,
+} from "@/app/_shared/utils/terms";
 import { getCreds } from "./numbers";
 import { findActiveFormByName, sendFormToContact, syncFormCatalog } from "./forms";
 import { broadcastWhatsAppEvent, whatsappChannelId } from "./service";
@@ -38,11 +40,8 @@ const COMPANY = "Brasil Benefícios e Indenizações";
 const TERMS_DEFAULT_BODY =
   "Para darmos andamento ao seu pedido, preciso da sua autorização. É rapidinho: toque no botão abaixo, confira seu nome e CPF e marque \"SIM, autorizo\".";
 const TERMS_DEFAULT_CTA = "Ver e autorizar";
-// Reenvio só depois de 10 min e no máximo 3 por atendimento: o cliente que
-// escreve "pronto" sem tocar no botão recebe o lembrete do cérebro, não um
-// formulário novo a cada mensagem.
-export const TERMS_RESEND_MS = 10 * 60_000;
-export const TERMS_MAX_SENDS = 3;
+// Reenvio (10 min, até 3 por atendimento) e a ordem documento → formulário:
+// termsAskStep em utils/terms.ts.
 
 export function termsFormName(): string | null {
   return process.env.WA_TERMS_FORM?.trim() || null;
@@ -77,8 +76,9 @@ function attendanceStart(conv: { closedAt: Date | null; createdAt: Date } | null
 }
 
 /**
- * Fato para o cérebro: formulário de aceite enviado neste atendimento e ainda
- * sem aceite. null = nada pendente (ou recurso desligado).
+ * Fato para o cérebro: formulário de aceite enviado (neste atendimento ou nos
+ * últimos 7 dias, `termsPendingSince`) e ainda sem aceite. null = nada
+ * pendente (ou recurso desligado).
  */
 export async function termsPendingFact(contactId: string): Promise<{ sentAt: string; sends: number } | null> {
   if (!termsFormName()) return null;
@@ -88,7 +88,7 @@ export async function termsPendingFact(contactId: string): Promise<{ sentAt: str
       db.whatsAppConversation.findUnique({ where: { contactId }, select: { closedAt: true, createdAt: true } }),
     ]);
     if (!contact) return null;
-    const sends = await botTermsSends(contactId, attendanceStart(conv));
+    const sends = await botTermsSends(contactId, termsPendingSince(attendanceStart(conv), Date.now()));
     if (!sends.length || (await hasAcceptedTerms(contact))) return null;
     return { sentAt: sends[0].toISOString(), sends: sends.length };
   } catch {
@@ -101,16 +101,19 @@ export type TermsRequestState =
   | { state: "accepted" }
   | { state: "sent" }
   | { state: "waiting"; sends: number }
+  | { state: "no_document" }
   | { state: "failed"; error: string };
 
 /**
  * Chamado no `qualify` do bot. "sent"/"waiting" = a conversa fica no bot
- * esperando o aceite; "off"/"accepted"/"failed" = segue para a Fila como
- * sempre (no "failed", com o motivo na nota).
+ * esperando o aceite; "off"/"accepted"/"no_document"/"failed" = segue para a
+ * Fila como sempre (no "no_document" e no "failed", com o motivo na nota).
+ * `docsReceived` = fotos/PDFs do cliente neste atendimento (o mesmo fato que o
+ * cérebro recebe): sem nenhum, o 1º formulário não sai (T-TC5IR).
  */
 export async function maybeRequestTermsAcceptance(
   contactId: string,
-  opts: { queueReason?: string | null; hasCard?: boolean } = {},
+  opts: { queueReason?: string | null; hasCard?: boolean; docsReceived: number },
 ): Promise<TermsRequestState> {
   const formName = termsFormName();
   if (!formName) return { state: "off" };
@@ -128,9 +131,16 @@ export async function maybeRequestTermsAcceptance(
     if (conv?.status !== "bot") return { state: "off" };
     if (await hasAcceptedTerms(contact)) return { state: "accepted" };
 
-    const sends = await botTermsSends(contactId, attendanceStart(conv));
-    if (sends.length >= TERMS_MAX_SENDS) return { state: "waiting", sends: sends.length };
-    if (sends[0] && Date.now() - sends[0].getTime() < TERMS_RESEND_MS) return { state: "waiting", sends: sends.length };
+    const now = Date.now();
+    const start = attendanceStart(conv);
+    const sends = await botTermsSends(contactId, start);
+    // Formulário de atendimento anterior (cliente sumiu e voltou): só importa
+    // quando ainda não houve envio neste atendimento nem documento.
+    const sentEarlier = !sends.length && opts.docsReceived < 1
+      && (await botTermsSends(contactId, termsPendingSince(start, now))).length > 0;
+    const step = termsAskStep({ sends, sentEarlier, docsReceived: opts.docsReceived, now });
+    if (step === "waiting") return { state: "waiting", sends: sends.length };
+    if (step === "no_document") return { state: "no_document" };
 
     const creds = await getCreds(contact.numberId);
     if (!creds?.wabaId) return { state: "failed", error: "linha do contato sem a conta (WABA) cadastrada" };
