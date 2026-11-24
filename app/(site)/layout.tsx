@@ -1,5 +1,11 @@
 /* eslint-disable @next/next/no-img-element */
 import Script from "next/script";
+import { WhatsAppFloat } from "@/app/_components/landing_page/WhatsAppFloat";
+import {
+  ENDERECOS,
+  HORARIO_SCHEMA,
+  WHATSAPP_NUMBER,
+} from "@/app/_components/landing_page/site-info";
 
 // Layout do site institucional: é AQUI (e só aqui) que os scripts de
 // marketing carregam — Google Analytics, Facebook Pixel e RD Station.
@@ -57,11 +63,20 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
             description:
               "Especialistas em indenizações de acidentes de trânsito e benefícios do INSS no Paraná.",
             areaServed: "Paraná, Brasil",
-            telephone: "+5541920077331",
+            telephone: `+${WHATSAPP_NUMBER}`,
+            openingHours: HORARIO_SCHEMA,
+            address: ENDERECOS.map((e) => ({
+              "@type": "PostalAddress",
+              streetAddress: e.rua,
+              addressLocality: e.cidade,
+              addressRegion: e.uf,
+              postalCode: e.cep,
+              addressCountry: "BR",
+            })),
             contactPoint: {
               "@type": "ContactPoint",
               contactType: "Customer Service",
-              telephone: "+5541920077331",
+              telephone: `+${WHATSAPP_NUMBER}`,
               areaServed: "BR",
               availableLanguage: "Portuguese",
             },
@@ -74,6 +89,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       />
 
       {children}
+
+      <WhatsAppFloat />
 
       <noscript>
         <img

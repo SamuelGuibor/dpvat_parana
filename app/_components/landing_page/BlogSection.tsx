@@ -1,49 +1,6 @@
-// import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Calendar, ArrowRight } from 'lucide-react';
 import Image from 'next/image'
-const blogPosts = [
-  {
-    id: 1,
-    title: 'Como Funciona o Seguro DPVAT em 2025',
-    excerpt: 'Entenda seus direitos e como solicitar a indenização do seguro obrigatório para vítimas de acidentes de trânsito.',
-    image: '/fotodpvat.png',
-    date: '15 de Dezembro, 2025',
-    category: 'DPVAT',
-    src: '/blog/dpvat'
-  },
-  {
-    id: 2,
-    title: 'Auxílio-Acidente do INSS: Guia Completo',
-    excerpt: 'Saiba quando você tem direito ao benefício e como dar entrada no pedido junto ao INSS.',
-    image: 'https://images.unsplash.com/photo-1516069677018-378515003435?q=80&w=1829&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
-    date: '10 de Dezembro, 2025',
-    category: 'INSS',
-    src: '/blog/inss'
-  },
-
-  /*
-  {
-    id: 3,
-    title: 'Documentos Necessários para Processos de Indenização',
-    excerpt: 'Lista completa de documentos que você precisa reunir para agilizar seu processo de indenização.',
-    image: '/documentation.jpeg',
-    date: '5 de Dezembro, 2025',
-    category: 'Documentação',
-    src: '/blog/documentacao'
-  },
-  */
-
-  {
-    id: 3,
-    title: 'O que é a licença maternidade e quem pode recebê-lo?',
-    excerpt: 'Descubra em quais situações você pode solicitar indenização por danos morais e como calcular o valor justo da sua reparação.',
-    image: 'https://images.unsplash.com/photo-1581998392741-67879e0ef04a?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
-    date: '12 de maio, 2026',
-    category: 'INSS',
-    author: '',
-    src: '/blog/auxilio-maternidade'
-  },
-];
+import { BLOG_POSTS, blogPostUrl } from './blog-posts';
 
 export function BlogSection() {
   return (
@@ -54,13 +11,13 @@ export function BlogSection() {
             Blog e Artigos
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Informações atualizadas sobre seus direitos e processos de indenização
+            Informações sobre o Auxílio-Acidente e os seus direitos depois de um acidente
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {blogPosts.map((post) => (
-            <article key={post.id} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow">
+          {BLOG_POSTS.slice(0, 3).map((post) => (
+            <article key={post.slug} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow">
               <Image
                 src={post.image}
                 alt={post.title}
@@ -80,7 +37,7 @@ export function BlogSection() {
                 </div>
                 <h3 className="text-xl text-gray-900 mb-3">{post.title}</h3>
                 <p className="text-gray-600 mb-4">{post.excerpt}</p>
-                <a href={post.src} className="text-blue-600 hover:text-blue-700 flex items-center gap-2 transition-colors">
+                <a href={blogPostUrl(post)} className="text-blue-600 hover:text-blue-700 flex items-center gap-2 transition-colors">
                   Ler mais
                   <ArrowRight className="w-4 h-4" />
                 </a>

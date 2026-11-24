@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Blog — Seguros e Benefícios no Paraná",
+  title: "Blog — Auxílio-Acidente e direitos de quem sofreu um acidente",
   description:
-    "Artigos sobre indenização DPVAT, auxílio-acidente do INSS, auxílio-maternidade e documentação para vítimas de acidente de trânsito no Paraná.",
+    "Artigos sobre o Auxílio-Acidente do INSS: quem tem direito, diferença para o auxílio-doença, acidente de trânsito, trabalhar recebendo o benefício e documentos.",
   alternates: { canonical: "/blog" },
 };
 

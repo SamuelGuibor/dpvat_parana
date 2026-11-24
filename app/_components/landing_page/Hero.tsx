@@ -1,48 +1,66 @@
 'use client'
 import { ArrowRight } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import Image from "next/image";
+import { FaWhatsapp } from 'react-icons/fa';
+import { WHATSAPP_ANALISE_URL } from './site-info';
 
 export function Hero() {
-    const { data: session } = useSession(); // Obter dados da sessão
+  const { data: session } = useSession();
 
-    const consultProcessUrl = session?.user ? "/area-do-cliente" : "/login";
+  const consultProcessUrl = session?.user ? "/area-do-cliente" : "/login";
 
   return (
-    <section id="inicio" className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white">
+    // No desktop o hero ocupa a tela inteira abaixo do Header (68px: logo de
+    // 60px + py-1), senão a faixa escura da seção seguinte aparecia embaixo.
+    <section
+      id="inicio"
+      className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white lg:flex lg:items-center lg:min-h-[calc(100svh_-_68px)]"
+    >
       <div className="absolute inset-0 bg-black/20"></div>
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
+      <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 lg:py-10">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_auto] gap-12 lg:gap-16 items-center">
           <div>
-            <h1 className="text-4xl lg:text-5xl mb-6">
-              Receba a Indenização que Você Merece
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl leading-tight mb-6">
+              <strong className="font-bold">Sofreu um acidente e ficou com limitações?</strong>{" "}
+              Você pode ter direito a uma indenização do INSS!
             </h1>
-            <p className="text-xl mb-8 text-blue-100">
-              Especialistas em DPVAT, Auxílio-Acidente INSS e recuperação de danos causados por acidentes de trânsito. Sua justiça é nossa missão.
+            <p className="text-lg lg:text-xl mb-8 text-blue-100 max-w-xl">
+              Especialistas em Auxílio-Acidente INSS e recuperação de danos causados por acidentes de trânsito. Sua justiça é nossa missão.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <a href={consultProcessUrl} className="bg-white text-blue-900 px-8 py-4 rounded-lg hover:bg-blue-50 transition-colors flex items-center justify-center gap-2">
                 Consulte seu Processo
                 <ArrowRight className="w-5 h-5" />
               </a>
-              <a href="#servicos" className="border-2 border-white text-white px-8 py-4 rounded-lg hover:bg-white/20 transition-colors flex items-center justify-center">
-                Nossos Serviços
+              <a
+                href={WHATSAPP_ANALISE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-green-500 text-white px-8 py-4 rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2 font-semibold"
+              >
+                <FaWhatsapp className="w-5 h-5" />
+                Análise Gratuita
+                <ArrowRight className="w-5 h-5" />
               </a>
             </div>
           </div>
-          <div className="hidden lg:block">
-            {/* priority + sizes: esta é a imagem LCP da landing. */}
-            <Image src='/img1.2.png' width={700} height={200} priority sizes="(min-width: 1024px) 700px, 0px" alt='Atendimento da Brasil Benefícios e Indenizações a vítimas de acidente de trânsito' className='rounded-xl'/>
-            {/* <ImageWithFallback 
-              src="https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGNvbnN1bHRhdGlvbiUyMG9mZmljZXxlbnwxfHx8fDE3NjU5Nzk5NjR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-              alt="Consultoria jurídica"
-              className="rounded-lg shadow-2xl"
-            /> */}
-          </div>
+
+          {/* Vídeo de apresentação no topo da página (antes ficava abaixo dos
+              serviços). Vertical 576x1024 (9:16), servido de public/ sem o
+              Mux. No desktop a altura acompanha a tela (teto de 604px = 340px
+              de largura), para caber inteiro em notebook de tela baixa. */}
+          <video
+            className="w-full max-w-[300px] h-auto aspect-[9/16] mx-auto rounded-2xl shadow-2xl ring-1 ring-white/20 bg-gray-900 lg:w-auto lg:max-w-none lg:h-[min(604px,calc(100svh_-_68px_-_5rem))]"
+            src="/videos/apresentacao-brasil-beneficios.mp4"
+            poster="/videos/apresentacao-brasil-beneficios.jpg"
+            width={576}
+            height={1024}
+            controls
+            playsInline
+            preload="metadata"
+          />
         </div>
       </div>
     </section>
   );
 }
-
-

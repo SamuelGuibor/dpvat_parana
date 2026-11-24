@@ -61,6 +61,10 @@ const nextConfig = {
     return [
       { source: "/blog-seguros-parana", destination: "/blog", permanent: true },
       { source: "/blog-seguros-parana/:path*", destination: "/blog/:path*", permanent: true },
+      // Artigos que saíram quando o blog passou a tratar só de Auxílio-Acidente
+      // (11/2026): o Google e links antigos ainda chegam por eles.
+      { source: "/blog/dpvat", destination: "/blog/auxilio-acidente-transito", permanent: true },
+      { source: "/blog/auxilio-maternidade", destination: "/blog", permanent: true },
     ];
   },
   async headers() {

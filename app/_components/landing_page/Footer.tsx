@@ -1,5 +1,6 @@
 import { Facebook, Instagram, Linkedin } from 'lucide-react';
 import Image from 'next/image'
+import { WHATSAPP_ANALISE_URL } from './site-info';
 export function Footer() {
   return (
     <footer className="bg-gray-900 text-gray-300">
@@ -12,17 +13,17 @@ export function Footer() {
               </div>
             </div>
             <p className="text-sm text-gray-400">
-              Defendendo os direitos de vítimas de acidentes de trânsito desde 2010.
+              Há mais de 15 anos defendendo os direitos de quem sofreu um acidente.
             </p>
           </div>
 
           <div>
-            <h4 className="text-white mb-4">Serviços</h4>
+            <h4 className="text-white mb-4">Auxílio-Acidente</h4>
             <ul className="space-y-2 text-sm">
-              <li><a href="/#servicos" className="hover:text-blue-400 transition-colors">Seguro DPVAT</a></li>
-              <li><a href="/#servicos" className="hover:text-blue-400 transition-colors">Auxílio-Acidente INSS</a></li>
-              <li><a href="/#servicos" className="hover:text-blue-400 transition-colors">Danos Materiais</a></li>
-              <li><a href="/#servicos" className="hover:text-blue-400 transition-colors">Pensão por Morte</a></li>
+              <li><a href="/#auxilio-acidente" className="hover:text-blue-400 transition-colors">O que é</a></li>
+              <li><a href="/#quem-tem-direito" className="hover:text-blue-400 transition-colors">Quem tem direito</a></li>
+              <li><a href="/faq" className="hover:text-blue-400 transition-colors">Perguntas frequentes</a></li>
+              <li><a href={WHATSAPP_ANALISE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">Análise gratuita</a></li>
             </ul>
           </div>
 

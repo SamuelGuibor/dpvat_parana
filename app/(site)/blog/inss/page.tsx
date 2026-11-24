@@ -2,7 +2,7 @@ import { Calendar, User, Clock, Share2, Facebook, Twitter, Linkedin, Mail, Tag, 
 import Image from 'next/image';
 import { Footer } from '@/app/_components/landing_page/Footer';
 import { Header } from '@/app/_components/landing_page/Header';
-import Link from 'next/link';
+import { RelatedPosts } from '../_components/ArticleShell';
 
 export default function BlogArticle() {
   return (
@@ -454,50 +454,7 @@ export default function BlogArticle() {
             </div>
           </div>
 
-          {/* Related Articles */}
-          <div className="mt-16">
-            <h3 className="text-2xl text-gray-900 mb-8">Artigos Relacionados</h3>
-            <div className="grid md:grid-cols-3 gap-6">
-              {[
-                {
-                  title: "Como Funciona o Seguro DPVAT em 2025",
-                  category: "DPVAT",
-                  date: "15 de Dezembro, 2025",
-                  image: "https://images.unsplash.com/photo-1637763723578-79a4ca9225f7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBhY2NpZGVudCUyMGluc3VyYW5jZXxlbnwxfHx8fDE3NjU4OTY4OTd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                  link: '/blog/dpvat'
-                },
-                {
-                  title: "Documentos Necessários para Processos",
-                  category: "Documentação",
-                  date: "5 de Dezembro, 2025",
-                  image: "https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGRvY3VtZW50cyUyMG9mZmljZXxlbnwxfHx8fDE3NjU5ODEwNDd8MA&ixlib=rb-4.1.0&q=80&w=1080",
-                  link: '/blog/documentacao'
-                }
-              ].map((article, index) => (
-                <div key={index} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow cursor-pointer">
-                  <Link href={article.link}>
-                    <Image
-                      width={500}
-                      height={500}
-                      src={article.image}
-                      alt={article.title}
-                      className="w-full h-48 object-cover"
-                    />
-                  </Link>
-                  <div className="p-4">
-                    <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
-                      {article.category}
-                    </span>
-                    <h4 className="text-gray-900 mt-3 mb-2">{article.title}</h4>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {article.date}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <RelatedPosts slug="inss" />
         </article>
       </div>
       <Footer />

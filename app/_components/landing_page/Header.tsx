@@ -1,6 +1,7 @@
 "use client";
 
-import { Phone, LogOutIcon, X, Menu, LogIn, Home, Briefcase, Newspaper, Users, Mail } from "lucide-react";
+import { LogOutIcon, X, Menu, LogIn, Home, Newspaper, Users, Mail } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import Image from "next/image";
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -12,6 +13,7 @@ import { RxAvatar } from "react-icons/rx";
 import { MdInsertChartOutlined } from "react-icons/md";
 import { useSession, signOut } from "next-auth/react";
 import { cn } from "@/app/_shared/lib/utils";
+import { WHATSAPP_ANALISE_URL } from "./site-info";
 
 export function Header() {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -49,7 +51,6 @@ export function Header() {
   // ficava inacessível no celular — não havia hambúrguer para deslogados).
   const siteLinks = [
     { href: "/", label: "Início", icon: <Home size={20} /> },
-    { href: "/#servicos", label: "Serviços", icon: <Briefcase size={20} /> },
     { href: "/#blog", label: "Blog", icon: <Newspaper size={20} /> },
     { href: "/nossa-equipe", label: "Equipe", icon: <Users size={20} /> },
     { href: "/#contato", label: "Contato", icon: <Mail size={20} /> },
@@ -72,20 +73,23 @@ export function Header() {
 
             <nav className="hidden md:flex items-center gap-8">
               <a href="/" className="text-gray-700 hover:text-blue-600">Início</a>
-              <a href="/#servicos" className="text-gray-700 hover:text-blue-600">Serviços</a>
               <a href="/#blog" className="text-gray-700 hover:text-blue-600">Blog</a>
               <a href="/nossa-equipe" className="text-gray-700 hover:text-blue-600">Equipe</a>
               <a href="/#contato" className="text-gray-700 hover:text-blue-600">Contato</a>
             </nav>
 
             <div className="flex items-center gap-4">
+              {/* Era "Ligue Agora" (tel:): a análise gratuita leva direto à
+                  conversa no WhatsApp, onde o atendimento acontece. */}
               <a
-                href="tel:+5541920077331"
+                href={WHATSAPP_ANALISE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
-                aria-label="Ligar agora"
+                aria-label="Análise gratuita pelo WhatsApp"
               >
-                <Phone className="w-4 h-4" />
-                <span className="hidden sm:inline">Ligue Agora</span>
+                <FaWhatsapp className="w-4 h-4" />
+                <span className="hidden sm:inline">Análise Gratuita</span>
               </a>
 
               {session?.user ? (

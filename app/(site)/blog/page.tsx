@@ -5,97 +5,17 @@ import Image from 'next/image';
 import { useMemo, useState } from 'react';
 import { Footer } from '@/app/_components/landing_page/Footer';
 import { Header } from '@/app/_components/landing_page/Header';
-const blogPosts = [
-    {
-        id: 1,
-        title: 'Como Funciona o Seguro DPVAT em 2025',
-        excerpt: 'Entenda seus direitos e como solicitar a indenização do seguro obrigatório para vítimas de acidentes de trânsito. Saiba quais documentos reunir e os prazos.',
-        image: '/fotodpvat.png',
-        date: '15 de Dezembro, 2025',
-        category: 'DPVAT',
-        author: 'Me Ajuda DPVAT',
-        link: '/blog/dpvat'
-    },
-    {
-        id: 2,
-        title: 'Auxílio-Acidente do INSS: Guia Completo',
-        excerpt: 'Saiba quando você tem direito ao benefício e como dar entrada no pedido junto ao INSS. Conheça os requisitos e valores atualizados para 2025.',
-        image: 'https://images.unsplash.com/photo-1516069677018-378515003435?q=80&w=1829&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fA%3D%3D',
-        date: '19 de dezembro de 2025',
-        category: 'INSS',
-        author: 'Dr. Hilário Bocchi Neto',
-        link: '/blog/inss'
-    },
-    {
-        id: 3,
-        title: 'Documentos Necessários para Processos de Indenização',
-        excerpt: 'Lista completa de documentos que você precisa reunir para agilizar seu processo de indenização. Organize-se e evite atrasos no seu processo.',
-        image: 'https://images.unsplash.com/photo-1603796846097-bee99e4a601f?q=80&w=1374&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
-        date: '5 de Dezembro, 2025',
-        category: 'Documentação',
-        author: 'Dr. Paulo Mendes',
-        link: '/blog/documentacao'
-    },
-    {
-        id: 4,
-        title: 'O que é a licença maternidade e quem pode recebê-lo?',
-        excerpt: 'Descubra em quais situações você pode solicitar indenização por danos morais e como calcular o valor justo da sua reparação.',
-        image: 'https://images.unsplash.com/photo-1504439158909-5a2f08876082?q=80&w=1742&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
-        date: '12 de maio, 2026',
-        category: 'INSS',
-        author: '',
-        link: '/blog/auxilio-maternidade'
-    },
-    // {
-    //     id: 5,
-    //     title: 'Pensão por Morte: Direitos dos Dependentes',
-    //     excerpt: 'Entenda como funciona a pensão por morte em casos de acidentes fatais e quais são os direitos dos dependentes da vítima.',
-    //     image: 'https://images.unsplash.com/photo-1734328819658-0c3ceef27c46?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxpbnN1cmFuY2UlMjBjbGFpbSUyMHBhcGVyd29ya3xlbnwxfHx8fDE3NjYwMzM5ODd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-    //     date: '28 de Novembro, 2025',
-    //     category: 'INSS',
-    //     author: 'Dra. Ana Santos',
-    // },
-    // {
-    //     id: 6,
-    //     title: 'Prazos Legais: Não Perca Seu Direito à Indenização',
-    //     excerpt: 'Conheça os prazos prescricionais para diferentes tipos de indenização e garanta que você não perca seus direitos por falta de atenção.',
-    //     image: 'https://images.unsplash.com/photo-1758518731462-d091b0b4ed0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsZWdhbCUyMGRvY3VtZW50cyUyMG9mZmljZXxlbnwxfHx8fDE3NjU5ODEwNDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-    //     date: '22 de Novembro, 2025',
-    //     category: 'Legislação',
-    //     author: 'Dr. Paulo Mendes',
-    // },
-];
+import { BLOG_POSTS, blogPostUrl } from '@/app/_components/landing_page/blog-posts';
+import { WHATSAPP_ANALISE_URL } from '@/app/_components/landing_page/site-info';
+// Lista única em blog-posts.ts (também usada pela home e pelo sitemap).
+const blogPosts = BLOG_POSTS.map((post) => ({ ...post, link: blogPostUrl(post) }));
 
-const categories = [
-    { name: 'DPVAT', count: 1 },
-    { name: 'INSS', count: 2 },
-    { name: 'Documentação', count: 1 },
-    // { name: 'Danos Morais', count: 15 },
-    // { name: 'Legislação', count: 10 },
-];
+const categories = Array.from(
+    blogPosts.reduce((acc, post) => acc.set(post.category, (acc.get(post.category) ?? 0) + 1), new Map<string, number>()),
+    ([name, count]) => ({ name, count }),
+);
 
-const popularPosts = [
-    //{
-    //    title: 'Como Funciona o Seguro DPVAT em 2025',
-    //    date: '15 de Dezembro, 2025',
-    //    link: '/blog/dpvat'
-    //},
-    {
-        title: 'Auxílio-Acidente do INSS: Guia Completo',
-        date: '19 de dezembro de 2025',
-        link: '/blog/inss'
-    },
-    {
-        title: 'Documentos Necessários para Processos de Indenização',
-        date: '1 de Dezembro, 2025',
-        link: '/blog/documentacao'
-    },
-    {
-        title: 'O que é e como solicitar o licença maternidade',
-        date: '12 de maio, 2026',
-        link: '/blog/auxilio-maternidade'
-    },
-];
+const popularPosts = blogPosts.slice(0, 3);
 
 function Categories({
     categories,
@@ -167,7 +87,7 @@ export default function BlogPage() {
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <h1 className="text-4xl lg:text-5xl mb-4">Blog Brasil Benefícios e Indenizações</h1>
                         <p className="text-xl text-blue-100 max-w-3xl">
-                            Artigos, guias e informações sobre seus direitos em casos de acidentes de trânsito
+                            Artigos e guias sobre o Auxílio-Acidente e os seus direitos depois de um acidente
                         </p>
                     </div>
                 </div>
@@ -211,7 +131,7 @@ export default function BlogPage() {
                                 {filteredPosts.length > 0 ? (
                                     filteredPosts.map((post) => (
                                         <article
-                                            key={post.id}
+                                            key={post.slug}
                                             className="bg-white rounded-lg shadow overflow-hidden"
                                         >
                                             <div className="md:flex">
@@ -328,13 +248,15 @@ export default function BlogPage() {
                             <div className="bg-gradient-to-br from-blue-900 to-blue-700 text-white p-6 rounded-lg shadow-md">
                                 <h3 className="text-2xl mb-3">Precisa de Ajuda?</h3>
                                 <p className="mb-6 text-blue-100">
-                                    Agende uma consulta gratuita com nossos especialistas
+                                    Faça a análise gratuita do seu caso pelo WhatsApp
                                 </p>
                                 <a
-                                    href="/#contato"
+                                    href={WHATSAPP_ANALISE_URL}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="block w-full bg-white text-blue-900 px-6 py-3 rounded-lg hover:bg-blue-50 transition-colors text-center"
                                 >
-                                    Falar com Especialista
+                                    Análise Gratuita
                                 </a>
                             </div>
                         </div>

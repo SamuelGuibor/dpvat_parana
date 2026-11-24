@@ -20,7 +20,7 @@ const Stats = () => {
             <p className="text-gray-700">Pessoas Indenizadas</p>
           </div>
           <div className="space-y-4">
-            <div className="text-5xl font-bold text-blue-600">17 anos</div>
+            <div className="text-5xl font-bold text-blue-600">15 anos</div>
             <p className="text-gray-700">De Experiência</p>
           </div>
           <div className="space-y-4">

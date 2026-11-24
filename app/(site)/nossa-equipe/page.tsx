@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Footer } from '@/app/_components/landing_page/Footer';
 import { Header } from '@/app/_components/landing_page/Header';
 import '@/app/_components/landing_page/styles/flip.css';
+import { WHATSAPP_ANALISE_URL } from '@/app/_components/landing_page/site-info';
 
 const teamMembers = [
   {
@@ -148,7 +149,7 @@ const teamMembers = [
     name: 'Luana de Oliveira',
     role: 'Coordenadora de Recursos Humanos',
     specialty: 'Especialista na Aréa de Recursos Humanos',
-    image: '/luana.jpeg',
+    image: '/luana-oliveira.jpeg',
     email: 'luana.paranaseguros@gmail.com',
     experience: '12 anos de experiência',
     education: 'Gestão de Recursos Humanos - Universidade Positivo',
@@ -356,10 +357,12 @@ export default function TeamPage() {
               Nossa equipe está pronta para analisar seu caso e oferecer a melhor solução
             </p>
             <a
-              href="/#contato"
+              href={WHATSAPP_ANALISE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-block bg-white text-blue-900 px-8 py-4 rounded-lg hover:bg-blue-50 transition-colors"
             >
-              Agende uma Consulta Gratuita
+              Análise Gratuita pelo WhatsApp
             </a>
           </div>
         </div>

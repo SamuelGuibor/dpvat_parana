@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { BLOG_POSTS, blogPostUrl } from "@/app/_components/landing_page/blog-posts";
 
 const BASE = "https://www.brasilbeneficiosbr.com";
 
@@ -7,10 +8,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const pages: { path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] }[] = [
     { path: "/", priority: 1, changeFrequency: "weekly" },
     { path: "/blog", priority: 0.9, changeFrequency: "weekly" },
-    { path: "/blog/dpvat", priority: 0.8, changeFrequency: "monthly" },
-    { path: "/blog/inss", priority: 0.8, changeFrequency: "monthly" },
-    { path: "/blog/auxilio-maternidade", priority: 0.8, changeFrequency: "monthly" },
-    { path: "/blog/documentacao", priority: 0.8, changeFrequency: "monthly" },
+    ...BLOG_POSTS.map((post) => ({ path: blogPostUrl(post), priority: 0.8, changeFrequency: "monthly" as const })),
     { path: "/faq", priority: 0.7, changeFrequency: "monthly" },
     { path: "/nossa-equipe", priority: 0.6, changeFrequency: "monthly" },
     { path: "/politica-de-privacidade", priority: 0.3, changeFrequency: "yearly" },

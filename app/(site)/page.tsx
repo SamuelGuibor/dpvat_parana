@@ -1,25 +1,24 @@
 import { Header } from '@/app/_components/landing_page/Header';
 import { Hero } from '@/app/_components/landing_page/Hero';
-import { Services } from '@/app/_components/landing_page/Services';
+import { AuxilioAcidente } from '@/app/_components/landing_page/AuxilioAcidente';
+import { WhyChooseUs } from '@/app/_components/landing_page/WhyChooseUs';
 import { BlogSection } from '@/app/_components/landing_page/BlogSection';
 import { Contact } from '@/app/_components/landing_page/Contact';
 import { Footer } from '@/app/_components/landing_page/Footer';
 import Stats from './section/stats';
-import Video from '@/app/_components/landing_page/video';
-import { Testimonials } from '@/app/_components/landing_page/feedback';
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: { absolute: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura" },
   description:
-    "Saiba tudo sobre o seguro DPVAT e como podemos ajudar a garantir sua indenização rápida e sem burocracia.",
+    "Sofreu um acidente e ficou com sequelas? Você pode ter direito ao Auxílio-Acidente do INSS. Faça a análise gratuita do seu caso pelo WhatsApp.",
   alternates: {
     canonical: "https://www.brasilbeneficiosbr.com/",
   },
   openGraph: {
-    title: "Brasil Benefícios e Indenizações - Indenização Rápida e Segura com DPVAT",
+    title: "Brasil Benefícios e Indenizações - Auxílio-Acidente do INSS",
     description:
-      "Especialistas em indenizações de Acidentes de Transito no Paraná.",
+      "Especialistas em Auxílio-Acidente do INSS e indenizações de acidentes de trânsito.",
     url: "https://www.brasilbeneficiosbr.com/",
     siteName: "Brasil Benefícios e Indenizações",
     images: [
@@ -27,7 +26,7 @@ export const metadata: Metadata = {
         url: "https://www.brasilbeneficiosbr.com/og-brasil-beneficios.png",
         width: 1200,
         height: 630,
-        alt: "Brasil Benefícios e Indenizações - Indenização DPVAT",
+        alt: "Brasil Benefícios e Indenizações",
       },
     ],
     locale: "pt_BR",
@@ -35,9 +34,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Brasil Benefícios e Indenizações - Indenização Rápida DPVAT",
+    title: "Brasil Benefícios e Indenizações - Auxílio-Acidente do INSS",
     description:
-      "Garantimos sua indenização DPVAT com rapidez e transparência no Paraná. Entre em contato hoje!",
+      "Sofreu um acidente e ficou com sequelas? Faça a análise gratuita do seu caso pelo WhatsApp.",
     images: ["https://www.brasilbeneficiosbr.com/og-brasil-beneficios.png"],
   },
   robots: {
@@ -63,11 +62,10 @@ export default function App() {
     <div className="min-h-screen bg-white">
       <Header />
       <Hero />
-      <Services />
-      <Video />
+      <AuxilioAcidente />
+      <WhyChooseUs />
       <Stats />
       <BlogSection />
-      <Testimonials />
       <Contact />
       <Footer />
     </div>

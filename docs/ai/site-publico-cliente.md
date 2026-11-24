@@ -1,8 +1,8 @@
 # Site público, área do cliente e integrações de entrada — mapa para IA
-> Verificado em 2026-09-26 · Escopo: `app/(site)/**`, `app/(cliente)/**`, `app/store/**`, `app/layout.tsx`, `app/{sitemap,robots}.ts`, `public/` (estrutura), `app/api/{process-status,zapier,botconversa,migrate-hospitals}/**`, `app/_actions/botconversa.ts`, `app/_shared/lib/aws-messaging.ts` (+ satélites lidos: `app/_shared/lib/db/botconversa.ts`, `app/_actions/contacts/*`, `app/_actions/users/{user-stats,get-status-user}.ts`, `app/_actions/process/get-status-process.ts`, `app/_components/landing_page/*`)
+> Verificado em 2026-09-26 (site institucional revisto em 2026-11-24) · Escopo: `app/(site)/**`, `app/(cliente)/**`, `app/store/**`, `app/layout.tsx`, `app/{sitemap,robots}.ts`, `public/` (estrutura), `app/api/{process-status,zapier,botconversa,migrate-hospitals}/**`, `app/_actions/botconversa.ts`, `app/_shared/lib/aws-messaging.ts` (+ satélites lidos: `app/_shared/lib/db/botconversa.ts`, `app/_actions/contacts/*`, `app/_actions/users/{user-stats,get-status-user}.ts`, `app/_actions/process/get-status-process.ts`, `app/_components/landing_page/*`)
 
 ## TL;DR
-- **Site institucional** (grupo `(site)`): home, blog com 4 posts estáticos, FAQ, equipe e páginas legais. Todo o conteúdo está escrito direto no TSX (sem CMS). A única escrita no banco é o formulário de contato (`ContactUsers` → tabela `Contact`).
+- **Site institucional** (grupo `(site)`): home focada em Auxílio-Acidente, blog com 5 artigos estáticos, FAQ, equipe e páginas legais. Todo o conteúdo está escrito direto no TSX (sem CMS). O site **não grava nada no banco**: o formulário de contato saiu em 11/2026 e o contato é só pelo WhatsApp (botão fixo em todas as páginas).
 - **Área do cliente** (grupo `(cliente)`): o cliente entra com CPF e senha (mesma tabela `User` da equipe) e vê cartões "Acidente N" com uma linha do tempo de etapas lida de `User.status` (`/status`) ou de `Process.status` (`/status/[processId]`). **Nunca mostra documentos.**
 - **Integrações de entrada**: webhook do BotConversa `/api/botconversa/contratado` (cria card, tarefa de setor e linha em `Botconversa`), rotas legadas do MiniKanban, proxy Zapier sem chamador, migração de hospitais **destrutiva** e `aws-messaging.ts` (SMS SNS / e-mail SES da recuperação de senha).
 - Quebra mais: (1) as allowlists do `middleware.ts`: página, action ou API pública que não entra lá vai para o login ou leva 401. A home `/` **não** está em `PUBLIC_ACTION_PAGES`; (2) as etapas de status estão copiadas em 3 lugares e o portal usa semântica deslocada em uma etapa; (3) actions e rotas do cliente confiam em ids enviados pelo navegador (IDOR).
@@ -15,9 +15,11 @@
 | `app/sitemap.ts` / `app/robots.ts` | `/sitemap.xml` (lista fixa de 10 URLs) / `/robots.txt` (bloqueia `/nova-dash`, `/api/`, `/area-do-cliente`, `/status`, `/login`) | `sitemap`, `robots` |
 | `app/error.tsx`, `app/not-found.tsx`, `app/global-error.tsx` | Páginas de erro com a marca | — |
 | `app/(site)/layout.tsx` | **Único** lugar com GA4, Meta Pixel, RD Station e JSON-LD `LegalService` | `SiteLayout` |
-| `app/(site)/page.tsx` + `section/stats.tsx` | Home `/`: monta as seções de `app/_components/landing_page/*` | `App`, `metadata`, `viewport`, `Stats` |
-| `app/_components/landing_page/*.tsx` | Seções da home: `Header` (link para a nova-dash se ADMIN*), `Hero` (CTA → `/area-do-cliente` se logado, senão `/login`), `Contact` (formulário), `BlogSection` (lista **própria** de posts), `video` (next-video) | `Header`, `Hero`, `Contact`, `BlogSection`, `Footer` |
-| `app/(site)/blog/**` | Índice client (`blogPosts` fixo + busca) e 4 posts; metadata no `layout.tsx` de cada pasta | `BlogPage`, `BlogArticle`, `PostLayout` |
+| `app/(site)/page.tsx` + `section/stats.tsx` | Home `/`: Header → Hero (com o vídeo) → AuxilioAcidente → WhyChooseUs → Stats → BlogSection → Contact → Footer | `App`, `metadata`, `viewport`, `Stats` |
+| `app/_components/landing_page/*.tsx` | Seções da home: `Header` (link para a nova-dash se ADMIN*; botão "Análise Gratuita" → WhatsApp), `Hero` (vídeo vertical de `public/videos/`; "Consulte seu Processo" → `/area-do-cliente` se logado, senão `/login`), `AuxilioAcidente` (âncoras `#auxilio-acidente` e `#quem-tem-direito`), `WhyChooseUs`, `Contact` (WhatsApp, telefone, horário, redes, endereços + mapa do Google embutido), `BlogSection` (3 primeiros de `BLOG_POSTS`), `WhatsAppFloat` (montado no `(site)/layout.tsx`) | `Header`, `Hero`, `AuxilioAcidente`, `WhyChooseUs`, `Contact`, `BlogSection`, `WhatsAppFloat`, `Footer` |
+| `app/_components/landing_page/site-info.ts` | **Fonte única** de WhatsApp/telefone, link da análise gratuita (com texto pronto), horário e endereços (+ URLs do mapa). Usado por Header, Hero, Contact, Footer, equipe, blog e JSON-LD | `WHATSAPP_ANALISE_URL`, `ENDERECOS`, `HORARIO_ATENDIMENTO`, `mapaEmbedUrl` |
+| `app/_components/landing_page/blog-posts.ts` | **Lista única** dos artigos (home, índice `/blog`, "Leia também" e sitemap). Ordem = exibição | `BLOG_POSTS`, `blogPostUrl` |
+| `app/(site)/blog/**` | Índice client (lê `BLOG_POSTS` + busca/categorias) e 5 artigos. Os novos usam `_components/ArticleShell.tsx` (moldura + CTA + "Leia também"; metadata exportada no próprio `page.tsx`); `inss` é o formato antigo, com `layout.tsx` de metadata. `/blog/dpvat` e `/blog/auxilio-maternidade` saíram e redirecionam (`next.config.mjs`) | `BlogPage`, `ArticleShell`, `RelatedPosts`, `Callout` |
 | `app/(site)/faq/page.tsx` + `faq/section/feature.tsx` | FAQ em dados, com busca; reusa a `Sidebar` do cliente | `Feature`, `CATEGORIES`, `WHATSAPP_URL` |
 | `app/(site)/nossa-equipe/page.tsx` | Página da equipe (cards que viram, fotos em `public/`) | `TeamPage` |
 | `app/(site)/{politica-de-privacidade,politica-privacidade,termos-de-uso,exclusao-de-dados}/page.tsx` | Páginas legais. **Existem duas de privacidade**: o Footer aponta para a antiga, o sitemap para a nova | `PrivacyPolicyPage`, `PrivacyPolicy`, `TermsOfUse`, `DataDeletionPage` |
@@ -45,9 +47,9 @@
 ## Fluxo principal
 **A) Visitante → lead do site**
 1. `/` renderiza as seções no servidor; `app/(site)/layout.tsx` injeta GA, Pixel (só `PageView`), RD Station e JSON-LD.
-2. `Contact` → `useFormState(ContactUsers)` → server action com POST em `/` → `middleware` → `db.contact.create` → a equipe vê em `app/nova-dash/form-leads.tsx` (`LeadsTable` via `getContacts`).
-   - Pela lógica atual do middleware, `/` é página pública, mas **não** está em `PUBLIC_ACTION_PAGES`, então a action anônima recebe 401. Confirmado lendo o código; não foi testado em produção.
-3. Os links de telefone e WhatsApp (JSON-LD, `Header`, `Contact`, `WHATSAPP_URL` do FAQ) estão fixos no código e apontam para a linha 2323.
+2. Todo CTA ("Análise Gratuita" do Header, Hero, seção do Auxílio-Acidente, Contact, botão fixo, artigos e equipe) abre `wa.me/5541920077331` com o texto "Olá! Quero fazer a análise gratuita do meu caso." (`WHATSAPP_ANALISE_URL`). O lead entra pelo inbox/bot como qualquer conversa.
+   - O formulário antigo (`ContactUsers` → tabela `Contact`, lido por `LeadsTable` em `app/nova-dash/form-leads.tsx`) saiu do site em 11/2026: ninguém acompanhava. A action e a tabela continuam no código, sem chamador no site.
+3. O número fica em `site-info.ts`; o `WHATSAPP_URL` do FAQ e o link de `status/[processId]/status-progress.tsx` ainda têm o número escrito à mão (mesma linha 92007-7331).
 
 **B) Cliente → etapa do processo**
 1. `/login` (CPF + senha) → `role.startsWith("ADMIN") ? "/nova-dash" : "/area-do-cliente"`.
@@ -131,8 +133,8 @@
   - Registre o prefixo em `PUBLIC_PAGE_PREFIXES` (`middleware.ts`) e a URL em `app/sitemap.ts`.
   - Cuidado: `alternates.canonical` próprio e título sem a marca.
   - Valide: aba anônima + `/sitemap.xml`.
-- **Post novo no blog** → crie a pasta `app/(site)/blog/<slug>/` com `page.tsx` e `layout.tsx` (metadata).
-  - Adicione o post em `blogPosts` de `blog/page.tsx`, em `blogPosts` de `app/_components/landing_page/BlogSection.tsx` (se for aparecer na home) e em `sitemap.ts`.
+- **Post novo no blog** → adicione o item em `BLOG_POSTS` (`app/_components/landing_page/blog-posts.ts`; a posição define se aparece na home) e crie `app/(site)/blog/<slug>/page.tsx` com `export const metadata` (title sem a marca, `alternates.canonical`) e o texto dentro de `<ArticleShell slug="<slug>" readTime="N min">` (h2/p/ul simples; `Callout` para destaque). Índice, home, "Leia também" e sitemap se atualizam sozinhos.
+  - Post removido → tire de `BLOG_POSTS`, apague a pasta e adicione redirect permanente em `next.config.mjs`.
   - Cuidado: imagem remota só de `images.unsplash.com` (`remotePatterns` em `next.config.mjs`); o resto vai em `public/`.
 - **Server action anônima em página pública** → inclua a rota em `PUBLIC_ACTION_PAGES`.
   - Cuidado: a action precisa validar a entrada e não pode aceitar id de usuário vindo do navegador.
@@ -145,7 +147,8 @@
   - Valide: `curl` com o header `x-webhook-secret`, usando evento diferente de `contratado`.
 - **Script de marketing, Pixel ou JSON-LD** → só em `app/(site)/layout.tsx`. Valide no view-source de `/` e de `/nova-dash`.
 - **Pergunta nova no FAQ** → adicione em `CATEGORIES` (`faq/section/feature.tsx`) com `id` único e `searchText` em texto puro, que é o que a busca usa.
-- **Trocar telefone ou WhatsApp do site** → JSON-LD de `(site)/layout.tsx`, `Header.tsx`, `Contact.tsx` e `WHATSAPP_URL` do FAQ. O link de `status/[processId]/status-progress.tsx` ainda é um placeholder.
+- **Trocar telefone, WhatsApp, horário ou endereço do site** → `app/_components/landing_page/site-info.ts` (o JSON-LD do `(site)/layout.tsx` lê de lá). Fora dele: `WHATSAPP_URL` do FAQ e o link de `status/[processId]/status-progress.tsx`.
+  - Endereço novo: confira o CEP (ViaCEP) e veja o pin no mapa da seção Contato, que busca por "rua - bairro, cidade - UF, CEP".
 - **SMS ou e-mail transacional novo** → reuse `sendSmsAws`/`sendEmailAws`, checando antes `isAws*Configured()`. Tenha fallback (veja a ordem em `password-reset.ts`).
 - **Dado novo no painel do cliente** → crie uma action que tira o usuário de `getServerSession(authOptions)` e consuma em `section/demo.tsx`. Não receba `userId` como parâmetro.
 
@@ -153,9 +156,9 @@
 - **Testes automáticos**: nenhum teste em `tests/` cobre este domínio diretamente. `tests/date-br.test.ts` cobre os helpers de fuso usados por `fetchEventsByMonth` e `getBotconversaAdsData`.
 - **Gates do CI** (`.github/workflows/ci.yml`): `npx tsc --noEmit`, `npm run lint`, `npm test`. Nesta máquina o `next build` local para em silêncio (problema pré-existente); o build confiável é o da Vercel.
 - **Validação manual** (`npm run dev`):
-  1. Em aba anônima, `/`, `/blog/dpvat`, `/faq`, `/termos-de-uso` e `/exclusao-de-dados` abrem sem login. `/nova-dash` redireciona para `/login`.
+  1. Em aba anônima, `/`, `/blog/inss`, `/faq`, `/termos-de-uso` e `/exclusao-de-dados` abrem sem login. `/nova-dash` redireciona para `/login`.
   2. `/sitemap.xml` e `/robots.txt` respondem.
-  3. Envie o formulário de contato anônimo. Pelo código atual, espera-se falha 401.
+  3. Os botões "Análise Gratuita" abrem o WhatsApp com o texto pronto; no Contato, cada endereço troca o mapa. `/blog/dpvat` redireciona para `/blog/auxilio-acidente-transito`.
   4. Faça login como cliente: deve cair em `/area-do-cliente`, com os cartões Acidente N. `/status` mostra a linha do tempo; no Network, o polling de 30s para quando a aba fica oculta.
   5. O tour abre na primeira visita e o botão "Ver tutorial" o reabre.
 - **Webhook**: POST para `/api/botconversa/contratado` com corpo `{nome, telefone, evento}` e header `x-webhook-secret`. Use `contratado` só em ambiente de teste, porque cria card e tarefa.
