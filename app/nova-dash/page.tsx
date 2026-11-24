@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { PartnerLogo } from '@/app/_components/landing_page/PartnerLogo';
 import { LayoutDashboard, Trello, Users, Sun, Moon, Clock, Archive, UserCircle, Ticket, HelpCircle, MessageCircle, AtSign, FileSignature } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/_shared/ui/tabs';
@@ -221,15 +222,22 @@ function PageInner() {
       }`}>
         <div className="px-3 md:px-6">
           <div className="flex items-center justify-between gap-2">
-            <Link href='/' className="flex shrink-0 items-center">
-              <Image
-                src={darkReaderOn ? '/logo-brasil-beneficios-branca.png' : '/logo-brasil-beneficios.png'}
-                width={200}
-                height={200}
-                alt="Logo"
-                className="h-auto w-[190px] pt-2"
-              />
-            </Link>
+            <div className="flex min-w-0 items-center gap-3">
+              <Link href='/' className="flex shrink-0 items-center">
+                <Image
+                  src={darkReaderOn ? '/logo-brasil-beneficios-branca.png' : '/logo-brasil-beneficios.png'}
+                  width={200}
+                  height={200}
+                  alt="Logo"
+                  className="h-auto w-[190px] pt-2"
+                />
+              </Link>
+              {/* Escritório parceiro, com a mesma altura do nosso logo (190px
+                  de largura em arquivo 1200x466 = 74px). Só a partir de lg:
+                  abaixo disso os ícones e a presença da equipe à direita já
+                  ocupam a largura. */}
+              <PartnerLogo dark={darkReaderOn} className="hidden lg:flex pt-2" imageClassName="h-[74px]" />
+            </div>
             <div className="flex items-center gap-1.5 md:gap-3">
               {/* Rever o tutorial de onboarding a qualquer momento. */}
               <Button
