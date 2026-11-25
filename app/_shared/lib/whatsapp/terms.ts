@@ -10,7 +10,7 @@ import { cardUploadKey } from "@/app/_shared/utils/s3-keys";
 import { parseDraftDocuments } from "@/app/_shared/utils/draft-documents";
 import { parseInteractive, readFlowJson, walkComponents, type FlowJson } from "@/app/_shared/utils/wa-forms";
 import {
-  canonicalTermsRecord, formatVerificationCode, parseTermsReply, termsAskStep, termsPendingSince,
+  canonicalTermsRecord, formatVerificationCode, parseTermsReply, termsAskStep, termsPendingSince, termsSkipsForCard,
 } from "@/app/_shared/utils/terms";
 import { getCreds } from "./numbers";
 import { findActiveFormByName, sendFormToContact, syncFormCatalog } from "./forms";
@@ -117,22 +117,29 @@ export async function maybeRequestTermsAcceptance(
 ): Promise<TermsRequestState> {
   const formName = termsFormName();
   if (!formName) return { state: "off" };
-  // O aceite é etapa do filtro inicial de LEAD NOVO: cliente que já tem card
-  // (retorno, consulta de status) segue para a Fila como sempre.
-  if (opts.hasCard) return { state: "off" };
   try {
     const [contact, conv] = await Promise.all([
       db.whatsAppContact.findUnique({ where: { id: contactId }, select: { id: true, phone: true, name: true, numberId: true, userId: true } }),
       db.whatsAppConversation.findUnique({ where: { contactId }, select: { status: true, closedAt: true, createdAt: true } }),
     ]);
     if (!contact) return { state: "failed", error: "contato não encontrado" };
+    const start = attendanceStart(conv);
+    // Cliente que já tinha card segue para a Fila como sempre; card criado
+    // neste atendimento ainda é lead novo (termsSkipsForCard).
+    if (opts.hasCard) {
+      const cardRow = contact.userId
+        ? await db.user.findUnique({ where: { id: contact.userId }, select: { createdAt: true } })
+        : null;
+      if (termsSkipsForCard({ hasCard: true, cardCreatedAt: cardRow?.createdAt ?? null, attendanceStart: start })) {
+        return { state: "off" };
+      }
+    }
     // Atendente assumiu durante o turno: nada sai; o qualifyToQueue condicional
     // do bot também não move (o atendente conduz e manda o formulário se quiser).
     if (conv?.status !== "bot") return { state: "off" };
     if (await hasAcceptedTerms(contact)) return { state: "accepted" };
 
     const now = Date.now();
-    const start = attendanceStart(conv);
     const sends = await botTermsSends(contactId, start);
     // Formulário de atendimento anterior (cliente sumiu e voltou): só importa
     // quando ainda não houve envio neste atendimento nem documento.

@@ -230,6 +230,20 @@ export function termsAskStep(i: { sends: Date[]; sentEarlier: boolean; docsRecei
   return "send";
 }
 
+/**
+ * O aceite é etapa do filtro inicial de LEAD NOVO: cliente com card (retorno,
+ * consulta de status) segue para a Fila sem formulário. Exceção: card criado
+ * DENTRO deste atendimento (o atendente clicou "Adicionar cliente" na ficha
+ * enquanto o bot ainda coletava) continua sendo lead novo — caso de 25/11, em
+ * que o card nasceu 1 min antes do qualify e o formulário não saiu.
+ * `cardCreatedAt` null = card sem data conhecida (Process): trata como antigo.
+ */
+export function termsSkipsForCard(i: { hasCard: boolean; cardCreatedAt: Date | null; attendanceStart: Date }): boolean {
+  if (!i.hasCard) return false;
+  if (!i.cardCreatedAt) return true;
+  return i.cardCreatedAt.getTime() < i.attendanceStart.getTime();
+}
+
 /** Por quanto tempo um formulário de atendimento ANTERIOR ainda conta no fato termsPending. */
 export const TERMS_PENDING_CARRY_MS = 7 * 86_400_000;
 

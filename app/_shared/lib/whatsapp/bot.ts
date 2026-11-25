@@ -2273,7 +2273,8 @@ ${emptyNote}`,
         // responde continua elegível à recuperação automática, que lembra do
         // botão. O cérebro sabe que está pendente pelo fato `termsPending`.
         // Cliente já cadastrado (card vinculado) não passa pelo aceite: o termo é
-        // etapa do filtro inicial de lead novo; quem tem card segue como sempre.
+        // etapa do filtro inicial de lead novo; quem tem card segue como sempre,
+        // salvo card criado neste atendimento (termsSkipsForCard, caso de 25/11).
         // Sem foto/PDF do cliente neste atendimento (docsReceived, o mesmo fato
         // do cérebro), o 1º formulário não sai (T-TC5IR): vai à Fila com nota.
         const terms = await (await import("./terms")).maybeRequestTermsAcceptance(contactId, {

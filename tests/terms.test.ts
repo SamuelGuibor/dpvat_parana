@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseTermsReply, formatVerificationCode, normalizeVerificationCode, canonicalTermsRecord,
   brDateTimeLabel, maskCpf, maskName, maskPhone, formatCpf, termsGate, normalizeColumnName,
-  termsAskStep, termsPendingSince, TERMS_MAX_SENDS, TERMS_RESEND_MS, TERMS_PENDING_CARRY_MS,
+  termsAskStep, termsPendingSince, termsSkipsForCard, TERMS_MAX_SENDS, TERMS_RESEND_MS, TERMS_PENDING_CARRY_MS,
   type TermsGateInput,
 } from "@/app/_shared/utils/terms";
 
@@ -38,6 +38,28 @@ describe("pedido do aceite pelo bot (termsAskStep)", () => {
   it("no teto de envios, só espera", () => {
     const sends = Array.from({ length: TERMS_MAX_SENDS }, (_, i) => ago(60 * (i + 1)));
     expect(termsAskStep({ ...base, sends, docsReceived: 5 })).toBe("waiting");
+  });
+});
+
+// Caso de 25/11: o atendente criou o card pela ficha 1 min antes do qualify e o
+// formulário não saiu (o card fazia o bot tratar o lead como cliente antigo).
+describe("aceite de quem tem card (termsSkipsForCard)", () => {
+  const attendanceStart = new Date("2026-11-25T18:48:33Z");
+
+  it("sem card, o aceite vale", () => {
+    expect(termsSkipsForCard({ hasCard: false, cardCreatedAt: null, attendanceStart })).toBe(false);
+  });
+
+  it("card criado neste atendimento continua sendo lead novo", () => {
+    expect(termsSkipsForCard({ hasCard: true, cardCreatedAt: new Date("2026-11-25T18:58:56Z"), attendanceStart })).toBe(false);
+  });
+
+  it("card de antes do atendimento (cliente que voltou) pula o aceite", () => {
+    expect(termsSkipsForCard({ hasCard: true, cardCreatedAt: new Date("2026-10-02T12:00:00Z"), attendanceStart })).toBe(true);
+  });
+
+  it("card sem data conhecida (Process) pula o aceite", () => {
+    expect(termsSkipsForCard({ hasCard: true, cardCreatedAt: null, attendanceStart })).toBe(true);
   });
 });
 
