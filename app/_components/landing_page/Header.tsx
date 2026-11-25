@@ -14,7 +14,6 @@ import { MdInsertChartOutlined } from "react-icons/md";
 import { useSession, signOut } from "next-auth/react";
 import { cn } from "@/app/_shared/lib/utils";
 import { WHATSAPP_ANALISE_URL } from "./site-info";
-import { PartnerLogo } from "./PartnerLogo";
 
 export function Header() {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -63,25 +62,20 @@ export function Header() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-1">
 
-            {/* Nosso logo + o do escritório parceiro (PartnerLogo). */}
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <a href="/" className="shrink-0">
-                <Image
-                  src="/logo-brasil-beneficios.png"
-                  // Arquivo é 1200x466: altura fixa e largura automática. Em
-                  // 180x60 ficava achatado; e o header precisa manter 68px no
-                  // desktop (o hero desconta essa altura da tela).
-                  width={155}
-                  height={60}
-                  className="h-10 sm:h-[60px] w-auto"
-                  alt="Brasil Benefícios e Indenizações"
-                />
-              </a>
-              <PartnerLogo />
-            </div>
+            <a href="/" className="shrink-0">
+              <Image
+                src="/logo-brasil-beneficios.png"
+                // Arquivo é 1200x466: altura fixa e largura automática. Em
+                // 180x60 ficava achatado; e o header precisa manter 68px no
+                // desktop (o hero desconta essa altura da tela).
+                width={155}
+                height={60}
+                className="h-[60px] w-auto"
+                alt="Brasil Benefícios e Indenizações"
+              />
+            </a>
 
-            {/* lg (não md): com os dois logos, o menu não cabe entre 768 e 1023px. */}
-            <nav className="hidden lg:flex items-center gap-8">
+            <nav className="hidden md:flex items-center gap-8">
               <a href="/" className="text-gray-700 hover:text-blue-600">Início</a>
               <a href="/#blog" className="text-gray-700 hover:text-blue-600">Blog</a>
               <a href="/nossa-equipe" className="text-gray-700 hover:text-blue-600">Equipe</a>
@@ -95,9 +89,7 @@ export function Header() {
                 href={WHATSAPP_ANALISE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                // No celular some: os dois logos ocupam a largura e o botão
-                // fixo do WhatsApp já fica na tela.
-                className="hidden sm:flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
+                className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
                 aria-label="Análise gratuita pelo WhatsApp"
               >
                 <FaWhatsapp className="w-4 h-4" />
@@ -123,7 +115,7 @@ export function Header() {
                 <button
                   type="button"
                   onClick={toggleSheet}
-                  className="lg:hidden rounded-lg p-2 text-gray-700 hover:bg-gray-100 transition-colors"
+                  className="md:hidden rounded-lg p-2 text-gray-700 hover:bg-gray-100 transition-colors"
                   aria-label="Abrir menu de navegação"
                 >
                   <Menu className="h-6 w-6" />

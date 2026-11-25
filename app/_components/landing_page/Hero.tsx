@@ -14,9 +14,9 @@ export function Hero() {
     // 60px + py-1), senão a faixa escura da seção seguinte aparecia embaixo.
     <section
       id="inicio"
-      className="relative bg-gradient-to-br from-blue-900 to-blue-900 text-white lg:flex lg:items-center lg:min-h-[calc(100svh_-_68px)]"
+      // Mesmo fundo do rodapé (bg-gray-900), sem véu por cima para a cor bater.
+      className="relative bg-gray-900 text-white lg:flex lg:items-center lg:min-h-[calc(100svh_-_68px)]"
     >
-      <div className="absolute inset-0 bg-black/20"></div>
       <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 lg:py-10">
         <div className="grid lg:grid-cols-[minmax(0,1fr)_auto] gap-12 lg:gap-16 items-center">
           <div>

@@ -3,7 +3,7 @@ import { cn } from "@/app/_shared/lib/utils";
 
 /**
  * Divisor dourado + logo do escritório parceiro Caique Castro, ao lado do
- * nosso logo (header do site e da nova-dash).
+ * nosso logo (header da nova-dash; o site público não exibe).
  *
  * Os SVGs foram vetorizados do logo original (dourado sobre marrom, 937px):
  * mesmo formato — símbolo em cima, nome embaixo —, sem "Sociedade de
